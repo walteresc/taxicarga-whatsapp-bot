@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TaxiCarga | Acceso comercial</title>
+  <link href="https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/vuetify@3.7.6/dist/vuetify.min.css" rel="stylesheet">
+  <style>
+    body {
+      margin: 0;
+      background: #edf2f4;
+      letter-spacing: 0;
+    }
+    [v-cloak] { display: none; }
+    .login-shell {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: minmax(420px, 0.9fr) minmax(420px, 1.1fr);
+      background: #edf2f4;
+    }
+    .brand-panel {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 42px;
+      background: #102027;
+      color: #fff;
+    }
+    .brand-name {
+      font-size: 30px;
+      font-weight: 800;
+      letter-spacing: 0;
+    }
+    .brand-copy {
+      max-width: 560px;
+    }
+    .brand-copy h1 {
+      margin: 0;
+      font-size: 40px;
+      line-height: 1.05;
+      letter-spacing: 0;
+    }
+    .brand-copy p {
+      margin: 14px 0 0;
+      color: #c8d5d9;
+      font-size: 16px;
+      line-height: 1.55;
+    }
+    .login-panel {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 32px;
+    }
+    .login-card {
+      width: min(460px, 100%);
+      border-radius: 8px;
+      border: 1px solid #d8e0e4;
+      background: #fff;
+    }
+    .feature-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-top: 28px;
+    }
+    .feature {
+      border: 1px solid rgba(255,255,255,.18);
+      border-radius: 8px;
+      padding: 12px;
+      color: #e5eef0;
+      font-size: 13px;
+    }
+    .v-btn {
+      letter-spacing: 0;
+      text-transform: none;
+    }
+    @media (max-width: 920px) {
+      .login-shell { grid-template-columns: 1fr; }
+      .brand-panel { min-height: 360px; padding: 28px; }
+      .brand-copy h1 { font-size: 32px; }
+      .feature-row { grid-template-columns: 1fr; }
+      .login-panel { padding: 18px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="login-app" v-cloak>
+    <v-app>
+      <main class="login-shell">
+        <section class="brand-panel">
+          <div class="d-flex align-center ga-3">
+            <v-avatar color="teal-lighten-4" rounded="lg">
+              <v-icon color="teal-darken-4" icon="mdi-truck-fast-outline"></v-icon>
+            </v-avatar>
+            <div class="brand-name">TaxiCarga</div>
+          </div>
+
+          <div class="brand-copy">
+            <h1>Gestion comercial para conversaciones de mudanza y carga</h1>
+            <p>Atiende clientes, toma conversaciones, registra cotizaciones y controla leads desde una sola pantalla.</p>
+            <div class="feature-row">
+              <div class="feature">WhatsApp</div>
+              <div class="feature">Cotizaciones</div>
+              <div class="feature">Vendedores</div>
+            </div>
+          </div>
+
+          <div class="text-caption" style="color:#9fb2b8;">Panel interno - acceso autorizado</div>
+        </section>
+
+        <section class="login-panel">
+          <v-card class="login-card pa-6" elevation="0">
+            <div class="mb-6">
+              <div class="text-h5 font-weight-bold">Acceso comercial</div>
+              <div class="text-body-2 text-medium-emphasis mt-1">Ingresa con tu usuario de vendedor.</div>
+            </div>
+
+            {% if form.errors %}
+              <v-alert class="mb-4" type="error" variant="tonal" density="compact">
+                Usuario o contrasena incorrectos.
+              </v-alert>
+            {% endif %}
+
+            <form method="post" action="{% url 'dashboard-login' %}">
+              {% csrf_token %}
+              <input type="hidden" name="next" value="{{ next }}">
+              <v-text-field
+                name="username"
+                label="Usuario"
+                prepend-inner-icon="mdi-account-outline"
+                variant="outlined"
+                density="comfortable"
+                autofocus
+              ></v-text-field>
+              <v-text-field
+                name="password"
+                label="Contrasena"
+                type="password"
+                prepend-inner-icon="mdi-lock-outline"
+                variant="outlined"
+                density="comfortable"
+              ></v-text-field>
+              <v-btn block size="large" color="teal-darken-2" type="submit" prepend-icon="mdi-login">
+                Iniciar sesion
+              </v-btn>
+            </form>
+
+            <div class="text-caption text-medium-emphasis mt-5">
+              Demo local: usuario <strong>demo_vendedor</strong>
+            </div>
+          </v-card>
+        </section>
+      </main>
+    </v-app>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vuetify@3.7.6/dist/vuetify.min.js"></script>
+  <script>
+    const { createApp } = Vue;
+    const { createVuetify } = Vuetify;
+    createApp({}).use(createVuetify()).mount('#login-app');
+  </script>
+</body>
+</html>

@@ -1,0 +1,1017 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <title>TaxiCarga | Dashboard</title>
+  <link href="https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/vuetify@3.7.6/dist/vuetify.min.css" rel="stylesheet">
+  <style>
+    body {
+      margin: 0;
+      background: #eef2f4;
+      letter-spacing: 0;
+    }
+    [v-cloak] {
+      display: none;
+    }
+    .shell {
+      min-height: 100vh;
+      background:
+        linear-gradient(180deg, #102027 0, #102027 168px, #eef2f4 168px, #eef2f4 100%);
+    }
+    .app-frame {
+      max-width: 1600px;
+      margin: 0 auto;
+      padding: 18px;
+    }
+    .toolbar {
+      color: #fff;
+      padding: 8px 2px 22px;
+    }
+    .brand-title {
+      font-size: 23px;
+      font-weight: 750;
+      line-height: 1.15;
+      letter-spacing: 0;
+    }
+    .brand-subtitle {
+      color: #c7d4d8;
+      font-size: 13px;
+      margin-top: 3px;
+    }
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .work-grid {
+      display: grid;
+      grid-template-columns: minmax(540px, 1.05fr) minmax(430px, 0.95fr);
+      gap: 14px;
+      align-items: start;
+    }
+    .lead-board {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .column-surface,
+    .detail-surface,
+    .metric-surface {
+      border: 1px solid #d7e0e4;
+      border-radius: 8px;
+      background: #fff;
+    }
+    .column-surface {
+      min-height: 312px;
+      overflow: hidden;
+    }
+    .lead-row {
+      border-top: 1px solid #edf1f3;
+      cursor: pointer;
+      min-height: 96px;
+    }
+    .lead-row:hover,
+    .lead-row.active {
+      background: #edf7f5;
+    }
+    .route-text,
+    .muted-text {
+      color: #5d6b73;
+      font-size: 12px;
+    }
+    .completion-line {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: center;
+      margin-top: 8px;
+    }
+    .detail-surface {
+      overflow: hidden;
+    }
+    .message-line {
+      border-bottom: 1px solid #edf1f3;
+    }
+    .chat-timeline {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      max-height: 560px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+    .chat-message {
+      display: flex;
+      gap: 8px;
+      align-items: flex-end;
+      max-width: 88%;
+    }
+    .chat-message.out {
+      align-self: flex-end;
+      flex-direction: row-reverse;
+    }
+    .chat-bubble {
+      border: 1px solid #dfe7eb;
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: #fff;
+      overflow-wrap: anywhere;
+    }
+    .chat-message.out .chat-bubble {
+      background: #e7f6f2;
+      border-color: #b8ded5;
+    }
+    .chat-meta {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: #5d6b73;
+      font-size: 11px;
+      margin-bottom: 4px;
+    }
+    .object-box,
+    .note-box {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      border: 1px solid #dfe7eb;
+      border-radius: 8px;
+      padding: 12px;
+      background: #f8fafb;
+      min-height: 48px;
+    }
+    .action-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .wide {
+      grid-column: 1 / -1;
+    }
+    .quick-replies {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .checklist-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .checklist-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid #dfe7eb;
+      border-radius: 8px;
+      padding: 9px 10px;
+      background: #f8fafb;
+      min-height: 42px;
+    }
+    .v-btn {
+      letter-spacing: 0;
+      text-transform: none;
+    }
+    @media (max-width: 1180px) {
+      .work-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    @media (max-width: 760px) {
+      .app-frame {
+        padding: 12px;
+      }
+      .metric-grid,
+      .lead-board,
+      .action-grid,
+      .checklist-grid {
+        grid-template-columns: 1fr;
+      }
+      .toolbar {
+        padding-bottom: 14px;
+      }
+    }
+  </style>
+</head>
+<body>
+  {{ dashboard_data|json_script:"dashboard-data" }}
+  <div id="dashboard-app" v-cloak>
+    <v-app>
+      <div class="shell">
+        <div class="app-frame">
+          <header class="toolbar d-flex align-center justify-space-between ga-4 flex-wrap">
+            <div>
+              <div class="brand-title">TaxiCarga</div>
+              <div class="brand-subtitle">Panel comercial de WhatsApp</div>
+            </div>
+            <div class="d-flex align-center ga-2 flex-wrap">
+              <v-btn color="teal-lighten-4" variant="flat" prepend-icon="mdi-plus" @click="newLeadDialog = true">
+                Nuevo lead
+              </v-btn>
+              <v-chip color="teal-lighten-4" text-color="teal-darken-4" prepend-icon="mdi-account-circle-outline">
+                [[ data.user.username ]]
+              </v-chip>
+              <v-btn href="/dashboard/logout/" variant="tonal" color="white" prepend-icon="mdi-logout">
+                Salir
+              </v-btn>
+              <v-btn href="/admin/" variant="tonal" color="white" prepend-icon="mdi-shield-account-outline">
+                Admin
+              </v-btn>
+            </div>
+          </header>
+
+          <section class="metric-grid" aria-label="Metricas">
+            <v-sheet class="metric-surface pa-4" v-for="metric in metrics" :key="metric.key">
+              <div class="d-flex align-center justify-space-between">
+                <div>
+                  <div class="text-caption text-medium-emphasis">[[ metric.label ]]</div>
+                  <div class="text-h5 font-weight-bold mt-1">[[ metric.value ]]</div>
+                </div>
+                <v-avatar :color="metric.color" variant="tonal" rounded="lg">
+                  <v-icon :icon="metric.icon"></v-icon>
+                </v-avatar>
+              </div>
+            </v-sheet>
+          </section>
+
+          {% if messages %}
+            {% for message in messages %}
+              <v-alert class="mb-3" type="success" variant="tonal" density="compact">{{ message }}</v-alert>
+            {% endfor %}
+          {% endif %}
+
+          <v-sheet class="pa-3 mb-3" rounded="lg" border>
+            <div class="d-flex ga-3 flex-wrap align-center">
+              <v-text-field
+                v-model="filters.search"
+                class="flex-grow-1"
+                label="Buscar lead"
+                prepend-inner-icon="mdi-magnify"
+                density="compact"
+                variant="outlined"
+                hide-details
+              ></v-text-field>
+              <v-select
+                v-model="filters.priority"
+                :items="priorityFilterItems"
+                item-title="label"
+                item-value="value"
+                label="Prioridad"
+                density="compact"
+                variant="outlined"
+                hide-details
+                style="max-width: 210px"
+              ></v-select>
+              <v-select
+                v-model="filters.followUp"
+                :items="followUpFilterItems"
+                item-title="label"
+                item-value="value"
+                label="Seguimiento"
+                density="compact"
+                variant="outlined"
+                hide-details
+                style="max-width: 230px"
+              ></v-select>
+              <v-menu>
+                <template v-slot:activator="{ props }">
+                  <v-btn v-bind="props" color="blue-grey-darken-2" variant="tonal" prepend-icon="mdi-download">
+                    Exportar
+                  </v-btn>
+                </template>
+                <v-list density="compact">
+                  <v-list-item v-for="item in exportItems" :key="item.value" :href="exportUrl(item.value)">
+                    <v-list-item-title>[[ item.label ]]</v-list-item-title>
+                  </v-list-item>
+                </v-list>
+              </v-menu>
+            </div>
+          </v-sheet>
+
+          <main class="work-grid">
+            <section class="lead-board" aria-label="Leads">
+              <v-sheet class="column-surface" v-for="group in filteredGroups" :key="group.key">
+                <div class="pa-3 d-flex align-center justify-space-between">
+                  <div class="d-flex align-center ga-2">
+                    <v-avatar :color="group.color" variant="tonal" size="32" rounded="lg">
+                      <v-icon :icon="group.icon" size="18"></v-icon>
+                    </v-avatar>
+                    <div class="text-subtitle-2 font-weight-bold">[[ group.label ]]</div>
+                  </div>
+                  <v-chip size="small" variant="tonal">[[ group.leads.length ]]</v-chip>
+                </div>
+
+                <template v-if="group.leads.length">
+                  <div
+                    v-for="lead in group.leads"
+                    :key="lead.id"
+                    class="lead-row pa-3"
+                    :class="{ active: selectedLead && selectedLead.id === lead.id }"
+                    @click="openLead(lead)"
+                  >
+                    <div class="d-flex align-start justify-space-between ga-2">
+                      <div class="text-body-2 font-weight-bold">[[ lead.cliente ]]</div>
+                      <div class="d-flex ga-1 flex-wrap justify-end">
+                        <v-chip :color="priorityColor(lead.prioridad)" size="x-small" variant="tonal">
+                          [[ lead.prioridad ]]
+                        </v-chip>
+                        <v-chip v-if="lead.atencionHumana" color="blue-grey-darken-2" size="x-small">
+                          humano
+                        </v-chip>
+                        <v-chip v-if="lead.seguimientoVencido" color="red-darken-2" size="x-small">
+                          vencido
+                        </v-chip>
+                        <v-chip v-else-if="lead.seguimientoHoy" color="amber-darken-3" size="x-small">
+                          hoy
+                        </v-chip>
+                      </div>
+                    </div>
+                    <div class="route-text mt-1">[[ lead.ruta ]]</div>
+                    <div class="d-flex align-center justify-space-between ga-2 mt-2">
+                      <span class="muted-text">[[ lead.tipoServicio ]] · [[ lead.fechaServicio || 'sin fecha' ]]</span>
+                      <span class="text-caption font-weight-bold">S/ [[ lead.precioCotizado || lead.precioRecomendado || '-' ]]</span>
+                    </div>
+                    <div class="completion-line">
+                      <v-progress-linear
+                        :model-value="lead.completion.percent"
+                        :color="completionColor(lead.completion.percent)"
+                        height="6"
+                        rounded
+                      ></v-progress-linear>
+                      <span class="text-caption font-weight-bold">[[ lead.completion.percent ]]%</span>
+                    </div>
+                  </div>
+                </template>
+                <div v-else class="pa-4 muted-text">Sin leads.</div>
+              </v-sheet>
+            </section>
+
+            <aside class="detail-surface" aria-label="Detalle del lead">
+              <template v-if="selectedLead">
+                <div class="pa-4 d-flex align-start justify-space-between ga-4 flex-wrap">
+                  <div>
+                    <div class="text-h6 font-weight-bold">[[ selectedLead.cliente ]]</div>
+                    <div class="muted-text mt-1">[[ selectedLead.telefono ]] · [[ selectedLead.estado ]] · [[ selectedLead.prioridad ]]</div>
+                  </div>
+                  <v-chip :color="selectedLead.atencionHumana ? 'blue-grey-darken-2' : 'teal-darken-2'" variant="flat">
+                    [[ selectedLead.atencionHumana ? 'atencion humana' : 'automatico' ]]
+                  </v-chip>
+                  <div class="wide">
+                    <div class="d-flex align-center justify-space-between mb-1">
+                      <span class="text-caption text-medium-emphasis">Datos para cotizar</span>
+                      <span class="text-caption font-weight-bold">[[ selectedLead.completion.label ]] - [[ selectedLead.completion.percent ]]%</span>
+                    </div>
+                    <v-progress-linear
+                      :model-value="selectedLead.completion.percent"
+                      :color="completionColor(selectedLead.completion.percent)"
+                      height="8"
+                      rounded
+                    ></v-progress-linear>
+                  </div>
+                </div>
+
+                <v-divider></v-divider>
+
+                <v-tabs v-model="tab" density="comfortable" color="teal-darken-2">
+                  <v-tab value="resumen" prepend-icon="mdi-view-dashboard-outline">Resumen</v-tab>
+                  <v-tab value="gestion" prepend-icon="mdi-tune-variant">Gestion</v-tab>
+                  <v-tab value="historial" prepend-icon="mdi-message-text-outline">Historial</v-tab>
+                </v-tabs>
+
+                <v-window v-model="tab">
+                  <v-window-item value="resumen">
+                    <div class="pa-4">
+                      <v-row dense>
+                        <v-col cols="12" md="6" v-for="item in summaryItems" :key="item.label">
+                          <v-sheet class="pa-3" rounded="lg" border>
+                            <div class="text-caption text-medium-emphasis">[[ item.label ]]</div>
+                            <div class="text-body-2 font-weight-bold mt-1">[[ item.value ]]</div>
+                          </v-sheet>
+                        </v-col>
+                      </v-row>
+
+                      <div class="mt-4">
+                        <div class="text-caption text-medium-emphasis mb-2">Checklist comercial</div>
+                        <div class="checklist-grid">
+                          <div
+                            v-for="item in selectedLead.completion.items"
+                            :key="item.key"
+                            class="checklist-item text-body-2"
+                          >
+                            <v-icon
+                              :color="item.done ? 'teal-darken-2' : 'amber-darken-3'"
+                              :icon="item.done ? 'mdi-check-circle-outline' : 'mdi-alert-circle-outline'"
+                              size="18"
+                            ></v-icon>
+                            <span>[[ item.label ]]</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div class="mt-4" v-if="selectedLead.completion.missing.length">
+                        <div class="text-caption text-medium-emphasis mb-2">Falta pedir</div>
+                        <div class="quick-replies">
+                          <v-chip
+                            v-for="item in selectedLead.completion.missing"
+                            :key="item.key"
+                            color="amber-darken-3"
+                            variant="tonal"
+                            size="small"
+                          >
+                            [[ item.label ]]
+                          </v-chip>
+                        </div>
+                      </div>
+
+                      <div class="mt-4">
+                        <div class="text-caption text-medium-emphasis mb-1">Objetos</div>
+                        <div class="object-box text-body-2">[[ selectedLead.listaObjetos ]]</div>
+                      </div>
+                      <div class="mt-3">
+                        <div class="text-caption text-medium-emphasis mb-1">Nota interna</div>
+                        <div class="note-box text-body-2">[[ selectedLead.notaInterna || '-' ]]</div>
+                      </div>
+                    </div>
+                  </v-window-item>
+
+                  <v-window-item value="gestion">
+                    <div class="pa-4">
+                      <div class="action-grid">
+                        <v-btn color="teal-darken-2" prepend-icon="mdi-account-check-outline" @click="postAction('assign_me')">
+                          Asignarme
+                        </v-btn>
+                        <v-btn color="blue-darken-2" prepend-icon="mdi-calendar-check-outline" @click="postAction('follow_up')">
+                          Registrar seguimiento
+                        </v-btn>
+                        <v-text-field
+                          v-model="forms.proximoSeguimiento"
+                          class="wide"
+                          label="Proximo seguimiento"
+                          type="datetime-local"
+                          density="comfortable"
+                          variant="outlined"
+                          hide-details
+                        ></v-text-field>
+                        <v-btn class="wide" variant="tonal" color="blue-darken-2" prepend-icon="mdi-calendar-clock-outline" @click="postAction('schedule_follow_up', { fecha_proximo_seguimiento: forms.proximoSeguimiento })">
+                          Programar seguimiento
+                        </v-btn>
+                        <v-btn
+                          v-if="!selectedLead.atencionHumana"
+                          class="wide"
+                          color="red-darken-2"
+                          prepend-icon="mdi-hand-back-left-outline"
+                          @click="postAction('take_over')"
+                        >
+                          Tomar conversacion
+                        </v-btn>
+                        <v-btn
+                          v-else
+                          class="wide"
+                          color="blue-grey-darken-2"
+                          prepend-icon="mdi-robot-outline"
+                          @click="postAction('release')"
+                        >
+                          Liberar automatico
+                        </v-btn>
+
+                        <v-select
+                          v-model="forms.estado"
+                          :items="data.states"
+                          item-title="label"
+                          item-value="value"
+                          label="Estado"
+                          density="comfortable"
+                          variant="outlined"
+                          hide-details
+                        ></v-select>
+                        <v-btn variant="tonal" color="teal-darken-2" @click="postAction('change_state', { estado: forms.estado })">
+                          Cambiar estado
+                        </v-btn>
+
+                        <v-select
+                          v-model="forms.prioridad"
+                          :items="data.priorities"
+                          item-title="label"
+                          item-value="value"
+                          label="Prioridad"
+                          density="comfortable"
+                          variant="outlined"
+                          hide-details
+                        ></v-select>
+                        <v-btn variant="tonal" color="amber-darken-3" @click="postAction('change_priority', { prioridad: forms.prioridad })">
+                          Cambiar prioridad
+                        </v-btn>
+
+                        <div class="wide">
+                          <div class="text-caption text-medium-emphasis mb-2">Datos comerciales</div>
+                          <v-row dense>
+                            <v-col cols="12" md="6">
+                              <v-text-field v-model="forms.tipoServicio" label="Tipo de servicio" density="comfortable" variant="outlined" hide-details></v-text-field>
+                            </v-col>
+                            <v-col cols="12" md="6">
+                              <v-text-field v-model="forms.fechaServicio" label="Fecha" type="date" density="comfortable" variant="outlined" hide-details></v-text-field>
+                            </v-col>
+                            <v-col cols="12" md="6">
+                              <v-text-field v-model="forms.distritoOrigen" label="Distrito origen" density="comfortable" variant="outlined" hide-details></v-text-field>
+                            </v-col>
+                            <v-col cols="12" md="6">
+                              <v-text-field v-model="forms.distritoDestino" label="Distrito destino" density="comfortable" variant="outlined" hide-details></v-text-field>
+                            </v-col>
+                            <v-col cols="12" md="6">
+                              <v-text-field v-model="forms.horarioServicio" label="Horario" density="comfortable" variant="outlined" hide-details></v-text-field>
+                            </v-col>
+                            <v-col cols="6" md="3">
+                              <v-text-field v-model="forms.pisoOrigen" label="Piso origen" type="number" min="0" density="comfortable" variant="outlined" hide-details></v-text-field>
+                            </v-col>
+                            <v-col cols="6" md="3">
+                              <v-text-field v-model="forms.pisoDestino" label="Piso destino" type="number" min="0" density="comfortable" variant="outlined" hide-details></v-text-field>
+                            </v-col>
+                            <v-col cols="12" md="6">
+                              <v-select
+                                v-model="forms.ascensorOrigen"
+                                :items="elevatorItems"
+                                item-title="label"
+                                item-value="value"
+                                label="Ascensor origen"
+                                density="comfortable"
+                                variant="outlined"
+                                hide-details
+                              ></v-select>
+                            </v-col>
+                            <v-col cols="12" md="6">
+                              <v-select
+                                v-model="forms.ascensorDestino"
+                                :items="elevatorItems"
+                                item-title="label"
+                                item-value="value"
+                                label="Ascensor destino"
+                                density="comfortable"
+                                variant="outlined"
+                                hide-details
+                              ></v-select>
+                            </v-col>
+                            <v-col cols="12">
+                              <v-textarea v-model="forms.listaObjetos" label="Objetos" rows="3" density="comfortable" variant="outlined" hide-details></v-textarea>
+                            </v-col>
+                          </v-row>
+                        </div>
+                        <v-btn class="wide" color="teal-darken-2" prepend-icon="mdi-content-save-outline" @click="postAction('update_details', detailPayload())">
+                          Guardar datos comerciales
+                        </v-btn>
+                        <v-btn class="wide" variant="tonal" color="teal-darken-2" prepend-icon="mdi-calculator-variant-outline" @click="postAction('recalculate_quote')">
+                          Recalcular precio recomendado
+                        </v-btn>
+
+                        <v-sheet v-if="selectedLead.ultimaCotizacion" class="wide pa-3" rounded="lg" border>
+                          <div class="d-flex align-center justify-space-between ga-2 flex-wrap">
+                            <div>
+                              <div class="text-caption text-medium-emphasis">Ultima cotizacion interna</div>
+                              <div class="text-body-2 font-weight-bold">
+                                S/ [[ selectedLead.ultimaCotizacion.precioMin ]] - S/ [[ selectedLead.ultimaCotizacion.precioMax ]]
+                                <span class="text-medium-emphasis">/ recomendado S/ [[ selectedLead.ultimaCotizacion.precioRecomendado ]]</span>
+                              </div>
+                            </div>
+                            <v-chip color="blue-grey-darken-2" size="small" variant="tonal">
+                              [[ selectedLead.ultimaCotizacion.similares ]] similares
+                            </v-chip>
+                          </div>
+                          <div class="muted-text mt-2">[[ selectedLead.ultimaCotizacion.explicacion ]]</div>
+                        </v-sheet>
+
+                        <div class="wide">
+                          <div class="text-caption text-medium-emphasis mb-2">Respuestas rapidas</div>
+                          <div class="quick-replies">
+                            <v-chip
+                              v-for="reply in data.quickReplies"
+                              :key="reply.key"
+                              color="blue-grey-darken-2"
+                              variant="tonal"
+                              @click="applyQuickReply(reply)"
+                            >
+                              <v-icon :icon="reply.icon" start></v-icon>
+                              [[ reply.label ]]
+                            </v-chip>
+                          </div>
+                        </div>
+
+                        <v-text-field
+                          v-model="forms.precioCotizado"
+                          class="wide"
+                          label="Precio cotizado"
+                          prefix="S/"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          density="comfortable"
+                          variant="outlined"
+                          hide-details
+                        ></v-text-field>
+                        <v-textarea
+                          v-model="forms.mensajeCotizacion"
+                          class="wide"
+                          label="Mensaje de cotizacion"
+                          rows="3"
+                          density="comfortable"
+                          variant="outlined"
+                          hide-details
+                        ></v-textarea>
+                        <v-btn class="wide" color="teal-darken-2" prepend-icon="mdi-currency-usd" @click="postAction('send_quote', { precio_cotizado: forms.precioCotizado, mensaje_cotizacion: forms.mensajeCotizacion })">
+                          Enviar cotizacion
+                        </v-btn>
+
+                        <div class="wide">
+                          <div class="text-caption text-medium-emphasis mb-2">Cierre comercial</div>
+                          <v-row dense>
+                            <v-col cols="12" md="5">
+                              <v-text-field
+                                v-model="forms.precioFinal"
+                                label="Precio final"
+                                prefix="S/"
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                density="comfortable"
+                                variant="outlined"
+                                hide-details
+                              ></v-text-field>
+                            </v-col>
+                            <v-col cols="12" md="7">
+                              <v-text-field
+                                v-model="forms.motivoPerdida"
+                                label="Motivo de perdida"
+                                density="comfortable"
+                                variant="outlined"
+                                hide-details
+                              ></v-text-field>
+                            </v-col>
+                          </v-row>
+                        </div>
+                        <v-btn color="teal-darken-2" prepend-icon="mdi-check-decagram-outline" @click="postAction('close_won', { precio_final: forms.precioFinal })">
+                          Cerrar venta
+                        </v-btn>
+                        <v-btn color="red-darken-2" variant="tonal" prepend-icon="mdi-close-octagon-outline" @click="postAction('close_lost', { motivo_perdida: forms.motivoPerdida })">
+                          Marcar perdido
+                        </v-btn>
+
+                        <v-textarea
+                          v-model="forms.respuesta"
+                          class="wide"
+                          label="Respuesta manual"
+                          rows="3"
+                          density="comfortable"
+                          variant="outlined"
+                          hide-details
+                        ></v-textarea>
+                        <v-btn class="wide" color="blue-darken-2" prepend-icon="mdi-send-outline" @click="postAction('manual_reply', { respuesta: forms.respuesta })">
+                          Enviar respuesta manual
+                        </v-btn>
+
+                        <v-textarea
+                          v-model="forms.nota"
+                          class="wide"
+                          label="Nota interna"
+                          rows="3"
+                          density="comfortable"
+                          variant="outlined"
+                          hide-details
+                        ></v-textarea>
+                        <v-btn class="wide" color="blue-grey-darken-2" prepend-icon="mdi-note-edit-outline" @click="postAction('save_note', { nota: forms.nota })">
+                          Guardar nota
+                        </v-btn>
+                      </div>
+                    </div>
+                  </v-window-item>
+
+                  <v-window-item value="historial">
+                    <div class="pa-4">
+                      <template v-if="data.messages.length">
+                        <div class="chat-timeline">
+                          <div
+                            v-for="message in data.messages"
+                            :key="message.key"
+                            class="chat-message"
+                            :class="message.direction"
+                          >
+                            <v-avatar
+                              :color="message.direction === 'out' ? 'teal-darken-2' : 'blue-grey-lighten-4'"
+                              :variant="message.direction === 'out' ? 'flat' : 'tonal'"
+                              size="28"
+                            >
+                              <v-icon :icon="message.icon" size="16"></v-icon>
+                            </v-avatar>
+                            <div class="chat-bubble">
+                              <div class="chat-meta">
+                                <strong>[[ message.author ]]</strong>
+                                <span>[[ message.fecha ]]</span>
+                              </div>
+                              <div class="text-body-2">[[ message.text ]]</div>
+                            </div>
+                          </div>
+                        </div>
+                      </template>
+                      <div v-else class="muted-text">Sin conversacion registrada.</div>
+                    </div>
+                  </v-window-item>
+                </v-window>
+              </template>
+
+              <div v-else class="pa-6">
+                <div class="text-h6 font-weight-bold">Sin leads</div>
+                <div class="muted-text mt-1">Cuando llegue una conversacion, aparecera aqui.</div>
+              </div>
+            </aside>
+          </main>
+
+          <v-dialog v-model="newLeadDialog" max-width="760">
+            <v-card rounded="lg">
+              <v-card-title class="d-flex align-center justify-space-between">
+                <span>Nuevo lead</span>
+                <v-btn icon="mdi-close" variant="text" @click="newLeadDialog = false"></v-btn>
+              </v-card-title>
+              <v-divider></v-divider>
+              <v-card-text>
+                <v-row dense>
+                  <v-col cols="12" md="6">
+                    <v-text-field v-model="newLead.nombre" label="Nombre" variant="outlined" density="comfortable"></v-text-field>
+                  </v-col>
+                  <v-col cols="12" md="6">
+                    <v-text-field v-model="newLead.telefono" label="Telefono" variant="outlined" density="comfortable"></v-text-field>
+                  </v-col>
+                  <v-col cols="12" md="6">
+                    <v-text-field v-model="newLead.tipo_servicio" label="Tipo de servicio" variant="outlined" density="comfortable"></v-text-field>
+                  </v-col>
+                  <v-col cols="12" md="6">
+                    <v-select
+                      v-model="newLead.prioridad"
+                      :items="data.priorities"
+                      item-title="label"
+                      item-value="value"
+                      label="Prioridad"
+                      variant="outlined"
+                      density="comfortable"
+                    ></v-select>
+                  </v-col>
+                  <v-col cols="12" md="6">
+                    <v-text-field v-model="newLead.distrito_origen" label="Distrito origen" variant="outlined" density="comfortable"></v-text-field>
+                  </v-col>
+                  <v-col cols="12" md="6">
+                    <v-text-field v-model="newLead.distrito_destino" label="Distrito destino" variant="outlined" density="comfortable"></v-text-field>
+                  </v-col>
+                  <v-col cols="12" md="6">
+                    <v-text-field v-model="newLead.fecha_servicio" label="Fecha" type="date" variant="outlined" density="comfortable"></v-text-field>
+                  </v-col>
+                  <v-col cols="12" md="6">
+                    <v-text-field v-model="newLead.horario_servicio" label="Horario" variant="outlined" density="comfortable"></v-text-field>
+                  </v-col>
+                  <v-col cols="12">
+                    <v-textarea v-model="newLead.lista_objetos" label="Objetos" rows="3" variant="outlined" density="comfortable"></v-textarea>
+                  </v-col>
+                  <v-col cols="12">
+                    <v-textarea v-model="newLead.nota_interna" label="Nota interna" rows="2" variant="outlined" density="comfortable"></v-textarea>
+                  </v-col>
+                </v-row>
+              </v-card-text>
+              <v-card-actions class="pa-4">
+                <v-spacer></v-spacer>
+                <v-btn variant="text" @click="newLeadDialog = false">Cancelar</v-btn>
+                <v-btn color="teal-darken-2" prepend-icon="mdi-content-save-outline" @click="createLead">
+                  Crear lead
+                </v-btn>
+              </v-card-actions>
+            </v-card>
+          </v-dialog>
+        </div>
+      </div>
+    </v-app>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vuetify@3.7.6/dist/vuetify.min.js"></script>
+  <script>
+    const dashboardData = JSON.parse(document.getElementById('dashboard-data').textContent);
+    const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+    const { createApp } = Vue;
+    const { createVuetify } = Vuetify;
+
+    createApp({
+      delimiters: ['[[', ']]'],
+      data() {
+        return {
+          data: dashboardData,
+          selectedLead: dashboardData.selectedLead,
+          tab: 'resumen',
+          forms: {
+            estado: dashboardData.selectedLead?.estado || '',
+            prioridad: dashboardData.selectedLead?.prioridad || '',
+            precioCotizado: dashboardData.selectedLead?.precioCotizado || dashboardData.selectedLead?.precioRecomendado || '',
+            mensajeCotizacion: '',
+            respuesta: '',
+            nota: '',
+            proximoSeguimiento: dashboardData.selectedLead?.fechaProximoSeguimientoInput || '',
+            precioFinal: dashboardData.selectedLead?.precioFinal || dashboardData.selectedLead?.precioCotizado || dashboardData.selectedLead?.precioRecomendado || '',
+            motivoPerdida: dashboardData.selectedLead?.motivoPerdida || '',
+            tipoServicio: dashboardData.selectedLead?.tipoServicio || '',
+            distritoOrigen: dashboardData.selectedLead?.distritoOrigen === '-' ? '' : dashboardData.selectedLead?.distritoOrigen || '',
+            distritoDestino: dashboardData.selectedLead?.distritoDestino === '-' ? '' : dashboardData.selectedLead?.distritoDestino || '',
+            fechaServicio: dashboardData.selectedLead?.fechaServicio || '',
+            horarioServicio: dashboardData.selectedLead?.horarioServicio || '',
+            pisoOrigen: dashboardData.selectedLead?.pisoOrigenInput || '',
+            pisoDestino: dashboardData.selectedLead?.pisoDestinoInput || '',
+            ascensorOrigen: dashboardData.selectedLead?.ascensorOrigenInput || 'sin_dato',
+            ascensorDestino: dashboardData.selectedLead?.ascensorDestinoInput || 'sin_dato',
+            listaObjetos: dashboardData.selectedLead?.listaObjetosInput || '',
+          },
+          filters: {
+            search: '',
+            priority: 'todas',
+            followUp: 'todos',
+          },
+          newLeadDialog: false,
+          newLead: {
+            nombre: '',
+            telefono: '',
+            tipo_servicio: '',
+            distrito_origen: '',
+            distrito_destino: '',
+            fecha_servicio: '',
+            horario_servicio: '',
+            lista_objetos: '',
+            prioridad: 'media',
+            nota_interna: '',
+          },
+        };
+      },
+      computed: {
+        priorityFilterItems() {
+          return [{ value: 'todas', label: 'Todas' }, ...this.data.priorities];
+        },
+        exportItems() {
+          return [
+            { value: 'todos', label: 'Todos los leads' },
+            { value: 'pendientes', label: 'Pendientes' },
+            { value: 'cotizados', label: 'Cotizados' },
+            { value: 'asignados', label: 'Asignados' },
+            { value: 'cerrados', label: 'Cerrados y perdidos' },
+          ];
+        },
+        followUpFilterItems() {
+          return [
+            { value: 'todos', label: 'Todos' },
+            { value: 'vencidos', label: 'Vencidos' },
+            { value: 'hoy', label: 'Para hoy' },
+            { value: 'programados', label: 'Programados' },
+          ];
+        },
+        elevatorItems() {
+          return [
+            { value: 'sin_dato', label: 'Sin dato' },
+            { value: 'si', label: 'Si' },
+            { value: 'no', label: 'No' },
+          ];
+        },
+        filteredGroups() {
+          const term = this.filters.search.trim().toLowerCase();
+          return this.data.groups.map((group) => {
+            const leads = group.leads.filter((lead) => {
+              const matchesPriority = this.filters.priority === 'todas' || lead.prioridad === this.filters.priority;
+              const text = `${lead.cliente} ${lead.telefono} ${lead.ruta} ${lead.tipoServicio}`.toLowerCase();
+              const matchesSearch = !term || text.includes(term);
+              const matchesFollowUp =
+                this.filters.followUp === 'todos' ||
+                (this.filters.followUp === 'vencidos' && lead.seguimientoVencido) ||
+                (this.filters.followUp === 'hoy' && lead.seguimientoHoy) ||
+                (this.filters.followUp === 'programados' && lead.fechaProximoSeguimiento !== '-');
+              return matchesPriority && matchesSearch && matchesFollowUp;
+            });
+            return { ...group, leads };
+          });
+        },
+        metrics() {
+          return [
+            { key: 'pendientes', label: 'Pendientes', value: this.data.stats.pendientes, icon: 'mdi-clock-outline', color: 'amber-darken-3' },
+            { key: 'cotizados', label: 'Cotizados', value: this.data.stats.cotizados, icon: 'mdi-file-document-check-outline', color: 'blue-darken-2' },
+            { key: 'asignados', label: 'Asignados', value: this.data.stats.asignados, icon: 'mdi-account-check-outline', color: 'teal-darken-2' },
+            { key: 'seguimientos_hoy', label: 'Para hoy', value: this.data.stats.seguimientos_hoy, icon: 'mdi-calendar-today-outline', color: 'deep-purple-darken-2' },
+            { key: 'seguimientos_vencidos', label: 'Vencidos', value: this.data.stats.seguimientos_vencidos, icon: 'mdi-alert-circle-outline', color: 'red-darken-2' },
+            { key: 'cerrados', label: 'Cerrados', value: this.data.stats.cerrados, icon: 'mdi-archive-check-outline', color: 'blue-grey-darken-2' },
+            { key: 'perdidos', label: 'Perdidos', value: this.data.stats.perdidos, icon: 'mdi-close-octagon-outline', color: 'red-darken-2' },
+            { key: 'ingresos_cerrados', label: 'Ingresos', value: this.data.stats.ingresos_cerrados, icon: 'mdi-cash-multiple', color: 'teal-darken-2' },
+            { key: 'ticket_promedio', label: 'Ticket promedio', value: this.data.stats.ticket_promedio, icon: 'mdi-ticket-percent-outline', color: 'blue-darken-2' },
+            { key: 'conversion_rate', label: 'Conversion', value: `${this.data.stats.conversion_rate}%`, icon: 'mdi-chart-line', color: 'deep-purple-darken-2' },
+          ];
+        },
+        summaryItems() {
+          if (!this.selectedLead) return [];
+          return [
+            { label: 'Ruta', value: this.selectedLead.ruta },
+            { label: 'Servicio', value: this.selectedLead.tipoServicio },
+            { label: 'Fecha y horario', value: `${this.selectedLead.fechaServicio || '-'} · ${this.selectedLead.horarioServicio || '-'}` },
+            { label: 'Vendedor', value: this.selectedLead.vendedor },
+            { label: 'Pisos', value: `${this.selectedLead.pisoOrigen} -> ${this.selectedLead.pisoDestino}` },
+            { label: 'Ascensor', value: `${this.selectedLead.ascensorOrigen} -> ${this.selectedLead.ascensorDestino}` },
+            { label: 'Rango estimado', value: this.selectedLead.precioEstimadoMin || this.selectedLead.precioEstimadoMax ? `S/ ${this.selectedLead.precioEstimadoMin || '-'} - S/ ${this.selectedLead.precioEstimadoMax || '-'}` : '-' },
+            { label: 'Precio recomendado', value: `S/ ${this.selectedLead.precioRecomendado || '-'}` },
+            { label: 'Precio cotizado', value: `S/ ${this.selectedLead.precioCotizado || '-'}` },
+            { label: 'Precio final', value: `S/ ${this.selectedLead.precioFinal || '-'}` },
+            { label: 'Fecha de cierre', value: this.selectedLead.fechaCierre },
+            { label: 'Ultimo seguimiento', value: this.selectedLead.fechaUltimoSeguimiento },
+            { label: 'Proximo seguimiento', value: this.selectedLead.fechaProximoSeguimiento },
+          ];
+        },
+      },
+      methods: {
+        openLead(lead) {
+          window.location.href = lead.detailUrl;
+        },
+        priorityColor(priority) {
+          return {
+            baja: 'teal-darken-2',
+            media: 'amber-darken-3',
+            alta: 'red-darken-2',
+            urgente: 'red-darken-4',
+          }[priority] || 'blue-grey';
+        },
+        completionColor(percent) {
+          if (percent >= 80) return 'teal-darken-2';
+          if (percent >= 50) return 'amber-darken-3';
+          return 'red-darken-2';
+        },
+        postAction(action, payload = {}) {
+          if (!this.selectedLead) return;
+          const form = document.createElement('form');
+          form.method = 'post';
+          form.action = this.selectedLead.actionUrl;
+          form.style.display = 'none';
+          this.addField(form, 'csrfmiddlewaretoken', csrfToken);
+          this.addField(form, 'action', action);
+          Object.entries(payload).forEach(([key, value]) => this.addField(form, key, value ?? ''));
+          document.body.appendChild(form);
+          form.submit();
+        },
+        detailPayload() {
+          return {
+            tipo_servicio: this.forms.tipoServicio,
+            distrito_origen: this.forms.distritoOrigen,
+            distrito_destino: this.forms.distritoDestino,
+            fecha_servicio: this.forms.fechaServicio,
+            horario_servicio: this.forms.horarioServicio,
+            piso_origen: this.forms.pisoOrigen,
+            piso_destino: this.forms.pisoDestino,
+            ascensor_origen: this.forms.ascensorOrigen,
+            ascensor_destino: this.forms.ascensorDestino,
+            lista_objetos: this.forms.listaObjetos,
+          };
+        },
+        createLead() {
+          const form = document.createElement('form');
+          form.method = 'post';
+          form.action = this.data.createLeadUrl;
+          form.style.display = 'none';
+          this.addField(form, 'csrfmiddlewaretoken', csrfToken);
+          Object.entries(this.newLead).forEach(([key, value]) => this.addField(form, key, value ?? ''));
+          document.body.appendChild(form);
+          form.submit();
+        },
+        exportUrl(scope) {
+          return `${this.data.exportLeadsUrl}?estado=${encodeURIComponent(scope)}`;
+        },
+        applyQuickReply(reply) {
+          const text = this.renderQuickReply(reply.text);
+          if (reply.target === 'cotizacion') {
+            if (!this.forms.precioCotizado) {
+              this.forms.precioCotizado = this.selectedLead?.precioCotizado || this.selectedLead?.precioRecomendado || '';
+            }
+            this.forms.mensajeCotizacion = text;
+            return;
+          }
+          this.forms.respuesta = text;
+        },
+        renderQuickReply(text) {
+          if (!this.selectedLead) return text;
+          const values = {
+            cliente: this.selectedLead.cliente || '',
+            origen: this.selectedLead.distritoOrigen || 'origen',
+            destino: this.selectedLead.distritoDestino || 'destino',
+            ruta: this.selectedLead.ruta || '',
+            precio: this.forms.precioCotizado || this.selectedLead.precioCotizado || this.selectedLead.precioRecomendado || '...',
+          };
+          return Object.entries(values).reduce(
+            (message, [key, value]) => message.replaceAll(`{${key}}`, value),
+            text,
+          );
+        },
+        addField(form, name, value) {
+          const input = document.createElement('input');
+          input.type = 'hidden';
+          input.name = name;
+          input.value = value;
+          form.appendChild(input);
+        },
+      },
+    }).use(createVuetify()).mount('#dashboard-app');
+  </script>
+</body>
+</html>

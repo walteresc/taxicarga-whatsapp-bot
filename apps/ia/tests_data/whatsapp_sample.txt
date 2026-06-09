@@ -1,0 +1,7 @@
+CLIENTE1
+[9:00 a. m., 1/6/2026] +51 999 888 777: Hola, quiero una mudanza
+[9:01 a. m., 1/6/2026] Lima Express: Hola, que cosas desea trasladar?
+[9:02 a. m., 1/6/2026] +51 999 888 777: Cama y cajas. Mi correo es cliente@example.com
+[9:03 a. m., 1/6/2026] Lima Express: De que piso sale y a que piso llega?
+[9:04 a. m., 1/6/2026] +51 999 888 777: Av. Siempre Viva 123, piso 2
+[9:05 a. m., 1/6/2026] Lima Express: Hay ascensor?
