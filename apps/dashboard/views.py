@@ -16,6 +16,7 @@ from decimal import Decimal, InvalidOperation
 from apps.clientes.models import Cliente, Conversacion
 from apps.cotizador.services import cotizar_lead
 from apps.leads.models import Lead
+from apps.whatsapp.models import BotSchedule, ConfiguracionBot, WhatsAppChannel
 from apps.whatsapp.services import send_whatsapp_message
 
 
@@ -35,7 +36,11 @@ def dashboard_logout(request):
 
 @login_required
 def dashboard_home(request, lead_id=None):
-    leads = Lead.objects.select_related("cliente", "vendedor_asignado").order_by("-fecha_creacion")
+    channel_id = request.GET.get("channel")
+    leads_qs = Lead.objects.select_related("cliente", "vendedor_asignado").order_by("-fecha_creacion")
+    if channel_id:
+        leads_qs = leads_qs.filter(whatsapp_channel_id=channel_id)
+    leads = leads_qs
     selected_lead = _selected_lead(leads, lead_id)
     grouped_leads = {
         "pendientes": leads.filter(
@@ -52,7 +57,8 @@ def dashboard_home(request, lead_id=None):
         "conversaciones": _conversaciones(selected_lead),
         "estados": Lead.ESTADOS,
         "prioridades": Lead.PRIORIDADES,
-        "dashboard_data": _dashboard_payload(grouped_leads, selected_lead, request.user),
+        "dashboard_data": _dashboard_payload(grouped_leads, selected_lead, request.user, channel_id),
+        "channel_id": channel_id,
     }
     return render(request, "dashboard/home.html", context)
 
@@ -106,6 +112,12 @@ def lead_action(request, lead_id):
         lead.atencion_humana = False
         lead.save(update_fields=["atencion_humana"])
         messages.success(request, "Conversacion liberada. La respuesta automatica vuelve a estar activa.")
+    elif action == "reactivate_bot":
+        lead.atencion_humana = False
+        lead.bot_pausado = False
+        lead.requiere_asesor = False
+        lead.save(update_fields=["atencion_humana", "bot_pausado", "requiere_asesor"])
+        messages.success(request, "Bot reactivado para este lead. Motivo de derivación conservado como historial.")
     elif action == "manual_reply":
         sent = _send_manual_reply(lead, request.POST.get("respuesta", ""), request.user)
         if sent:
@@ -181,11 +193,34 @@ def _stats():
     }
 
 
-def _dashboard_payload(grouped_leads, selected_lead, user):
+def _dashboard_payload(grouped_leads, selected_lead, user, channel_id=None):
     conversations = [_conversation_payload(item) for item in _conversaciones(selected_lead)]
+    canales = list(WhatsAppChannel.objects.filter(activo=True))
+    channel = None
+    if channel_id:
+        channel = WhatsAppChannel.objects.filter(id=channel_id).first()
+    conf = ConfiguracionBot.obtener(channel=channel)
+    schedule_filters = {}
+    if channel:
+        schedule_filters["channel"] = channel
+    schedules_qs = BotSchedule.objects.filter(**schedule_filters).order_by("day_of_week", "start_time")
     return {
+        "canales": [
+            {
+                "id": ch.id,
+                "nombre": str(ch),
+                "numero_visible": ch.numero_visible,
+                "asesor_nombre": str(ch.asesor) if ch.asesor else "Sin asesor",
+                "activo": ch.activo,
+            }
+            for ch in canales
+        ],
+        "channel_id": channel.id if channel else None,
         "user": {"username": user.username},
         "stats": _stats(),
+        "botConfig": _bot_config_payload(conf, schedules_qs),
+        "botSettingsUrl": "/api/bot-settings/",
+        "botSchedulesUrl": "/api/bot-schedules/",
         "groups": [
             {
                 "key": "pendientes",
@@ -225,6 +260,48 @@ def _dashboard_payload(grouped_leads, selected_lead, user):
         "createLeadUrl": "/dashboard/leads/nuevo/",
         "exportLeadsUrl": "/dashboard/exportar/leads.csv",
         "today": timezone.localdate().isoformat(),
+    }
+
+
+def _format_time_value(value):
+    if value is None:
+        return ""
+    if hasattr(value, "strftime"):
+        return value.strftime("%H:%M")
+    if isinstance(value, str):
+        return value
+    return str(value)
+
+
+def _bot_config_payload(conf, schedules_qs=None):
+    return {
+        "bot_activo": conf.bot_activo,
+        "modo_atencion": conf.modo_atencion,
+        "hora_inicio_bot": _format_time_value(conf.hora_inicio_bot),
+        "hora_fin_bot": _format_time_value(conf.hora_fin_bot),
+        "lunes_activo": conf.lunes_activo,
+        "martes_activo": conf.martes_activo,
+        "miercoles_activo": conf.miercoles_activo,
+        "jueves_activo": conf.jueves_activo,
+        "viernes_activo": conf.viernes_activo,
+        "sabado_activo": conf.sabado_activo,
+        "domingo_activo": conf.domingo_activo,
+        "mensaje_fuera_horario": conf.mensaje_fuera_horario,
+        "override_activo": conf.override_activo,
+        "override_modo": conf.override_modo,
+        "override_desde": conf.override_desde.isoformat() if conf.override_desde else None,
+        "override_hasta": conf.override_hasta.isoformat() if conf.override_hasta else None,
+        "override_motivo": conf.override_motivo,
+        "schedules": [
+            {
+                "id": s.id,
+                "day_of_week": s.day_of_week,
+                "start_time": _format_time_value(s.start_time),
+                "end_time": _format_time_value(s.end_time),
+                "is_active": s.is_active,
+            }
+            for s in (schedules_qs or [])
+        ],
     }
 
 
@@ -412,6 +489,12 @@ def _lead_payload(lead):
         "motivoPerdida": lead.motivo_perdida or "",
         "fechaCierre": _datetime_label(lead.fecha_cierre),
         "ultimaCotizacion": _latest_quote_payload(lead),
+        "requiereAsesor": lead.requiere_asesor,
+        "motivoDerivacion": lead.motivo_derivacion or "",
+        "botPausado": lead.bot_pausado,
+        "guardPausado": lead.bot_pausado and "WhatsApp Business" in (lead.motivo_derivacion or ""),
+        "whatsappChannel": lead.whatsapp_channel_id,
+        "fechaDerivacion": _datetime_label(lead.fecha_derivacion),
         "fechaUltimoSeguimiento": _datetime_label(lead.fecha_ultimo_seguimiento),
         "fechaProximoSeguimiento": _datetime_label(lead.fecha_proximo_seguimiento),
         "fechaProximoSeguimientoInput": _datetime_input_value(lead.fecha_proximo_seguimiento),

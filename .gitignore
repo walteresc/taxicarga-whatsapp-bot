@@ -1,12 +1,50 @@
-.venv/
+# Python
 __pycache__/
 *.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+venv/
+.venv/
+env/
+
+# Django
 db.sqlite3
+*.db
+media/
+staticfiles/
+datos_privados/
+
+# Secrets
 .env
+.env.local
+.env.production
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
 .pytest_cache/
 .coverage
 htmlcov/
-staticfiles/
+.tox/
+.cache/
+
+# Logs
 *.log
-datos_privados/
+
+# OS
+Thumbs.db
+Desktop.ini
+
+# Project specific
 .aider*
+DEV_NOTES.md
+nul

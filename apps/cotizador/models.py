@@ -6,6 +6,10 @@ from apps.leads.models import Lead
 class ServicioHistorico(models.Model):
     fuente = models.CharField(max_length=40, blank=True)
     referencia_externa = models.CharField(max_length=80, blank=True)
+    lead_origen = models.ForeignKey(
+        Lead, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="historicos_generados",
+    )
     fecha = models.DateField()
     tipo_servicio = models.CharField(max_length=80)
     distrito_origen = models.CharField(max_length=120)
@@ -41,6 +45,11 @@ class ServicioHistorico(models.Model):
                 fields=["fuente", "referencia_externa"],
                 condition=~models.Q(referencia_externa=""),
                 name="historico_fuente_referencia_unica",
+            ),
+            models.UniqueConstraint(
+                fields=["lead_origen"],
+                condition=~models.Q(lead_origen=None),
+                name="historico_lead_origen_unico",
             ),
         ]
         indexes = [

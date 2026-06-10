@@ -1,11 +1,13 @@
+from datetime import date
 from decimal import Decimal
 
 from django.core.management import call_command
 from django.test import TestCase
+from django.utils import timezone
 
 from apps.clientes.models import Cliente
 from apps.cotizador.models import Cotizacion, ServicioHistorico
-from apps.cotizador.services import cotizar_lead
+from apps.cotizador.services import cotizar_lead, crear_servicio_historico_desde_lead
 from apps.leads.models import Lead
 
 
@@ -146,8 +148,8 @@ class CotizadorTests(TestCase):
 
         quote = cotizar_lead(lead)
 
-        self.assertEqual(quote.precio_recomendado, Decimal("425.00"))
-        self.assertLess(quote.precio_max, Decimal("2500.00"))
+        self.assertEqual(quote.precio_recomendado, Decimal("400.00"))
+        self.assertEqual(quote.precio_max, Decimal("430.00"))
 
     def test_referencias_para_traslado_pequeno_cercano(self):
         cliente = Cliente.objects.create(telefono="51922222225")
@@ -198,3 +200,271 @@ class CotizadorTests(TestCase):
         self.assertEqual(personnel.precio_recomendado, Decimal("200.00"))
         self.assertEqual(basic.precio_recomendado, Decimal("350.00"))
         self.assertEqual(furniture.precio_recomendado, Decimal("400.00"))
+
+    def test_historico_reciente_pesa_mas_que_antiguo(self):
+        cliente = Cliente.objects.create(telefono="51933333331")
+        recent = ServicioHistorico.objects.create(
+            fecha=date(2026, 5, 1),
+            tipo_servicio="mudanza",
+            distrito_origen="Miraflores",
+            distrito_destino="Surco",
+            piso_origen=2,
+            piso_destino=1,
+            ascensor_origen=True,
+            ascensor_destino=False,
+            lista_objetos="cama ropero refrigerador cajas",
+            precio_cotizado=Decimal("500.00"),
+            precio_final=Decimal("500.00"),
+            cerrado=True,
+        )
+        old = ServicioHistorico.objects.create(
+            fecha=date(2024, 1, 1),
+            tipo_servicio="mudanza",
+            distrito_origen="Miraflores",
+            distrito_destino="Surco",
+            piso_origen=2,
+            piso_destino=1,
+            ascensor_origen=True,
+            ascensor_destino=False,
+            lista_objetos="cama ropero refrigerador cajas",
+            precio_cotizado=Decimal("500.00"),
+            precio_final=Decimal("500.00"),
+            cerrado=True,
+        )
+        lead = Lead.objects.create(
+            cliente=cliente,
+            tipo_servicio="mudanza",
+            distrito_origen="Miraflores",
+            distrito_destino="Surco",
+            piso_origen=2,
+            piso_destino=1,
+            ascensor_origen=True,
+            ascensor_destino=False,
+            lista_objetos="cama ropero refrigerador cajas",
+        )
+        from apps.cotizador.similarity import score_service as scoring
+        recent_score = scoring(lead, recent)
+        old_score = scoring(lead, old)
+        self.assertGreater(recent_score, old_score)
+        self.assertEqual(recent_score, round(17 * 1.0, 2))
+        self.assertEqual(old_score, round(17 * 0.25, 2))
+
+    def test_outlier_no_afecta_recomendacion(self):
+        cliente = Cliente.objects.create(telefono="51933333332")
+        lead = Lead.objects.create(
+            cliente=cliente,
+            tipo_servicio="mudanza",
+            distrito_origen="Miraflores",
+            distrito_destino="Surco",
+            piso_origen=2,
+            piso_destino=1,
+            ascensor_origen=True,
+            ascensor_destino=False,
+            lista_objetos="cama ropero refrigerador cajas",
+        )
+        for price in ["400.00", "410.00", "420.00", "8000.00"]:
+            ServicioHistorico.objects.create(
+                fecha=date(2026, 5, 1),
+                tipo_servicio="mudanza",
+                distrito_origen="Miraflores",
+                distrito_destino="Surco",
+                piso_origen=2,
+                piso_destino=1,
+                ascensor_origen=True,
+                ascensor_destino=False,
+                lista_objetos="cama ropero refrigerador cajas",
+                precio_cotizado=Decimal(price),
+                precio_final=Decimal(price),
+                cerrado=True,
+            )
+
+        quote = cotizar_lead(lead)
+
+        self.assertEqual(quote.precio_recomendado, Decimal("410.00"))
+        self.assertLess(quote.precio_max, Decimal("500.00"))
+
+    def test_menos_de_tres_historicos_usa_fallback(self):
+        cliente = Cliente.objects.create(telefono="51933333333")
+        Lead.objects.create(
+            cliente=cliente,
+            tipo_servicio="mudanza",
+            distrito_origen="Miraflores",
+            distrito_destino="Surco",
+        )
+        lead = Lead.objects.create(
+            cliente=cliente,
+            tipo_servicio="otro_servicio",
+            distrito_origen="A",
+            distrito_destino="B",
+        )
+        self.assertEqual(lead.cotizaciones.count(), 0)
+        quote = cotizar_lead(lead)
+        self.assertGreater(quote.precio_recomendado, Decimal("0.00"))
+        self.assertIn("reglas base", quote.explicacion.lower())
+
+
+class AprendizajeTests(TestCase):
+    def setUp(self):
+        self.cliente = Cliente.objects.create(
+            nombre="Cliente Test", telefono="51900000001"
+        )
+
+    def _lead_completo(self, **extra):
+        defaults = dict(
+            cliente=self.cliente,
+            tipo_servicio="mudanza",
+            distrito_origen="Miraflores",
+            distrito_destino="Surco",
+            piso_origen=3,
+            piso_destino=1,
+            ascensor_origen=True,
+            ascensor_destino=False,
+            modalidad_servicio="embalaje basico",
+            incluye_personal_carga=True,
+            requiere_desarmado=True,
+            lista_objetos="cama ropero refrigerador cajas",
+            objetos_pesados="refrigerador",
+            peso_carga_kg=Decimal("200.00"),
+            volumen_carga_m3=Decimal("4.00"),
+            acceso_origen="edificio",
+            acceso_destino="casa",
+            camion_llega_origen=True,
+            camion_llega_destino=True,
+            distancia_carga_origen_m=10,
+            distancia_carga_destino_m=5,
+            tipo_camion="camion 8m",
+            capacidad_camion="500 kg",
+            precio_final=Decimal("450.00"),
+            precio_recomendado=Decimal("500.00"),
+            estado=Lead.CERRADO,
+            fecha_cierre=timezone.now(),
+        )
+        defaults.update(extra)
+        return Lead.objects.create(**defaults)
+
+    # --- Unit tests: crear_servicio_historico_desde_lead ---
+
+    def test_lead_cerrado_completo_crea_historico(self):
+        lead = self._lead_completo()
+        historico = crear_servicio_historico_desde_lead(lead)
+        self.assertIsNotNone(historico)
+        self.assertEqual(historico.lead_origen_id, lead.id)
+        self.assertEqual(historico.tipo_servicio, "mudanza")
+        self.assertEqual(historico.distrito_origen, "Miraflores")
+        self.assertEqual(historico.distrito_destino, "Surco")
+        self.assertEqual(historico.piso_origen, 3)
+        self.assertEqual(historico.piso_destino, 1)
+        self.assertTrue(historico.ascensor_origen)
+        self.assertFalse(historico.ascensor_destino)
+        self.assertEqual(historico.modalidad_servicio, "embalaje basico")
+        self.assertEqual(historico.ayudantes, 1)
+        self.assertTrue(historico.requiere_desarmado)
+        self.assertIn("cama", historico.lista_objetos)
+        self.assertIn("refrigerador", historico.objetos_pesados)
+        self.assertEqual(historico.peso_carga_kg, Decimal("200.00"))
+        self.assertEqual(historico.volumen_carga_m3, Decimal("4.00"))
+        self.assertEqual(historico.acceso_origen, "edificio")
+        self.assertEqual(historico.acceso_destino, "casa")
+        self.assertTrue(historico.camion_llega_origen)
+        self.assertTrue(historico.camion_llega_destino)
+        self.assertEqual(historico.distancia_carga_origen_m, 10)
+        self.assertEqual(historico.distancia_carga_destino_m, 5)
+        self.assertEqual(historico.camion_usado, "camion 8m")
+        self.assertEqual(historico.capacidad_camion, "500 kg")
+        self.assertEqual(historico.precio_final, Decimal("450.00"))
+        self.assertEqual(historico.precio_cotizado, Decimal("500.00"))
+        self.assertTrue(historico.cerrado)
+        self.assertEqual(historico.fuente, "lead")
+        self.assertEqual(historico.referencia_externa, str(lead.id))
+
+    def test_lead_cerrado_sin_precio_no_crea_historico(self):
+        lead = self._lead_completo(precio_final=None, precio_recomendado=None)
+        historico = crear_servicio_historico_desde_lead(lead)
+        self.assertIsNone(historico)
+        self.assertEqual(ServicioHistorico.objects.count(), 0)
+
+    def test_lead_cerrado_sin_origen_destino_no_crea_historico(self):
+        lead = self._lead_completo(distrito_origen="", distrito_destino="")
+        historico = crear_servicio_historico_desde_lead(lead)
+        self.assertIsNone(historico)
+        self.assertEqual(ServicioHistorico.objects.count(), 0)
+
+    def test_lead_cerrado_sin_tipo_servicio_no_crea_historico(self):
+        lead = self._lead_completo(tipo_servicio="")
+        historico = crear_servicio_historico_desde_lead(lead)
+        self.assertIsNone(historico)
+        self.assertEqual(ServicioHistorico.objects.count(), 0)
+
+    def test_lead_no_cerrado_no_crea_historico(self):
+        lead = self._lead_completo(estado=Lead.COTIZADO)
+        historico = crear_servicio_historico_desde_lead(lead)
+        self.assertIsNone(historico)
+        self.assertEqual(ServicioHistorico.objects.count(), 0)
+
+    def test_lead_perdido_no_alimenta_historicos(self):
+        lead = self._lead_completo(estado=Lead.PERDIDO)
+        historico = crear_servicio_historico_desde_lead(lead)
+        self.assertIsNone(historico)
+        self.assertEqual(ServicioHistorico.objects.count(), 0)
+
+    def test_cerrar_dos_veces_mismo_lead_no_duplica(self):
+        lead = self._lead_completo()
+        h1 = crear_servicio_historico_desde_lead(lead)
+        h2 = crear_servicio_historico_desde_lead(lead)
+        self.assertIsNotNone(h1)
+        self.assertIsNotNone(h2)
+        self.assertEqual(h1.id, h2.id)
+        self.assertEqual(ServicioHistorico.objects.count(), 1)
+
+    def test_cambio_precio_final_actualiza_historico(self):
+        lead = self._lead_completo()
+        h1 = crear_servicio_historico_desde_lead(lead)
+        self.assertEqual(h1.precio_final, Decimal("450.00"))
+
+        lead.precio_final = Decimal("500.00")
+        lead.save(update_fields=["precio_final"])
+        h2 = crear_servicio_historico_desde_lead(lead)
+        self.assertEqual(h2.id, h1.id)
+        h2.refresh_from_db()
+        self.assertEqual(h2.precio_final, Decimal("500.00"))
+        self.assertEqual(ServicioHistorico.objects.count(), 1)
+
+    def test_lead_con_precio_recomendado_sin_final_crea_historico(self):
+        lead = self._lead_completo(precio_final=None, precio_recomendado=Decimal("480.00"))
+        historico = crear_servicio_historico_desde_lead(lead)
+        self.assertIsNotNone(historico)
+        self.assertIsNone(historico.precio_final)
+        self.assertEqual(historico.precio_cotizado, Decimal("480.00"))
+
+    def test_incluye_personal_false_asigna_ayudantes_0(self):
+        lead = self._lead_completo(incluye_personal_carga=False)
+        historico = crear_servicio_historico_desde_lead(lead)
+        self.assertEqual(historico.ayudantes, 0)
+
+    # --- Signal integration tests ---
+
+    def test_signal_crea_historico_al_cerrar_lead(self):
+        lead = self._lead_completo(estado=Lead.COTIZADO)
+        self.assertEqual(ServicioHistorico.objects.count(), 0)
+        lead.estado = Lead.CERRADO
+        lead.fecha_cierre = timezone.now()
+        lead.save(update_fields=["estado", "fecha_cierre"])
+        self.assertEqual(ServicioHistorico.objects.count(), 1)
+        historico = ServicioHistorico.objects.get(lead_origen=lead)
+        self.assertEqual(historico.tipo_servicio, "mudanza")
+
+    def test_signal_no_dispara_cuando_historico_ya_existe_sin_cambios(self):
+        lead = self._lead_completo()
+        self.assertEqual(ServicioHistorico.objects.count(), 1)
+        lead.save(update_fields=["observaciones"])
+        self.assertEqual(ServicioHistorico.objects.count(), 1)
+
+    def test_signal_actualiza_historico_cuando_cambia_precio_final(self):
+        lead = self._lead_completo()
+        self.assertEqual(ServicioHistorico.objects.get(lead_origen=lead).precio_final, Decimal("450.00"))
+        lead.precio_final = Decimal("600.00")
+        lead.save(update_fields=["precio_final"])
+        self.assertEqual(
+            ServicioHistorico.objects.get(lead_origen=lead).precio_final,
+            Decimal("600.00"),
+        )

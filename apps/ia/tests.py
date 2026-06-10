@@ -618,7 +618,7 @@ class ConversationEngineTests(TestCase):
             camion_llega_destino=True,
             lista_objetos="cama, refrigeradora y cajas",
             incluye_personal_carga=True,
-            modalidad_servicio="solo traslado",
+            modalidad_servicio="sin embalaje",
             requiere_desarmado=False,
         )
 
@@ -719,9 +719,7 @@ class ConversationEngineTests(TestCase):
 
         reply = handle_incoming_message(cliente, "con ayudantes")
 
-        self.assertIn("solo lo mas fragil", reply.lower())
-        self.assertIn("muebles y artefactos", reply.lower())
-        self.assertIn("empaquetado de cajas", reply.lower())
+        self.assertIn("con embalaje o sin embalaje", reply.lower())
 
     def test_muestra_solo_precio_alto_al_cliente(self):
         cliente = Cliente.objects.create(telefono="51955550023")
@@ -775,7 +773,7 @@ class ConversationEngineTests(TestCase):
         floor_reply = handle_incoming_message(cliente, "algo menos")
         lead.refresh_from_db()
         self.assertEqual(lead.precio_cotizado, Decimal("180"))
-        self.assertIn("minimo", floor_reply.lower())
+        self.assertIn("mejor precio", floor_reply.lower())
 
     def test_me_parece_muy_elevado_negocia_en_lugar_de_reservar(self):
         cliente = Cliente.objects.create(telefono="51955550043")
@@ -1381,3 +1379,345 @@ class ConversationEngineTests(TestCase):
         recent.refresh_from_db()
         self.assertTrue(recent.incluye_personal_carga)
         self.assertIn("embalaje", reply.lower())
+
+    def test_con_embalaje_sin_especificar_cotiza_basico(self):
+        cliente = Cliente.objects.create(telefono="51955550030")
+        Lead.objects.create(
+            cliente=cliente,
+            tipo_servicio="traslado pequeno",
+            distrito_origen="Surco",
+            distrito_destino="La Molina",
+            piso_origen=1,
+            piso_destino=1,
+            lista_objetos="refrigeradora",
+            incluye_personal_carga=True,
+        )
+
+        reply = handle_incoming_message(cliente, "con embalaje")
+
+        lead = cliente.leads.first()
+        self.assertEqual(lead.modalidad_servicio, "embalaje basico")
+
+    def test_con_embalaje_cuanto_seria_cotiza_basico(self):
+        cliente = Cliente.objects.create(telefono="51955550031")
+        Lead.objects.create(
+            cliente=cliente,
+            tipo_servicio="traslado pequeno",
+            distrito_origen="Surco",
+            distrito_destino="La Molina",
+            piso_origen=1,
+            piso_destino=1,
+            lista_objetos="refrigeradora",
+            incluye_personal_carga=True,
+            requiere_desarmado=False,
+            fecha_por_confirmar=True,
+        )
+
+        reply = handle_incoming_message(cliente, "con embalaje cuanto seria?")
+
+        lead = cliente.leads.first()
+        self.assertEqual(lead.modalidad_servicio, "embalaje basico")
+        self.assertEqual(lead.estado, Lead.COTIZADO)
+        self.assertIn("costo", reply.lower())
+
+    def test_embalaje_muebles_y_artefactos_cotiza_automaticamente(self):
+        cliente = Cliente.objects.create(telefono="51955550032")
+        Lead.objects.create(
+            cliente=cliente,
+            tipo_servicio="mudanza",
+            distrito_origen="Surco",
+            distrito_destino="Miraflores",
+            piso_origen=1,
+            piso_destino=1,
+            ascensor_origen=False,
+            ascensor_destino=False,
+            camion_llega_origen=True,
+            camion_llega_destino=True,
+            lista_objetos="escritorio, silla y PC",
+            incluye_personal_carga=True,
+            requiere_desarmado=False,
+            fecha_por_confirmar=True,
+        )
+
+        reply = handle_incoming_message(cliente, "embalaje de muebles y artefactos")
+
+        lead = cliente.leads.first()
+        self.assertEqual(lead.modalidad_servicio, "embalaje de muebles y artefactos")
+        self.assertEqual(lead.estado, Lead.COTIZADO)
+        self.assertIn("costo", reply.lower())
+
+    def test_embalaje_full_pide_fotos_y_deriva_a_asesor(self):
+        cliente = Cliente.objects.create(telefono="51955550033")
+        Lead.objects.create(
+            cliente=cliente,
+            tipo_servicio="mudanza",
+            distrito_origen="Surco",
+            distrito_destino="Miraflores",
+            piso_origen=1,
+            piso_destino=1,
+            ascensor_origen=False,
+            ascensor_destino=False,
+            camion_llega_origen=True,
+            camion_llega_destino=True,
+            lista_objetos="escritorio, silla y PC",
+            incluye_personal_carga=True,
+        )
+
+        reply = handle_incoming_message(cliente, "quiero embalaje full")
+
+        lead = cliente.leads.first()
+        self.assertEqual(lead.modalidad_servicio, "embalaje full")
+        self.assertTrue(lead.atencion_humana)
+        self.assertIn("fotos", reply.lower())
+        self.assertIn("asesor", reply.lower())
+        self.assertNotEqual(lead.estado, Lead.COTIZADO)
+
+    def test_precio_incluye_embalaje_full_respuesta_informativa(self):
+        cliente = Cliente.objects.create(telefono="51955550034")
+        lead = Lead.objects.create(
+            cliente=cliente,
+            tipo_servicio="traslado pequeno",
+            estado=Lead.COTIZADO,
+            modalidad_servicio="embalaje basico",
+            precio_estimado_min=Decimal("180"),
+            precio_estimado_max=Decimal("240"),
+            precio_cotizado=Decimal("240"),
+        )
+
+        reply = handle_incoming_message(
+            cliente, "ese precio incluye embalaje full?"
+        )
+
+        lead.refresh_from_db()
+        self.assertEqual(lead.modalidad_servicio, "embalaje basico")
+        self.assertIn("embalaje basico", reply.lower())
+        self.assertIn("full", reply.lower())
+
+    def test_consulta_tipo_embalaje_actual(self):
+        cliente = Cliente.objects.create(telefono="51955550035")
+        lead = Lead.objects.create(
+            cliente=cliente,
+            tipo_servicio="traslado pequeno",
+            estado=Lead.COTIZADO,
+            modalidad_servicio="embalaje basico",
+            precio_estimado_min=Decimal("180"),
+            precio_estimado_max=Decimal("240"),
+            precio_cotizado=Decimal("240"),
+        )
+
+        reply = handle_incoming_message(
+            cliente, "quiero saber si el embalaje es basico o full"
+        )
+
+        lead.refresh_from_db()
+        self.assertEqual(lead.modalidad_servicio, "embalaje basico")
+        self.assertEqual(lead.precio_cotizado, Decimal("240"))
+        self.assertIn("embalaje basico", reply.lower())
+
+    def test_disponibilidad_manana_sin_repetir_precio(self):
+        cliente = Cliente.objects.create(telefono="51955550036")
+        lead = Lead.objects.create(
+            cliente=cliente,
+            tipo_servicio="traslado pequeno",
+            estado=Lead.COTIZADO,
+            precio_estimado_min=Decimal("180"),
+            precio_estimado_max=Decimal("240"),
+            precio_cotizado=Decimal("240"),
+        )
+
+        reply = handle_incoming_message(cliente, "tienen disponibilidad para manana?")
+
+        lead.refresh_from_db()
+        self.assertEqual(lead.precio_cotizado, Decimal("240"))
+        self.assertIn("hora", reply.lower())
+        self.assertNotIn("240", reply)
+
+    def test_rechazo_no_repite_precio(self):
+        cliente = Cliente.objects.create(telefono="51955550037")
+        lead = Lead.objects.create(
+            cliente=cliente,
+            tipo_servicio="traslado pequeno",
+            estado=Lead.COTIZADO,
+            precio_estimado_min=Decimal("180"),
+            precio_estimado_max=Decimal("240"),
+            precio_cotizado=Decimal("240"),
+        )
+
+        reply = handle_incoming_message(
+            cliente, "no estoy interesado gracias"
+        )
+
+        lead.refresh_from_db()
+        self.assertEqual(lead.estado, Lead.PERDIDO)
+        self.assertEqual(lead.motivo_perdida, "Cliente no interesado / lo pensara")
+        self.assertIn("quedamos atentos", reply.lower())
+        self.assertNotIn("240", reply)
+        self.assertNotIn("descuento", reply.lower())
+
+    def test_segunda_objecion_no_restablece_precio_original(self):
+        cliente = Cliente.objects.create(telefono="51955550050")
+        lead = Lead.objects.create(
+            cliente=cliente,
+            tipo_servicio="traslado pequeno",
+            estado=Lead.COTIZADO,
+            precio_estimado_min=Decimal("800"),
+            precio_estimado_max=Decimal("1146"),
+            precio_cotizado=Decimal("1146"),
+        )
+
+        reply1 = handle_incoming_message(cliente, "es demasiado")
+
+        lead.refresh_from_db()
+        first_discounted = lead.precio_cotizado
+        self.assertLess(first_discounted, 1146)
+        self.assertIn(str(int(first_discounted)), reply1)
+
+        reply2 = handle_incoming_message(cliente, "es mucho")
+
+        lead.refresh_from_db()
+        self.assertLessEqual(lead.precio_cotizado, first_discounted)
+        self.assertNotIn("1146", reply2)
+
+    def test_mejor_precio_disponible_si_ya_no_hay_margen(self):
+        cliente = Cliente.objects.create(telefono="51955550051")
+        lead = Lead.objects.create(
+            cliente=cliente,
+            tipo_servicio="traslado pequeno",
+            estado=Lead.COTIZADO,
+            precio_estimado_min=Decimal("800"),
+            precio_estimado_max=Decimal("800"),
+            precio_cotizado=Decimal("800"),
+        )
+
+        reply = handle_incoming_message(cliente, "es demasiado")
+
+        lead.refresh_from_db()
+        self.assertEqual(lead.precio_cotizado, 800)
+        self.assertIn("mejor precio", reply.lower())
+        self.assertIn("800", reply)
+
+    def test_no_retrocede_precio_despues_de_descuento(self):
+        cliente = Cliente.objects.create(telefono="51955550052")
+        lead = Lead.objects.create(
+            cliente=cliente,
+            tipo_servicio="traslado pequeno",
+            estado=Lead.COTIZADO,
+            precio_estimado_min=Decimal("800"),
+            precio_estimado_max=Decimal("1146"),
+            precio_cotizado=Decimal("1026"),
+        )
+
+        reply = handle_incoming_message(cliente, "un momento")
+
+        lead.refresh_from_db()
+        self.assertEqual(lead.precio_cotizado, 1026)
+        self.assertNotIn("1146", reply)
+
+    def test_rechazo_despues_de_descuento_no_repite_precio(self):
+        cliente = Cliente.objects.create(telefono="51955550053")
+        lead = Lead.objects.create(
+            cliente=cliente,
+            tipo_servicio="traslado pequeno",
+            estado=Lead.COTIZADO,
+            precio_estimado_min=Decimal("800"),
+            precio_estimado_max=Decimal("1146"),
+            precio_cotizado=Decimal("1026"),
+        )
+
+        reply = handle_incoming_message(cliente, "no gracias")
+
+        lead.refresh_from_db()
+        self.assertEqual(lead.estado, Lead.PERDIDO)
+        self.assertNotIn("1026", reply)
+        self.assertNotIn("1146", reply)
+        self.assertNotIn("reserva", reply.lower())
+
+    def test_yo_le_aviso_cierra_sin_insistir(self):
+        cliente = Cliente.objects.create(telefono="51955550038")
+        lead = Lead.objects.create(
+            cliente=cliente,
+            tipo_servicio="traslado pequeno",
+            estado=Lead.COTIZADO,
+            precio_estimado_min=Decimal("180"),
+            precio_estimado_max=Decimal("240"),
+            precio_cotizado=Decimal("240"),
+        )
+
+        reply = handle_incoming_message(cliente, "yo le aviso cualquier cosa")
+
+        lead.refresh_from_db()
+        self.assertEqual(lead.estado, Lead.PERDIDO)
+        self.assertEqual(lead.motivo_perdida, "Cliente no interesado / lo pensara")
+        self.assertIn("quedamos atentos", reply.lower())
+        self.assertNotIn("240", reply)
+        self.assertNotIn("descuento", reply.lower())
+
+    @patch("apps.ia.conversation_engine._ai_detects_new_quote")
+    def test_nueva_cotizacion_despues_de_cotizado_crea_lead_nuevo(
+        self, mock_ai_detect
+    ):
+        mock_ai_detect.return_value = True
+        cliente = Cliente.objects.create(telefono="51955550039")
+        lead = Lead.objects.create(
+            cliente=cliente,
+            tipo_servicio="traslado pequeno",
+            estado=Lead.COTIZADO,
+            precio_estimado_min=Decimal("180"),
+            precio_estimado_max=Decimal("240"),
+            precio_cotizado=Decimal("240"),
+        )
+
+        reply = handle_incoming_message(
+            cliente, "quiero trasladar las cosas de un estudiante"
+        )
+
+        lead.refresh_from_db()
+        self.assertEqual(lead.estado, Lead.PERDIDO)
+        self.assertEqual(
+            lead.motivo_perdida, "Cliente inicio nueva cotizacion"
+        )
+        new_lead = cliente.leads.filter(estado=Lead.DATOS_INCOMPLETOS).first()
+        self.assertIsNotNone(new_lead)
+        self.assertNotEqual(new_lead.id, lead.id)
+        self.assertIn("distrito", reply.lower())
+
+    def test_no_estoy_interesado_marca_perdido(self):
+        cliente = Cliente.objects.create(telefono="51955550040")
+        lead = Lead.objects.create(
+            cliente=cliente,
+            tipo_servicio="traslado pequeno",
+            estado=Lead.COTIZADO,
+            precio_estimado_min=Decimal("180"),
+            precio_estimado_max=Decimal("240"),
+            precio_cotizado=Decimal("240"),
+        )
+
+        reply = handle_incoming_message(cliente, "no estoy interesado")
+
+        lead.refresh_from_db()
+        self.assertEqual(lead.estado, Lead.PERDIDO)
+        self.assertEqual(lead.motivo_perdida, "Cliente no interesado / lo pensara")
+        self.assertIn("quedamos atentos", reply.lower())
+        self.assertNotIn("240", reply)
+        self.assertNotIn("descuento", reply.lower())
+        self.assertNotIn("reserva", reply.lower())
+
+    def test_gracias_solo_cierra_sin_repetir_precio(self):
+        cliente = Cliente.objects.create(telefono="51955550041")
+        lead = Lead.objects.create(
+            cliente=cliente,
+            tipo_servicio="traslado pequeno",
+            estado=Lead.COTIZADO,
+            precio_estimado_min=Decimal("180"),
+            precio_estimado_max=Decimal("240"),
+            precio_cotizado=Decimal("240"),
+        )
+
+        reply = handle_incoming_message(cliente, "gracias")
+
+        lead.refresh_from_db()
+        self.assertEqual(lead.estado, Lead.PERDIDO)
+        self.assertEqual(lead.motivo_perdida, "Cliente no interesado / lo pensara")
+        self.assertIn("quedamos atentos", reply.lower())
+        self.assertNotIn("240", reply)
+        self.assertNotIn("descuento", reply.lower())

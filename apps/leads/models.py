@@ -96,12 +96,22 @@ class Lead(models.Model):
     precio_cotizado = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     precio_final = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     esperando_motivo_no_reserva = models.BooleanField(default=False)
+    requiere_asesor = models.BooleanField(default=False)
+    motivo_derivacion = models.TextField(blank=True, null=True)
+    bot_pausado = models.BooleanField(default=False)
+    fecha_derivacion = models.DateTimeField(null=True, blank=True)
     observaciones = models.TextField(blank=True)
     nota_interna = models.TextField(blank=True)
     motivo_perdida = models.CharField(max_length=255, blank=True)
     fecha_creacion = models.DateTimeField(auto_now_add=True)
     fecha_ultimo_seguimiento = models.DateTimeField(null=True, blank=True)
     fecha_proximo_seguimiento = models.DateTimeField(null=True, blank=True)
+    whatsapp_channel = models.ForeignKey(
+        "whatsapp.WhatsAppChannel",
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name="leads",
+    )
     fecha_cierre = models.DateTimeField(null=True, blank=True)
 
     class Meta:

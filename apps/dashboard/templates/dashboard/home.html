@@ -243,6 +243,239 @@
             {% endfor %}
           {% endif %}
 
+          <v-sheet class="pa-4 mb-3" rounded="lg" border>
+            <div class="d-flex align-center ga-3 flex-wrap">
+              <v-icon color="teal-darken-2" size="28">mdi-phone-outline</v-icon>
+              <span class="text-subtitle-1 font-weight-bold flex-grow-1">Canal WhatsApp</span>
+              <v-select
+                v-if="data.canales && data.canales.length"
+                v-model="selectedChannel"
+                :items="data.canales"
+                item-title="nombre"
+                item-value="id"
+                density="compact"
+                variant="outlined"
+                hide-details
+                style="min-width: 340px;"
+                @update:model-value="onChannelChange"
+              >
+                <template v-slot:item="{ props, item }">
+                  <v-list-item v-bind="props" :subtitle="'Asesor: ' + item.raw.asesor_nombre">
+                    <template v-slot:prepend>
+                      <v-icon :color="item.raw.activo ? 'teal-darken-2' : 'red-darken-2'" size="small">mdi-circle</v-icon>
+                    </template>
+                  </v-list-item>
+                </template>
+                <template v-slot:selection="{ item }">
+                  <v-chip size="small" color="teal-darken-2" variant="tonal">
+                    <v-icon start size="14" :color="item.raw.activo ? 'teal-darken-2' : 'red-darken-2'">mdi-circle</v-icon>
+                    [[ item.raw.nombre ]]
+                  </v-chip>
+                </template>
+              </v-select>
+              <v-chip v-if="!data.canales || !data.canales.length" color="blue-grey-lighten-2" variant="tonal" size="small">
+                Sin canales configurados
+              </v-chip>
+              <v-btn color="blue-grey-darken-2" variant="tonal" prepend-icon="mdi-cog-outline" size="small" @click="openChannelDialog">
+                Gestionar canales
+              </v-btn>
+            </div>
+          </v-sheet>
+
+          <v-sheet class="pa-4 mb-3" rounded="lg" border>
+            <div class="d-flex align-center ga-3 flex-wrap">
+              <v-icon color="teal-darken-2" size="28">mdi-robot-outline</v-icon>
+              <span class="text-subtitle-1 font-weight-bold">Control del bot</span>
+              <v-chip v-if="selectedChannel && activeChannelLabel" size="small" color="teal-darken-2" variant="tonal">
+                <v-icon start size="14">mdi-phone-outline</v-icon>
+                [[ activeChannelLabel ]]
+              </v-chip>
+              <v-chip v-else size="small" color="blue-grey-darken-2" variant="tonal">
+                <v-icon start size="14">mdi-earth</v-icon>
+                Configuración global
+              </v-chip>
+              <v-spacer></v-spacer>
+              <v-chip
+                :color="botStatusColor"
+                variant="flat"
+                size="small"
+              >
+                [[ botStatusText ]]
+              </v-chip>
+              <v-chip
+                v-if="data.botConfig.override_activo"
+                color="orange-darken-3"
+                variant="tonal"
+                size="small"
+                prepend-icon="mdi-hand-back-right-outline"
+              >
+                [[ data.botConfig.override_modo === 'force_bot' ? 'Forzado (bot)' : data.botConfig.override_modo === 'force_mixto' ? 'Forzado (mixto inteligente)' : 'Forzado (humano)' ]]
+              </v-chip>
+              <v-chip
+                v-if="!data.botConfig.override_activo && data.botConfig.modo_atencion === 'bot'"
+                color="blue-grey-darken-2"
+                variant="tonal"
+                size="small"
+              >
+                [[ modoLabel ]]
+              </v-chip>
+              <v-menu>
+                <template v-slot:activator="{ props }">
+                  <v-btn
+                    v-bind="props"
+                    color="blue-grey-darken-2"
+                    variant="tonal"
+                    prepend-icon="mdi-cog-outline"
+                    size="small"
+                  >
+                    Acciones
+                  </v-btn>
+                </template>
+                <v-list density="compact">
+                  <v-list-item @click="forceBotNow" prepend-icon="mdi-robot-outline">
+                    <v-list-item-title>Forzar bot ahora</v-list-item-title>
+                  </v-list-item>
+                  <v-list-item @click="forceHumanNow" prepend-icon="mdi-account-outline">
+                    <v-list-item-title>Forzar atención humana</v-list-item-title>
+                  </v-list-item>
+                  <v-list-item @click="forceMixtoNow" prepend-icon="mdi-robot-happy-outline">
+                    <v-list-item-title>Forzar mixto inteligente</v-list-item-title>
+                  </v-list-item>
+                  <v-list-item @click="clearOverride" prepend-icon="mdi-calendar-clock-outline">
+                    <v-list-item-title>Volver a horario programado</v-list-item-title>
+                  </v-list-item>
+                  <v-divider></v-divider>
+                  <v-list-item @click="botConfigDialog = true" prepend-icon="mdi-tune-variant">
+                    <v-list-item-title>Configurar horarios</v-list-item-title>
+                  </v-list-item>
+                </v-list>
+              </v-menu>
+            </div>
+          </v-sheet>
+
+          <v-dialog v-model="botConfigDialog" max-width="680" persistent @update:model-value="onBotDialogToggle">
+            <v-card rounded="lg">
+              <v-card-title class="d-flex align-center justify-space-between">
+                <span class="text-h6">Configurar horarios del bot</span>
+                <v-btn icon="mdi-close" variant="text" @click="botConfigDialog = false"></v-btn>
+              </v-card-title>
+              <v-divider></v-divider>
+              <v-card-text class="pt-4">
+                <v-switch
+                  v-model="botForm.bot_activo"
+                  label="Bot activo"
+                  color="teal-darken-2"
+                  hide-details
+                  class="mb-3"
+                ></v-switch>
+                <v-select
+                  v-model="botForm.modo_atencion"
+                  :items="botModos"
+                  item-title="label"
+                  item-value="value"
+                  label="Modo de atencion"
+                  variant="outlined"
+                  density="comfortable"
+                  persistent-hint
+                  :hint="botForm.modo_atencion === 'mixto' ? 'Mixto inteligente: el bot cotiza servicios simples y deriva casos complejos al asesor.' : ''"
+                  class="mb-4"
+                ></v-select>
+                <div class="text-subtitle-2 font-weight-bold mb-3">Horarios por día</div>
+                <div
+                  v-for="d in dayNames"
+                  :key="d.value"
+                  class="mb-3 pa-3"
+                  style="border:1px solid #dfe7eb;border-radius:8px"
+                >
+                  <div class="d-flex align-center ga-2 mb-2">
+                    <v-icon
+                      :color="dayHasSchedules(d.value) ? 'teal-darken-2' : 'grey'"
+                      size="20"
+                    >[[ dayHasSchedules(d.value) ? 'mdi-check-circle-outline' : 'mdi-cancel' ]]</v-icon>
+                    <span class="text-body-2 font-weight-bold flex-grow-1">[[ d.label ]]</span>
+                    <v-chip
+                      v-if="dayHasSchedules(d.value)"
+                      color="teal-darken-2"
+                      size="x-small"
+                      variant="tonal"
+                      v-text="daySchedules(d.value).length + ' rango' + (daySchedules(d.value).length !== 1 ? 's' : '')"
+                    ></v-chip>
+                  </div>
+                  <div v-if="daySchedules(d.value).length" class="d-flex flex-wrap ga-2 mb-2">
+                    <template v-for="s in daySchedules(d.value)" :key="s.id">
+                      <v-chip
+                        v-if="editingSchedule !== s.id"
+                        closable
+                        @click="editSchedule(s)"
+                        @click:close="deleteSchedule(s)"
+                        variant="outlined"
+                        color="blue-grey-darken-2"
+                        size="small"
+                      >[[ s.start_time ]] - [[ s.end_time ]]</v-chip>
+                      <div v-else class="d-flex align-center ga-1">
+                        <v-text-field
+                          v-model="editTimes.start"
+                          label="Inicio"
+                          type="time"
+                          density="compact"
+                          variant="outlined"
+                          hide-details
+                          style="max-width:130px"
+                        ></v-text-field>
+                        <v-text-field
+                          v-model="editTimes.end"
+                          label="Fin"
+                          type="time"
+                          density="compact"
+                          variant="outlined"
+                          hide-details
+                          style="max-width:130px"
+                        ></v-text-field>
+                        <v-btn icon="mdi-check" size="x-small" color="green" variant="tonal" @click="saveScheduleEdit(s)"></v-btn>
+                        <v-btn icon="mdi-close" size="x-small" variant="tonal" @click="cancelScheduleEdit()"></v-btn>
+                      </div>
+                    </template>
+                  </div>
+                  <div v-else class="text-caption muted-text mb-2">Sin horarios configurados</div>
+                  <div class="d-flex align-center ga-2">
+                    <v-text-field
+                      v-model="newScheduleTimes[d.value].start"
+                      label="Inicio"
+                      type="time"
+                      density="compact"
+                      variant="outlined"
+                      hide-details
+                      style="max-width:140px"
+                    ></v-text-field>
+                    <v-text-field
+                      v-model="newScheduleTimes[d.value].end"
+                      label="Fin"
+                      type="time"
+                      density="compact"
+                      variant="outlined"
+                      hide-details
+                      style="max-width:140px"
+                    ></v-text-field>
+                    <v-btn
+                      icon="mdi-plus"
+                      size="small"
+                      color="teal-darken-2"
+                      variant="tonal"
+                      @click="addSchedule(d.value)"
+                    ></v-btn>
+                  </div>
+                </div>
+              </v-card-text>
+              <v-card-actions class="pa-4 pt-0">
+                <v-spacer></v-spacer>
+                <v-btn variant="text" @click="botConfigDialog = false">Cerrar</v-btn>
+                <v-btn color="teal-darken-2" prepend-icon="mdi-content-save-outline" @click="saveBotConfig">
+                  Guardar cambios
+                </v-btn>
+              </v-card-actions>
+            </v-card>
+          </v-dialog>
+
           <v-sheet class="pa-3 mb-3" rounded="lg" border>
             <div class="d-flex ga-3 flex-wrap align-center">
               <v-text-field
@@ -321,6 +554,19 @@
                         <v-chip v-if="lead.atencionHumana" color="blue-grey-darken-2" size="x-small">
                           humano
                         </v-chip>
+                        <v-tooltip v-if="lead.requiereAsesor" location="top" :text="lead.motivoDerivacion">
+                          <template v-slot:activator="{ props }">
+                            <v-chip v-bind="props" color="orange-darken-3" size="x-small" variant="tonal">
+                              requiere asesor
+                            </v-chip>
+                          </template>
+                        </v-tooltip>
+                        <v-chip v-if="lead.botPausado" color="deep-purple-darken-2" size="x-small">
+                          bot pausado
+                        </v-chip>
+                        <v-chip v-if="lead.guardPausado" color="orange-darken-3" size="x-small" prepend-icon="mdi-shield-alert-outline">
+                          Posible atención por WhatsApp Business
+                        </v-chip>
                         <v-chip v-if="lead.seguimientoVencido" color="red-darken-2" size="x-small">
                           vencido
                         </v-chip>
@@ -356,9 +602,23 @@
                     <div class="text-h6 font-weight-bold">[[ selectedLead.cliente ]]</div>
                     <div class="muted-text mt-1">[[ selectedLead.telefono ]] · [[ selectedLead.estado ]] · [[ selectedLead.prioridad ]]</div>
                   </div>
-                  <v-chip :color="selectedLead.atencionHumana ? 'blue-grey-darken-2' : 'teal-darken-2'" variant="flat">
-                    [[ selectedLead.atencionHumana ? 'atencion humana' : 'automatico' ]]
-                  </v-chip>
+                  <div class="d-flex ga-1 flex-wrap">
+                    <v-chip :color="selectedLead.atencionHumana ? 'blue-grey-darken-2' : 'teal-darken-2'" variant="flat">
+                      [[ selectedLead.atencionHumana ? 'atencion humana' : 'automatico' ]]
+                    </v-chip>
+                    <v-chip v-if="selectedLead.requiereAsesor" color="orange-darken-3" size="x-small" variant="tonal">
+                      requiere asesor
+                    </v-chip>
+                    <template v-if="selectedLead.requiereAsesor && selectedLead.motivoDerivacion">
+                      <span class="text-caption text-medium-emphasis ml-1">[[ selectedLead.motivoDerivacion ]]</span>
+                    </template>
+                    <v-chip v-if="selectedLead.botPausado" color="deep-purple-darken-2" size="x-small" variant="tonal">
+                      bot pausado
+                    </v-chip>
+                    <v-chip v-if="selectedLead.guardPausado" color="orange-darken-3" size="x-small" variant="tonal" prepend-icon="mdi-shield-alert-outline">
+                      Posible atención por WhatsApp Business
+                    </v-chip>
+                  </div>
                   <div class="wide">
                     <div class="d-flex align-center justify-space-between mb-1">
                       <span class="text-caption text-medium-emphasis">Datos para cotizar</span>
@@ -475,6 +735,15 @@
                           @click="postAction('release')"
                         >
                           Liberar automatico
+                        </v-btn>
+                        <v-btn
+                          v-if="selectedLead.botPausado"
+                          class="wide"
+                          color="teal-darken-2"
+                          prepend-icon="mdi-robot-happy-outline"
+                          @click="postAction('reactivate_bot')"
+                        >
+                          Reactivar bot
                         </v-btn>
 
                         <v-select
@@ -783,6 +1052,82 @@
               </v-card-actions>
             </v-card>
           </v-dialog>
+
+          <v-dialog v-model="channelDialog" max-width="640">
+            <v-card rounded="lg">
+              <v-card-title class="d-flex align-center justify-space-between">
+                <span class="text-h6">Gestionar canales WhatsApp</span>
+                <v-btn icon="mdi-close" variant="text" @click="channelDialog = false"></v-btn>
+              </v-card-title>
+              <v-divider></v-divider>
+              <v-card-text class="pt-4">
+                <v-list v-if="channelsList.length" density="compact" class="mb-4" border rounded>
+                  <v-list-item
+                    v-for="ch in channelsList"
+                    :key="ch.id"
+                    :title="ch.nombre"
+                    :subtitle="ch.numero_visible + ' · ' + (ch.asesor_nombre || 'Sin asesor')"
+                  >
+                    <template v-slot:prepend>
+                      <v-icon :color="ch.activo ? 'teal-darken-2' : 'red-darken-2'">mdi-circle</v-icon>
+                    </template>
+                    <template v-slot:append>
+                      <v-btn icon="mdi-pencil" size="x-small" variant="tonal" @click="editChannel(ch)"></v-btn>
+                    </template>
+                  </v-list-item>
+                </v-list>
+                <v-divider class="mb-3"></v-divider>
+                <div class="text-subtitle-2 font-weight-bold mb-2">[[ editingChannel ? 'Editar canal' : 'Nuevo canal' ]]</div>
+                <v-row dense>
+                  <v-col cols="12">
+                    <v-text-field v-model="channelForm.nombre" label="Nombre" variant="outlined" density="comfortable"></v-text-field>
+                  </v-col>
+                  <v-col cols="12" md="6">
+                    <v-text-field
+                      v-model="channelForm.phone_number_id"
+                      label="Phone Number ID"
+                      persistent-hint
+                      hint="Phone Number ID es el ID de Meta, no el número de celular."
+                      variant="outlined"
+                      density="comfortable"
+                    ></v-text-field>
+                  </v-col>
+                  <v-col cols="12" md="6">
+                    <v-text-field v-model="channelForm.numero_visible" label="Número visible" variant="outlined" density="comfortable"></v-text-field>
+                  </v-col>
+                  <v-col cols="12" md="6">
+                    <v-select
+                      v-model="channelForm.asesor_id"
+                      :items="asesoresList"
+                      item-title="username"
+                      item-value="id"
+                      label="Asesor responsable"
+                      variant="outlined"
+                      density="comfortable"
+                      clearable
+                    >
+                      <template v-slot:item="{ props, item }">
+                        <v-list-item v-bind="props" :title="item.raw.username"></v-list-item>
+                      </template>
+                    </v-select>
+                  </v-col>
+                  <v-col cols="12" md="6">
+                    <v-switch v-model="channelForm.activo" label="Activo" color="teal-darken-2" hide-details></v-switch>
+                  </v-col>
+                </v-row>
+                <v-alert v-if="channelError" type="error" variant="tonal" density="compact" class="mb-3" closable @click:close="channelError = ''">
+                  [[ channelError ]]
+                </v-alert>
+              </v-card-text>
+              <v-card-actions class="pa-4 pt-0">
+                <v-spacer></v-spacer>
+                <v-btn variant="text" @click="resetChannelForm">Cancelar</v-btn>
+                <v-btn color="teal-darken-2" prepend-icon="mdi-content-save-outline" @click="saveChannel" :loading="channelSaving">
+                  [[ editingChannel ? 'Actualizar' : 'Crear canal' ]]
+                </v-btn>
+              </v-card-actions>
+            </v-card>
+          </v-dialog>
         </div>
       </div>
     </v-app>
@@ -829,6 +1174,32 @@
             priority: 'todas',
             followUp: 'todos',
           },
+          selectedChannel: dashboardData.channel_id || null,
+          botConfigDialog: false,
+          botForm: {
+            bot_activo: dashboardData.botConfig?.bot_activo ?? true,
+            modo_atencion: dashboardData.botConfig?.modo_atencion ?? 'bot',
+          },
+          schedules: dashboardData.botConfig?.schedules || [],
+          editingSchedule: null,
+          editTimes: { start: '', end: '' },
+          newScheduleTimes: Object.fromEntries(
+            [0,1,2,3,4,5,6].map(d => [d, { start: '09:00', end: '18:00' }])
+          ),
+          channelDialog: false,
+          channelForm: {
+            id: null,
+            nombre: '',
+            phone_number_id: '',
+            numero_visible: '',
+            asesor_id: null,
+            activo: true,
+          },
+          channelsList: [],
+          asesoresList: [],
+          editingChannel: false,
+          channelError: '',
+          channelSaving: false,
           newLeadDialog: false,
           newLead: {
             nombre: '',
@@ -916,10 +1287,69 @@
             { label: 'Precio recomendado', value: `S/ ${this.selectedLead.precioRecomendado || '-'}` },
             { label: 'Precio cotizado', value: `S/ ${this.selectedLead.precioCotizado || '-'}` },
             { label: 'Precio final', value: `S/ ${this.selectedLead.precioFinal || '-'}` },
+            { label: 'Motivo derivacion', value: this.selectedLead.motivoDerivacion || '-' },
+            { label: 'Fecha derivacion', value: this.selectedLead.fechaDerivacion || '-' },
             { label: 'Fecha de cierre', value: this.selectedLead.fechaCierre },
             { label: 'Ultimo seguimiento', value: this.selectedLead.fechaUltimoSeguimiento },
             { label: 'Proximo seguimiento', value: this.selectedLead.fechaProximoSeguimiento },
           ];
+        },
+        modoLabel() {
+          const found = this.botModos.find(m => m.value === this.data.botConfig?.modo_atencion);
+          return found ? found.label : this.data.botConfig?.modo_atencion || 'bot';
+        },
+        botModos() {
+          return this.data.botConfig?.modos_atencion || [
+            { value: 'bot', label: 'Solo bot' },
+            { value: 'humano', label: 'Solo humano' },
+            { value: 'mixto', label: 'Mixto inteligente' },
+          ];
+        },
+        activeChannelLabel() {
+          if (!this.selectedChannel) return '';
+          const ch = this.data.canales.find(c => c.id === this.selectedChannel);
+          return ch ? ch.nombre : '';
+        },
+        dayNames() {
+          return [
+            { value: 0, label: 'Lunes' },
+            { value: 1, label: 'Martes' },
+            { value: 2, label: 'Miércoles' },
+            { value: 3, label: 'Jueves' },
+            { value: 4, label: 'Viernes' },
+            { value: 5, label: 'Sábado' },
+            { value: 6, label: 'Domingo' },
+          ];
+        },
+        daySchedules() {
+          return (day) => this.schedules.filter(s => s.day_of_week === day && s.is_active !== false);
+        },
+        dayHasSchedules() {
+          return (day) => this.schedules.some(s => s.day_of_week === day && s.is_active !== false);
+        },
+        botStatusText() {
+          const bc = this.data.botConfig;
+          if (!bc || !bc.bot_activo) return 'Apagado';
+          if (bc.override_activo) {
+            if (bc.override_modo === 'force_bot') return 'Forzado (bot)';
+            if (bc.override_modo === 'force_mixto') return 'Forzado (mixto inteligente)';
+            if (bc.override_modo === 'force_human') return 'Forzado (humano)';
+          }
+          if (bc.modo_atencion === 'humano') return 'Solo humano';
+          if (bc.modo_atencion === 'mixto') return 'Mixto inteligente';
+          return 'Activo por horario';
+        },
+        botStatusColor() {
+          const bc = this.data.botConfig;
+          if (!bc || !bc.bot_activo) return 'red-darken-2';
+          if (bc.override_activo) {
+            if (bc.override_modo === 'force_bot') return 'teal-darken-2';
+            if (bc.override_modo === 'force_mixto') return 'teal-darken-2';
+            if (bc.override_modo === 'force_human') return 'orange-darken-3';
+          }
+          if (bc.modo_atencion === 'humano') return 'blue-grey-darken-2';
+          if (bc.modo_atencion === 'mixto') return 'teal-darken-2';
+          return 'teal-darken-2';
         },
       },
       methods: {
@@ -1009,6 +1439,246 @@
           input.name = name;
           input.value = value;
           form.appendChild(input);
+        },
+        onBotDialogToggle(open) {
+          if (open) this.loadSchedules();
+          else this.editingSchedule = null;
+        },
+        scheduleApiUrl() {
+          let url = this.data.botSchedulesUrl;
+          if (this.selectedChannel) url += '?channel=' + this.selectedChannel;
+          return url;
+        },
+        async loadSchedules() {
+          try {
+            const r = await fetch(this.scheduleApiUrl(), {
+              headers: { 'X-CSRFToken': csrfToken },
+            });
+            if (r.ok) this.schedules = await r.json();
+          } catch (e) {}
+        },
+        async addSchedule(day) {
+          const t = this.newScheduleTimes[day];
+          if (!t.start || !t.end) return;
+          try {
+            const r = await fetch(this.scheduleApiUrl(), {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+              body: JSON.stringify({ day_of_week: day, start_time: t.start, end_time: t.end }),
+            });
+            if (r.ok) {
+              const created = await r.json();
+              this.schedules.push(created);
+              t.start = '09:00';
+              t.end = '18:00';
+            }
+          } catch (e) {}
+        },
+        async deleteSchedule(sched) {
+          try {
+            const r = await fetch(`${this.data.botSchedulesUrl}${sched.id}/`, {
+              method: 'DELETE',
+              headers: { 'X-CSRFToken': csrfToken },
+            });
+            if (r.ok) {
+              this.schedules = this.schedules.filter(s => s.id !== sched.id);
+            }
+          } catch (e) {}
+        },
+        editSchedule(sched) {
+          this.editTimes.start = sched.start_time;
+          this.editTimes.end = sched.end_time;
+          this.editingSchedule = sched.id;
+        },
+        async saveScheduleEdit(sched) {
+          if (!this.editTimes.start || !this.editTimes.end) return;
+          try {
+            const r = await fetch(`${this.data.botSchedulesUrl}${sched.id}/`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+              body: JSON.stringify({ start_time: this.editTimes.start, end_time: this.editTimes.end }),
+            });
+            if (r.ok) {
+              const updated = await r.json();
+              const idx = this.schedules.findIndex(s => s.id === sched.id);
+              if (idx !== -1) this.schedules[idx] = updated;
+              this.editingSchedule = null;
+            }
+          } catch (e) {}
+        },
+        cancelScheduleEdit() {
+          this.editingSchedule = null;
+        },
+        async saveBotConfig() {
+          try {
+            let url = this.data.botSettingsUrl;
+            if (this.selectedChannel) url += '?channel=' + this.selectedChannel;
+            const r = await fetch(url, {
+              method: 'PATCH',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken,
+              },
+              body: JSON.stringify(this.botForm),
+            });
+            if (!r.ok) throw new Error();
+            this.data.botConfig.bot_activo = this.botForm.bot_activo;
+            this.data.botConfig.modo_atencion = this.botForm.modo_atencion;
+            this.botConfigDialog = false;
+          } catch (e) {
+            alert('Error al guardar la configuracion del bot');
+          }
+        },
+        async _patchOverride(payload) {
+          try {
+            let url = this.data.botSettingsUrl;
+            if (this.selectedChannel) url += '?channel=' + this.selectedChannel;
+            const r = await fetch(url, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+              body: JSON.stringify(payload),
+            });
+            if (!r.ok) throw new Error();
+            const updated = await r.json();
+            if (updated.ok) {
+              Object.assign(this.data.botConfig, payload);
+            }
+          } catch (e) {
+            alert('Error al cambiar modo del bot');
+          }
+        },
+        forceBotNow() {
+          this._patchOverride({
+            override_activo: true,
+            override_modo: 'force_bot',
+            override_motivo: 'Activado manualmente desde dashboard',
+          });
+        },
+        forceHumanNow() {
+          this._patchOverride({
+            override_activo: true,
+            override_modo: 'force_human',
+            override_motivo: 'Activado manualmente desde dashboard',
+          });
+        },
+        forceMixtoNow() {
+          this._patchOverride({
+            override_activo: true,
+            override_modo: 'force_mixto',
+            override_motivo: 'Activado manualmente desde dashboard',
+          });
+        },
+        clearOverride() {
+          this._patchOverride({
+            override_activo: false,
+            override_modo: 'none',
+            override_motivo: '',
+          });
+        },
+        onChannelChange(channelId) {
+          const url = new URL(window.location);
+          if (channelId) {
+            url.searchParams.set('channel', channelId);
+          } else {
+            url.searchParams.delete('channel');
+          }
+          window.location.href = url.toString();
+        },
+        openChannelDialog() {
+          this.resetChannelForm();
+          this.channelError = '';
+          this.loadChannels();
+          this.loadAsesores();
+          this.channelDialog = true;
+        },
+        async loadChannels() {
+          try {
+            const r = await fetch('/api/whatsapp-channels/', {
+              headers: { 'X-CSRFToken': csrfToken },
+            });
+            if (r.ok) this.channelsList = await r.json();
+          } catch (e) {}
+        },
+        async loadAsesores() {
+          try {
+            const r = await fetch('/api/whatsapp-channels/asesores/', {
+              headers: { 'X-CSRFToken': csrfToken },
+            });
+            if (r.ok) this.asesoresList = await r.json();
+          } catch (e) {}
+        },
+        editChannel(ch) {
+          this.editingChannel = true;
+          this.channelError = '';
+          this.channelForm = {
+            id: ch.id,
+            nombre: ch.nombre,
+            phone_number_id: ch.phone_number_id,
+            numero_visible: ch.numero_visible,
+            asesor_id: ch.asesor_id,
+            activo: ch.activo,
+          };
+        },
+        resetChannelForm() {
+          this.editingChannel = false;
+          this.channelError = '';
+          this.channelForm = {
+            id: null,
+            nombre: '',
+            phone_number_id: '',
+            numero_visible: '',
+            asesor_id: null,
+            activo: true,
+          };
+        },
+        async saveChannel() {
+          this.channelSaving = true;
+          this.channelError = '';
+          try {
+            const isEdit = this.editingChannel && this.channelForm.id;
+            const url = isEdit
+              ? '/api/whatsapp-channels/' + this.channelForm.id + '/'
+              : '/api/whatsapp-channels/';
+            const payload = {
+              nombre: this.channelForm.nombre,
+              phone_number_id: this.channelForm.phone_number_id,
+              numero_visible: this.channelForm.numero_visible,
+              asesor_id: this.channelForm.asesor_id || null,
+              activo: this.channelForm.activo,
+            };
+            console.log('saveChannel payload:', JSON.stringify(payload));
+            const r = await fetch(url, {
+              method: isEdit ? 'PATCH' : 'POST',
+              headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+              body: JSON.stringify(payload),
+            });
+            console.log('saveChannel status:', r.status);
+            if (r.ok) {
+              this.resetChannelForm();
+              await this.loadChannels();
+              this.channelDialog = false;
+              window.location.reload();
+            } else {
+              let msg = 'Error ' + r.status;
+              try {
+                const errData = await r.json();
+                console.log('saveChannel error response:', JSON.stringify(errData));
+                if (errData.errors) {
+                  msg = Object.values(errData.errors).join('\n');
+                } else if (errData.error) {
+                  msg = errData.error;
+                }
+              } catch (e2) {
+                console.log('saveChannel response text:', await r.text());
+              }
+              this.channelError = msg;
+            }
+          } catch (e) {
+            console.log('saveChannel exception:', e);
+            this.channelError = 'Error de conexión al guardar el canal.';
+          } finally {
+            this.channelSaving = false;
+          }
         },
       },
     }).use(createVuetify()).mount('#dashboard-app');

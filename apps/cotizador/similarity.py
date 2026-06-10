@@ -1,3 +1,6 @@
+from django.utils import timezone
+
+
 def score_service(lead, service):
     score = 0
     if _same(lead.tipo_servicio, service.tipo_servicio):
@@ -41,7 +44,8 @@ def score_service(lead, service):
         score += 2
     score += _object_overlap(lead.lista_objetos, service.lista_objetos)
     score += _object_overlap(lead.objetos_pesados, service.objetos_pesados)
-    return score
+    weight = _recency_weight(service.fecha)
+    return round(score * weight, 2)
 
 
 def _same(left, right):
@@ -72,3 +76,18 @@ def _canonical(value):
         "solo traslado": "sin embalaje",
     }
     return aliases.get(normalized, normalized)
+
+
+def _recency_weight(fecha):
+    if not fecha:
+        return 1.0
+    delta = (timezone.localdate() - fecha).days
+    if delta <= 90:
+        return 1.0
+    if delta <= 180:
+        return 0.9
+    if delta <= 365:
+        return 0.75
+    if delta <= 730:
+        return 0.5
+    return 0.25

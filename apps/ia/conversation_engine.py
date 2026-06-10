@@ -1,3 +1,4 @@
+import logging
 import re
 import unicodedata
 from datetime import datetime
@@ -13,6 +14,7 @@ from .history import conversation_examples_for, format_examples_for_prompt
 from .openai_client import extract_floors_with_ai, extract_lead_with_ai, generate_reply
 from .prompts import POST_RESERVATION_SYSTEM_PROMPT
 
+logger = logging.getLogger(__name__)
 
 BASE_QUESTIONS = [
     ("tipo_servicio", "Hola, que deseas trasladar?"),
@@ -209,21 +211,15 @@ def handle_incoming_message(cliente, message):
             return f"{packing_info} {next_question}"
         return packing_info
 
-    if lead.estado == Lead.COTIZADO:
-        price_reply = _handle_price_conversation(lead, message)
-        if price_reply:
-            return price_reply
-        if _is_acceptance(message):
-            lead.etapa_conversacion = Lead.ETAPA_RESERVA
-            lead.esperando_motivo_no_reserva = False
-            lead.save(
-                update_fields=["etapa_conversacion", "esperando_motivo_no_reserva"]
-            )
-            return _next_missing_question(lead)
+    packaging_inquiry = _handle_packaging_inquiry(lead, message)
+    if packaging_inquiry:
+        return packaging_inquiry
 
-    expected_field = _next_missing_field(lead)
-    extracted = extract_lead_data(message)
+    availability_reply = _handle_availability_inquiry(lead, message)
+    if availability_reply:
+        return availability_reply
 
+    # Run AI extraction early so it's available for both COTIZADO and normal flows.
     recent_history = list(
         lead.cliente.conversaciones.order_by("-fecha").values_list(
             "mensaje_entrada",
@@ -232,14 +228,60 @@ def handle_incoming_message(cliente, message):
     )
     recent_history.reverse()
     ai_extracted = extract_lead_with_ai(message, lead, recent_history)
+
+    if lead.estado == Lead.COTIZADO:
+        closure_reply = _handle_conversation_closure(lead, message)
+        if closure_reply:
+            logger.info(
+                "Rechazo detectado: lead %s marcado PERDIDO", lead.id,
+            )
+            return closure_reply
+        price_reply = _handle_price_conversation(lead, message)
+        if price_reply:
+            return price_reply
+        if _is_acceptance(message):
+            lead.etapa_conversacion = Lead.ETAPA_RESERVA
+            lead.esperando_motivo_no_reserva = False
+            lead.save(
+                update_fields=[
+                    "etapa_conversacion",
+                    "esperando_motivo_no_reserva",
+                ]
+            )
+            return _next_missing_question(lead)
+
+        # If no price/closure/acceptance matched, check AI for new quote intent.
+        if _ai_detects_new_quote(ai_extracted):
+            logger.info(
+                "AI nueva cotizacion: lead %s -> PERDIDO, se crea nuevo lead",
+                lead.id,
+            )
+            lead.estado = Lead.PERDIDO
+            lead.motivo_perdida = "Cliente inicio nueva cotizacion"
+            lead.save(update_fields=["estado", "motivo_perdida"])
+            return handle_incoming_message(cliente, message)
+
+        # Safety guard: if nothing matched in COTIZADO, return current price
+        # instead of falling through to cotizar_lead which would restore max price.
+        # Exclude RESERVA stage — those leads still need normal data processing.
+        if lead.etapa_conversacion != Lead.ETAPA_RESERVA:
+            price = lead.precio_cotizado or lead.precio_estimado_max
+            if price is not None:
+                return (
+                    f"En que puedo ayudarte? El precio actual del servicio es "
+                    f"S/ {price:.0f}. "
+                    "Te gustaria reservarlo o tienes alguna pregunta?"
+                )
+
+    expected_field = _next_missing_field(lead)
+    extracted = extract_lead_data(message)
+
     if ai_extracted and ai_extracted["campos_detectados"]:
         for field, value in ai_extracted["campos_detectados"].items():
             if value not in ("", None) and not extracted.get(field):
                 extracted[field] = value
 
     if expected_field == "fecha_servicio" and not extracted.get("fecha_servicio"):
-        # Si no responde la fecha, la dejamos pendiente y seguimos cotizando.
-        # Repetir inmediatamente la misma pregunta hace artificial la conversacion.
         lead.fecha_por_confirmar = True
         lead.save(update_fields=["fecha_por_confirmar"])
     _apply_contextual_answer(extracted, expected_field, message, lead)
@@ -310,6 +352,15 @@ def handle_incoming_message(cliente, message):
             "Como la ruta incluye una ciudad fuera de Lima o Callao, necesito "
             "revisar kilometraje, peajes y tiempo de viaje antes de darte un precio. "
             "Ya tengo los datos del servicio y un asesor continuara la cotizacion."
+        )
+
+    if lead.modalidad_servicio == "embalaje full":
+        lead.estado = Lead.DATOS_INCOMPLETOS
+        lead.atencion_humana = True
+        lead.save(update_fields=["estado", "atencion_humana"])
+        return (
+            "Para cotizar embalaje full necesitamos fotos de todo lo que deseas "
+            "embalar. Un asesor revisara el volumen y te indicara el monto."
         )
 
     cotizacion = cotizar_lead(lead)
@@ -541,14 +592,17 @@ def _apply_contextual_answer(extracted, expected_field, message, lead):
         if any(term in lowered for term in ["sin embalaje", "no quiero embalaje", "no", "sin"]):
             extracted["modalidad_servicio"] = "sin embalaje"
             return
+        if "con embalaje" in lowered or "embalaje" in lowered:
+            extracted["modalidad_servicio"] = "embalaje basico"
+            return
         wants_packing = any(
             term in lowered
             for term in [
-                "si", "sí", "quiero", "con embalaje", "necesito",
+                "si", "sí", "quiero", "necesito",
                 "claro", "dale", "ok", "obvio",
             ]
         )
-        if wants_packing or "embalaje" in lowered:
+        if wants_packing:
             extracted["modalidad_servicio"] = "embalaje_pendiente"
         return
 
@@ -1308,6 +1362,68 @@ def _complete_reservation(lead):
     )
 
 
+def _ai_detects_new_quote(ai_extracted):
+    if not ai_extracted or not ai_extracted.get("campos_detectados"):
+        return False
+    campos = ai_extracted["campos_detectados"]
+    new_quote_fields = [
+        "lista_objetos", "tipo_servicio",
+        "distrito_origen", "distrito_destino",
+        "fecha_servicio",
+    ]
+    return any(
+        field in campos and campos[field] not in (None, "")
+        for field in new_quote_fields
+    )
+
+
+def _handle_conversation_closure(lead, message):
+    lowered = message.strip().lower()
+    closure_phrases = [
+        "yo le aviso",
+        "cualquier cosa le aviso",
+        "cualquier cosa te aviso",
+        "cualquier cosa le escribo",
+        "cualquier cosa te escribo",
+        "gracias igual",
+        "gracias por la informacion",
+        "gracias por la información",
+        "gracias por la info",
+        "no estoy interesado",
+        "por ahora no gracias",
+        "por ahora no",
+        "por el momento no",
+        "lo voy a evaluar",
+        "voy a consultarlo",
+        "lo converso y te aviso",
+        "lo voy a conversar",
+        "lo voy a pensar",
+        "hablamos luego",
+        "gracias no gracias",
+        "no gracias",
+    ]
+    if any(phrase in lowered for phrase in closure_phrases):
+        lead.estado = Lead.PERDIDO
+        lead.motivo_perdida = "Cliente no interesado / lo pensara"
+        lead.save(update_fields=["estado", "motivo_perdida"])
+        return (
+            "Perfecto. Quedamos atentos por si mas adelante deseas continuar con "
+            "la cotizacion. Que tengas un excelente dia."
+        )
+    bare = lowered.strip().rstrip(".!")
+    if bare == "gracias" and not any(
+        acc in lowered for acc in ["quiero reservar", "acepto", "confirmo", "si reserv"]
+    ):
+        lead.estado = Lead.PERDIDO
+        lead.motivo_perdida = "Cliente no interesado / lo pensara"
+        lead.save(update_fields=["estado", "motivo_perdida"])
+        return (
+            "Perfecto. Quedamos atentos por si mas adelante deseas continuar con "
+            "la cotizacion. Que tengas un excelente dia."
+        )
+    return None
+
+
 def _handle_price_conversation(lead, message):
     current = lead.precio_cotizado or lead.precio_estimado_max
     minimum = lead.precio_estimado_min
@@ -1352,8 +1468,8 @@ def _handle_price_conversation(lead, message):
     if _mentions_price_objection(lowered):
         if current <= minimum:
             return (
-                f"Lo minimo que puedo dejarte el servicio es en S/ {minimum:.0f}. "
-                "Si te parece, avanzamos con la reserva."
+                f"Entiendo. El mejor precio que puedo ofrecerte actualmente es "
+                f"S/ {current:.0f}. Si te sirve, avanzamos con la reserva."
             )
         new_price = max(minimum, current - _negotiation_step(lead))
         lead.precio_cotizado = new_price
@@ -1383,7 +1499,10 @@ def _handle_price_conversation(lead, message):
                 f"y dejar el servicio en S/ {new_price:.0f}. ¿Te gustaría reservar ahora?"
             )
         else:
-            return "Este es el mejor precio que puedo ofrecer. ¿Quieres proceder con la reserva?"
+            return (
+                f"Entiendo. El mejor precio que puedo ofrecerte actualmente es "
+                f"S/ {current:.0f}. Si te sirve, avanzamos con la reserva."
+            )
 
     if "no quiero pagar tanto" in lowered or "es muy caro" in lowered:
         if current > minimum:
@@ -1395,7 +1514,10 @@ def _handle_price_conversation(lead, message):
                 "¿Quieres reservar con este precio?"
             )
         else:
-            return "El precio ya está ajustado al mínimo posible. ¿Quieres continuar con la reserva?"
+            return (
+                f"Entiendo. El mejor precio que puedo ofrecerte actualmente es "
+                f"S/ {current:.0f}. Si te sirve, avanzamos con la reserva."
+            )
 
     return None
 
@@ -1406,8 +1528,8 @@ def _handle_reservation_objection(lead, message, current, minimum):
         if current <= minimum:
             lead.save(update_fields=["esperando_motivo_no_reserva"])
             return (
-                f"Entiendo. Ya estamos en el minimo, S/ {minimum:.0f}. "
-                "Cuando decidas avanzar, me avisas."
+                f"Entiendo. El mejor precio que puedo ofrecerte actualmente es "
+                f"S/ {current:.0f}. Si te sirve, avanzamos con la reserva."
             )
         new_price = max(minimum, current - _negotiation_step(lead))
         lead.precio_cotizado = new_price
@@ -1456,6 +1578,9 @@ def _mentions_price_objection(message):
             "muy alto",
             "elevado",
             "demasiado",
+            "es mucho",
+            "no llego",
+            "se me escapa",
             "se me hace mucho",
             "no me alcanza",
             "fuera de mi presupuesto",
@@ -1674,11 +1799,93 @@ def _packing_information(message):
     )
 
 
-def _route_requires_manual_review(lead):
-    return any(
-        _canonical_place(place) not in LOCAL_LIMA_CALLAO_AREAS
-        for place in [lead.distrito_origen, lead.distrito_destino]
+def _handle_packaging_inquiry(lead, message):
+    lowered = message.lower()
+
+    if lead.estado == Lead.COTIZADO and "embalaje full" in lowered:
+        if any(
+            term in lowered
+            for term in [
+                "incluye", "incluido", "incluye embalaje",
+                "precio incluye", "precio incluye embalaje",
+                "ese precio", "esta incluido", "está incluido",
+            ]
+        ):
+            current_type = lead.modalidad_servicio or "basico"
+            return (
+                f"No, ese precio considera embalaje {current_type}. "
+                "El embalaje full requiere evaluacion previa con fotos "
+                "de todo lo que deseas embalar."
+            )
+
+    if "embalaje" in lowered:
+        asks_type = any(
+            term in lowered
+            for term in [
+                "que tipo", "qué tipo", "que embalaje", "qué embalaje",
+                "es basico", "es básico", "es full",
+                "estan dando", "están dando", "me estan dando",
+                "quiero saber", "como es el embalaje", "cómo es el embalaje",
+            ]
+        )
+        if asks_type:
+            current_type = lead.modalidad_servicio or "aun no se ha definido"
+            if current_type == "embalaje_pendiente":
+                current_type = "aun por definir"
+            return f"La modalidad actual es: {current_type}."
+
+    if "quiero embalaje full" in lowered or "embalaje full quiero" in lowered:
+        lead.modalidad_servicio = "embalaje full"
+        lead.atencion_humana = True
+        lead.save(update_fields=["modalidad_servicio", "atencion_humana"])
+        return (
+            "Para cotizar embalaje full necesitamos fotos de todo lo que "
+            "deseas embalar. Un asesor revisara el volumen y te indicara "
+            "el monto."
+        )
+
+    return None
+
+
+def _handle_availability_inquiry(lead, message):
+    lowered = message.lower()
+    asks_availability = any(
+        term in lowered
+        for term in [
+            "disponibilidad", "disponible",
+            "tienen para manana", "tienen para mañana",
+            "pueden manana", "pueden mañana",
+            "para manana", "para mañana",
+            "hacen manana", "hacen mañana",
+            "trabajan manana", "trabajan mañana",
+            "atencion manana", "atención mañana",
+        ]
     )
+    if not asks_availability:
+        return None
+
+    if lead.estado not in (Lead.COTIZADO, Lead.ASIGNADO, Lead.DATOS_INCOMPLETOS):
+        return None
+
+    return (
+        "Podemos revisar disponibilidad para manana. "
+        "A que hora aproximadamente lo necesitas?"
+    )
+
+
+def _route_requires_manual_review(lead):
+    for place, label in [
+        (lead.distrito_origen, "distrito_origen"),
+        (lead.distrito_destino, "distrito_destino"),
+    ]:
+        canonical = _canonical_place(place)
+        if canonical not in LOCAL_LIMA_CALLAO_AREAS:
+            logger.info(
+                "ManualReview=True | %s=%s canonical=%s fuera de Lima/Callao",
+                label, place, canonical,
+            )
+            return True
+    return False
 
 
 def _canonical_place(value):
