@@ -1,0 +1,86 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Por cotizar | TaxiCarga{% endblock %}
+
+{% block extra_head %}
+<style>
+  .quote-queue { max-width: 1500px; margin: 0 auto; padding: 24px; color: #182230; }
+  .quote-queue h1 { margin: 0 0 18px; font-size: 25px; }
+  .queue-stats { display: grid; grid-template-columns: repeat(3, minmax(180px, 1fr)); gap: 14px; margin-bottom: 18px; }
+  .queue-stat { display: flex; align-items: center; gap: 13px; background: #fff; border: 1px solid #e3e7ed; border-radius: 10px; padding: 18px; }
+  .queue-icon { display: grid; place-items: center; width: 43px; height: 43px; border-radius: 50%; font-size: 25px; color: #f57c00; background: #fff4e7; }
+  .queue-stat:nth-child(2) .queue-icon { color: #ef476f; background: #fff0f3; }
+  .queue-stat:nth-child(3) .queue-icon { color: #1683e8; background: #edf6ff; }
+  .queue-label { color: #667085; font-size: 13px; }
+  .queue-value { font-weight: 750; font-size: 25px; }
+  .queue-card { background: #fff; border: 1px solid #e3e7ed; border-radius: 10px; overflow: hidden; }
+  .queue-filters { display: grid; grid-template-columns: minmax(220px, 1.5fr) repeat(3, minmax(145px, .8fr)) auto; gap: 10px; padding: 14px; border-bottom: 1px solid #e8ebef; }
+  .queue-filters input, .queue-filters select { width: 100%; border: 1px solid #d5dae1; border-radius: 7px; padding: 9px 10px; background: #fff; color: #344054; }
+  .queue-filter-btn { border: 0; border-radius: 7px; padding: 0 18px; background: #26363d; color: #fff; cursor: pointer; }
+  .queue-table-wrap { overflow-x: auto; }
+  .queue-table { width: 100%; border-collapse: collapse; min-width: 1080px; }
+  .queue-table th { padding: 11px 13px; background: #fafbfc; color: #667085; text-align: left; font-size: 11px; font-weight: 700; }
+  .queue-table td { padding: 13px; border-top: 1px solid #edf0f2; font-size: 13px; vertical-align: middle; }
+  .queue-client { font-weight: 700; color: #172033; }
+  .queue-phone { color: #8a94a3; font-size: 11px; margin-top: 3px; }
+  .queue-progress { display: flex; align-items: center; gap: 8px; }
+  .queue-progress-track { width: 55px; height: 5px; background: #e8ebef; border-radius: 5px; overflow: hidden; }
+  .queue-progress-bar { height: 100%; background: #20b486; }
+  .queue-priority { display: inline-flex; padding: 4px 8px; border-radius: 12px; font-size: 11px; font-weight: 700; text-transform: capitalize; }
+  .queue-priority.urgente, .queue-priority.alta { color: #d92d20; background: #feeceb; }
+  .queue-priority.media { color: #b54708; background: #fff4e5; }
+  .queue-priority.baja { color: #027a48; background: #eaf8f1; }
+  .queue-wait-hot { color: #d92d20; font-weight: 700; }
+  .queue-actions { display: flex; gap: 6px; }
+  .queue-btn { border: 1px solid #f57c00; border-radius: 6px; padding: 7px 10px; background: #fff; color: #d96700; font-weight: 700; cursor: pointer; white-space: nowrap; }
+  .queue-btn.primary { background: #f57c00; color: #fff; }
+  .queue-empty { padding: 48px 20px; text-align: center; color: #667085; }
+  .queue-pagination { display: flex; justify-content: flex-end; align-items: center; gap: 10px; padding: 13px; border-top: 1px solid #edf0f2; }
+  .queue-pagination a { color: #d96700; text-decoration: none; }
+  @media (max-width: 1000px) { .queue-filters { grid-template-columns: 1fr 1fr; } .queue-filter-btn { min-height: 38px; } }
+  @media (max-width: 650px) { .quote-queue { padding: 14px; } .queue-stats { grid-template-columns: 1fr; } .queue-filters { grid-template-columns: 1fr; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="quote-queue">
+  <h1>Por cotizar</h1>
+  <section class="queue-stats">
+    <div class="queue-stat"><span class="queue-icon mdi mdi-clock-outline"></span><div><div class="queue-label">Pendientes</div><div class="queue-value">{{ counts.pending }}</div></div></div>
+    <div class="queue-stat"><span class="queue-icon mdi mdi-alarm-light-outline"></span><div><div class="queue-label">Urgentes</div><div class="queue-value">{{ counts.urgent }}</div></div></div>
+    <div class="queue-stat"><span class="queue-icon mdi mdi-calendar-today"></span><div><div class="queue-label">Hoy</div><div class="queue-value">{{ counts.today }}</div></div></div>
+  </section>
+
+  <section class="queue-card">
+    <form class="queue-filters" method="get">
+      <input name="q" value="{{ filters.q }}" placeholder="Buscar cliente, teléfono o ruta…">
+      <select name="advisor"><option value="">Todos los asesores</option><option value="unassigned" {% if filters.advisor == 'unassigned' %}selected{% endif %}>Sin asignar</option>{% for advisor in advisors %}<option value="{{ advisor.id }}" {% if filters.advisor == advisor.id|stringformat:'s' %}selected{% endif %}>{{ advisor.get_full_name|default:advisor.username }}</option>{% endfor %}</select>
+      <select name="priority"><option value="">Todas las prioridades</option>{% for value,label in priorities %}<option value="{{ value }}" {% if filters.priority == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+      <select name="reason"><option value="">Todos los motivos</option>{% for reason in reasons %}<option value="{{ reason }}" {% if filters.reason == reason %}selected{% endif %}>{{ reason|truncatechars:38 }}</option>{% endfor %}</select>
+      {% if filters.channel %}<input type="hidden" name="channel" value="{{ filters.channel }}">{% endif %}
+      <button class="queue-filter-btn" type="submit"><span class="mdi mdi-filter-outline"></span> Filtrar</button>
+    </form>
+
+    {% if rows %}
+    <div class="queue-table-wrap"><table class="queue-table">
+      <thead><tr><th>Cliente</th><th>Ruta</th><th>Fecha</th><th>Información</th><th>Motivo</th><th>Espera</th><th>Asesor</th><th>Prioridad</th><th>Acción</th></tr></thead>
+      <tbody>{% for row in rows %}<tr>
+        <td><div class="queue-client">{{ row.item.lead.cliente.nombre|default:row.item.lead.cliente.telefono }}</div><div class="queue-phone">{{ row.item.lead.cliente.telefono }}</div></td>
+        <td>{{ row.route }}</td>
+        <td>{% if row.item.lead.fecha_servicio %}{{ row.item.lead.fecha_servicio|date:'d M, H:i' }}{% else %}Por confirmar{% endif %}</td>
+        <td><div class="queue-progress"><span>{{ row.information }}%</span><span class="queue-progress-track"><span class="queue-progress-bar" style="display:block;width:{{ row.information }}%"></span></span></div></td>
+        <td>{{ row.item.motivo|default:'Revisión manual'|truncatechars:42 }}</td>
+        <td class="{% if row.wait_minutes >= 30 %}queue-wait-hot{% endif %}">{{ row.wait }}</td>
+        <td>{% if row.item.asignada_a %}{{ row.item.asignada_a.get_full_name|default:row.item.asignada_a.username }}{% else %}Sin asignar{% endif %}</td>
+        <td><span class="queue-priority {{ row.item.prioridad }}">{{ row.item.get_prioridad_display }}</span></td>
+        <td><div class="queue-actions">
+          {% if not row.item.asignada_a %}<form method="post" action="{% url 'dashboard-whatsapp-solicitud-accion' row.item.id %}">{% csrf_token %}<input type="hidden" name="action" value="assign"><button class="queue-btn" type="submit">Tomar</button></form>{% endif %}
+          <form method="post" action="{% url 'dashboard-whatsapp-solicitud-accion' row.item.id %}">{% csrf_token %}<input type="hidden" name="action" value="quote"><button class="queue-btn primary" type="submit">Cotizar</button></form>
+        </div></td>
+      </tr>{% endfor %}</tbody>
+    </table></div>
+    <div class="queue-pagination"><span>{{ page.start_index }}–{{ page.end_index }} de {{ page.paginator.count }}</span>{% if page.has_previous %}<a href="?page={{ page.previous_page_number }}&q={{ filters.q|urlencode }}">Anterior</a>{% endif %}{% if page.has_next %}<a href="?page={{ page.next_page_number }}&q={{ filters.q|urlencode }}">Siguiente</a>{% endif %}</div>
+    {% else %}<div class="queue-empty">No existen solicitudes activas con estos filtros.</div>{% endif %}
+  </section>
+</div>
+{% endblock %}

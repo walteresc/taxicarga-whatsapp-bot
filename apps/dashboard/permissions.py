@@ -66,6 +66,14 @@ def can_manage_administracion(user):
     return has_role(user, ["Administrador", "Supervisor"])
 
 
+def can_manage_whatsapp(user):
+    return has_role(user, ["Administrador", "Supervisor", "Asesor de Ventas"])
+
+
+def can_configure_whatsapp(user):
+    return has_role(user, ["Administrador"])
+
+
 # Decoradores para vistas
 
 def leads_required(view_func):
@@ -112,5 +120,22 @@ def conductor_helper_required(view_func):
         return view_func(request, *args, **kwargs)
     return _wrapped_view
 
+
+def whatsapp_required(view_func):
+    @wraps(view_func)
+    def _wrapped_view(request, *args, **kwargs):
+        if not can_manage_whatsapp(request.user):
+            raise PermissionDenied
+        return view_func(request, *args, **kwargs)
+    return _wrapped_view
+
+
+def whatsapp_config_required(view_func):
+    @wraps(view_func)
+    def _wrapped_view(request, *args, **kwargs):
+        if not can_configure_whatsapp(request.user):
+            raise PermissionDenied
+        return view_func(request, *args, **kwargs)
+    return _wrapped_view
 
 

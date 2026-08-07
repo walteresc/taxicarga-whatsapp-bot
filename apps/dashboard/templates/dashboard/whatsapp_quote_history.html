@@ -1,0 +1,86 @@
+{% extends "dashboard/base.html" %}
+{% load l10n %}
+
+{% block title %}Cotizaciones | TaxiCarga{% endblock %}
+
+{% block extra_head %}
+<style>
+  .quote-history { max-width:1500px; margin:0 auto; padding:24px; color:#182230; }
+  .quote-history h1 { margin:0 0 18px; font-size:25px; }
+  .history-stats { display:grid; grid-template-columns:repeat(5,1fr); gap:12px; margin-bottom:18px; }
+  .history-stat { background:#fff; border:1px solid #e3e7ed; border-radius:9px; padding:15px; }
+  .history-stat span { color:#667085; font-size:12px; }
+  .history-stat strong { display:block; font-size:24px; margin-top:5px; }
+  .history-tabs { display:flex; gap:4px; overflow-x:auto; border-bottom:1px solid #e3e7ed; background:#fff; padding:0 13px; }
+  .history-tabs a { padding:13px 12px 10px; color:#667085; text-decoration:none; font-size:13px; border-bottom:2px solid transparent; white-space:nowrap; }
+  .history-tabs a.active { color:#ef6c00; border-color:#ef6c00; font-weight:700; }
+  .history-card { background:#fff; border:1px solid #e3e7ed; border-radius:10px; overflow:hidden; }
+  .history-filters { display:grid; grid-template-columns:1.5fr repeat(2,1fr) auto; gap:10px; padding:14px; }
+  .history-filters input,.history-filters select { border:1px solid #d5dae1; border-radius:7px; padding:9px 10px; min-width:0; }
+  .history-filter-btn { border:0; border-radius:7px; padding:0 18px; color:#fff; background:#26363d; }
+  .history-table-wrap { overflow-x:auto; }
+  .history-table { width:100%; min-width:1080px; border-collapse:collapse; }
+  .history-table th { background:#fafbfc; color:#667085; font-size:11px; text-align:left; padding:11px 13px; }
+  .history-table td { border-top:1px solid #edf0f2; padding:13px; font-size:13px; }
+  .history-code { font-weight:750; color:#182230; }
+  .history-client { color:#667085; font-size:11px; margin-top:3px; }
+  .history-status { display:inline-flex; border-radius:12px; padding:4px 8px; font-size:11px; font-weight:700; background:#f2f4f7; color:#475467; }
+  .history-status.enviada,.history-status.entregada { background:#eaf3ff; color:#175cd3; }
+  .history-status.en_negociacion { background:#fff4e5; color:#b54708; }
+  .history-status.aceptada { background:#eaf8f1; color:#027a48; }
+  .history-status.rechazada,.history-status.vencida,.history-status.cancelada { background:#feeceb; color:#b42318; }
+  .history-actions { display:flex; align-items:center; gap:6px; }
+  .history-actions a,.history-actions button { border:1px solid #d5dae1; border-radius:6px; background:#fff; color:#475467; padding:6px 9px; text-decoration:none; cursor:pointer; white-space:nowrap; }
+  .history-actions button.danger { color:#b42318; border-color:#f3b7b2; }
+  .history-empty { padding:48px 20px; text-align:center; color:#667085; }
+  .history-pagination { display:flex; justify-content:flex-end; gap:10px; padding:13px; border-top:1px solid #edf0f2; }
+  .history-pagination a { color:#ef6c00; text-decoration:none; }
+  @media(max-width:1100px){.history-stats{grid-template-columns:repeat(3,1fr)}.history-filters{grid-template-columns:1fr 1fr}}
+  @media(max-width:650px){.quote-history{padding:14px}.history-stats{grid-template-columns:1fr 1fr}.history-filters{grid-template-columns:1fr}}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="quote-history">
+  <h1>Cotizaciones</h1>
+  <section class="history-stats">
+    <div class="history-stat"><span>Total este mes</span><strong>{{ stats.total }}</strong></div>
+    <div class="history-stat"><span>Enviadas este mes</span><strong>{{ stats.sent }}</strong></div>
+    <div class="history-stat"><span>En negociación</span><strong>{{ stats.negotiating }}</strong></div>
+    <div class="history-stat"><span>Aceptadas este mes</span><strong>{{ stats.accepted }}</strong></div>
+    <div class="history-stat"><span>Vencidas</span><strong>{{ stats.expired }}</strong></div>
+  </section>
+  <section class="history-card">
+    <nav class="history-tabs">
+      <a class="{% if filters.state == 'all' %}active{% endif %}" href="?state=all">Todas</a>
+      {% for value,label in states %}<a class="{% if filters.state == value %}active{% endif %}" href="?state={{ value }}">{{ label }}</a>{% endfor %}
+    </nav>
+    <form class="history-filters" method="get">
+      <input name="q" value="{{ filters.q }}" placeholder="Buscar código, cliente, teléfono o ruta…">
+      <select name="origin"><option value="">Todos los orígenes</option>{% for value,label in origins %}<option value="{{ value }}" {% if filters.origin == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+      <select name="advisor"><option value="">Todos los asesores</option><option value="bot" {% if filters.advisor == 'bot' %}selected{% endif %}>Bot</option>{% for advisor in advisors %}<option value="{{ advisor.id }}" {% if filters.advisor == advisor.id|stringformat:'s' %}selected{% endif %}>{{ advisor.get_full_name|default:advisor.username }}</option>{% endfor %}</select>
+      <input type="hidden" name="state" value="{{ filters.state }}">{% if filters.channel %}<input type="hidden" name="channel" value="{{ filters.channel }}">{% endif %}
+      <button class="history-filter-btn" type="submit"><span class="mdi mdi-filter-outline"></span> Filtrar</button>
+    </form>
+    {% if rows %}<div class="history-table-wrap"><table class="history-table">
+      <thead><tr><th>Código / Cliente</th><th>Ruta</th><th>Precio</th><th>Generada por</th><th>Canal</th><th>Fecha</th><th>Estado</th><th>Acciones</th></tr></thead>
+      <tbody>{% for row in rows %}<tr>
+        <td><div class="history-code">{{ row.quote.codigo }}</div><div class="history-client">{{ row.quote.lead.cliente.nombre|default:row.quote.lead.cliente.telefono }}</div></td>
+        <td>{{ row.quote.lead.distrito_origen|default:'?' }} → {{ row.quote.lead.distrito_destino|default:'?' }}</td>
+        <td>{% if row.revision %}<strong>S/ {{ row.revision.precio_final|unlocalize }}</strong><div class="history-client">v{{ row.revision.numero }}</div>{% else %}Sin revisión{% endif %}</td>
+        <td>{% if row.quote.asesor %}{{ row.quote.asesor.get_full_name|default:row.quote.asesor.username }}{% else %}Bot{% endif %}</td>
+        <td>{% if row.quote.channel %}{{ row.quote.channel.nombre }}{% else %}Sin canal{% endif %}</td>
+        <td>{{ row.quote.creada_en|date:'d/m/Y H:i' }}</td>
+        <td><span class="history-status {{ row.quote.estado }}">{{ row.quote.get_estado_display }}</span></td>
+        <td><div class="history-actions">
+          <a href="{% url 'dashboard-whatsapp-cotizacion-detalle' row.quote.id %}" title="Ver detalle"><span class="mdi mdi-eye-outline"></span> Ver</a>
+          {% if row.quote.estado == 'borrador' and row.quote.solicitud_id %}<a href="{% url 'dashboard-whatsapp-crear-cotizacion' row.quote.solicitud_id %}"><span class="mdi mdi-pencil-outline"></span> Editar</a><form method="post" action="{% url 'dashboard-whatsapp-cotizacion-accion' row.quote.id %}">{% csrf_token %}<input type="hidden" name="state" value="cancelada"><button class="danger" type="submit">Cancelar</button></form>{% endif %}
+          {% if row.quote.estado == 'enviada' or row.quote.estado == 'entregada' %}<form method="post" action="{% url 'dashboard-whatsapp-cotizacion-accion' row.quote.id %}">{% csrf_token %}<input type="hidden" name="state" value="en_negociacion"><button type="submit">Negociación</button></form>{% endif %}
+          {% if row.quote.estado == 'enviada' or row.quote.estado == 'entregada' or row.quote.estado == 'en_negociacion' %}<form method="post" action="{% url 'dashboard-whatsapp-cotizacion-accion' row.quote.id %}">{% csrf_token %}<input type="hidden" name="state" value="aceptada"><button type="submit">Aceptar</button></form>{% endif %}
+        </div></td>
+      </tr>{% endfor %}</tbody>
+    </table></div><div class="history-pagination"><span>{{ page.start_index }}–{{ page.end_index }} de {{ page.paginator.count }}</span>{% if page.has_previous %}<a href="?page={{ page.previous_page_number }}&state={{ filters.state }}">Anterior</a>{% endif %}{% if page.has_next %}<a href="?page={{ page.next_page_number }}&state={{ filters.state }}">Siguiente</a>{% endif %}</div>
+    {% else %}<div class="history-empty">No existen cotizaciones con estos filtros.</div>{% endif %}
+  </section>
+</div>
+{% endblock %}

@@ -20,7 +20,8 @@ from apps.leads.models import Lead
 
 from . import models as whatsapp_models
 from .models import BotSchedule, ConfiguracionBot, MensajeWhatsappProcesado, WhatsAppChannel
-from .services import download_whatsapp_image, send_whatsapp_message
+from .services import download_whatsapp_image, download_whatsapp_media, send_whatsapp_message
+from .status import apply_status, extract_statuses
 from .utils import extract_event, should_bot_reply, should_bot_handle_lead, evaluar_mixto_inteligente, evaluar_conversacion_avanzada, _marcar_derivacion
 
 logger = logging.getLogger(__name__)
@@ -50,6 +51,11 @@ def _receive_message(request):
     except json.JSONDecodeError:
         logger.warning("Payload WhatsApp invalido.")
         return JsonResponse({"ok": False, "error": "invalid_json"}, status=400)
+
+    statuses = extract_statuses(payload)
+    if statuses:
+        updated = sum(1 for status in statuses if apply_status(status))
+        return JsonResponse({"ok": True, "statuses": len(statuses), "updated": updated})
 
     event = extract_event(payload)
     if not event or not event["phone"]:
@@ -92,6 +98,32 @@ def _receive_message(request):
             response = _receive_image(cliente, active_lead, event)
             _complete_message(processed)
             return response
+        if event["type"] in {"audio", "document"}:
+            active_lead = active_lead or Lead.objects.create(
+                cliente=cliente, estado=Lead.NUEVO, whatsapp_channel=channel
+            )
+            result = download_whatsapp_media(cliente, active_lead, event)
+            label = "[Audio recibido]" if event["type"] == "audio" else "[Documento recibido]"
+            if event.get("caption"):
+                label += f" {event['caption']}"
+            Conversacion.objects.create(
+                cliente=cliente, mensaje_entrada=label, mensaje_salida="",
+                canal=Conversacion.CANAL_WHATSAPP,
+            )
+            _complete_message(processed)
+            return JsonResponse({"ok": True, "media_saved": result.get("saved", False)})
+        if event["type"] == "location":
+            active_lead = active_lead or Lead.objects.create(
+                cliente=cliente, estado=Lead.NUEVO, whatsapp_channel=channel
+            )
+            Conversacion.objects.create(
+                cliente=cliente,
+                mensaje_entrada=f"[Ubicación recibida] {event['text']}",
+                mensaje_salida="",
+                canal=Conversacion.CANAL_WHATSAPP,
+            )
+            _complete_message(processed)
+            return JsonResponse({"ok": True, "location_saved": True})
 
         bot_deberia_responder = should_bot_reply(lead=active_lead, channel=channel)
         if event["type"] != "text" or not event["text"]:
@@ -188,6 +220,10 @@ def _receive_message(request):
         if active_lead and not active_lead.requiere_asesor:
             try:
                 conf = ConfiguracionBot.obtener(channel=channel)
+                if conf.modo_operacion == "recopilar":
+                    active_lead.refresh_from_db()
+                    if active_lead.precio_recomendado or active_lead.precio_cotizado:
+                        _marcar_derivacion(active_lead, ["Ficha completada en modo recopilar datos"])
                 if conf.modo_atencion == "mixto" and active_lead.lista_objetos:
                     evaluation = evaluar_mixto_inteligente(active_lead)
                     if evaluation["requiere_asesor"]:
@@ -384,6 +420,16 @@ def bot_settings(request):
         return JsonResponse({
             "bot_activo": conf.bot_activo,
             "modo_atencion": conf.modo_atencion,
+            "modo_operacion": conf.modo_operacion,
+            "zona_horaria": conf.zona_horaria,
+            "transferir_fuera_horario": conf.transferir_fuera_horario,
+            "confianza_minima": float(conf.confianza_minima),
+            "margen_minimo_porcentaje": float(conf.margen_minimo_porcentaje),
+            "espera_asesor_minutos": conf.espera_asesor_minutos,
+            "seguimiento_horas": conf.seguimiento_horas,
+            "asesor_predeterminado_id": conf.asesor_predeterminado_id,
+            "reglas_automaticas": conf.reglas_automaticas,
+            "mensaje_bienvenida": conf.mensaje_bienvenida,
             "hora_inicio_bot": conf.hora_inicio_bot.strftime("%H:%M") if hasattr(conf.hora_inicio_bot, "strftime") else str(conf.hora_inicio_bot or ""),
             "hora_fin_bot": conf.hora_fin_bot.strftime("%H:%M") if hasattr(conf.hora_fin_bot, "strftime") else str(conf.hora_fin_bot or ""),
             "lunes_activo": conf.lunes_activo,
@@ -430,6 +476,15 @@ def bot_settings(request):
         })
 
     data = json.loads(request.body)
+    if "modo_operacion" in data and data["modo_operacion"] in dict(whatsapp_models.MODOS_OPERACION):
+        conf.modo_operacion = data["modo_operacion"]
+        legacy = {
+            "asesor": ("humano", False),
+            "recopilar": ("bot", True),
+            "automatica": ("bot", True),
+            "hibrido": ("mixto", True),
+        }[conf.modo_operacion]
+        conf.modo_atencion, conf.bot_activo = legacy
     for field in [
         "bot_activo", "modo_atencion",
         "lunes_activo", "martes_activo", "miercoles_activo",
@@ -439,6 +494,8 @@ def bot_settings(request):
     ]:
         if field in data:
             setattr(conf, field, data[field])
+    if "modo_atencion" in data and "modo_operacion" not in data:
+        conf.modo_operacion = {"humano": "asesor", "bot": "automatica", "mixto": "hibrido"}.get(conf.modo_atencion, "automatica")
     if "hora_inicio_bot" in data:
         conf.hora_inicio_bot = datetime.strptime(data["hora_inicio_bot"], "%H:%M").time()
     if "hora_fin_bot" in data:

@@ -43,7 +43,6 @@ def _resumen_pagos(servicio):
 
 
 @login_required
-@role_required("Administrador", "Supervisor", "Asesor de Ventas", "Conductor", "Ayudante")
 def lista_reservas(request):
     user = request.user
     servicios = Servicio.objects.select_related(

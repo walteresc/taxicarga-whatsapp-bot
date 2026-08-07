@@ -82,7 +82,7 @@ def _recency_weight(fecha):
     if not fecha:
         return 1.0
     delta = (timezone.localdate() - fecha).days
-    if delta <= 90:
+    if delta <= 120:
         return 1.0
     if delta <= 180:
         return 0.9

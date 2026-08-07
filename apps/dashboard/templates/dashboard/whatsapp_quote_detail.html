@@ -1,0 +1,108 @@
+{% extends "dashboard/base.html" %}
+{% load l10n %}
+
+{% block title %}{{ quote.codigo }} | TaxiCarga{% endblock %}
+
+{% block extra_head %}
+<style>
+  .detail-wrap { max-width:1500px; margin:0 auto; padding:24px; color:#182230; }
+  .detail-head { display:flex; justify-content:space-between; gap:14px; align-items:center; margin-bottom:18px; }
+  .detail-title { display:flex; align-items:center; gap:11px; }
+  .detail-title a { color:#667085; font-size:22px; text-decoration:none; }
+  .detail-title h1 { margin:0; font-size:22px; }
+  .detail-status { padding:5px 9px; border-radius:13px; background:#fff4e5; color:#b54708; font-size:11px; font-weight:700; }
+  .detail-head-actions { display:flex; gap:8px; }
+  .detail-head-actions button,.detail-head-actions a { border:1px solid #d5dae1; border-radius:7px; padding:8px 11px; background:#fff; color:#475467; text-decoration:none; cursor:pointer; }
+  .detail-steps { display:grid; grid-template-columns:repeat(4,1fr); margin-bottom:16px; background:#fff; border:1px solid #e3e7ed; border-radius:10px; overflow:hidden; }
+  .detail-step { position:relative; padding:14px; border-right:1px solid #edf0f2; }
+  .detail-step:last-child { border:0; }
+  .detail-step span { color:#667085; font-size:11px; }
+  .detail-step strong { display:block; margin-top:4px; font-size:13px; }
+  .detail-grid { display:grid; grid-template-columns:1.35fr .85fr; gap:16px; align-items:start; }
+  .detail-main { display:grid; gap:16px; }
+  .detail-card { background:#fff; border:1px solid #e3e7ed; border-radius:10px; overflow:hidden; }
+  .detail-card-title { padding:13px 15px; border-bottom:1px solid #edf0f2; font-weight:750; }
+  .detail-card-body { padding:15px; }
+  .info-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:12px 18px; }
+  .info-item span { display:block; color:#7a8492; font-size:11px; margin-bottom:4px; }
+  .info-item strong { font-size:13px; word-break:break-word; }
+  .price-box { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+  .price-item { background:#f8fafb; border-radius:8px; padding:11px; }
+  .price-item span { color:#7a8492; font-size:11px; }
+  .price-item strong { display:block; margin-top:4px; font-size:18px; }
+  .revision { border:1px solid #e8ebef; border-radius:8px; margin-bottom:10px; padding:12px; }
+  .revision:last-child { margin:0; }
+  .revision-head { display:flex; justify-content:space-between; gap:10px; font-weight:700; }
+  .revision-meta { color:#7a8492; font-size:11px; margin-top:4px; }
+  .revision-message { margin-top:10px; padding:11px; border-radius:8px; background:#e8f8e7; color:#24492b; white-space:pre-wrap; font-size:12px; }
+  .timeline { position:relative; }
+  .timeline-event { position:relative; padding:0 0 16px 22px; border-left:2px solid #e5e8ec; margin-left:5px; }
+  .timeline-event::before { content:''; position:absolute; left:-6px; top:2px; width:10px; height:10px; border-radius:50%; background:#f57c00; }
+  .timeline-event:last-child { padding-bottom:0; }
+  .timeline-event strong { font-size:12px; }
+  .timeline-event div { color:#667085; font-size:11px; margin-top:3px; }
+  .quick-actions { display:grid; gap:8px; }
+  .quick-actions a,.quick-actions button { width:100%; border:1px solid #d5dae1; border-radius:7px; padding:9px; background:#fff; color:#475467; text-align:center; text-decoration:none; cursor:pointer; }
+  .quick-actions .primary { background:#f57c00; border-color:#f57c00; color:#fff; }
+  @media print { .sidebar,.dashboard-header,.detail-head-actions,.quick-actions{display:none!important}.main-area{padding:0}.detail-wrap{padding:0}.detail-grid{grid-template-columns:1fr} }
+  @media(max-width:1000px){.detail-grid{grid-template-columns:1fr}.detail-steps{grid-template-columns:1fr 1fr}}
+  @media(max-width:650px){.detail-wrap{padding:14px}.detail-head{align-items:flex-start}.detail-head-actions{flex-wrap:wrap}.info-grid,.price-box{grid-template-columns:1fr}.detail-steps{grid-template-columns:1fr}}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="detail-wrap">
+  <header class="detail-head">
+    <div class="detail-title"><a href="{% url 'dashboard-whatsapp-cotizaciones' %}">←</a><h1>{{ quote.codigo }}</h1><span class="detail-status">{{ quote.get_estado_display }}</span></div>
+    <div class="detail-head-actions"><button type="button" onclick="window.print()"><span class="mdi mdi-printer-outline"></span> Imprimir / PDF</button></div>
+  </header>
+
+  <section class="detail-steps">
+    <div class="detail-step"><span>Creada</span><strong>{{ quote.creada_en|date:'d/m/Y H:i' }}</strong></div>
+    <div class="detail-step"><span>Última revisión</span><strong>{% if latest %}v{{ latest.numero }} · {{ latest.creada_en|date:'d/m/Y H:i' }}{% else %}Sin revisión{% endif %}</strong></div>
+    <div class="detail-step"><span>Último envío</span><strong>{% if latest and latest.enviada_en %}{{ latest.enviada_en|date:'d/m/Y H:i' }}{% else %}No enviada{% endif %}</strong></div>
+    <div class="detail-step"><span>Estado</span><strong>{{ quote.get_estado_display }}</strong></div>
+  </section>
+
+  <div class="detail-grid">
+    <main class="detail-main">
+      <section class="detail-card"><div class="detail-card-title">Información general</div><div class="detail-card-body"><div class="info-grid">
+        <div class="info-item"><span>Cliente</span><strong>{{ lead.cliente.nombre|default:lead.cliente.telefono }}</strong></div>
+        <div class="info-item"><span>Teléfono</span><strong>{{ lead.cliente.telefono }}</strong></div>
+        <div class="info-item"><span>Canal</span><strong>{% if quote.channel %}{{ quote.channel.nombre }}{% else %}Sin canal{% endif %}</strong></div>
+        <div class="info-item"><span>Generada por</span><strong>{% if quote.asesor %}{{ quote.asesor.get_full_name|default:quote.asesor.username }}{% else %}Bot{% endif %}</strong></div>
+      </div></div></section>
+
+      <section class="detail-card"><div class="detail-card-title">Detalle del servicio</div><div class="detail-card-body"><div class="info-grid">
+        <div class="info-item"><span>Ruta</span><strong>{{ lead.distrito_origen|default:'?' }} → {{ lead.distrito_destino|default:'?' }}</strong></div>
+        <div class="info-item"><span>Fecha y hora</span><strong>{% if lead.fecha_servicio %}{{ lead.fecha_servicio|date:'d/m/Y' }}{% else %}Por confirmar{% endif %} · {{ lead.horario_servicio|default:'Por confirmar' }}</strong></div>
+        <div class="info-item"><span>Origen</span><strong>{{ lead.direccion_origen|default:'Sin dirección' }} · Piso {{ lead.piso_origen|default:'?' }}</strong></div>
+        <div class="info-item"><span>Destino</span><strong>{{ lead.direccion_destino|default:'Sin dirección' }} · Piso {{ lead.piso_destino|default:'?' }}</strong></div>
+        <div class="info-item"><span>Inventario</span><strong>{{ lead.lista_objetos|default:'No declarado' }}</strong></div>
+        <div class="info-item"><span>Objetos pesados</span><strong>{{ lead.objetos_pesados|default:'Ninguno declarado' }}</strong></div>
+      </div></div></section>
+
+      {% if latest %}<section class="detail-card"><div class="detail-card-title">Precio y versión actual</div><div class="detail-card-body">
+        <div class="price-box"><div class="price-item"><span>Versión</span><strong>{{ latest.numero }}</strong></div><div class="price-item"><span>Precio final</span><strong>S/ {{ latest.precio_final|unlocalize }}</strong></div><div class="price-item"><span>Vigencia</span><strong>{{ latest.vigencia_dias }} días</strong></div></div>
+        <div class="info-item" style="margin-top:13px"><span>Condiciones</span><strong>{{ latest.condiciones|default:'Sin condiciones adicionales'|linebreaksbr }}</strong></div>
+      </div></section>{% endif %}
+
+      <section class="detail-card"><div class="detail-card-title">Revisiones ({{ revisions|length }})</div><div class="detail-card-body">
+        {% for revision in revisions %}<article class="revision"><div class="revision-head"><span>Versión {{ revision.numero }}</span><span>S/ {{ revision.precio_final|unlocalize }}</span></div><div class="revision-meta">{{ revision.creada_en|date:'d/m/Y H:i' }} · {% if revision.creada_por %}{{ revision.creada_por.get_full_name|default:revision.creada_por.username }}{% else %}Sistema{% endif %} · {% if revision.enviada %}Enviada{% else %}Borrador{% endif %}</div>{% if revision.mensaje_whatsapp %}<div class="revision-message">{{ revision.mensaje_whatsapp }}</div>{% endif %}</article>{% empty %}<div style="color:#667085">Sin revisiones.</div>{% endfor %}
+      </div></section>
+    </main>
+
+    <aside class="detail-main">
+      <section class="detail-card"><div class="detail-card-title">Historial / Auditoría</div><div class="detail-card-body timeline">
+        {% for event in events %}<div class="timeline-event"><strong>{{ event.title }}</strong><div>{{ event.date|date:'d/m/Y H:i' }}</div><div>{{ event.detail }}</div></div>{% endfor %}
+      </div></section>
+      <section class="detail-card"><div class="detail-card-title">Acciones rápidas</div><div class="detail-card-body quick-actions">
+        {% if quote.estado == 'borrador' and latest %}<form method="post" action="{% url 'dashboard-whatsapp-cotizacion-accion' quote.id %}">{% csrf_token %}<input type="hidden" name="next" value="detail"><input type="hidden" name="action" value="send"><button class="primary" type="submit">Enviar por WhatsApp</button></form>{% endif %}
+        {% if quote.estado == 'borrador' and quote.solicitud_id %}<a class="primary" href="{% url 'dashboard-whatsapp-crear-cotizacion' quote.solicitud_id %}">Crear nueva revisión</a>{% endif %}
+        {% if quote.estado == 'enviada' or quote.estado == 'entregada' %}<form method="post" action="{% url 'dashboard-whatsapp-cotizacion-accion' quote.id %}">{% csrf_token %}<input type="hidden" name="next" value="detail"><input type="hidden" name="state" value="en_negociacion"><button type="submit">Marcar en negociación</button></form>{% endif %}
+        {% if quote.estado == 'enviada' or quote.estado == 'entregada' or quote.estado == 'en_negociacion' %}<form method="post" action="{% url 'dashboard-whatsapp-cotizacion-accion' quote.id %}">{% csrf_token %}<input type="hidden" name="next" value="detail"><input type="hidden" name="state" value="aceptada"><button class="primary" type="submit">Marcar aceptada</button></form>{% endif %}
+      </div></section>
+    </aside>
+  </div>
+</div>
+{% endblock %}

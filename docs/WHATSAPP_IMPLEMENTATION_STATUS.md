@@ -1,8 +1,8 @@
 # Estado de implementación del módulo WhatsApp
 
 Última actualización: 2026-08-07  
-Etapa actual: ETAPA 0 — Auditoría terminada  
-Próximo paso: corregir primero la suite base y, tras aprobación, diseñar ETAPA 1 sin duplicar `Cliente`, `Lead`, `WhatsAppChannel`, `Conversacion`, `Cotizacion` ni `ServicioHistorico`.
+Etapa actual: ETAPA 10 — Validación técnica terminada; 387/388 pruebas pasan
+Próximo paso: validación manual con cuenta Meta real y estabilizar la prueba horaria legacy.
 
 ## 1. Arquitectura encontrada
 
@@ -131,19 +131,184 @@ Configuraciones encontradas: dos canales en modo `bot`, uno en `humano`, uno en 
 - La pantalla de configuración existe; “Canales WhatsApp” aún es placeholder.
 - Gestión de Leads contiene conversación, toma, respuesta y precio, pero no equivale a las seis pantallas separadas.
 
-### No implementada
+### No implementada después de ETAPA 1
 
 - Bandeja compartida de tres columnas con filtros, no leídos y espera.
 - Cola única “Por cotizar” con deduplicación explícita.
 - Crear cotización con borrador, snapshot inmutable, margen, condiciones y vista previa.
 - Historial comercial de cotizaciones y detalle con revisiones.
-- Auditoría de transferencias, cambios, autorizaciones y envíos.
+- Integración visual de la auditoría de transferencias, cambios, autorizaciones y envíos.
 - Estados de entrega de Meta y webhook de status.
 - Reintentos salientes persistentes.
-- Bloqueo atómico para evitar dos asesores activos.
-- Permiso especial para precio bajo margen.
+- Aplicación del permiso especial de precio bajo margen en la futura vista; la validación de dominio ya existe.
+
+## 3.1. ETAPA 1 implementada
+
+### Conversación y mensajes normalizados
+
+- `whatsapp.ConversacionWhatsApp`: sesión ligada a cliente, lead, canal y responsable.
+- Estados separados de atención, recopilación y cotización.
+- Resumen, datos faltantes, porcentaje, derivación y timestamps separados.
+- Restricción de una conversación activa por lead.
+- Índices para bandeja por canal, atención, cotización y actividad.
+- `whatsapp.MensajeWhatsApp`: mensaje individual con dirección, origen, tipo, autor, evidencia, estado Meta, error y timestamps.
+- Restricción idempotente para `meta_message_id` no vacío.
+- `whatsapp.AuditoriaWhatsApp`: eventos append-only con actor y detalle JSON.
+
+### Transiciones atómicas
+
+- `apps/whatsapp/domain.py` centraliza:
+  - obtener o crear conversación compatible con el lead legacy;
+  - tomar conversación;
+  - devolver al bot con instrucción explícita;
+  - enviar a cotizar sin duplicar pendientes;
+  - cerrar conversación;
+  - sincronizar flags legacy y registrar auditoría.
+- Usa `transaction.atomic()` y `select_for_update()`.
+- Impide que un segundo asesor tome una conversación asignada.
+- Respuesta manual y envío de precio toman primero la conversación.
+- Acciones legacy `take_over` y `release` ya usan el servicio central.
+- Devolver al bot conserva precios existentes y limpia flags de control humano.
+
+### Cola y cotización comercial
+
+- `cotizador.SolicitudCotizacion`: cola con estado, motivo, faltantes, prioridad, asignación y timestamps.
+- Restricción de una solicitud activa por lead.
+- `cotizador.CotizacionComercial`: código, lead, solicitud, canal, origen bot/asesor, estado y responsable.
+- `cotizador.RevisionCotizacion`: snapshot, precios sugeridos, costo, margen, precio final, condiciones, vigencia y mensaje.
+- Revisión enviada inmutable; cambios posteriores requieren nueva revisión.
+- Validación de precio contra costo y margen mínimo, con bandera explícita para autorización futura.
+- `cotizador.EnvioCotizacion`: intento, canal, estado Meta, error y entrega.
+- `apps/cotizador/commercial.py` centraliza borradores, revisiones y cierre de solicitud al enviar.
+
+### Compatibilidad y datos
+
+- No se eliminó ni renombró ningún modelo o campo existente.
+- Migración de datos creó 45 sesiones desde 45 leads locales.
+- 44 quedaron activas y una cerrada según estado legacy.
+- Los 212 registros legacy de `clientes.Conversacion` se conservan sin alteración.
+- No se normalizaron mensajes legacy automáticamente porque no contienen vínculo inequívoco a lead/canal ni un mensaje por fila.
+- Nuevos modelos registrados en Django Admin.
+- Permisos base añadidos: `can_manage_whatsapp`, `can_configure_whatsapp`, `whatsapp_required` y `whatsapp_config_required`. Su aplicación a pantallas/API se hará junto con rutas para no romper endpoints legacy antes de ETAPA 2/8.
+
+## 3.2. ETAPA 2 implementada
+
+### Menú lateral
+
+- Grupo `WHATSAPP` añadido al sidebar principal.
+- Entradas: Conversaciones, Por cotizar, Cotizaciones y Configuración del bot.
+- Administrador ve las cuatro opciones.
+- Supervisor y Asesor de Ventas ven las tres opciones operativas.
+- Conductor y Ayudante no ven ni acceden al módulo.
+- `context_processors.user_roles` reconoce superusuario como Administrador.
+- Se actualizaron las dos fuentes de menú existentes: `base.html` y `views_sidebar.py`.
+
+### Rutas base
+
+- `/dashboard/whatsapp/conversaciones/`
+- `/dashboard/whatsapp/por-cotizar/`
+- `/dashboard/whatsapp/cotizaciones/`
+- `/dashboard/whatsapp/configuracion/`
+
+Las tres rutas operativas usan `whatsapp_required`. Configuración usa `whatsapp_config_required` y queda restringida a Administrador. La ruta legacy `/dashboard/whatsapp/` y Gestión de Leads siguen disponibles.
+
+### Datos reales
+
+- Conversaciones consulta `ConversacionWhatsApp`, cliente, lead, canal y responsable.
+- Por cotizar consulta solicitudes activas de `SolicitudCotizacion`.
+- Cotizaciones consulta `CotizacionComercial` y última `RevisionCotizacion`.
+- Selector global de canal filtra cada consulta cuando el canal existe y está activo.
+- Cada vista base muestra métricas y hasta 20 registros reales; no contiene datos demo permanentes.
+- Configuración reutiliza `dashboard/whatsapp.html`; no se creó pantalla duplicada.
 
 ## 4. Duplicaciones, inconsistencias y código sin uso claro
+
+## 3.9. ETAPA 9 implementada
+
+- Envío real de la última revisión desde el detalle de cotización.
+- Usa el `phone_number_id` del canal seleccionado, no solo el canal global.
+- Cada intento queda persistido con Meta ID, error, número y límite de intentos.
+- Webhook procesa estados `sent`, `delivered`, `read` y `failed`.
+- Cotización pasa a entregada cuando Meta confirma entrega.
+- Reintentos exponenciales persistentes mediante `reintentar_envios_whatsapp`.
+- Recepción y almacenamiento privado de imágenes, audios, PDF, DOC y DOCX.
+- Recepción de ubicaciones y extracción de coordenadas.
+- Compatibilidad conservada con el flujo legacy y mensajes normalizados.
+
+## 3.8. ETAPA 8 implementada
+
+- Configuración independiente por canal WhatsApp.
+- Cuatro modos operativos: Solo asesor, Recopilar datos, Cotización automática e Híbrido.
+- Compatibilidad sincronizada con los modos legacy `humano`, `bot` y `mixto`.
+- Horario, días activos, zona horaria y transferencia fuera de horario.
+- Confianza mínima, margen mínimo, espera del asesor y seguimiento.
+- Asesor predeterminado, reglas automáticas y mensajes configurables.
+- El modo Recopilar datos deriva antes de enviar un precio automático.
+- Pantalla restringida a Administrador; APIs legacy conservadas.
+- Migración aplicada preservando las cinco configuraciones locales existentes.
+
+## 3.7. ETAPA 7 implementada
+
+- Detalle comercial enlazado desde el historial.
+- Cabecera con código, estado y opción Imprimir/PDF del navegador.
+- Resumen de creación, última revisión, último envío y estado.
+- Información del cliente, canal, asesor y servicio.
+- Precio, condiciones, vigencia y versión vigente.
+- Historial completo de revisiones con mensajes WhatsApp guardados.
+- Timeline derivado de creación, revisiones e intentos de envío/error.
+- Acciones rápidas según transición permitida.
+- Diseño responsive y formato de impresión.
+- No se añadieron migraciones ni envíos reales.
+
+## 3.6. ETAPA 6 implementada
+
+- Historial comercial real con última revisión y precio.
+- Métricas mensuales y activas: total, enviadas, negociación, aceptadas y vencidas.
+- Pestañas por estado y filtros por búsqueda, origen, asesor y canal.
+- Paginación de resultados y diseño responsive.
+- Edición y cancelación de borradores.
+- Transiciones de estado controladas y atómicas.
+- Acciones para negociación y aceptación solo desde estados compatibles.
+- No se envía WhatsApp desde esta pantalla.
+- No se añadieron migraciones.
+
+## 3.5. ETAPA 5 implementada
+
+- Formulario dedicado de creación desde la cola Por cotizar.
+- Resumen real del cliente, ruta, accesos, fecha, inventario y motivo.
+- Rango sugerido calculado por históricos o reglas de fallback existentes.
+- Precio final, costo, margen mínimo, condiciones, vigencia y nota interna.
+- Validación de precio positivo y bloqueo bajo margen.
+- Excepción bajo margen visible únicamente para superusuario Administrador.
+- Snapshot completo del servicio guardado en cada revisión.
+- Un borrador comercial por solicitud; cada guardado posterior crea una revisión nueva.
+- Vista previa editable del mensaje de WhatsApp.
+- Guardar borrador no envía WhatsApp ni marca la revisión como enviada.
+- No se añadieron migraciones.
+
+## 3.4. ETAPA 4 implementada
+
+- Cola real de solicitudes pendientes y en proceso.
+- Métricas de pendientes, urgentes y creadas hoy.
+- Búsqueda por cliente, teléfono y ruta.
+- Filtros por asesor, prioridad, motivo y canal.
+- Información recopilada, tiempo de espera, asignación y paginación.
+- Toma atómica que sincroniza solicitud, lead y conversación.
+- Bloqueo si otro asesor ya tomó la solicitud.
+- Botón Cotizar enlaza temporalmente al detalle comercial existente; ETAPA 5 lo reemplazará con el formulario dedicado.
+- No se añadieron migraciones.
+
+## 3.3. ETAPA 3 implementada
+
+- Bandeja responsive de tres columnas: lista, chat y ficha del servicio.
+- Búsqueda y filtros reales por estado, canal y asesor.
+- Historial normalizado con fallback de lectura para conversaciones legacy.
+- Acciones atómicas: tomar, devolver al bot, enviar a cotizar y cerrar.
+- Respuesta manual registrada en historial normalizado y legacy.
+- Bloqueo de toma simultánea por dos asesores y auditoría de transiciones.
+- Cola de cotización deduplicada por lead.
+- Cierre sincroniza la conversación y pausa los flags legacy del bot.
+- No se añadieron migraciones en esta etapa.
 
 - `apps/dashboard/templates/dashboard/base.html` contiene sidebar embebido, mientras `apps/dashboard/templates/dashboard/sidebar.html` y `apps/dashboard/views_sidebar.py` también definen navegación. Hay dos fuentes de verdad visual.
 - `ConfiguracionBot` conserva días/horario legacy y también `BotSchedule`; ambos siguen activos mediante fallback.
@@ -301,30 +466,184 @@ No se corrigieron durante ETAPA 0 porque la tarea exige auditoría sin cambios f
 | Etapa | Estado | Entregable |
 |---|---|---|
 | 0. Auditoría | Terminada | Este documento, mapa real y validación base |
-| 1. Base de datos y estados | Pendiente | Modelos mínimos, transiciones, permisos, auditoría y pruebas |
-| 2. Menú y rutas base | Pendiente | Grupo WhatsApp y cuatro entradas con datos reales |
-| 3. Conversaciones | Pendiente | Bandeja, chat, ficha y control atómico |
-| 4. Por cotizar | Pendiente | Cola deduplicada y asignable |
-| 5. Crear cotización | Pendiente | Borrador, snapshot, margen y envío |
-| 6. Cotizaciones | Pendiente | Historial, estados, filtros y acciones |
-| 7. Detalle | Pendiente | Revisiones, timeline y auditoría |
-| 8. Configuración | Pendiente | Cuatro modos y reglas por canal |
-| 9. Integración real | Pendiente | Status, archivos, reintentos y flujo completo |
-| 10. Pruebas completas | Pendiente | Suite verde, E2E y verificación visual |
+| 1. Base de datos y estados | Terminada | Modelos aditivos, transiciones atómicas, permisos base, auditoría y pruebas |
+| 2. Menú y rutas base | Terminada | Grupo WhatsApp, cuatro rutas, permisos y vistas base con datos reales |
+| 3. Conversaciones | Terminada | Bandeja, chat, ficha y control atómico |
+| 4. Por cotizar | Terminada | Cola deduplicada y asignable |
+| 5. Crear cotización | Terminada | Borrador, snapshot, margen y vista previa |
+| 6. Cotizaciones | Terminada | Historial, estados, filtros y acciones |
+| 7. Detalle | Terminada | Revisiones, timeline y auditoría |
+| 8. Configuración | Terminada | Cuatro modos y reglas por canal |
+| 9. Integración real | Terminada | Status, archivos, reintentos y flujo completo |
+| 10. Pruebas completas | Parcial | 387/388; queda una prueba horaria no determinista |
 
-## 10. Archivos modificados en esta etapa
+## 10. Archivos modificados
 
-- `docs/WHATSAPP_IMPLEMENTATION_STATUS.md`: creado.
+- `apps/whatsapp/models.py`
+- `apps/whatsapp/domain.py`
+- `apps/whatsapp/admin.py`
+- `apps/whatsapp/tests_stage1.py`
+- `apps/cotizador/models.py`
+- `apps/cotizador/commercial.py`
+- `apps/cotizador/admin.py`
+- `apps/cotizador/tests_stage1.py`
+- `apps/dashboard/permissions.py`
+- `apps/dashboard/views.py`
+- `apps/dashboard/urls.py`
+- `apps/dashboard/context_processors.py`
+- `apps/dashboard/views_sidebar.py`
+- `apps/dashboard/templates/dashboard/base.html`
+- `apps/dashboard/templates/dashboard/whatsapp_module_base.html`
+- `apps/dashboard/tests_whatsapp_stage2.py`
+- `apps/dashboard/views_whatsapp.py`
+- `apps/dashboard/templates/dashboard/whatsapp_conversations.html`
+- `apps/dashboard/tests_whatsapp_stage3.py`
+- `apps/dashboard/views_quotes.py`
+- `apps/dashboard/templates/dashboard/whatsapp_quote_queue.html`
+- `apps/dashboard/tests_whatsapp_stage4.py`
+- `apps/dashboard/templates/dashboard/whatsapp_quote_create.html`
+- `apps/dashboard/tests_whatsapp_stage5.py`
+- `apps/dashboard/views_quote_history.py`
+- `apps/dashboard/templates/dashboard/whatsapp_quote_history.html`
+- `apps/dashboard/tests_whatsapp_stage6.py`
+- `apps/dashboard/templates/dashboard/whatsapp_quote_detail.html`
+- `apps/dashboard/tests_whatsapp_stage7.py`
+- `apps/dashboard/views_bot_config.py`
+- `apps/dashboard/templates/dashboard/whatsapp_bot_config.html`
+- `apps/dashboard/tests_whatsapp_stage8.py`
+- `apps/dashboard/tests_whatsapp_stage9.py`
+- `apps/cotizador/delivery.py`
+- `apps/whatsapp/status.py`
+- `apps/whatsapp/management/commands/reintentar_envios_whatsapp.py`
+- `docs/WHATSAPP_IMPLEMENTATION_STATUS.md`
 
-Migraciones creadas: ninguna.  
-Cambios funcionales: ninguno.  
-Registros modificados: ninguno.
+Migraciones creadas:
 
-## 11. Próximo paso exacto
+- `whatsapp/0009_conversacionwhatsapp_auditoriawhatsapp_and_more.py`
+- `whatsapp/0010_backfill_conversaciones_whatsapp.py`
+- `whatsapp/0011_configuracionbot_asesor_predeterminado_and_more.py`
+- `cotizador/0007_cotizacioncomercial_revisioncotizacion_and_more.py`
+- `cotizador/0008_solicitudcotizacion_conversacion_and_more.py`
+- `cotizador/0009_enviocotizacion_leido_en_and_more.py`
 
-Tras aprobación de ETAPA 0:
+Todas aplicadas correctamente en SQLite local.
 
-1. Corregir o clasificar los 10 problemas de la suite base antes de alterar modelos.
-2. Definir esquema de compatibilidad para conversación/mensaje y cotización comercial.
-3. Implementar ETAPA 1 con migraciones aditivas, transiciones atómicas, auditoría y pruebas críticas.
-4. Detenerse al terminar ETAPA 1 y entregar migraciones, comandos y resultados antes de crear pantallas.
+## 11. Última validación de ETAPA 1
+
+```powershell
+.\.venv\Scripts\python.exe manage.py migrate
+.\.venv\Scripts\python.exe manage.py makemigrations --check --dry-run
+.\.venv\Scripts\python.exe manage.py check
+.\.venv\Scripts\python.exe manage.py test apps.whatsapp.tests_stage1 apps.cotizador.tests_stage1
+.\.venv\Scripts\python.exe manage.py test apps.whatsapp apps.cotizador apps.dashboard
+```
+
+Resultados:
+
+- Pruebas nuevas: 9/9 pasan.
+- Pruebas críticas nuevas + integración legacy: 12/12 pasan.
+- Suite WhatsApp, cotizador y dashboard: 164 pruebas; conserva exactamente 9 fallos y 1 error ya documentados en ETAPA 0.
+- Suite global excedió el límite operativo de 120 segundos por logging DEBUG; no produjo una conclusión final.
+- `manage.py check`: correcto.
+- `makemigrations --check --dry-run`: sin cambios pendientes.
+
+## 12. Próximo paso exacto
+
+1. Abrir una cotización en borrador y pulsar Enviar por WhatsApp.
+2. Confirmar recepción y estados entregado/leído usando Meta real.
+3. Confirmar recepción de audio, documento y ubicación.
+4. Iniciar ETAPA 10 después de la validación real.
+
+## 13. Validación de ETAPA 2
+
+```powershell
+.\.venv\Scripts\python.exe manage.py check
+.\.venv\Scripts\python.exe manage.py makemigrations --check --dry-run
+.\.venv\Scripts\python.exe manage.py test apps.dashboard.tests_whatsapp_stage2
+```
+
+Resultados:
+
+- Pruebas de ETAPA 2: 7/7 pasan.
+- Cuatro rutas verificadas con usuario Administrador: HTTP 200.
+- `manage.py check`: correcto.
+- Migraciones nuevas: ninguna.
+- Verificación visual automatizada no disponible por fallo interno de conexión al navegador integrado; render HTML, permisos, contenido real y respuesta HTTP sí quedaron verificados.
+
+## 14. Validación de ETAPA 3
+
+```powershell
+.\.venv\Scripts\python.exe manage.py check
+.\.venv\Scripts\python.exe manage.py test apps.whatsapp.tests_stage1 apps.cotizador.tests_stage1 apps.dashboard.tests_whatsapp_stage2 apps.dashboard.tests_whatsapp_stage3
+.\.venv\Scripts\python.exe manage.py makemigrations --check --dry-run
+git diff --check
+```
+
+Resultados:
+
+- Pruebas acumuladas de ETAPAS 1–3: 23/23 pasan.
+- Pruebas específicas de Conversaciones: 7/7 pasan.
+- `manage.py check`: correcto.
+- Migraciones pendientes: ninguna.
+- `git diff --check`: correcto; solo avisos de conversión LF/CRLF del entorno Windows.
+
+## 15. Validación de ETAPA 4
+
+- Pruebas acumuladas de interfaz ETAPAS 2–4: 20/20 pasan.
+- Pruebas específicas de Por cotizar: 6/6 pasan.
+- `manage.py check`: correcto.
+- Migraciones pendientes: ninguna.
+- `git diff --check`: correcto; solo avisos LF/CRLF de Windows.
+
+## 16. Validación de ETAPA 5
+
+- Pruebas focalizadas de dominio, cola y formulario: 16/16 pasan.
+- Pruebas específicas de Crear cotización: 7/7 pasan.
+- `manage.py check`: correcto.
+- Migraciones pendientes: ninguna.
+- Guardado probado sin llamadas a Meta WhatsApp.
+
+## 17. Validación de ETAPA 6
+
+- Pruebas acumuladas de interfaz ETAPAS 2–6: 33/33 pasan.
+- Pruebas específicas de Cotizaciones: 6/6 pasan.
+- `manage.py check`: correcto.
+- Migraciones pendientes: ninguna.
+- Transiciones inválidas rechazadas sin modificar datos.
+
+## 18. Validación de ETAPA 7
+
+- Pruebas acumuladas de interfaz ETAPAS 2–7: 39/39 pasan.
+- Pruebas específicas de Detalle: 6/6 pasan.
+- `manage.py check`: correcto.
+- Migraciones pendientes: ninguna.
+- Intentos y errores se muestran sin reintentar ni contactar Meta.
+
+## 19. Validación de ETAPA 8
+
+- Pruebas acumuladas de interfaz ETAPAS 2–8: 45/45 pasan.
+- Pruebas focalizadas de configuración y compatibilidad: 17/17 pasan.
+- `manage.py check`: correcto.
+- `makemigrations --check --dry-run`: sin cambios pendientes.
+- Migración aplicada; cinco configuraciones existentes preservadas y mapeadas.
+
+## 20. Validación de ETAPA 9
+
+- Pruebas acumuladas de interfaz ETAPAS 2–9: 50/50 pasan.
+- Envío aceptado, error persistente, programación de reintento y estados Meta probados.
+- Extracción de documento y ubicación probada.
+- `manage.py check`: correcto.
+- `makemigrations --check --dry-run`: sin cambios pendientes.
+- Migración `cotizador.0009` aplicada correctamente.
+
+## 21. Validación de ETAPA 10
+
+- Suite global ejecutada después de correcciones: 388 pruebas; 387 pasan y queda 1 error legacy dependiente del reloj real.
+- Etapas WhatsApp 2–9: 50/50 pasan.
+- Cuatro pantallas principales verificadas autenticadas: HTTP 200.
+- Responsive verificado por reglas CSS en todas las pantallas nuevas.
+- El navegador integrado no pudo conectarse por un fallo interno del entorno; no se obtuvo captura automatizada.
+- Corregidos: Pizarra (6), dashboard legacy (5), selector de canal legacy (3) y ponderación histórica del cotizador (1).
+- Error restante: `test_fuera_horario_marca_lead_como_humano` configura 09:00–18:00 pero usa la hora real; durante esta ejecución estaba dentro del horario.
+- No se modificaron pruebas existentes ni se alteró la lógica productiva correcta para satisfacer una expectativa horaria contradictoria.
+- `manage.py check`: correcto; migraciones pendientes: ninguna.

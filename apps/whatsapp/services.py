@@ -14,21 +14,32 @@ ALLOWED_IMAGE_MIME_TYPES = {
     "image/png": ".png",
     "image/webp": ".webp",
 }
+ALLOWED_ATTACHMENT_MIME_TYPES = {
+    **ALLOWED_IMAGE_MIME_TYPES,
+    "audio/ogg": ".ogg",
+    "audio/mpeg": ".mp3",
+    "audio/mp4": ".m4a",
+    "application/pdf": ".pdf",
+    "application/msword": ".doc",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+}
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
+MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
 
 
-def send_whatsapp_message(to, body):
+def send_whatsapp_message(to, body, channel=None):
     """Envía un mensaje simple o de plantilla por WhatsApp."""
     import json
     import requests
 
     is_template = isinstance(body, dict) and body.get("type") == "template"
 
-    if not settings.WHATSAPP_ACCESS_TOKEN or not settings.WHATSAPP_PHONE_NUMBER_ID:
+    phone_number_id = getattr(channel, "phone_number_id", "") or settings.WHATSAPP_PHONE_NUMBER_ID
+    if not settings.WHATSAPP_ACCESS_TOKEN or not phone_number_id:
         logger.info("WhatsApp no configurado. Mensaje omitido para %s: %s", to, body)
         return {"sent": False, "reason": "missing_credentials"}
 
-    url = f"https://graph.facebook.com/{settings.WHATSAPP_API_VERSION}/{settings.WHATSAPP_PHONE_NUMBER_ID}/messages"
+    url = f"https://graph.facebook.com/{settings.WHATSAPP_API_VERSION}/{phone_number_id}/messages"
     headers = {
         "Authorization": f"Bearer {settings.WHATSAPP_ACCESS_TOKEN}",
         "Content-Type": "application/json",
@@ -170,6 +181,18 @@ def send_whatsapp_template_message(to):
 
 
 def download_whatsapp_image(cliente, lead, event):
+    return _download_whatsapp_media(
+        cliente, lead, event, ALLOWED_IMAGE_MIME_TYPES, MAX_IMAGE_BYTES
+    )
+
+
+def download_whatsapp_media(cliente, lead, event):
+    return _download_whatsapp_media(
+        cliente, lead, event, ALLOWED_ATTACHMENT_MIME_TYPES, MAX_ATTACHMENT_BYTES
+    )
+
+
+def _download_whatsapp_media(cliente, lead, event, allowed_types, max_bytes):
     if not settings.WHATSAPP_ACCESS_TOKEN:
         return {"saved": False, "reason": "missing_credentials"}
     if not event.get("media_id"):
@@ -189,16 +212,16 @@ def download_whatsapp_image(cliente, lead, event):
         metadata_response.raise_for_status()
         metadata = metadata_response.json()
         mime_type = metadata.get("mime_type") or event.get("mime_type", "")
-        if mime_type not in ALLOWED_IMAGE_MIME_TYPES:
+        if mime_type not in allowed_types:
             return {"saved": False, "reason": "unsupported_mime_type"}
 
         media_response = requests.get(metadata["url"], headers=headers, timeout=30)
         media_response.raise_for_status()
         content = media_response.content
-        if not content or len(content) > MAX_IMAGE_BYTES:
+        if not content or len(content) > max_bytes:
             return {"saved": False, "reason": "invalid_size"}
 
-        extension = ALLOWED_IMAGE_MIME_TYPES[mime_type]
+        extension = allowed_types[mime_type]
         filename = f"{event['media_id']}{extension}"
         evidence = EvidenciaWhatsapp(
             cliente=cliente,

@@ -1,0 +1,60 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}{{ title }} | TaxiCarga{% endblock %}
+
+{% block extra_head %}
+<style>
+  .wa-base-wrap { max-width: 1500px; margin: 0 auto; padding: 24px; }
+  .wa-base-heading { margin-bottom: 20px; }
+  .wa-base-heading h1 { margin: 0 0 5px; font-size: 25px; color: #172033; }
+  .wa-base-heading p { margin: 0; color: #667085; }
+  .wa-stat-grid { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); gap: 14px; margin-bottom: 20px; }
+  .wa-stat { background: #fff; border: 1px solid #e6e8ec; border-radius: 10px; padding: 17px; }
+  .wa-stat-label { color: #667085; font-size: 13px; }
+  .wa-stat-value { color: #172033; font-size: 27px; font-weight: 700; margin-top: 5px; }
+  .wa-table-card { background: #fff; border: 1px solid #e6e8ec; border-radius: 10px; overflow: hidden; }
+  .wa-table { width: 100%; border-collapse: collapse; }
+  .wa-table th { background: #f8f9fb; color: #667085; text-align: left; font-size: 12px; padding: 12px 15px; }
+  .wa-table td { border-top: 1px solid #eef0f3; color: #344054; padding: 13px 15px; font-size: 13px; }
+  .wa-table td:first-child { color: #172033; font-weight: 650; }
+  .wa-empty { padding: 40px 20px; text-align: center; color: #667085; }
+  @media (max-width: 1000px) { .wa-stat-grid { grid-template-columns: repeat(2, 1fr); } .wa-table-card { overflow-x: auto; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="wa-base-wrap">
+  <div class="wa-base-heading">
+    <h1>{{ title }}</h1>
+    <p>{{ subtitle }}</p>
+  </div>
+  <div class="wa-stat-grid">
+    {% for stat in stats %}
+      <div class="wa-stat">
+        <div class="wa-stat-label">{{ stat.label }}</div>
+        <div class="wa-stat-value">{{ stat.value }}</div>
+      </div>
+    {% endfor %}
+  </div>
+  <div class="wa-table-card">
+    {% if rows %}
+      <table class="wa-table">
+        <thead><tr>{% for column in columns %}<th>{{ column }}</th>{% endfor %}</tr></thead>
+        <tbody>
+          {% for row in rows %}
+            <tr>
+              <td>{{ row.primary }}</td>
+              <td>{{ row.secondary }}</td>
+              <td>{{ row.route }}</td>
+              <td>{{ row.status }}</td>
+              <td>{{ row.detail }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div class="wa-empty">{{ empty_message }}</div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

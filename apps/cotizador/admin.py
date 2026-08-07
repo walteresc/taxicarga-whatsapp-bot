@@ -1,6 +1,13 @@
 from django.contrib import admin
 
-from .models import Cotizacion, ServicioHistorico
+from .models import (
+    Cotizacion,
+    CotizacionComercial,
+    EnvioCotizacion,
+    RevisionCotizacion,
+    ServicioHistorico,
+    SolicitudCotizacion,
+)
 
 
 @admin.register(ServicioHistorico)
@@ -36,5 +43,34 @@ class CotizacionAdmin(admin.ModelAdmin):
         "fecha_creacion",
     )
     readonly_fields = ("fecha_creacion",)
+
+
+@admin.register(SolicitudCotizacion)
+class SolicitudCotizacionAdmin(admin.ModelAdmin):
+    list_display = ("id", "lead", "estado", "prioridad", "asignada_a", "creada_en")
+    list_filter = ("estado", "prioridad")
+    search_fields = ("lead__cliente__nombre", "lead__cliente__telefono", "motivo")
+
+
+class RevisionCotizacionInline(admin.TabularInline):
+    model = RevisionCotizacion
+    extra = 0
+    readonly_fields = ("numero", "precio_final", "enviada", "creada_en", "enviada_en")
+
+
+@admin.register(CotizacionComercial)
+class CotizacionComercialAdmin(admin.ModelAdmin):
+    list_display = ("codigo", "lead", "origen", "estado", "asesor", "creada_en")
+    list_filter = ("origen", "estado", "channel")
+    search_fields = ("codigo", "lead__cliente__nombre", "lead__cliente__telefono")
+    inlines = (RevisionCotizacionInline,)
+
+
+@admin.register(EnvioCotizacion)
+class EnvioCotizacionAdmin(admin.ModelAdmin):
+    list_display = ("revision", "channel", "estado", "intento", "creado_en")
+    list_filter = ("estado", "channel")
+    search_fields = ("meta_message_id", "revision__cotizacion__codigo")
+    readonly_fields = ("creado_en", "actualizado_en", "entregado_en")
 
 # Register your models here.

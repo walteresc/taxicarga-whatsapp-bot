@@ -6,7 +6,7 @@ from django.contrib.auth.forms import AuthenticationForm
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import LoginView
 from apps.dashboard.permissions import role_required, can_manage_pizarra,can_view_assigned_services,can_driver_update_status
-from django.db.models import Count, OuterRef, Subquery, Sum
+from django.db.models import Count, OuterRef, Prefetch, Subquery, Sum
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -17,11 +17,14 @@ from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
 from apps.clientes.models import Cliente, Conversacion
+from apps.cotizador.models import CotizacionComercial, RevisionCotizacion, SolicitudCotizacion
 from apps.cotizador.services import cotizar_lead
 from apps.leads.models import Lead
 from apps.servicios.services import crear_servicio_desde_lead
-from apps.whatsapp.models import BotSchedule, ConfiguracionBot, WhatsAppChannel
+from apps.whatsapp.models import BotSchedule, ConfiguracionBot, ConversacionWhatsApp, WhatsAppChannel
+from apps.whatsapp.domain import devolver_al_bot, obtener_o_crear_conversacion, tomar_conversacion
 from apps.whatsapp.services import send_whatsapp_message
+from apps.dashboard.permissions import whatsapp_config_required, whatsapp_required
 
 
 class DashboardLoginView(LoginView):
@@ -119,14 +122,12 @@ def lead_action(request, lead_id):
         else:
             messages.error(request, "Ingresa una fecha y hora valida para el seguimiento.")
     elif action == "take_over":
-        lead.atencion_humana = True
-        lead.vendedor_asignado = request.user
-        lead.estado = Lead.ASIGNADO
-        lead.save(update_fields=["atencion_humana", "vendedor_asignado", "estado"])
+        conversacion = obtener_o_crear_conversacion(lead)
+        tomar_conversacion(conversacion.id, request.user)
         messages.success(request, "Conversacion tomada. La respuesta automatica queda pausada.")
     elif action == "release":
-        lead.atencion_humana = False
-        lead.save(update_fields=["atencion_humana"])
+        conversacion = obtener_o_crear_conversacion(lead)
+        devolver_al_bot(conversacion.id, request.user, "esperar")
         messages.success(request, "Conversacion liberada. La respuesta automatica vuelve a estar activa.")
     elif action == "reactivate_bot":
         lead.atencion_humana = False
@@ -779,6 +780,8 @@ def _send_manual_reply(lead, reply, user):
     reply = reply.strip()
     if not reply:
         return False
+    conversacion_whatsapp = obtener_o_crear_conversacion(lead)
+    tomar_conversacion(conversacion_whatsapp.id, user)
     send_whatsapp_message(lead.cliente.telefono, reply)
     Conversacion.objects.create(
         cliente=lead.cliente,
@@ -800,6 +803,8 @@ def _send_quote(lead, price, custom_message, user):
     quoted_price = _decimal_or_none(price)
     if quoted_price is None or quoted_price <= 0:
         return False
+    conversacion_whatsapp = obtener_o_crear_conversacion(lead)
+    tomar_conversacion(conversacion_whatsapp.id, user)
     message = custom_message.strip() or _default_quote_message(lead, quoted_price)
     send_whatsapp_message(lead.cliente.telefono, message)
     Conversacion.objects.create(
@@ -916,6 +921,135 @@ def placeholder_whatsapp(request):
     return render(request, "dashboard/whatsapp.html", {
         "active_section": "whatsapp",
     })
+
+
+@login_required
+@whatsapp_required
+def whatsapp_conversaciones_base(request):
+    conversaciones = ConversacionWhatsApp.objects.select_related(
+        "cliente", "lead", "channel", "responsable"
+    )
+    channel_id = _active_channel_id(request)
+    if channel_id:
+        conversaciones = conversaciones.filter(channel_id=channel_id)
+    rows = [
+        {
+            "primary": conversacion.cliente.nombre or conversacion.cliente.telefono,
+            "secondary": conversacion.cliente.telefono,
+            "route": str(conversacion.channel) if conversacion.channel_id else "Sin canal",
+            "status": conversacion.get_estado_atencion_display(),
+            "detail": conversacion.responsable.get_full_name() or conversacion.responsable.username
+            if conversacion.responsable_id
+            else "Bot",
+        }
+        for conversacion in conversaciones[:20]
+    ]
+    return _render_whatsapp_base(
+        request,
+        title="Conversaciones",
+        subtitle="Bandeja compartida conectada a sesiones reales",
+        active_section="whatsapp-conversaciones",
+        stats=[
+            ("Total", conversaciones.count()),
+            ("Bot atendiendo", conversaciones.filter(estado_atencion=ConversacionWhatsApp.ATENCION_BOT).count()),
+            ("Asesor atendiendo", conversaciones.filter(estado_atencion=ConversacionWhatsApp.ATENCION_ASESOR).count()),
+            ("Por cotizar", conversaciones.filter(estado_cotizacion=ConversacionWhatsApp.COTIZACION_PENDIENTE).count()),
+        ],
+        rows=rows,
+        columns=("Cliente", "Telefono", "Canal", "Estado", "Responsable"),
+        empty_message="No existen conversaciones para el canal seleccionado.",
+    )
+
+
+@login_required
+@whatsapp_required
+def whatsapp_por_cotizar_base(request):
+    solicitudes = SolicitudCotizacion.objects.select_related(
+        "lead__cliente", "lead__whatsapp_channel", "asignada_a"
+    ).filter(estado__in=[SolicitudCotizacion.PENDIENTE, SolicitudCotizacion.EN_PROCESO])
+    channel_id = _active_channel_id(request)
+    if channel_id:
+        solicitudes = solicitudes.filter(lead__whatsapp_channel_id=channel_id)
+    rows = [
+        {
+            "primary": solicitud.lead.cliente.nombre or solicitud.lead.cliente.telefono,
+            "secondary": f"{solicitud.lead.distrito_origen or '?'} → {solicitud.lead.distrito_destino or '?'}",
+            "route": solicitud.motivo or "Revision manual",
+            "status": solicitud.get_estado_display(),
+            "detail": solicitud.asignada_a.username if solicitud.asignada_a_id else "Sin asignar",
+        }
+        for solicitud in solicitudes[:20]
+    ]
+    return _render_whatsapp_base(
+        request,
+        title="Por cotizar",
+        subtitle="Cola real de solicitudes pendientes",
+        active_section="whatsapp-por-cotizar",
+        stats=[
+            ("Pendientes", solicitudes.filter(estado=SolicitudCotizacion.PENDIENTE).count()),
+            ("En proceso", solicitudes.filter(estado=SolicitudCotizacion.EN_PROCESO).count()),
+            ("Urgentes", solicitudes.filter(prioridad=Lead.PRIORIDAD_URGENTE).count()),
+        ],
+        rows=rows,
+        columns=("Cliente", "Ruta", "Motivo", "Estado", "Asesor"),
+        empty_message="No existen solicitudes activas por cotizar.",
+    )
+
+
+@login_required
+@whatsapp_required
+def whatsapp_cotizaciones_base(request):
+    cotizaciones = CotizacionComercial.objects.select_related(
+        "lead__cliente", "channel", "asesor"
+    ).prefetch_related(
+        Prefetch("revisiones", queryset=RevisionCotizacion.objects.order_by("-numero"), to_attr="revisiones_ordenadas")
+    )
+    channel_id = _active_channel_id(request)
+    if channel_id:
+        cotizaciones = cotizaciones.filter(channel_id=channel_id)
+    rows = []
+    for cotizacion in cotizaciones[:20]:
+        revision = cotizacion.revisiones_ordenadas[0] if cotizacion.revisiones_ordenadas else None
+        rows.append({
+            "primary": cotizacion.codigo,
+            "secondary": cotizacion.lead.cliente.nombre or cotizacion.lead.cliente.telefono,
+            "route": f"S/ {revision.precio_final}" if revision else "Sin revision",
+            "status": cotizacion.get_estado_display(),
+            "detail": cotizacion.asesor.username if cotizacion.asesor_id else "Bot",
+        })
+    return _render_whatsapp_base(
+        request,
+        title="Cotizaciones",
+        subtitle="Historial comercial conectado a cotizaciones versionadas",
+        active_section="whatsapp-cotizaciones",
+        stats=[
+            ("Total", cotizaciones.count()),
+            ("Borradores", cotizaciones.filter(estado="borrador").count()),
+            ("Enviadas", cotizaciones.filter(estado__in=["enviada", "entregada"]).count()),
+            ("Aceptadas", cotizaciones.filter(estado="aceptada").count()),
+        ],
+        rows=rows,
+        columns=("Codigo", "Cliente", "Precio", "Estado", "Generada por"),
+        empty_message="Todavia no existen cotizaciones comerciales.",
+    )
+
+
+@login_required
+@whatsapp_config_required
+def whatsapp_configuracion(request):
+    return render(request, "dashboard/whatsapp.html", {"active_section": "whatsapp-configuracion"})
+
+
+def _render_whatsapp_base(request, **context):
+    context["stats"] = [{"label": label, "value": value} for label, value in context["stats"]]
+    return render(request, "dashboard/whatsapp_module_base.html", context)
+
+
+def _active_channel_id(request):
+    channel_id = request.GET.get("channel", "")
+    if not channel_id.isdigit():
+        return None
+    return WhatsAppChannel.objects.filter(pk=int(channel_id), activo=True).values_list("id", flat=True).first()
 
 
 @login_required

@@ -1,0 +1,89 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Crear cotización | TaxiCarga{% endblock %}
+
+{% block extra_head %}
+<style>
+  .quote-create { max-width: 1500px; margin: 0 auto; padding: 24px; color: #182230; }
+  .quote-create-head { display:flex; align-items:center; gap:12px; margin-bottom:18px; }
+  .quote-create-head a { color:#5f6b7a; font-size:22px; text-decoration:none; }
+  .quote-create-head h1 { margin:0; font-size:25px; }
+  .quote-create-grid { display:grid; grid-template-columns: 1fr 1.08fr; gap:16px; align-items:start; }
+  .quote-panel { background:#fff; border:1px solid #e3e7ed; border-radius:10px; overflow:hidden; }
+  .quote-panel-title { padding:14px 16px; border-bottom:1px solid #e8ebef; font-weight:750; }
+  .quote-panel-body { padding:16px; }
+  .service-progress { height:5px; background:#e8ebef; border-radius:5px; overflow:hidden; margin:8px 0 16px; }
+  .service-progress span { display:block; height:100%; background:#20b486; }
+  .summary-row { display:grid; grid-template-columns:130px 1fr; gap:8px; padding:9px 0; border-bottom:1px solid #f0f2f4; font-size:13px; }
+  .summary-row:last-child { border:0; }
+  .summary-row label { color:#7a8492; }
+  .summary-row strong { font-weight:650; word-break:break-word; }
+  .suggestion { display:flex; justify-content:space-between; gap:12px; padding:14px; border:1px solid #ffd6ad; background:#fff8ef; border-radius:8px; margin-bottom:15px; }
+  .suggestion span { color:#8a4b08; font-size:12px; }
+  .suggestion strong { color:#e56f00; font-size:21px; white-space:nowrap; }
+  .form-grid { display:grid; grid-template-columns:1fr 1fr; gap:13px; }
+  .field { display:flex; flex-direction:column; gap:6px; }
+  .field.full { grid-column:1/-1; }
+  .field label { font-size:12px; font-weight:700; color:#475467; }
+  .field input, .field textarea { border:1px solid #d5dae1; border-radius:7px; padding:10px; font:inherit; color:#26323b; }
+  .field textarea { min-height:72px; resize:vertical; }
+  .margin-note { grid-column:1/-1; padding:10px; background:#f7f8fa; border-radius:7px; color:#667085; font-size:12px; }
+  .whatsapp-preview { grid-column:1/-1; padding:13px; border-radius:8px; background:#e8f8e7; color:#24492b; font-size:13px; white-space:pre-wrap; }
+  .draft-version { display:inline-flex; margin-bottom:12px; padding:5px 9px; background:#fff4e5; color:#b54708; border-radius:13px; font-size:11px; font-weight:700; }
+  .quote-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:16px; }
+  .quote-actions a, .quote-actions button { border-radius:7px; padding:10px 16px; font-weight:700; text-decoration:none; cursor:pointer; }
+  .quote-cancel { border:1px solid #d5dae1; color:#475467; background:#fff; }
+  .quote-save { border:1px solid #f57c00; color:#fff; background:#f57c00; }
+  @media(max-width:1000px){ .quote-create-grid{grid-template-columns:1fr;} }
+  @media(max-width:650px){ .quote-create{padding:14px;} .form-grid{grid-template-columns:1fr;} .field.full,.margin-note,.whatsapp-preview{grid-column:1;} }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="quote-create">
+  <div class="quote-create-head"><a href="{% url 'dashboard-whatsapp-por-cotizar' %}" title="Volver">←</a><h1>Crear cotización</h1></div>
+  <div class="quote-create-grid">
+    <section class="quote-panel">
+      <div class="quote-panel-title">Resumen del servicio</div>
+      <div class="quote-panel-body">
+        <div style="display:flex;justify-content:space-between;font-size:12px"><span>Información</span><strong>{% if solicitud.conversacion %}{{ solicitud.conversacion.porcentaje_informacion }}{% else %}0{% endif %}%</strong></div>
+        <div class="service-progress"><span style="width:{% if solicitud.conversacion %}{{ solicitud.conversacion.porcentaje_informacion }}{% else %}0{% endif %}%"></span></div>
+        <div class="summary-row"><label>Cliente</label><strong>{{ lead.cliente.nombre|default:lead.cliente.telefono }}</strong></div>
+        <div class="summary-row"><label>Ruta</label><strong>{{ lead.distrito_origen|default:'?' }} → {{ lead.distrito_destino|default:'?' }}</strong></div>
+        <div class="summary-row"><label>Origen</label><strong>{{ lead.direccion_origen|default:'Sin dirección' }} · Piso {{ lead.piso_origen|default:'?' }} · Ascensor: {{ lead.ascensor_origen|yesno:'Sí,No,?' }}</strong></div>
+        <div class="summary-row"><label>Destino</label><strong>{{ lead.direccion_destino|default:'Sin dirección' }} · Piso {{ lead.piso_destino|default:'?' }} · Ascensor: {{ lead.ascensor_destino|yesno:'Sí,No,?' }}</strong></div>
+        <div class="summary-row"><label>Fecha y hora</label><strong>{% if lead.fecha_servicio %}{{ lead.fecha_servicio|date:'d/m/Y' }}{% else %}Por confirmar{% endif %} · {{ lead.horario_servicio|default:'Por confirmar' }}</strong></div>
+        <div class="summary-row"><label>Inventario</label><strong>{{ lead.lista_objetos|default:'No declarado'|linebreaksbr }}</strong></div>
+        <div class="summary-row"><label>Objetos pesados</label><strong>{{ lead.objetos_pesados|default:'Ninguno declarado' }}</strong></div>
+        <div class="summary-row"><label>Motivo</label><strong>{{ solicitud.motivo|default:'Revisión manual' }}</strong></div>
+      </div>
+    </section>
+
+    <section class="quote-panel">
+      <div class="quote-panel-title">Propuesta de precio</div>
+      <div class="quote-panel-body">
+        {% if latest %}<span class="draft-version">Borrador {{ existing.codigo }} · versión {{ latest.numero }}</span>{% endif %}
+        <div class="suggestion"><div><span>Precio sugerido</span><div style="font-size:11px;color:#8a94a3">{{ technical.servicios_similares_encontrados }} servicios similares</div></div><strong>S/ {{ technical.precio_min }} – {{ technical.precio_max }}</strong></div>
+        <form method="post">{% csrf_token %}
+          <div class="form-grid">
+            <div class="field"><label>Precio final (S/)</label><input id="price" name="price" type="number" min="0.01" step="0.01" value="{{ form.price }}" required></div>
+            <div class="field"><label>Vigencia (días)</label><input name="validity" type="number" min="1" max="90" value="{{ form.validity }}" required></div>
+            <div class="field"><label>Costo estimado (S/)</label><input id="cost" name="cost" type="number" min="0.01" step="0.01" value="{{ form.cost }}"></div>
+            <div class="field"><label>Margen mínimo (%)</label><input id="margin" name="margin" type="number" min="0.01" step="0.01" value="{{ form.margin }}"></div>
+            <div class="margin-note">Si indicas costo, el sistema impide guardar un precio inferior al margen mínimo. Solo Administrador puede autorizar excepción.</div>
+            {% if request.user.is_superuser %}<div class="field full"><label><input type="checkbox" name="authorize_low_margin" value="1" style="width:auto"> Autorizar precio bajo margen</label></div>{% endif %}
+            <div class="field full"><label>Condiciones</label><textarea name="conditions">{{ form.conditions }}</textarea></div>
+            <div class="field full"><label>Nota interna (no visible al cliente)</label><textarea name="internal_note">{{ form.internal_note }}</textarea></div>
+            <div class="field full"><label>Mensaje para WhatsApp</label><textarea id="message" name="message">{{ form.message }}</textarea></div>
+            <div class="whatsapp-preview"><strong>Vista previa WhatsApp</strong><br><span id="previewText">{{ form.message }}</span></div>
+          </div>
+          <div class="quote-actions"><a class="quote-cancel" href="{% url 'dashboard-whatsapp-por-cotizar' %}">Cancelar</a><button class="quote-save" type="submit">Guardar borrador</button></div>
+        </form>
+      </div>
+    </section>
+  </div>
+</div>
+<script>
+  (function(){ const message=document.getElementById('message'); const preview=document.getElementById('previewText'); if(message&&preview){ message.addEventListener('input',function(){preview.textContent=message.value;}); } })();
+</script>
+{% endblock %}

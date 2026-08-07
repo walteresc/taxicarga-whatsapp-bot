@@ -9,6 +9,7 @@
   <link href="https://cdn.jsdelivr.net/npm/vuetify@3.7.6/dist/vuetify.min.css" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; }
+    .sr-only { position:absolute!important; width:1px!important; height:1px!important; padding:0!important; margin:-1px!important; overflow:hidden!important; clip:rect(0,0,0,0)!important; white-space:nowrap!important; border:0!important; }
     body {
       margin: 0;
       font-family: 'Roboto', sans-serif;
@@ -131,7 +132,7 @@
 </head>
 <body>
   <header class="dashboard-header">
-    <div class="system-name">TaxiCarga</div>
+    <div class="system-name">TaxiCarga<span class="sr-only"> — Panel Comercial</span></div>
 
     {% if header_canales %}
     <select id="header-channel-select"
@@ -181,6 +182,16 @@
         <a href="/dashboard/servicios/" class="sidebar-link {% if active_section == 'servicios' %}sidebar-link-active{% endif %}"><span class="mdi mdi-briefcase-outline"></span><span>Reservas</span></a>
         <a href="/dashboard/clientes/" class="sidebar-link {% if active_section == 'clientes' %}sidebar-link-active{% endif %}"><span class="mdi mdi-account-group-outline"></span><span>Clientes</span></a>
 
+        {% if is_admin or is_supervisor or is_asesor %}
+        <div class="sidebar-section-label">WHATSAPP</div>
+        <a href="{% url 'dashboard-whatsapp-conversaciones' %}" class="sidebar-link {% if active_section == 'whatsapp-conversaciones' %}sidebar-link-active{% endif %}"><span class="mdi mdi-message-text-outline"></span><span>Conversaciones</span></a>
+        <a href="{% url 'dashboard-whatsapp-por-cotizar' %}" class="sidebar-link {% if active_section == 'whatsapp-por-cotizar' %}sidebar-link-active{% endif %}"><span class="mdi mdi-clock-alert-outline"></span><span>Por cotizar</span></a>
+        <a href="{% url 'dashboard-whatsapp-cotizaciones' %}" class="sidebar-link {% if active_section == 'whatsapp-cotizaciones' %}sidebar-link-active{% endif %}"><span class="mdi mdi-file-document-outline"></span><span>Cotizaciones</span></a>
+        {% if is_admin %}
+        <a href="{% url 'dashboard-whatsapp-configuracion' %}" class="sidebar-link {% if active_section == 'whatsapp-configuracion' or active_section == 'whatsapp' %}sidebar-link-active{% endif %}"><span class="mdi mdi-robot-outline"></span><span>Configuración del bot</span></a>
+        {% endif %}
+        {% endif %}
+
         <div class="sidebar-section-label">OPERACIONES</div>
         <a href="/dashboard/pizarra/" class="sidebar-link {% if active_section == 'pizarra' %}sidebar-link-active{% endif %}"><span class="mdi mdi-bulletin-board"></span><span>Pizarra</span></a>
         <div class="sidebar-section-label" style="padding-top:8px;">GESTIÓN DE CAMPO</div>
@@ -191,10 +202,6 @@
         <div class="sidebar-section-label" style="padding-top:8px;">GESTIÓN DE FLOTA</div>
         <a href="/dashboard/flota/vehiculos/" class="sidebar-link {% if active_section == 'flota' %}sidebar-link-active{% endif %}"><span class="mdi mdi-truck"></span><span>Vehículos</span></a>
         <a href="/dashboard/flota/mantenimientos/" class="sidebar-link {% if active_section == 'flota' %}sidebar-link-active{% endif %}"><span class="mdi mdi-book-open-page-variant"></span><span>Mantenimientos</span></a>
-
-        <div class="sidebar-section-label">CONFIGURACIÓN</div>
-        <a href="{% url 'dashboard-whatsapp' %}" class="sidebar-link {% if active_section == 'whatsapp' %}sidebar-link-active{% endif %}"><span class="mdi mdi-robot-outline"></span><span>Bot WhatsApp</span></a>
-        <a href="{% url 'dashboard-canales' %}" class="sidebar-link {% if active_section == 'canales' %}sidebar-link-active{% endif %}"><span class="mdi mdi-whatsapp"></span><span>Canales WhatsApp</span></a>
 
         <div class="sidebar-section-label">ANALÍTICA</div>
         <a href="/dashboard/reportes/" class="sidebar-link {% if active_section == 'reportes' %}sidebar-link-active{% endif %}"><span class="mdi mdi-chart-bar"></span><span>Reportes</span></a>

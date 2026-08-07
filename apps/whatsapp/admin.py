@@ -1,9 +1,12 @@
 from django.contrib import admin
 
 from .models import (
+    AuditoriaWhatsApp,
     BotSchedule,
     ConfiguracionBot,
+    ConversacionWhatsApp,
     EvidenciaWhatsapp,
+    MensajeWhatsApp,
     MensajeWhatsappProcesado,
     WhatsAppChannel,
 )
@@ -51,3 +54,36 @@ class ConfiguracionBotAdmin(admin.ModelAdmin):
 class BotScheduleAdmin(admin.ModelAdmin):
     list_display = ("channel", "day_of_week", "start_time", "end_time", "is_active")
     list_filter = ("day_of_week", "is_active")
+
+
+@admin.register(ConversacionWhatsApp)
+class ConversacionWhatsAppAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "cliente",
+        "channel",
+        "estado_atencion",
+        "estado_recopilacion",
+        "estado_cotizacion",
+        "responsable",
+        "ultima_actividad",
+    )
+    list_filter = ("estado_atencion", "estado_recopilacion", "estado_cotizacion", "channel")
+    search_fields = ("cliente__nombre", "cliente__telefono", "resumen", "motivo_derivacion")
+    readonly_fields = ("creada_en", "actualizada_en")
+
+
+@admin.register(MensajeWhatsApp)
+class MensajeWhatsAppAdmin(admin.ModelAdmin):
+    list_display = ("id", "conversacion", "origen", "tipo", "estado", "fecha_mensaje")
+    list_filter = ("origen", "tipo", "estado")
+    search_fields = ("meta_message_id", "contenido")
+    readonly_fields = [field.name for field in MensajeWhatsApp._meta.fields]
+
+
+@admin.register(AuditoriaWhatsApp)
+class AuditoriaWhatsAppAdmin(admin.ModelAdmin):
+    list_display = ("evento", "conversacion", "actor", "creado_en")
+    list_filter = ("evento", "creado_en")
+    search_fields = ("evento", "conversacion__cliente__nombre")
+    readonly_fields = [field.name for field in AuditoriaWhatsApp._meta.fields]

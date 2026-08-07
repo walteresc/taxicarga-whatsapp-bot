@@ -1,0 +1,92 @@
+{% extends "dashboard/base.html" %}
+{% load l10n %}
+
+{% block title %}Configuración del bot | TaxiCarga{% endblock %}
+
+{% block extra_head %}
+<style>
+  .bot-config { max-width:1500px; margin:0 auto; padding:24px; color:#182230; }
+  .config-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; }
+  .config-head h1 { margin:0; font-size:25px; }
+  .channel-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:18px; }
+  .channel-card { display:block; background:#fff; border:1px solid #e3e7ed; border-radius:10px; padding:15px; color:#182230; text-decoration:none; }
+  .channel-card.active { border:2px solid #f57c00; padding:14px; }
+  .channel-name { display:flex; align-items:center; gap:8px; font-weight:750; }
+  .channel-name .mdi { color:#13a05a; font-size:22px; }
+  .channel-meta { color:#667085; font-size:11px; margin-top:7px; }
+  .channel-state { display:inline-flex; margin-top:8px; padding:4px 8px; border-radius:12px; background:#eaf8f1; color:#027a48; font-size:11px; }
+  .config-empty { padding:45px; text-align:center; background:#fff; border:1px solid #e3e7ed; border-radius:10px; color:#667085; }
+  .mode-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:16px; }
+  .mode-option input { position:absolute; opacity:0; }
+  .mode-card { display:block; height:100%; border:1px solid #dfe3e8; border-radius:9px; padding:14px; cursor:pointer; background:#fff; }
+  .mode-option input:checked + .mode-card { border:2px solid #f57c00; padding:13px; background:#fff8ef; }
+  .mode-card strong { display:block; margin:8px 0 5px; font-size:13px; }
+  .mode-card span { color:#667085; font-size:11px; line-height:1.4; }
+  .mode-card .mdi { color:#f57c00; font-size:24px; }
+  .config-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  .config-panel { background:#fff; border:1px solid #e3e7ed; border-radius:10px; overflow:hidden; }
+  .config-panel-title { padding:13px 15px; border-bottom:1px solid #edf0f2; font-weight:750; }
+  .config-panel-body { padding:15px; }
+  .field-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .field { display:flex; flex-direction:column; gap:6px; }
+  .field.full { grid-column:1/-1; }
+  .field label,.section-label { color:#475467; font-size:11px; font-weight:700; }
+  .field input,.field select,.field textarea { border:1px solid #d5dae1; border-radius:7px; padding:9px 10px; font:inherit; color:#344054; }
+  .field textarea { min-height:72px; resize:vertical; }
+  .days { display:flex; flex-wrap:wrap; gap:7px; margin-top:8px; }
+  .check-chip input { position:absolute; opacity:0; }
+  .check-chip span { display:block; padding:6px 9px; border:1px solid #d5dae1; border-radius:14px; color:#667085; font-size:11px; cursor:pointer; }
+  .check-chip input:checked + span { background:#eaf8f1; border-color:#56c596; color:#027a48; }
+  .rule-list { display:grid; gap:9px; }
+  .rule { display:flex; gap:8px; align-items:flex-start; font-size:12px; color:#475467; }
+  .save-row { display:flex; justify-content:flex-end; margin-top:16px; }
+  .save-btn { border:0; border-radius:7px; padding:11px 18px; background:#f57c00; color:#fff; font-weight:750; cursor:pointer; }
+  @media(max-width:1100px){.channel-grid{grid-template-columns:1fr 1fr}.mode-grid{grid-template-columns:1fr 1fr}}
+  @media(max-width:800px){.config-grid{grid-template-columns:1fr}}
+  @media(max-width:600px){.bot-config{padding:14px}.channel-grid,.mode-grid,.field-grid{grid-template-columns:1fr}}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="bot-config">
+  <header class="config-head"><h1>Configuración del Bot</h1></header>
+  <section class="channel-grid">
+    {% for card in channel_cards %}<a class="channel-card {% if channel and channel.id == card.channel.id %}active{% endif %}" href="?channel={{ card.channel.id }}">
+      <div class="channel-name"><span class="mdi mdi-whatsapp"></span>{{ card.channel.nombre }}</div>
+      <div class="channel-meta">{{ card.channel.numero_visible|default:'Número no visible' }} · {% if card.channel.asesor %}{{ card.channel.asesor.get_full_name|default:card.channel.asesor.username }}{% else %}Sin asesor{% endif %}</div>
+      <span class="channel-state">{% if card.channel.activo %}Activo{% else %}Inactivo{% endif %}{% if card.config %} · {{ card.config.get_modo_operacion_display }}{% endif %}</span>
+    </a>{% empty %}<div class="config-empty">No existen canales WhatsApp.</div>{% endfor %}
+  </section>
+
+  {% if channel and config %}<form method="post">{% csrf_token %}<input type="hidden" name="channel_id" value="{{ channel.id }}">
+    <div class="section-label" style="margin-bottom:8px">Modo de atención para {{ channel.nombre }}</div>
+    <section class="mode-grid">
+      <label class="mode-option"><input type="radio" name="modo_operacion" value="asesor" {% if config.modo_operacion == 'asesor' %}checked{% endif %}><span class="mode-card"><span class="mdi mdi-account-headset"></span><strong>Solo asesor</strong><span>El bot no responde. Las conversaciones pasan al equipo.</span></span></label>
+      <label class="mode-option"><input type="radio" name="modo_operacion" value="recopilar" {% if config.modo_operacion == 'recopilar' %}checked{% endif %}><span class="mode-card"><span class="mdi mdi-clipboard-text-outline"></span><strong>Recopilar datos</strong><span>El bot completa la ficha y deriva antes de dar precio.</span></span></label>
+      <label class="mode-option"><input type="radio" name="modo_operacion" value="automatica" {% if config.modo_operacion == 'automatica' %}checked{% endif %}><span class="mode-card"><span class="mdi mdi-robot-happy-outline"></span><strong>Cotización automática</strong><span>El bot recopila, calcula y cotiza casos simples.</span></span></label>
+      <label class="mode-option"><input type="radio" name="modo_operacion" value="hibrido" {% if config.modo_operacion == 'hibrido' %}checked{% endif %}><span class="mode-card"><span class="mdi mdi-account-switch-outline"></span><strong>Híbrido</strong><span>El bot atiende y deriva según reglas y confianza.</span></span></label>
+    </section>
+
+    <div class="config-grid">
+      <section class="config-panel"><div class="config-panel-title">Horario de atención</div><div class="config-panel-body">
+        <div class="field-grid"><div class="field"><label>Hora de inicio</label><input type="time" name="hora_inicio_bot" value="{{ config.hora_inicio_bot|time:'H:i' }}" required></div><div class="field"><label>Hora de fin</label><input type="time" name="hora_fin_bot" value="{{ config.hora_fin_bot|time:'H:i' }}" required></div><div class="field full"><label>Zona horaria</label><input name="zona_horaria" value="{{ config.zona_horaria }}" required></div></div>
+        <div class="days">
+          <label class="check-chip"><input type="checkbox" name="lunes_activo" value="1" {% if config.lunes_activo %}checked{% endif %}><span>Lun</span></label><label class="check-chip"><input type="checkbox" name="martes_activo" value="1" {% if config.martes_activo %}checked{% endif %}><span>Mar</span></label><label class="check-chip"><input type="checkbox" name="miercoles_activo" value="1" {% if config.miercoles_activo %}checked{% endif %}><span>Mié</span></label><label class="check-chip"><input type="checkbox" name="jueves_activo" value="1" {% if config.jueves_activo %}checked{% endif %}><span>Jue</span></label><label class="check-chip"><input type="checkbox" name="viernes_activo" value="1" {% if config.viernes_activo %}checked{% endif %}><span>Vie</span></label><label class="check-chip"><input type="checkbox" name="sabado_activo" value="1" {% if config.sabado_activo %}checked{% endif %}><span>Sáb</span></label><label class="check-chip"><input type="checkbox" name="domingo_activo" value="1" {% if config.domingo_activo %}checked{% endif %}><span>Dom</span></label>
+        </div>
+        <label class="rule" style="margin-top:14px"><input type="checkbox" name="transferir_fuera_horario" value="1" {% if config.transferir_fuera_horario %}checked{% endif %}>Transferir fuera de horario a la cola humana</label>
+      </div></section>
+
+      <section class="config-panel"><div class="config-panel-title">Reglas y límites</div><div class="config-panel-body"><div class="field-grid">
+        <div class="field"><label>Confianza mínima (%)</label><input type="number" min="0" max="100" step="0.01" name="confianza_minima" value="{{ config.confianza_minima|unlocalize }}" required></div>
+        <div class="field"><label>Margen mínimo (%)</label><input type="number" min="0" max="100" step="0.01" name="margen_minimo_porcentaje" value="{{ config.margen_minimo_porcentaje|unlocalize }}" required></div>
+        <div class="field"><label>Espera asesor (min)</label><input type="number" min="1" max="1440" name="espera_asesor_minutos" value="{{ config.espera_asesor_minutos }}" required></div>
+        <div class="field"><label>Seguimiento (horas)</label><input type="number" min="1" max="720" name="seguimiento_horas" value="{{ config.seguimiento_horas }}" required></div>
+        <div class="field full"><label>Asesor predeterminado</label><select name="asesor_predeterminado"><option value="">Sin asignar</option>{% for advisor in advisors %}<option value="{{ advisor.id }}" {% if config.asesor_predeterminado_id == advisor.id %}selected{% endif %}>{{ advisor.get_full_name|default:advisor.username }}</option>{% endfor %}</select></div>
+      </div><div class="section-label" style="margin:14px 0 8px">Derivación automática</div><div class="rule-list">{% for value,label in rules %}<label class="rule"><input type="checkbox" name="reglas_automaticas" value="{{ value }}" {% if value in config.reglas_automaticas %}checked{% endif %}>{{ label }}</label>{% endfor %}</div></div></section>
+
+      <section class="config-panel"><div class="config-panel-title">Mensajes</div><div class="config-panel-body"><div class="field-grid"><div class="field full"><label>Bienvenida</label><textarea name="mensaje_bienvenida">{{ config.mensaje_bienvenida }}</textarea></div><div class="field full"><label>Fuera de horario</label><textarea name="mensaje_fuera_horario">{{ config.mensaje_fuera_horario }}</textarea></div></div></div></section>
+    </div>
+    <div class="save-row"><button class="save-btn" type="submit">Guardar configuración</button></div>
+  </form>{% else %}<div class="config-empty">Selecciona un canal para editar su configuración.</div>{% endif %}
+</div>
+{% endblock %}

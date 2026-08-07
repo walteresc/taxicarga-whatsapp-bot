@@ -544,16 +544,19 @@ def extract_event(payload):
         }
         if event["type"] == "text":
             event["text"] = message.get("text", {}).get("body", "")
-        elif event["type"] == "image":
-            image = message.get("image", {})
+        elif event["type"] in {"image", "audio", "document"}:
+            media = message.get(event["type"], {})
             event.update(
                 {
-                    "media_id": image.get("id", ""),
-                    "mime_type": image.get("mime_type", ""),
-                    "sha256": image.get("sha256", ""),
-                    "caption": image.get("caption", ""),
+                    "media_id": media.get("id", ""),
+                    "mime_type": media.get("mime_type", ""),
+                    "sha256": media.get("sha256", ""),
+                    "caption": media.get("caption", ""),
                 }
             )
+        elif event["type"] == "location":
+            location = message.get("location", {})
+            event["text"] = f"{location.get('latitude', '')},{location.get('longitude', '')}"
         return event
     except (KeyError, IndexError, TypeError):
         return None

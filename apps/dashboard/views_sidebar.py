@@ -18,8 +18,10 @@ def sidebar(request):
         {"path": "/dashboard/campo/equipos/", "icon": "mdi-account-group", "title": "Equipos de Campo", "roles": ["Administrador", "Supervisor", "Asesor de Ventas"]},
         {"path": "/dashboard/flota/vehiculos/", "icon": "mdi-truck", "title": "Vehículos", "roles": ["Administrador", "Supervisor", "Asesor de Ventas"]},
         {"path": "/dashboard/flota/mantenimientos/", "icon": "mdi-book-open-page-variant", "title": "Mantenimientos", "roles": ["Administrador", "Supervisor", "Asesor de Ventas"]},
-        {"path": "/dashboard/whatsapp/", "icon": "mdi-chat", "title": "Bot WhatsApp", "roles": ["Administrador", "Supervisor", "Asesor de Ventas"]},
-        {"path": "/dashboard/canales-whatsapp/", "icon": "mdi-phone", "title": "Canales WhatsApp", "roles": ["Administrador", "Supervisor", "Asesor de Ventas"]},
+        {"path": "/dashboard/whatsapp/conversaciones/", "icon": "mdi-message-text-outline", "title": "Conversaciones", "roles": ["Administrador", "Supervisor", "Asesor de Ventas"]},
+        {"path": "/dashboard/whatsapp/por-cotizar/", "icon": "mdi-clock-alert-outline", "title": "Por cotizar", "roles": ["Administrador", "Supervisor", "Asesor de Ventas"]},
+        {"path": "/dashboard/whatsapp/cotizaciones/", "icon": "mdi-file-document-outline", "title": "Cotizaciones", "roles": ["Administrador", "Supervisor", "Asesor de Ventas"]},
+        {"path": "/dashboard/whatsapp/configuracion/", "icon": "mdi-robot-outline", "title": "Configuración del bot", "roles": ["Administrador"]},
         {"path": "/dashboard/reportes/", "icon": "mdi-chart-bar", "title": "Reportes", "roles": ["Administrador", "Supervisor"]},
         {"path": "/dashboard/mis-servicios/", "icon": "mdi-truck-delivery", "title": "Mis Servicios", "roles": ["Conductor", "Ayudante"]},
         {"path": "/dashboard/mi-programacion/", "icon": "mdi-calendar-clock", "title": "Mi Programación", "roles": ["Conductor", "Ayudante"]}

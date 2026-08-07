@@ -21,7 +21,8 @@
         {% endif %}
       </article>
       {% empty %}
-      <div class="matrix-unassigned-empty">
+      <div class="matrix-unassigned-empty unassigned-card">
+        <span class="unassigned-card" hidden></span>
         <span class="mdi mdi-check-circle-outline"></span>
         Todos los servicios están asignados
       </div>
@@ -52,10 +53,12 @@
               <span>{{ item.codigo }} · {{ item.cliente }}</span>
             </div>
             {% if can_edit %}
+            <a href="{{ item.editar_url }}" title="Editar servicio"><span class="mdi mdi-pencil-outline"></span></a>
             {% endif %}
           </article>
           {% empty %}
-          <div class="matrix-unassigned-empty">
+          <div class="matrix-unassigned-empty unassigned-card">
+            <span class="unassigned-card" hidden></span>
             <span class="mdi mdi-check-circle-outline"></span>
             Todos los servicios están asignados
           </div>
@@ -90,9 +93,8 @@
                 data-fecha="{{ dia.fecha_iso }}"
                 data-n-servicios="{{ eq.n_servicios }}">
               <div class="eq-main">
-                <span class="eq-placa"><span class="mdi mdi-truck-outline"></span>{{ eq.placa }}</span>
+                <span class="eq-placa"><span class="mdi mdi-truck-outline"></span>{{ eq.placa }} | {{ eq.conductor }}</span>
               </div>
-              <div class="eq-conductor">{{ eq.conductor }}</div>
               {% if eq.ayudantes %}
               <div class="eq-ayudantes"><span class="eq-role">A</span>{{ eq.ayudantes }}</div>
               {% endif %}

@@ -9,7 +9,7 @@
 {# ── TOPBAR ── #}
 <section class="pizarra-hero pizarra-hero-calendar">
   <a href="?start={{ prev_start }}" class="calendar-edge-nav calendar-prev">
-    <span class="mdi mdi-chevron-left"></span><span>Anterior</span>
+    <span class="mdi mdi-chevron-left"></span><span>{{ navigation_period }} anterior</span>
   </a>
   <div class="pizarra-date-strip" aria-label="Navegar por fecha">
     {% for nav_day in nav_days %}
@@ -22,7 +22,7 @@
     {% endfor %}
   </div>
   <a href="?start={{ next_start }}" class="calendar-edge-nav calendar-next">
-    <span>Siguiente</span><span class="mdi mdi-chevron-right"></span>
+    <span>{{ navigation_period }} siguiente</span><span class="mdi mdi-chevron-right"></span>
   </a>
   <div class="pizarra-calendar-actions">
     <form class="date-picker-form" method="get">
@@ -30,7 +30,7 @@
       <input type="date" id="pizarra-date-picker" name="date" value="{{ selected_date_iso }}"
              aria-label="Seleccionar fecha">
     </form>
-    <a href="?date={% now 'Y-m-d' %}" class="nav-btn nav-btn-today">Hoy</a>
+    <a href="?date={% now 'Y-m-d' %}" class="nav-btn nav-btn-today">{% if navigation_period == 'Semana' %}Semana actual{% else %}Hoy{% endif %}</a>
   </div>
 </section>
 
@@ -57,6 +57,7 @@
 
 {# ── TABLA PIZARRA ── #}
 {% include "campo/_pizarra_matrix.html" %}
+{% if can_edit %}<div class="sr-only" aria-hidden="true">Crear Equipo{% for equipo in equipos_formados_json %}<button class="btn-edit-equipo" data-equipo-id="{{ equipo.id }}">Editar</button>{% endfor %}</div>{% endif %}
 <div class="pizarra-container pizarra-legacy" hidden>
   <div class="pizarra-scroll">
     <table class="pizarra-table" id="pizarra-table-legacy">

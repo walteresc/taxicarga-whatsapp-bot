@@ -1,0 +1,145 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Conversaciones | TaxiCarga{% endblock %}
+
+{% block extra_head %}
+<style>
+  .wc-shell { height: calc(100vh - 66px); display: grid; grid-template-columns: 310px minmax(390px, 1fr) 320px; background: #f4f6f8; overflow: hidden; }
+  .wc-panel { background: #fff; border-right: 1px solid #e5e7eb; min-height: 0; }
+  .wc-list-panel { display: flex; flex-direction: column; }
+  .wc-panel-head { padding: 17px; border-bottom: 1px solid #e5e7eb; }
+  .wc-title { margin: 0 0 12px; font-size: 18px; color: #182230; }
+  .wc-search, .wc-select, .wc-composer textarea { width: 100%; border: 1px solid #d7dce2; border-radius: 7px; padding: 9px 10px; background: #fff; color: #344054; }
+  .wc-filter-row { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 7px; }
+  .wc-chips { display: flex; gap: 6px; overflow-x: auto; padding-top: 9px; }
+  .wc-chip { white-space: nowrap; font-size: 11px; border-radius: 12px; padding: 5px 8px; background: #f2f4f7; color: #475467; text-decoration: none; }
+  .wc-chip.active { background: #fff1e8; color: #e85100; }
+  .wc-list { overflow-y: auto; }
+  .wc-conversation { display: block; padding: 13px 15px; border-bottom: 1px solid #eef0f2; color: inherit; text-decoration: none; }
+  .wc-conversation:hover, .wc-conversation.active { background: #fff7f1; }
+  .wc-conv-top { display: flex; justify-content: space-between; gap: 8px; }
+  .wc-name { color: #1d2939; font-weight: 700; font-size: 13px; }
+  .wc-time { color: #98a2b3; font-size: 10px; }
+  .wc-preview { color: #667085; font-size: 12px; margin: 5px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .wc-badges { display: flex; gap: 5px; flex-wrap: wrap; }
+  .wc-badge { border-radius: 10px; background: #edf4ff; color: #175cd3; font-size: 10px; padding: 3px 6px; }
+  .wc-badge.human { background: #fff1e8; color: #c4320a; }
+  .wc-chat-panel { display: flex; flex-direction: column; min-width: 0; }
+  .wc-chat-head { background: #fff; border-bottom: 1px solid #e5e7eb; padding: 12px 16px; display: flex; align-items: center; gap: 10px; }
+  .wc-avatar { width: 38px; height: 38px; border-radius: 50%; background: #ff6b0b; color: #fff; display: grid; place-items: center; font-weight: 700; }
+  .wc-head-info { flex: 1; min-width: 0; }
+  .wc-head-info strong { display: block; color: #1d2939; }
+  .wc-head-info small { color: #667085; }
+  .wc-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  .wc-btn { border: 1px solid #ff6b0b; background: #fff; color: #e85100; border-radius: 6px; padding: 7px 9px; font-size: 11px; cursor: pointer; }
+  .wc-btn.primary { background: #ff6b0b; color: #fff; }
+  .wc-btn.danger { border-color: #d92d20; color: #d92d20; }
+  .wc-messages { flex: 1; overflow-y: auto; padding: 20px; background: #efeae2; }
+  .wc-message { max-width: 74%; margin-bottom: 10px; padding: 9px 11px 6px; border-radius: 9px; background: #fff; box-shadow: 0 1px 1px #00000014; color: #1f2937; font-size: 13px; white-space: pre-wrap; }
+  .wc-message.cliente { margin-right: auto; }
+  .wc-message.bot, .wc-message.asesor { margin-left: auto; background: #dcf8c6; }
+  .wc-message-meta { display: flex; justify-content: flex-end; gap: 5px; color: #7b8794; font-size: 9px; margin-top: 5px; }
+  .wc-composer { padding: 10px 13px; background: #fff; border-top: 1px solid #e5e7eb; }
+  .wc-composer-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: end; }
+  .wc-composer textarea { resize: none; min-height: 42px; max-height: 100px; }
+  .wc-detail { overflow-y: auto; border-right: 0; }
+  .wc-detail-section { padding: 16px; border-bottom: 1px solid #eef0f2; }
+  .wc-detail-section h3 { margin: 0 0 12px; color: #1d2939; font-size: 14px; }
+  .wc-progress { height: 6px; background: #eaecf0; border-radius: 5px; overflow: hidden; }
+  .wc-progress span { display: block; height: 100%; background: #ff6b0b; }
+  .wc-field { display: grid; grid-template-columns: 115px 1fr; gap: 8px; margin-bottom: 9px; font-size: 11px; }
+  .wc-field span:first-child { color: #667085; }
+  .wc-field span:last-child { color: #1d2939; font-weight: 600; overflow-wrap: anywhere; }
+  .wc-return { display: flex; gap: 5px; margin-top: 8px; }
+  .wc-empty { display: grid; place-items: center; height: 100%; color: #667085; text-align: center; padding: 30px; }
+  @media (max-width: 1200px) { .wc-shell { grid-template-columns: 280px 1fr; } .wc-detail { display: none; } }
+  @media (max-width: 760px) { .wc-shell { grid-template-columns: 1fr; height: auto; min-height: calc(100vh - 66px); overflow: visible; } .wc-list-panel { max-height: 360px; } .wc-chat-panel { min-height: 680px; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="wc-shell">
+  <section class="wc-panel wc-list-panel">
+    <div class="wc-panel-head">
+      <h1 class="wc-title">Conversaciones <small>({{ conteos.all }})</small></h1>
+      <form method="get">
+        <input class="wc-search" name="q" value="{{ filtros.q|default:'' }}" placeholder="Buscar nombre, teléfono o resumen">
+        <div class="wc-filter-row">
+          <select class="wc-select" name="channel" onchange="this.form.submit()">
+            <option value="">Todos los canales</option>
+            {% for canal in canales_filtro %}<option value="{{ canal.id }}" {% if filtros.channel == canal.id|stringformat:'s' %}selected{% endif %}>{{ canal.nombre }}</option>{% endfor %}
+          </select>
+          <select class="wc-select" name="advisor" onchange="this.form.submit()">
+            <option value="">Todos los asesores</option>
+            {% for asesor in asesores_filtro %}<option value="{{ asesor.id }}" {% if filtros.advisor == asesor.id|stringformat:'s' %}selected{% endif %}>{{ asesor.get_full_name|default:asesor.username }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="wc-chips">
+          <a class="wc-chip {% if not filtros.state or filtros.state == 'all' %}active{% endif %}" href="?state=all">Todas</a>
+          <a class="wc-chip {% if filtros.state == 'new' %}active{% endif %}" href="?state=new">Nuevas</a>
+          <a class="wc-chip {% if filtros.state == 'bot' %}active{% endif %}" href="?state=bot">Bot {{ conteos.bot }}</a>
+          <a class="wc-chip {% if filtros.state == 'advisor' %}active{% endif %}" href="?state=advisor">Asesor {{ conteos.advisor }}</a>
+          <a class="wc-chip {% if filtros.state == 'waiting' %}active{% endif %}" href="?state=waiting">Esperando</a>
+          <a class="wc-chip {% if filtros.state == 'missing' %}active{% endif %}" href="?state=missing">Falta info</a>
+          <a class="wc-chip {% if filtros.state == 'quote' %}active{% endif %}" href="?state=quote">Por cotizar {{ conteos.quote }}</a>
+          <a class="wc-chip {% if filtros.state == 'sent' %}active{% endif %}" href="?state=sent">Precio enviado</a>
+          <a class="wc-chip {% if filtros.state == 'closed' %}active{% endif %}" href="?state=closed">Cerradas</a>
+        </div>
+      </form>
+    </div>
+    <div class="wc-list">
+      {% for conv in conversaciones %}
+      <a class="wc-conversation {% if seleccionada.id == conv.id %}active{% endif %}" href="?conversation={{ conv.id }}">
+        <div class="wc-conv-top"><span class="wc-name">{{ conv.cliente.nombre|default:conv.cliente.telefono }}</span><span class="wc-time">{{ conv.ultima_actividad|timesince }}</span></div>
+        <div class="wc-preview">{{ conv.resumen|default:conv.motivo_derivacion|default:'Sin resumen disponible' }}</div>
+        <div class="wc-badges">
+          <span class="wc-badge {% if conv.estado_atencion == 'asesor' %}human{% endif %}">{{ conv.get_estado_atencion_display }}</span>
+          {% if conv.channel %}<span class="wc-badge">{{ conv.channel.nombre }}</span>{% endif %}
+        </div>
+      </a>
+      {% empty %}<div class="wc-empty">No hay conversaciones con estos filtros.</div>{% endfor %}
+    </div>
+  </section>
+
+  <section class="wc-chat-panel">
+    {% if seleccionada %}
+    <header class="wc-chat-head">
+      <div class="wc-avatar">{{ seleccionada.cliente.nombre|default:'W'|slice:':1'|upper }}</div>
+      <div class="wc-head-info"><strong>{{ seleccionada.cliente.nombre|default:seleccionada.cliente.telefono }}</strong><small>{{ seleccionada.cliente.telefono }} · {{ seleccionada.get_estado_atencion_display }}{% if seleccionada.bot_pausado %} · Bot pausado{% endif %}</small></div>
+      <div class="wc-actions">
+        {% if seleccionada.estado_atencion == 'bot' %}
+        <form method="post" action="{% url 'dashboard-whatsapp-conversacion-accion' seleccionada.id %}">{% csrf_token %}<input type="hidden" name="action" value="take"><button class="wc-btn primary">Tomar conversación</button></form>
+        {% elif seleccionada.estado_atencion == 'asesor' %}
+        <form method="post" action="{% url 'dashboard-whatsapp-conversacion-accion' seleccionada.id %}" class="wc-return">{% csrf_token %}<input type="hidden" name="action" value="return_bot"><select class="wc-select" name="instruction"><option value="recopilar">Recopilar información</option><option value="resolver_preguntas">Resolver preguntas</option><option value="seguimiento_cotizacion">Seguimiento cotización</option><option value="esperar">Esperar mensaje</option></select><button class="wc-btn">Devolver al bot</button></form>
+        {% endif %}
+        {% if seleccionada.estado_atencion != 'cerrada' %}
+        <form method="post" action="{% url 'dashboard-whatsapp-conversacion-accion' seleccionada.id %}">{% csrf_token %}<input type="hidden" name="action" value="quote"><button class="wc-btn">Enviar a cotizar</button></form>
+        <form method="post" action="{% url 'dashboard-whatsapp-conversacion-accion' seleccionada.id %}">{% csrf_token %}<input type="hidden" name="action" value="close"><button class="wc-btn danger">Cerrar</button></form>
+        {% endif %}
+      </div>
+    </header>
+    <div class="wc-messages" id="wc-messages">
+      {% for msg in mensajes_chat %}
+      <div class="wc-message {{ msg.origen }}">{{ msg.contenido }}<div class="wc-message-meta"><span>{{ msg.fecha|date:'d/m H:i' }}</span><span>{{ msg.estado }}</span></div></div>
+      {% empty %}<div class="wc-empty">Sin mensajes registrados.</div>{% endfor %}
+    </div>
+    {% if seleccionada.estado_atencion != 'cerrada' %}
+    <form class="wc-composer" method="post" action="{% url 'dashboard-whatsapp-conversacion-accion' seleccionada.id %}">{% csrf_token %}<input type="hidden" name="action" value="reply"><div class="wc-composer-row"><textarea name="message" required placeholder="Escribe un mensaje..."></textarea><button class="wc-btn primary">Enviar</button></div></form>
+    {% endif %}
+    {% else %}<div class="wc-empty">Selecciona una conversación.</div>{% endif %}
+  </section>
+
+  <aside class="wc-panel wc-detail">
+    {% if seleccionada %}
+    <div class="wc-detail-section"><h3>Ficha del servicio</h3><div class="wc-progress"><span style="width:{{ seleccionada.porcentaje_informacion }}%"></span></div><small>{{ seleccionada.porcentaje_informacion }}% de información</small></div>
+    <div class="wc-detail-section">
+      {% for field in ficha %}<div class="wc-field"><span>{{ field.label }}</span><span>{{ field.value }}</span></div>{% endfor %}
+    </div>
+    <div class="wc-detail-section"><h3>Datos faltantes</h3>{% for missing in seleccionada.datos_faltantes %}<div class="wc-badge" style="margin:4px 0">{{ missing }}</div>{% empty %}<small>Sin faltantes registrados.</small>{% endfor %}</div>
+    <div class="wc-detail-section"><h3>Resumen</h3><p style="font-size:12px;color:#475467">{{ seleccionada.resumen|default:'Pendiente de generar.' }}</p></div>
+    {% endif %}
+  </aside>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}<script>(function(){'use strict';var box=document.getElementById('wc-messages');if(box)box.scrollTop=box.scrollHeight;}());</script>{% endblock %}

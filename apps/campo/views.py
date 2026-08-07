@@ -1027,7 +1027,19 @@ def pizarra(request):
         equipos_qs = equipos_qs.filter(ayudantes__usuario=user)
 
     equipos_por_fecha = {day: [] for day in days}
+    legacy_programaciones_asignadas = set()
     for eq in equipos_qs:
+        legacy = list(
+            ProgramacionServicio.objects.filter(
+                equipo_dia__isnull=True,
+                fecha=eq.fecha,
+                vehiculo_id=eq.vehiculo_id,
+                conductor_id=eq.conductor_id,
+            ).select_related("servicio", "servicio__cliente").order_by("hora_inicio")
+        )
+        if legacy:
+            eq.servicios_list.extend(legacy)
+            legacy_programaciones_asignadas.update(item.id for item in legacy)
         if eq.fecha in equipos_por_fecha:
             equipos_por_fecha[eq.fecha].append(eq)
 
@@ -1036,7 +1048,8 @@ def pizarra(request):
         ProgramacionServicio.objects.filter(
             fecha__range=(days[0], days[-1]),
             equipo_dia__isnull=True,
-        ).select_related("servicio", "servicio__cliente").order_by("fecha", "hora_inicio")
+        ).exclude(id__in=legacy_programaciones_asignadas)
+        .select_related("servicio", "servicio__cliente").order_by("fecha", "hora_inicio")
     )
     orphan_por_fecha = {day: [] for day in days}
     for ps in orphan_progs:
@@ -1227,6 +1240,7 @@ def pizarra(request):
         'prev_start': prev_start,
         'next_start': next_start,
         'selected_date_iso': selected_date.strftime("%Y-%m-%d"),
+        'navigation_period': "Día" if request.GET.get("view") == "day" else "Semana",
         'nav_days': nav_days,
         'start_display': start_display,
         'total_equipos': total_equipos,
