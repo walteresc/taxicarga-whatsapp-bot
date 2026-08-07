@@ -167,6 +167,11 @@ class ConfiguracionBot(models.Model):
 
 
 class BotSchedule(models.Model):
+    MODO_CHOICES = [
+        ('bot', 'Bot automático'),
+        ('mixto', 'Bot mixto inteligente'),
+    ]
+
     channel = models.ForeignKey(
         WhatsAppChannel,
         on_delete=models.CASCADE,
@@ -177,6 +182,11 @@ class BotSchedule(models.Model):
     start_time = models.TimeField()
     end_time = models.TimeField()
     is_active = models.BooleanField(default=True)
+    modo = models.CharField(
+        max_length=20,
+        choices=MODO_CHOICES,
+        default='bot',
+    )
 
     class Meta:
         verbose_name = "Horario del bot"
@@ -187,5 +197,5 @@ class BotSchedule(models.Model):
         dias = dict(DAY_CHOICES)
         dia = dias.get(self.day_of_week, str(self.day_of_week))
         canal = f" [{self.channel.nombre}]" if self.channel else ""
-        return f"{dia} {self.start_time:%H:%M}-{self.end_time:%H:%M}{canal}"
-        return f"{dia} {self.start_time:%H:%M}-{self.end_time:%H:%M}"
+        modo_label = dict(self.MODO_CHOICES).get(self.modo, self.modo)
+        return f"{dia} {self.start_time:%H:%M}-{self.end_time:%H:%M} [{modo_label}]{canal}"

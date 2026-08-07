@@ -1,0 +1,610 @@
+{% extends "dashboard/base.html" %}
+{% load static %}
+{% block title %}Pizarra Operativa{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="{% static 'campo/css/pizarra.css' %}?v=20260614-21">
+{% endblock %}
+{% block content %}
+
+{# ── TOPBAR ── #}
+<section class="pizarra-hero pizarra-hero-calendar">
+  <a href="?start={{ prev_start }}" class="calendar-edge-nav calendar-prev">
+    <span class="mdi mdi-chevron-left"></span><span>Anterior</span>
+  </a>
+  <div class="pizarra-date-strip" aria-label="Navegar por fecha">
+    {% for nav_day in nav_days %}
+    <a href="?date={{ nav_day.fecha_iso }}"
+       class="pizarra-date-card{% if nav_day.seleccionado %} active{% endif %}{% if nav_day.es_hoy %} today{% endif %}">
+      <strong>{{ nav_day.nombre }}</strong>
+      <span>{{ nav_day.fecha_corta }}</span>
+      <b>{{ nav_day.total }}</b>
+    </a>
+    {% endfor %}
+  </div>
+  <a href="?start={{ next_start }}" class="calendar-edge-nav calendar-next">
+    <span>Siguiente</span><span class="mdi mdi-chevron-right"></span>
+  </a>
+  <div class="pizarra-calendar-actions">
+    <form class="date-picker-form" method="get">
+      <span class="mdi mdi-calendar-month"></span>
+      <input type="date" id="pizarra-date-picker" name="date" value="{{ selected_date_iso }}"
+             aria-label="Seleccionar fecha">
+    </form>
+    <a href="?date={% now 'Y-m-d' %}" class="nav-btn nav-btn-today">Hoy</a>
+  </div>
+</section>
+
+
+<section class="pizarra-kpis" aria-label="Resumen de programación">
+  <article class="kpi-card kpi-reservas">
+    <div class="kpi-icon"><span class="mdi mdi-calendar-check"></span></div>
+    <div><span class="kpi-label">Reservas</span><strong>{{ total_reservas }}</strong></div>
+    <small>del día</small>
+  </article>
+  <article class="kpi-card kpi-monto">
+    <div class="kpi-icon"><span class="mdi mdi-cash-multiple"></span></div>
+    <div><span class="kpi-label">Monto total</span><strong>S/ {{ monto_total|floatformat:2 }}</strong></div>
+  </article>
+  <article class="kpi-card kpi-cobrado">
+    <div class="kpi-icon"><span class="mdi mdi-check-circle-outline"></span></div>
+    <div><span class="kpi-label">Cobrado</span><strong>S/ {{ cobrado_total|floatformat:2 }}</strong></div>
+  </article>
+  <article class="kpi-card kpi-saldo">
+    <div class="kpi-icon"><span class="mdi mdi-wallet-outline"></span></div>
+    <div><span class="kpi-label">Saldo total</span><strong>S/ {{ saldo_total|floatformat:2 }}</strong></div>
+  </article>
+</section>
+
+{# ── TABLA PIZARRA ── #}
+{% include "campo/_pizarra_matrix.html" %}
+<div class="pizarra-container pizarra-legacy" hidden>
+  <div class="pizarra-scroll">
+    <table class="pizarra-table" id="pizarra-table-legacy">
+      <thead>
+        {# Fila 1 — Días #}
+        <tr class="tr-dias">
+          <th class="th-hora sticky-corner" rowspan="2"><span class="mdi mdi-clock-outline"></span></th>
+          {% for dia in dias_data %}
+          <th class="th-dia sticky-top"
+              colspan="{{ dia.colspan }}"
+              style="background:{{ dia.gradient }};"
+              data-fecha="{{ dia.fecha_str }}">
+            <div class="dia-nombre">{{ dia.nombre_dia }}</div>
+            <div class="dia-fecha">{{ dia.fecha_display }}</div>
+            {% if dia.es_hoy %}<span class="badge-hoy">HOY</span>{% endif %}
+          </th>
+          {% endfor %}
+        </tr>
+        {# Fila 2 — Equipos #}
+        <tr class="tr-equipos">
+          {% for dia in dias_data %}
+            {% for eq in dia.equipos %}
+            <th class="th-equipo sticky-top"
+                data-equipo-id="{{ eq.id }}"
+                data-n-servicios="{{ eq.n_servicios }}"
+                data-fecha="{{ dia.fecha_str }}">
+              <div class="eq-main">
+                <span class="eq-placa"><span class="mdi mdi-truck-outline"></span>{{ eq.placa }}</span>
+                <span class="eq-divider">|</span>
+                <span class="eq-conductor">{{ eq.conductor }}</span>
+              </div>
+              {% if eq.ayudantes %}<div class="eq-ayudantes"><span class="eq-role">A</span>{{ eq.ayudantes }}</div>{% endif %}
+              {% if can_edit %}
+              <button class="btn-edit-equipo" data-equipo-id="{{ eq.id }}" title="Editar equipo">
+                <span class="mdi mdi-pencil-outline"></span>
+              </button>
+              <button class="btn-del-equipo" title="Eliminar equipo">
+                <span class="mdi mdi-close"></span>
+              </button>
+              {% endif %}
+            </th>
+            {% endfor %}
+            <th class="th-add sticky-top" data-fecha-iso="{{ dia.fecha_iso }}">
+              {% if can_edit %}
+              <button class="btn-add-equipo" data-fecha-iso="{{ dia.fecha_iso }}" title="Agregar equipo al día">
+                <span class="mdi mdi-plus"></span>
+              </button>
+              {% endif %}
+            </th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr class="tr-hora">
+          <td class="td-hora sticky-left">
+            <span class="hora-h">{{ row.hora }}</span>
+          </td>
+          {% for cell in row.cells %}
+            {% if cell.tipo == 'booking' %}
+            <td class="td-booking td-booking-{{ cell.servicio_estado }}"
+                rowspan="{{ cell.rowspan }}"
+                data-ps-id="{{ cell.ps_id }}">
+              <div class="booking-block estado-{{ cell.servicio_estado }}"
+                   draggable="true"
+                   data-ps-id="{{ cell.ps_id }}"
+                   data-servicio-pk="{{ cell.servicio_pk }}"
+                   data-servicio-codigo="{{ cell.servicio_codigo }}"
+                   data-cliente="{{ cell.cliente }}"
+                   data-estado="{{ cell.servicio_estado }}"
+                   data-estado-label="{{ cell.servicio_estado_label }}"
+                   data-hora="{{ cell.hora_display }}"
+                   data-hora-fin="{{ cell.hora_fin_display }}"
+                   data-duracion-hs="{{ cell.duracion_hs }}"
+                   data-precio="{{ cell.precio }}"
+                   data-origen="{{ cell.origen }}"
+                   data-destino="{{ cell.destino }}">
+                <div class="bb-line1">
+                  <span class="bb-hora">{{ cell.hora_display }}</span>
+                  <span class="bb-badge badge-{{ cell.servicio_estado }}">{{ cell.servicio_estado_label }}</span>
+                  <span class="bb-precio">{{ cell.precio }}</span>
+                </div>
+                <div class="bb-cliente">{{ cell.cliente }}</div>
+                <div class="bb-ruta">{{ cell.origen }} → {{ cell.destino }}</div>
+                <div class="bb-duracion">
+                  <span class="mdi mdi-clock-outline"></span> {{ cell.duracion }}
+                  <button class="bb-btn-duracion" data-ps-id="{{ cell.ps_id }}" title="Cambiar duración">
+                    <span class="mdi mdi-timer-edit-outline"></span>
+                  </button>
+                </div>
+              </div>
+            </td>
+            {% elif cell.tipo == 'empty' %}
+            <td class="td-empty"
+                data-fecha="{{ cell.equipo_fecha }}"
+                data-equipo-id="{{ cell.equipo_id }}">
+              <div class="td-half-wrap">
+                <div class="td-half-slot td-half-left" data-hora="{{ cell.hora }}">{{ cell.hora_display }}</div>
+                <div class="td-half-slot td-half-right" data-hora="{{ cell.hora_next }}">{{ cell.hora_next_display }}</div>
+              </div>
+            </td>
+            {% elif cell.tipo == 'spacer' %}
+            <td class="td-spacer"></td>
+            {% endif %}
+            {# tipo=='spanned': no se renderiza <td> — la celda anterior tiene rowspan #}
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{# ── RESERVAS SIN EQUIPO (draggable) ── #}
+{% if orphan_progs %}
+<div class="orphan-section">
+  <div class="orphan-header">
+    <span class="mdi mdi-alert-circle-outline"></span>
+    Reservas sin equipo asignado — arrastra a la celda deseada ({{ orphan_progs|length }})
+  </div>
+  <div class="orphan-list">
+    {% for ps in orphan_progs %}
+    <div class="orphan-item" draggable="true" data-ps-id="{{ ps.id }}">
+      <span class="mdi mdi-drag-horizontal" style="color:#94A3B8;cursor:grab;"></span>
+      <span class="orphan-codigo">{{ ps.servicio.codigo }}</span>
+      <span class="orphan-fecha">{{ ps.fecha|date:"d/m" }}</span>
+      <span class="orphan-hora">{{ ps.hora_inicio|time:"H:i" }}</span>
+      <span class="orphan-cliente">{{ ps.servicio.cliente.nombre|default:"—" }}</span>
+      <span class="orphan-ruta">{{ ps.servicio.direccion_origen|default:"" }} → {{ ps.servicio.direccion_destino|default:"" }}</span>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{# ── LEYENDA ── #}
+<div class="pizarra-footer-row">
+<div class="pizarra-leyenda">
+  <div class="leyenda-item"><span class="ldot ldot-pendiente"></span>Pendiente</div>
+  <div class="leyenda-item"><span class="ldot ldot-programado"></span>Programado</div>
+  <div class="leyenda-item"><span class="ldot ldot-asignado"></span>Asignado</div>
+  <div class="leyenda-item"><span class="ldot ldot-en_ruta"></span>En ruta</div>
+  <div class="leyenda-item"><span class="ldot ldot-finalizado"></span>Finalizado</div>
+  <div class="leyenda-item"><span class="ldot ldot-cancelado"></span>Cancelado</div>
+  <div class="leyenda-tip">
+    <span class="mdi mdi-lightbulb-outline"></span>
+    Arrastra para mover · Clic para opciones
+  </div>
+</div>
+
+{# ── MODAL: CREAR EQUIPO ── #}
+<div class="leyenda-summary" aria-label="Resumen financiero">
+  <span class="summary-reservations"><b>{{ total_reservas }}</b> reservas</span>
+  <span><small>Monto</small><b>S/ {{ monto_total|floatformat:2 }}</b></span>
+  <span class="summary-collected"><small>Cobrado</small><b>S/ {{ cobrado_total|floatformat:2 }}</b></span>
+  <span class="summary-balance"><small>Saldo</small><b>S/ {{ saldo_total|floatformat:2 }}</b></span>
+</div>
+</div>
+
+<div class="modal-overlay" id="modal-equipo" hidden>
+  <div class="modal-card modal-card-equipo">
+    <div class="modal-header">
+      <span class="mdi mdi-truck-plus"></span>
+      <span class="modal-title" id="modal-equipo-title">Agregar Equipo</span>
+      <button class="modal-close" data-close="modal-equipo"><span class="mdi mdi-close"></span></button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="eq-fecha-iso">
+
+      {# ── Tabs ── #}
+      <div class="eq-tabs">
+        <button type="button" class="eq-mode-tab active" data-eq-mode="dia">
+          <span class="mdi mdi-calendar-today"></span> Del día
+        </button>
+        <button type="button" class="eq-mode-tab" data-eq-mode="frecuentes">
+          <span class="mdi mdi-star-outline"></span> Frecuentes
+        </button>
+        <button type="button" class="eq-mode-tab" data-eq-mode="crear">
+          <span class="mdi mdi-plus"></span> Crear nuevo
+        </button>
+      </div>
+
+      {# ── Panel: Del día ── #}
+      <div class="eq-mode-panel" id="eq-panel-dia">
+        <div class="eq-panel-help">Equipos ya creados para este día (solo consulta).</div>
+        <div class="eq-formed-grid" id="eq-dia-grid"></div>
+        <div class="eq-empty-state" id="eq-dia-empty" hidden>
+          No hay equipos creados para este día aún.
+        </div>
+      </div>
+
+      {# ── Panel: Frecuentes ── #}
+      <div class="eq-mode-panel" id="eq-panel-frecuentes" hidden>
+        <div class="eq-panel-help">Selecciona un equipo frecuente para crearlo en este día.</div>
+        <div class="eq-formed-grid" id="eq-frec-grid"></div>
+        <div class="eq-empty-state" id="eq-frec-empty" hidden>
+          No hay equipos frecuentes. <a href="/dashboard/campo/equipos-frecuentes/" target="_blank">Crear uno</a>.
+        </div>
+      </div>
+
+      {# ── Panel: Crear nuevo (formados + builder) ── #}
+      <div class="eq-mode-panel" id="eq-panel-crear" hidden>
+        {# Equipos formados como atajos dentro del panel crear #}
+        <div id="eq-panel-formados-inner" style="margin-bottom:12px;">
+          <div class="eq-modal-section-title" style="margin-bottom:6px;">
+            <span class="mdi mdi-account-group"></span> Equipos formados (copiar configuración)
+          </div>
+          <div class="eq-formed-grid" id="eq-formed-grid"></div>
+          <div class="eq-empty-state" id="eq-formed-empty" hidden style="font-size:12px;padding:6px 0;">
+            Sin equipos formados previos.
+          </div>
+        </div>
+        <div class="eq-builder-summary" id="eq-builder-summary">
+          <span class="eq-summary-item vehicle"><span class="mdi mdi-truck"></span><span id="eq-summary-v">Sin vehículo</span></span>
+          <span class="mdi mdi-chevron-right"></span>
+          <span class="eq-summary-item conductor"><span class="mdi mdi-account-tie"></span><span id="eq-summary-c">Sin conductor</span></span>
+          <span class="eq-summary-item ayudante"><span class="mdi mdi-account-multiple"></span><span id="eq-summary-a">Sin ayudantes</span></span>
+        </div>
+
+        <div class="eq-builder-columns">
+          <section class="eq-builder-col vehicle">
+            <div class="eq-builder-head"><span class="mdi mdi-truck"></span> Vehículo</div>
+            <input type="search" class="eq-builder-search" data-eq-search="vehiculos" placeholder="Buscar vehículo...">
+            <div class="eq-builder-list" id="eq-vehiculos-list"></div>
+          </section>
+          <section class="eq-builder-col conductor">
+            <div class="eq-builder-head"><span class="mdi mdi-account-tie"></span> Conductor</div>
+            <input type="search" class="eq-builder-search" data-eq-search="conductores" placeholder="Buscar conductor...">
+            <div class="eq-builder-list" id="eq-conductores-list"></div>
+          </section>
+          <section class="eq-builder-col ayudante">
+            <div class="eq-builder-head"><span class="mdi mdi-account-multiple"></span> Ayudantes</div>
+            <input type="search" class="eq-builder-search" data-eq-search="ayudantes" placeholder="Buscar ayudante...">
+            <div class="eq-builder-list" id="eq-ayudantes-list"></div>
+          </section>
+        </div>
+      </div>
+      <div id="eq-warning" class="form-warning" hidden></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-cancel" data-close="modal-equipo">Cancelar</button>
+      <button class="btn-primary" id="btn-crear-equipo" disabled>
+        <span class="mdi mdi-check"></span> Agregar a Pizarra
+      </button>
+    </div>
+  </div>
+</div>
+
+{# ── MODAL: NUEVA RESERVA ── #}
+<div class="modal-overlay" id="modal-reserva" hidden>
+  <div class="modal-card modal-card-lg">
+    <div class="modal-header">
+      <span class="mdi mdi-calendar-plus"></span>
+      <span class="modal-title" id="modal-reserva-title">Nueva Reserva</span>
+      <button class="modal-close" data-close="modal-reserva"><span class="mdi mdi-close"></span></button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="res-equipo-id">
+      <input type="hidden" id="res-fecha">
+      <input type="hidden" id="res-hora">
+
+      <div class="form-row">
+        <div class="form-group fg-full">
+          <label class="form-label">Equipo / Fecha</label>
+          <input type="text" id="res-equipo-display" class="form-input" readonly>
+        </div>
+      </div>
+      <input type="text" id="res-hora-display" hidden>
+
+      <div class="form-group">
+        <label class="form-label">Duración *</label>
+        <select id="res-duracion" class="form-select">
+          <option value="1">1 hora</option>
+          <option value="1.5">1.5 horas</option>
+          <option value="2" selected>2 horas</option>
+          <option value="3">3 horas</option>
+          <option value="4">4 horas</option>
+          <option value="6">6 horas</option>
+          <option value="8">8 horas</option>
+        </select>
+      </div>
+
+      {% comment %}CARD 1 — CLIENTE{% endcomment %}
+      <div class="res-form-card">
+        <div class="res-form-card-header">
+          <span class="mdi mdi-account" style="color:#4F46E5;"></span> Datos del Cliente
+          <span class="res-badge-existente" id="res-badge-existente" hidden>
+            <span class="mdi mdi-check-circle"></span> Cliente existente
+          </span>
+        </div>
+        <div class="res-form-card-body">
+          <div class="field-row">
+            <span class="field-label fl110">Buscar</span>
+            <div style="position:relative;flex:1;">
+              <input type="text" id="res-buscar" class="c-input"
+                     placeholder="Nombre o teléfono..." autocomplete="off">
+              <input type="hidden" id="res-cliente-id" value="">
+              <div id="res-autocomplete" class="autocomplete-dd" hidden></div>
+            </div>
+          </div>
+          <div class="field-row">
+            <span class="field-label fl110">Nombre *</span>
+            <input type="text" id="res-nombre" class="c-input" placeholder="Nombre del cliente">
+          </div>
+          <div class="field-row">
+            <span class="field-label fl110">Teléfono *</span>
+            <input type="text" id="res-telefono" class="c-input" placeholder="999 999 999">
+          </div>
+          <div class="field-row">
+            <span class="field-label fl110">Documento</span>
+            <input type="text" id="res-documento" class="c-input c-input-sm" placeholder="DNI / CE">
+          </div>
+          <div class="res-empresa-toggle" id="res-empresa-toggle">
+            <span class="mdi mdi-chevron-right" id="res-empresa-arrow"></span>
+            Datos de empresa
+          </div>
+          <div class="res-empresa-content" id="res-empresa-content" hidden>
+            <div class="field-row" style="margin-top:8px;">
+              <span class="field-label fl110">Correo</span>
+              <input type="email" id="res-correo" class="c-input c-input-sm" placeholder="correo@ejemplo.com">
+            </div>
+            <div class="field-row">
+              <span class="field-label fl110">RUC</span>
+              <input type="text" id="res-ruc" class="c-input c-input-sm" placeholder="RUC">
+            </div>
+            <div class="field-row">
+              <span class="field-label fl110">Razón social</span>
+              <input type="text" id="res-razon-social" class="c-input c-input-sm" placeholder="Razón social">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {% comment %}CARD 2 — ORIGEN Y DESTINO{% endcomment %}
+      <div class="res-form-card">
+        <div class="res-form-card-header">
+          <span class="mdi mdi-routes" style="color:#059669;"></span> Origen y Destino
+        </div>
+        <div class="res-form-card-body">
+          <div class="res-section-subtitle"><span class="res-dot" style="background:#4F46E5;"></span> Origen</div>
+          <div class="field-row">
+            <span class="field-label fl72">Dirección *</span>
+            <input type="text" id="res-origen" class="c-input" placeholder="Av. Ejemplo 123">
+          </div>
+          <div class="field-row">
+            <span class="field-label fl72">Piso</span>
+            <input type="text" id="res-piso-origen" class="c-input c-input-xs" placeholder="Piso 3">
+          </div>
+          <div class="field-row">
+            <span class="field-label fl72">Acceso</span>
+            <div class="res-pill-group">
+              <label class="res-pill res-pill-acceso" data-value="ascensor">
+                <input type="checkbox" class="res-acceso-chk" name="acceso_origen" value="ascensor" hidden>
+                <span>Ascensor</span>
+              </label>
+              <label class="res-pill res-pill-acceso" data-value="escaleras">
+                <input type="checkbox" class="res-acceso-chk" name="acceso_origen" value="escaleras" hidden>
+                <span>Escaleras</span>
+              </label>
+              <label class="res-pill res-pill-acceso" data-value="sogas">
+                <input type="checkbox" class="res-acceso-chk" name="acceso_origen" value="sogas" hidden>
+                <span>Sogas</span>
+              </label>
+            </div>
+          </div>
+          <div class="res-section-subtitle" style="margin-top:14px;"><span class="res-dot" style="background:#059669;"></span> Destino</div>
+          <div class="field-row">
+            <span class="field-label fl72">Dirección *</span>
+            <input type="text" id="res-destino" class="c-input" placeholder="Av. Destino 456">
+          </div>
+          <div class="field-row">
+            <span class="field-label fl72">Piso</span>
+            <input type="text" id="res-piso-destino" class="c-input c-input-xs" placeholder="Piso 5">
+          </div>
+          <div class="field-row">
+            <span class="field-label fl72">Acceso</span>
+            <div class="res-pill-group">
+              <label class="res-pill res-pill-acceso" data-value="ascensor">
+                <input type="checkbox" class="res-acceso-chk" name="acceso_destino" value="ascensor" hidden>
+                <span>Ascensor</span>
+              </label>
+              <label class="res-pill res-pill-acceso" data-value="escaleras">
+                <input type="checkbox" class="res-acceso-chk" name="acceso_destino" value="escaleras" hidden>
+                <span>Escaleras</span>
+              </label>
+              <label class="res-pill res-pill-acceso" data-value="sogas">
+                <input type="checkbox" class="res-acceso-chk" name="acceso_destino" value="sogas" hidden>
+                <span>Sogas</span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {% comment %}CARD 3 — CARGA Y CONDICIONES{% endcomment %}
+      <div class="res-form-card">
+        <div class="res-form-card-header">
+          <span class="mdi mdi-package-variant" style="color:#D97706;"></span> Carga y Condiciones
+        </div>
+        <div class="res-form-card-body">
+          <div class="field-row field-row-top">
+            <span class="field-label fl140" style="margin-top:6px;">Detalle de carga</span>
+            <textarea id="res-detalle-carga" class="c-input" rows="3"
+                      placeholder="Describa la carga a transportar"></textarea>
+          </div>
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin:10px 0 6px;">Tipo de embalaje</div>
+          <div class="res-pill-group" id="res-tipo-embalaje">
+            <label class="res-pill" data-value="sin_embalaje">
+              <input type="radio" name="tipo_embalaje" value="sin_embalaje" checked hidden>
+              <span>Sin embalaje</span>
+            </label>
+            <label class="res-pill" data-value="basico">
+              <input type="radio" name="tipo_embalaje" value="basico" hidden>
+              <span>Embalaje básico</span>
+            </label>
+            <label class="res-pill" data-value="muebles">
+              <input type="radio" name="tipo_embalaje" value="muebles" hidden>
+              <span>Muebles y artefactos</span>
+            </label>
+            <label class="res-pill" data-value="full">
+              <input type="radio" name="tipo_embalaje" value="full" hidden>
+              <span>Embalaje full</span>
+            </label>
+          </div>
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin:12px 0 6px;">Requisitos especiales</div>
+          <div class="res-chip-group" id="res-requisitos">
+            <label class="res-check-chip">
+              <input type="checkbox" class="res-req-chk" value="ninguno" checked hidden>
+              <span class="res-chip-label">Ninguno</span>
+            </label>
+            <label class="res-check-chip">
+              <input type="checkbox" class="res-req-chk" value="epp" hidden>
+              <span class="res-chip-label">EPP</span>
+            </label>
+            <label class="res-check-chip">
+              <input type="checkbox" class="res-req-chk" value="sctr" hidden>
+              <span class="res-chip-label">SCTR</span>
+            </label>
+            <label class="res-check-chip">
+              <input type="checkbox" class="res-req-chk" value="otros" hidden>
+              <span class="res-chip-label">Otros</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      {% comment %}CARD 4 — PRECIO Y COMPROBANTE{% endcomment %}
+      <div class="res-form-card">
+        <div class="res-form-card-header">
+          <span class="mdi mdi-receipt" style="color:#16A34A;"></span> Precio y Comprobante
+        </div>
+        <div class="res-form-card-body">
+          <div class="field-row">
+            <span class="field-label fl72">Precio *</span>
+            <div class="res-price-wrap">
+              <span class="res-price-prefix">S/</span>
+              <input type="number" id="res-precio" class="c-input" step="0.01" min="0" placeholder="0.00">
+            </div>
+          </div>
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin:10px 0 6px;">Comprobante de pago</div>
+          <div class="res-pill-group" id="res-tipo-comprobante">
+            <label class="res-pill" data-value="ninguno">
+              <input type="radio" name="tipo_comprobante" value="ninguno" checked hidden>
+              <span>Ninguno</span>
+            </label>
+            <label class="res-pill" data-value="boleta">
+              <input type="radio" name="tipo_comprobante" value="boleta" hidden>
+              <span>Boleta</span>
+            </label>
+            <label class="res-pill" data-value="factura">
+              <input type="radio" name="tipo_comprobante" value="factura" hidden>
+              <span>Factura</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      {% comment %}CARD 5 — OBSERVACIONES{% endcomment %}
+      <div class="res-form-card">
+        <div class="res-form-card-header">
+          <span class="mdi mdi-note-text" style="color:#64748b;"></span> Observaciones
+        </div>
+        <div class="res-form-card-body">
+          <textarea id="res-obs" class="c-input" rows="2"
+                    placeholder="Información adicional para el equipo operativo..."></textarea>
+        </div>
+      </div>
+
+      <div id="res-warning" class="form-warning" hidden></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-cancel" data-close="modal-reserva">Cancelar</button>
+      <button class="btn-primary" id="btn-crear-reserva">
+        <span class="mdi mdi-check"></span> Crear Reserva
+      </button>
+    </div>
+  </div>
+</div>
+
+{# ── MODAL: MENÚ RÁPIDO RESERVA ── #}
+<div class="modal-overlay" id="modal-menu-reserva" hidden>
+  <div class="modal-card">
+    <div class="modal-header">
+      <span class="mdi mdi-calendar-check" id="mmr-icon-cls"></span>
+      <span class="modal-title" id="mmr-title">Reserva</span>
+      <button class="modal-close" data-close="modal-menu-reserva"><span class="mdi mdi-close"></span></button>
+    </div>
+    <div class="modal-body">
+      <div id="mmr-info" class="reserva-info-block"></div>
+      <div id="mmr-asignar" class="mmr-asignar-section" hidden>
+        <hr class="mmr-divider">
+        <label class="mmr-asignar-label">Asignar a equipo</label>
+        <select id="mmr-team-select" class="form-select" aria-label="Seleccionar equipo">
+          <option value="">— Seleccionar —</option>
+        </select>
+      </div>
+      <div class="mmr-section-label">Acciones</div>
+      <div class="menu-actions">
+        <a id="mmr-ver" href="#" class="btn-menu-action">
+          <span class="mdi mdi-eye-outline"></span> Ver detalle
+        </a>
+        <a id="mmr-editar" href="#" class="btn-menu-action">
+          <span class="mdi mdi-pencil-outline"></span> Editar
+        </a>
+        <button class="btn-menu-action btn-ma-success" id="mmr-finalizar" data-ps-id="">
+          <span class="mdi mdi-check-circle-outline"></span> Finalizar
+        </button>
+        <button class="btn-menu-action btn-ma-danger" id="mmr-cancelar" data-ps-id="">
+          <span class="mdi mdi-close-circle-outline"></span> Cancelar reserva
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── SNACKBAR ── #}
+<div id="pizarra-snackbar" class="pizarra-snackbar" hidden></div>
+
+{# ── DATOS PARA JS ── #}
+{{ vehiculos_json|json_script:"pizarra-vehiculos" }}
+{{ conductores_json|json_script:"pizarra-conductores" }}
+{{ ayudantes_json|json_script:"pizarra-ayudantes" }}
+{{ equipos_formados_json|json_script:"pizarra-equipos-formados" }}
+{{ equipos_edicion_json|json_script:"pizarra-equipos-edicion" }}
+{{ equipos_dia_json|json_script:"pizarra-equipos-dia" }}
+{{ equipos_frecuentes_json|json_script:"pizarra-equipos-frecuentes" }}
+
+{% endblock %}
+{% block extra_scripts %}
+<script src="{% static 'campo/js/pizarra.js' %}?v=20260614-12"></script>
+{% endblock %}

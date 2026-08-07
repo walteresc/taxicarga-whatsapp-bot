@@ -1,0 +1,407 @@
+{% extends "dashboard/base.html" %}
+{% block content %}
+{{ dashboard_data|json_script:"dashboard-data" }}
+<style>
+  .kanban-column .v-card { height: 100%; }
+  .kanban-column .v-list { max-height: 72vh; overflow-y: auto; }
+  .kanban-column .v-card-title { border-radius: 8px 8px 0 0; padding: 12px 16px; }
+  .metric-surface { border-left: 3px solid; transition: transform .15s; }
+  .metric-surface:hover { transform: translateY(-2px); }
+  .lead-card { cursor: pointer; }
+  .lead-card:hover { background: #f5f5f5; }
+  .lead-card.selected { background: #e0f2fe !important; border-left: 3px solid #0284c7; }
+  .lead-card.selected:hover { background: #bae6fd !important; }
+  .detail-label { font-size: .75rem; color: #64748b; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+  .detail-value { font-size: .9rem; color: #1e293b; }
+</style>
+<div id="dashboard-app" v-cloak>
+  <v-app>
+    <div>
+      <v-container fluid>
+        {# --- FILA 1: Toolbar compacto --- #}
+        <v-row>
+          <v-col cols="12">
+            <div class="d-flex align-center ga-2 flex-wrap justify-space-between" style="min-height:36px;">
+              <v-btn color="teal-lighten-4" variant="flat" prepend-icon="mdi-plus" @click="newLeadDialog = true" size="small">Nuevo lead</v-btn>
+              <div class="d-flex align-center ga-2 flex-wrap">
+                <template v-if="data.channel_id">
+                  <v-btn
+                    :color="overrideToolbarModo === 'force_bot' ? 'teal-darken-2' : ''"
+                    :variant="overrideToolbarModo === 'force_bot' ? 'flat' : 'outlined'"
+                    size="small"
+                    :loading="overrideSaving && overrideLoadingTarget === 'force_bot'"
+                    :disabled="overrideSaving"
+                    @click="toggleOverride('force_bot')"
+                  >
+                    <span :style="{ color: overrideToolbarModo === 'force_bot' ? '#4caf50' : '#9e9e9e', marginRight: '4px' }">[[ overridePunto('force_bot') ]]</span>
+                    <v-icon start>mdi-robot</v-icon> Bot automático
+                  </v-btn>
+                  <v-btn
+                    :color="overrideToolbarModo === 'force_mixto' ? 'teal-darken-2' : ''"
+                    :variant="overrideToolbarModo === 'force_mixto' ? 'flat' : 'outlined'"
+                    size="small"
+                    :loading="overrideSaving && overrideLoadingTarget === 'force_mixto'"
+                    :disabled="overrideSaving"
+                    @click="toggleOverride('force_mixto')"
+                  >
+                    <span :style="{ color: overrideToolbarModo === 'force_mixto' ? '#4caf50' : '#9e9e9e', marginRight: '4px' }">[[ overridePunto('force_mixto') ]]</span>
+                    <v-icon start>mdi-robot-happy</v-icon> Bot mixto
+                  </v-btn>
+                  <v-btn
+                    :color="overrideToolbarModo === null ? 'blue-grey-darken-3' : ''"
+                    :variant="overrideToolbarModo === null ? 'flat' : 'outlined'"
+                    size="small"
+                    @click="setManual"
+                  >
+                    <v-icon start>mdi-account</v-icon> Modo manual
+                  </v-btn>
+                  <v-chip v-if="overrideGuardadoChip" color="success" size="x-small" variant="tonal"><v-icon start size="12">mdi-check</v-icon></v-chip>
+                </template>
+                <template v-else>
+                  <v-btn disabled size="small" title="Selecciona un canal primero"><span style="color:#9e9e9e;margin-right:4px;">○</span><v-icon start>mdi-robot</v-icon> Bot automático</v-btn>
+                  <v-btn disabled size="small" title="Selecciona un canal primero"><span style="color:#9e9e9e;margin-right:4px;">○</span><v-icon start>mdi-robot-happy</v-icon> Bot mixto</v-btn>
+                  <v-btn disabled size="small" title="Selecciona un canal primero"><v-icon start>mdi-account</v-icon> Modo manual</v-btn>
+                </template>
+                <v-btn href="/admin/" variant="tonal" color="white" prepend-icon="mdi-shield-account-outline" size="small">Admin</v-btn>
+              </div>
+            </div>
+          </v-col>
+        </v-row>
+
+        {# --- FILA 2: Métricas compactas --- #}
+        <v-row class="mt-2">
+          <v-col v-for="metric in metrics" :key="metric.key" cols="6" sm="4" md="2">
+            <v-sheet class="metric-surface pa-3" rounded="lg" border :style="{ borderLeftColor: metric.borderColor }">
+              <div class="d-flex align-center justify-space-between">
+                <div>
+                  <div class="text-caption text-medium-emphasis">[[ metric.label ]]</div>
+                  <div class="text-h5 font-weight-bold mt-1">[[ metric.value ]]</div>
+                  <v-progress-linear :model-value="metric.progressValue" height="4" :color="metric.progressColor" class="mt-2" rounded></v-progress-linear>
+                </div>
+                <v-avatar :color="metric.color" variant="tonal" rounded="lg">
+                  <v-icon :icon="metric.icon"></v-icon>
+                </v-avatar>
+              </div>
+            </v-sheet>
+          </v-col>
+        </v-row>
+
+        {# --- FILA 3: Kanban de Leads --- #}
+        <v-row class="mt-4 kanban-board">
+          <v-col v-for="group in data.groups" :key="group.key" cols="12" md="3" class="kanban-column">
+            <v-card>
+              <v-card-title class="d-flex align-center ga-2" :style="{ backgroundColor: cardTitleBg(group.key) }">
+                <v-icon :color="group.color">[[ group.icon ]]</v-icon>
+                <span class="text-subtitle-2 font-weight-bold">[[ group.label ]]</span>
+                <v-chip size="x-small" :color="group.color" variant="tonal" class="ml-auto">
+                  [[ group.leads.length ]]
+                </v-chip>
+              </v-card-title>
+              <v-divider></v-divider>
+              <v-list density="compact" nav>
+                <v-list-item
+                  v-for="lead in group.leads"
+                  :key="lead.id"
+                  :title="lead.cliente"
+                  :subtitle="estadoLabel(lead.estado) + ' \u00b7 ' + lead.ruta"
+                  :class="['lead-card', { selected: selectedLead && selectedLead.id === lead.id }]"
+                  @click="abrirLead(lead)"
+                >
+                  <template v-slot:prepend>
+                    <v-icon :color="group.color" size="small">mdi-circle-small</v-icon>
+                  </template>
+                  <template v-slot:append>
+                    <v-btn variant="text" size="x-small" icon="mdi-chevron-right" @click.stop="abrirLead(lead)"></v-btn>
+                  </template>
+                </v-list-item>
+                <v-list-item v-if="!group.leads.length">
+                  <v-list-item-title class="text-caption text-medium-emphasis text-center py-4">
+                    Sin leads
+                  </v-list-item-title>
+                </v-list-item>
+              </v-list>
+            </v-card>
+          </v-col>
+        </v-row>
+        {# --- DIALOG: Nuevo lead --- #}
+        <v-dialog v-model="newLeadDialog" max-width="600">
+          <v-card>
+            <v-card-title class="d-flex align-center ga-2 pa-4">
+              <v-icon color="primary">mdi-plus-circle</v-icon>
+              <span class="text-h6 font-weight-bold">Nuevo lead</span>
+              <v-spacer></v-spacer>
+              <v-btn variant="text" icon="mdi-close" @click="newLeadDialog = false"></v-btn>
+            </v-card-title>
+            <v-divider></v-divider>
+            <v-card-text>
+              <form method="POST" action="/dashboard/leads/nuevo/" id="new-lead-form">
+                {% csrf_token %}
+                <v-row dense class="mt-1">
+                  <v-col cols="6">
+                    <label class="detail-label">Tel\u00e9fono *</label>
+                    <v-text-field name="telefono" variant="outlined" density="compact" placeholder="999888777" required hide-details="auto"></v-text-field>
+                  </v-col>
+                  <v-col cols="6">
+                    <label class="detail-label">Nombre</label>
+                    <v-text-field name="nombre" variant="outlined" density="compact" placeholder="Juan Perez" hide-details="auto"></v-text-field>
+                  </v-col>
+                  <v-col cols="6">
+                    <label class="detail-label">Tipo de servicio</label>
+                    <v-text-field name="tipo_servicio" variant="outlined" density="compact" placeholder="Mudanza" hide-details="auto"></v-text-field>
+                  </v-col>
+                  <v-col cols="6">
+                    <label class="detail-label">Distrito origen</label>
+                    <v-text-field name="distrito_origen" variant="outlined" density="compact" placeholder="Miraflores" hide-details="auto"></v-text-field>
+                  </v-col>
+                  <v-col cols="6">
+                    <label class="detail-label">Distrito destino</label>
+                    <v-text-field name="distrito_destino" variant="outlined" density="compact" placeholder="San Isidro" hide-details="auto"></v-text-field>
+                  </v-col>
+                  <v-col cols="6">
+                    <label class="detail-label">Lista de objetos</label>
+                    <v-text-field name="lista_objetos" variant="outlined" density="compact" placeholder="Cajas, muebles" hide-details="auto"></v-text-field>
+                  </v-col>
+                  <v-col cols="6">
+                    <label class="detail-label">Fecha del servicio</label>
+                    <v-text-field name="fecha_servicio" type="date" variant="outlined" density="compact" hide-details="auto"></v-text-field>
+                  </v-col>
+                  <v-col cols="6">
+                    <label class="detail-label">Horario</label>
+                    <v-text-field name="horario_servicio" variant="outlined" density="compact" placeholder="10:00-12:00" hide-details="auto"></v-text-field>
+                  </v-col>
+                  <v-col cols="6">
+                    <label class="detail-label">Prioridad</label>
+                    <v-select name="prioridad" :items="data.priorities" item-title="label" item-value="value" variant="outlined" density="compact" hide-details="auto"></v-select>
+                  </v-col>
+                  <v-col cols="12">
+                    <label class="detail-label">Nota interna</label>
+                    <v-textarea name="nota_interna" variant="outlined" density="compact" rows="2" hide-details="auto"></v-textarea>
+                  </v-col>
+                </v-row>
+              </form>
+            </v-card-text>
+            <v-divider></v-divider>
+            <v-card-actions class="pa-4">
+              <v-spacer></v-spacer>
+              <v-btn variant="text" @click="newLeadDialog = false">Cancelar</v-btn>
+              <v-btn type="submit" form="new-lead-form" color="primary" variant="flat" prepend-icon="mdi-check">Crear lead</v-btn>
+            </v-card-actions>
+          </v-card>
+        </v-dialog>
+        {# --- DIALOG: Detalle del lead --- #}
+        <v-dialog v-model="leadDetailDialog" max-width="700" scrollable>
+          <v-card v-if="selectedLead">
+            <v-card-title class="d-flex align-center ga-2 pa-4">
+              <v-icon color="primary">mdi-account-circle</v-icon>
+              <span class="text-h6 font-weight-bold">[[ selectedLead.cliente ]]</span>
+              <v-chip size="x-small" :color="estadoChipColor(selectedLead.estado)" variant="tonal" class="ml-auto">[[ estadoLabel(selectedLead.estado) ]]</v-chip>
+              <v-btn variant="text" icon="mdi-close" @click="leadDetailDialog = false"></v-btn>
+            </v-card-title>
+            <v-divider></v-divider>
+            <v-card-text style="max-height:70vh;">
+              <v-row dense class="mt-1">
+                <v-col cols="6">
+                  <div class="detail-label">Tel\u00e9fono</div>
+                  <div class="detail-value">[[ selectedLead.telefono ]]</div>
+                </v-col>
+                <v-col cols="6">
+                  <div class="detail-label">Tipo de servicio</div>
+                  <div class="detail-value">[[ selectedLead.tipoServicio ]]</div>
+                </v-col>
+                <v-col cols="6">
+                  <div class="detail-label">Ruta</div>
+                  <div class="detail-value">[[ selectedLead.ruta ]]</div>
+                </v-col>
+                <v-col cols="6">
+                  <div class="detail-label">Fecha servicio</div>
+                  <div class="detail-value">[[ selectedLead.fechaServicio ]]</div>
+                </v-col>
+                <v-col cols="6">
+                  <div class="detail-label">Horario</div>
+                  <div class="detail-value">[[ selectedLead.horarioServicio ]]</div>
+                </v-col>
+                <v-col cols="6">
+                  <div class="detail-label">Prioridad</div>
+                  <div class="detail-value">[[ selectedLead.prioridad ]]</div>
+                </v-col>
+                <v-col cols="6">
+                  <div class="detail-label">Vendedor</div>
+                  <div class="detail-value">[[ selectedLead.vendedor ]]</div>
+                </v-col>
+                <v-col cols="6">
+                  <div class="detail-label">Atenci\u00f3n</div>
+                  <div class="detail-value">[[ selectedLead.atencionHumana ? 'Humana' : 'Bot' ]]</div>
+                </v-col>
+              </v-row>
+            </v-card-text>
+            <v-divider></v-divider>
+            <v-card-actions class="pa-4">
+              <v-btn variant="outlined" color="primary" :href="selectedLead.detailUrl" prepend-icon="mdi-open-in-new">Ver completo</v-btn>
+              <v-spacer></v-spacer>
+              <v-btn variant="text" @click="leadDetailDialog = false">Cerrar</v-btn>
+            </v-card-actions>
+          </v-card>
+        </v-dialog>
+      </v-container>
+    </div>
+  </v-app>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  function getCSRFToken() {
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    if (meta) return meta.getAttribute('content');
+    const cookie = document.cookie.split('; ').find(function(r){return r.startsWith('csrftoken=');});
+    return cookie ? cookie.split('=')[1] : '';
+  }
+
+  const { createApp } = Vue;
+  const { createVuetify } = Vuetify;
+  createApp({
+    delimiters: ['[[', ']]'],
+    data() {
+      return {
+        data: JSON.parse(document.getElementById('dashboard-data').textContent),
+        metrics: [],
+        newLeadDialog: false,
+        overrideToolbarModo: null,
+        overrideSaving: false,
+        overrideLoadingTarget: null,
+        overrideGuardadoChip: false,
+        selectedLead: null,
+        leadDetailDialog: false,
+      };
+    },
+    mounted() {
+      if (!this.data.channel_id && this.data.canales && this.data.canales.length) {
+        const url = new URL(window.location);
+        url.searchParams.set('channel', this.data.canales[0].id);
+        window.location.replace(url.href);
+        return;
+      }
+      const bc = this.data.botConfig;
+      if (bc && bc.override_activo) {
+        this.overrideToolbarModo = bc.override_modo;
+      }
+      const pathMatch = window.location.pathname.match(/\/leads\/(\d+)\//);
+      if (this.data.selectedLead && pathMatch) {
+        this.selectedLead = this.data.selectedLead;
+        this.leadDetailDialog = true;
+      }
+      window.addEventListener('popstate', function() {
+        const m = window.location.pathname.match(/\/leads\/(\d+)\//);
+        if (!m) { this.selectedLead = null; this.leadDetailDialog = false; }
+      }.bind(this));
+      const stats = this.data.stats || {};
+      const total = ['pendientes','cotizados','asignados','cerrados','perdidos']
+        .reduce(function(s, k) { return s + (typeof stats[k] === 'number' ? stats[k] : 0); }, 0);
+      this.metrics = total > 0 ? [
+        { key:'pendientes', label:'Pendientes',     value:stats.pendientes, color:'teal lighten-1', icon:'mdi-calendar-clock',        borderColor:'#26a69a', progressValue:(stats.pendientes/total)*100, progressColor:'teal' },
+        { key:'cotizados',  label:'Cotizados',      value:stats.cotizados,  color:'blue lighten-1',  icon:'mdi-file-document-check',  borderColor:'#42a5f5', progressValue:(stats.cotizados/total)*100,  progressColor:'blue' },
+        { key:'asignados',  label:'Asignados',      value:stats.asignados,  color:'green lighten-1', icon:'mdi-account-check',        borderColor:'#66bb6a', progressValue:(stats.asignados/total)*100,  progressColor:'green' },
+        { key:'cerrados',   label:'Cerrados',       value:stats.cerrados,   color:'grey lighten-1',  icon:'mdi-archive',              borderColor:'#bdbdbd', progressValue:(stats.cerrados/total)*100,   progressColor:'grey' },
+        { key:'perdidos',   label:'Perdidos',       value:stats.perdidos,   color:'red lighten-1',   icon:'mdi-close-circle',         borderColor:'#ef5350', progressValue:(stats.perdidos/total)*100,   progressColor:'red' },
+      ] : [];
+    },
+    watch: {
+      leadDetailDialog(val) {
+        if (!val) {
+          const base = window.location.pathname.replace(/\/leads\/\d+\//, '/');
+          window.history.replaceState({}, '', base + window.location.search);
+        }
+      }
+    },
+    methods: {
+      toggleOverride(modo) {
+        var activar = this.overrideToolbarModo !== modo;
+        if (activar) {
+          this.overrideToolbarModo = modo;
+        } else {
+          this.overrideToolbarModo = null;
+        }
+        this.overrideSaving = true;
+        this.overrideLoadingTarget = modo;
+        var payload = activar
+          ? { override_activo: true, override_modo: modo, override_hasta: null, override_motivo: 'override r\u00e1pido dashboard' }
+          : { override_activo: false };
+        fetch('/api/bot-settings/?channel=' + this.data.channel_id, {
+          method: 'PATCH',
+          headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCSRFToken()},
+          body: JSON.stringify(payload)
+        }).then(function(r) {
+          if (!r.ok) throw new Error('Error');
+          this.data.botConfig.override_activo = this.overrideToolbarModo !== null;
+          this.data.botConfig.override_modo = this.overrideToolbarModo || 'none';
+          this.overrideGuardadoChip = true;
+          setTimeout(function() { this.overrideGuardadoChip = false; }.bind(this), 2000);
+        }.bind(this)).catch(function(e) {
+          console.error(e);
+          this.overrideToolbarModo = this.data.botConfig?.override_activo
+            ? this.data.botConfig.override_modo
+            : null;
+        }.bind(this))
+        .finally(function() { this.overrideSaving = false; this.overrideLoadingTarget = null; }.bind(this));
+      },
+      overridePunto(modo) {
+        return this.overrideToolbarModo === modo ? '\u25cf' : '\u25cb';
+      },
+      setManual() {
+        if (this.overrideToolbarModo === null) return;
+        this.overrideToolbarModo = null;
+        fetch('/api/bot-settings/?channel=' + this.data.channel_id, {
+          method: 'PATCH',
+          headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCSRFToken()},
+          body: JSON.stringify({ override_activo: false })
+        }).then(function(r) {
+          if (!r.ok) throw new Error('Error');
+          this.data.botConfig.override_activo = false;
+          this.data.botConfig.override_modo = 'none';
+          this.overrideGuardadoChip = true;
+          setTimeout(function() { this.overrideGuardadoChip = false; }.bind(this), 2000);
+        }.bind(this)).catch(function(e) {
+          console.error(e);
+          this.overrideToolbarModo = this.data.botConfig?.override_activo
+            ? this.data.botConfig.override_modo
+            : null;
+        }.bind(this));
+      },
+      openChannelDialog() {
+        this.$emit('open-channel-dialog');
+      },
+      abrirLead(lead) {
+        this.selectedLead = lead;
+        this.leadDetailDialog = true;
+        const url = new URL(window.location);
+        url.pathname = lead.detailUrl;
+        window.history.pushState({}, '', url.href);
+      },
+      estadoLabel(estado) {
+        const estados = this.data.states || [];
+        const found = estados.find(function(e) { return e.value === estado; });
+        return found ? found.label : estado;
+      },
+      estadoChipColor(estado) {
+        return {
+          nuevo: 'amber',
+          en_conversacion: 'blue',
+          datos_incompletos: 'orange',
+          cotizado: 'green',
+          asignado: 'teal',
+          cerrado: 'grey',
+          perdido: 'red',
+        }[estado] || 'grey';
+      },
+      cardTitleBg(key) {
+        return {
+          pendientes: '#e0f2f1',
+          cotizados:  '#e3f2fd',
+          asignados:  '#e8f5e9',
+          cerrados:   '#f5f5f5'
+        }[key] || '#fff';
+      }
+    }
+  }).use(createVuetify()).mount('#dashboard-app');
+</script>
+{% endblock %}

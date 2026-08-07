@@ -1,0 +1,121 @@
+{% extends "dashboard/base.html" %}
+{% block title %}{{ titulo }}{% endblock %}
+{% block content %}
+<div id="app">
+  <v-app>
+    <v-container class="py-6" style="max-width:800px;">
+      <v-card class="reserva-card mb-4">
+        <div class="card-header" style="padding:14px 20px;background:#EEF2FF;border-bottom:0.5px solid #e2e8f0;">
+          <div class="icon-wrap" style="background:#EEF2FF;">
+            <span class="mdi mdi-account" style="color:#4F46E5;font-size:18px;"></span>
+          </div>
+          <span style="font-size:15px;font-weight:500;color:#1e293b;">{{ titulo }}</span>
+        </div>
+        <div class="card-body">
+          <form method="post">
+            {% csrf_token %}
+
+            {% if form.non_field_errors %}
+            <div style="background:#FEF2F2;border-left:4px solid #DC2626;padding:12px 16px;border-radius:6px;color:#991B1B;font-size:13px;margin-bottom:12px;">
+              {% for err in form.non_field_errors %}<div>{{ err }}</div>{% endfor %}
+            </div>
+            {% endif %}
+
+            <div class="field-row">
+              <span class="field-label fl130">Nombre *</span>
+              <input type="text" name="nombre" id="id_nombre"
+                class="c-input" placeholder="Nombre del cliente"
+                value="{{ form.nombre.value|default:'' }}" required>
+            </div>
+            {% if form.nombre.errors %}
+            <div class="field-error" style="margin:-4px 0 4px 140px;">{{ form.nombre.errors.0 }}</div>
+            {% endif %}
+
+            <div class="field-row">
+              <span class="field-label fl130">Teléfono *</span>
+              <input type="text" name="telefono" id="id_telefono"
+                class="c-input" placeholder="999 999 999"
+                value="{{ form.telefono.value|default:'' }}" required>
+            </div>
+            {% if form.telefono.errors %}
+            <div class="field-error" style="margin:-4px 0 4px 140px;">{{ form.telefono.errors.0 }}</div>
+            {% endif %}
+
+            <div class="field-row">
+              <span class="field-label fl130">Documento</span>
+              <input type="text" name="documento" id="id_documento"
+                class="c-input" placeholder="DNI / CE"
+                value="{{ form.documento.value|default:'' }}">
+            </div>
+
+            <div class="field-row">
+              <span class="field-label fl130">Correo</span>
+              <input type="email" name="correo" id="id_correo"
+                class="c-input" placeholder="correo@ejemplo.com"
+                value="{{ form.correo.value|default:'' }}">
+            </div>
+
+            <div class="empresa-toggle-wrap">
+              <div class="empresa-toggle" id="empresaToggle">
+                <span class="mdi mdi-chevron-right"></span>
+                Datos de empresa
+              </div>
+            </div>
+            <div class="empresa-content" id="empresaContent">
+              <div class="field-row" style="margin-top:8px;">
+                <span class="field-label fl130">RUC</span>
+                <input type="text" name="ruc" id="id_ruc"
+                  class="c-input" placeholder="RUC"
+                  value="{{ form.ruc.value|default:'' }}">
+              </div>
+              <div class="field-row">
+                <span class="field-label fl130">Razón social</span>
+                <input type="text" name="razon_social" id="id_razon_social"
+                  class="c-input" placeholder="Razón social"
+                  value="{{ form.razon_social.value|default:'' }}">
+              </div>
+            </div>
+
+            <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:24px;padding-top:16px;border-top:0.5px solid #e2e8f0;">
+              <a href="{% url 'cliente_lista' %}"
+                style="padding:8px 20px;background:#fff;color:#64748b;border:0.5px solid #e2e8f0;border-radius:8px;font-size:14px;text-decoration:none;font-weight:500;">
+                Cancelar
+              </a>
+              <button type="submit"
+                style="padding:8px 24px;background:#4F46E5;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">
+                Guardar
+              </button>
+            </div>
+          </form>
+        </div>
+      </v-card>
+    </v-container>
+  </v-app>
+</div>
+<style>
+.field-error { font-size:12px;color:#DC2626; }
+</style>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+  (function() {
+    var toggle = document.getElementById('empresaToggle');
+    var content = document.getElementById('empresaContent');
+    if (toggle && content) {
+      toggle.addEventListener('click', function() {
+        toggle.classList.toggle('open');
+        content.classList.toggle('open');
+      });
+      var ruc = document.getElementById('id_ruc');
+      var rs = document.getElementById('id_razon_social');
+      if ((ruc && ruc.value) || (rs && rs.value)) {
+        toggle.classList.add('open');
+        content.classList.add('open');
+      }
+    }
+  })();
+  const { createApp } = Vue;
+  const { createVuetify } = Vuetify;
+  createApp({ delimiters: ['[[', ']]'], data() { return {}; } }).use(createVuetify()).mount('#app');
+</script>
+{% endblock %}

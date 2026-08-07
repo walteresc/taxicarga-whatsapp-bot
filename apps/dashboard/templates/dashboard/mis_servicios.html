@@ -1,0 +1,34 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Mis Servicios{% endblock %}
+{% block content %}
+<div id="app">
+  <v-app>
+    <v-container class="py-4">
+      <div class="text-h6 font-weight-bold mb-3">Mis Servicios</div>
+      <v-card>
+        <v-list density="compact">
+          {% for servicio in servicios %}
+          <v-list-item>
+            <v-list-item-title>
+              <a href="{% url 'detalle-servicio' servicio.pk %}" class="text-decoration-none">{{ servicio.codigo }}</a>
+            </v-list-item-title>
+            <v-list-item-subtitle>{{ servicio.estado }}</v-list-item-subtitle>
+          </v-list-item>
+          {% empty %}
+          <v-list-item>
+            <v-list-item-title class="text-medium-emphasis">No hay servicios asignados</v-list-item-title>
+          </v-list-item>
+          {% endfor %}
+        </v-list>
+      </v-card>
+    </v-container>
+  </v-app>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+  const { createApp } = Vue;
+  const { createVuetify } = Vuetify;
+  createApp({ delimiters: ['[[', ']]'], data() { return {}; } }).use(createVuetify()).mount('#app');
+</script>
+{% endblock %}

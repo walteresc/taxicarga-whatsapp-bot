@@ -1,0 +1,23 @@
+{% extends "dashboard/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div id="app">
+  <v-app>
+    <v-container class="py-8" style="max-width:800px;">
+      <v-card class="pa-8 text-center">
+        <v-icon color="blue-grey-darken-2" size="64" class="mb-4">{{ icon }}</v-icon>
+        <h1 class="text-h4 font-weight-bold mb-2">{{ title }}</h1>
+        <p class="text-body-1 text-medium-emphasis">Módulo en construcción</p>
+        <p class="text-body-2 text-grey mt-2">{{ description }}</p>
+      </v-card>
+    </v-container>
+  </v-app>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+  const { createApp } = Vue;
+  const { createVuetify } = Vuetify;
+  createApp({ delimiters: ['[[', ']]'], data() { return {}; } }).use(createVuetify()).mount('#app');
+</script>
+{% endblock %}

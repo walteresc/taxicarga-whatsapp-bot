@@ -1,0 +1,82 @@
+{% extends "dashboard/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block extra_head %}
+<style>
+.generic-table { width:100%; border-collapse:collapse; font-size:14px; }
+.generic-table th { text-align:left; padding:12px 16px; font-weight:600; color:#546e7a; font-size:12px; text-transform:uppercase; letter-spacing:.05em; border-bottom:1px solid #e0e0e0; white-space:nowrap; }
+.generic-table td { padding:10px 16px; border-bottom:1px solid #f0f0f0; color:#263238; }
+.generic-table tbody tr:hover { background:#f5f7f8; }
+.th-actions, .td-actions { text-align:center; width:80px; white-space:nowrap; }
+.btn-action { display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; border-radius:50%; text-decoration:none; font-size:18px; margin:0 2px; transition:background .12s; }
+.btn-edit { color:#1565c0; }
+.btn-edit:hover { background:#e3f2fd; }
+.btn-delete { color:#c62828; }
+.btn-delete:hover { background:#ffebee; }
+</style>
+{% endblock %}
+{% block content %}
+<div id="app">
+  <v-app>
+    <v-container class="py-6" style="max-width:1200px;">
+      <v-card>
+        <v-card-title class="d-flex align-center pa-4">
+          <v-icon color="teal-darken-1" class="mr-2">mdi-book-open-page-variant</v-icon>
+          <span class="text-h5 font-weight-bold">{{ title }}</span>
+          <v-spacer></v-spacer>
+          <a href="{% url 'flota-mantenimiento-create' %}" class="v-btn v-btn--elevated v-theme--light bg-teal-darken-1 text-none" style="text-decoration:none;font-size:14px;padding:6px 16px;border-radius:6px;color:#fff;">
+            <span class="mdi mdi-plus" style="margin-right:6px;"></span>Registrar Mantenimiento
+          </a>
+        </v-card-title>
+        <v-divider></v-divider>
+        <div style="overflow-x:auto;">
+          <table class="generic-table">
+            <thead>
+              <tr>
+                <th>Vehículo</th>
+                <th>Fecha</th>
+                <th>Kilometraje</th>
+                <th>Próximo (km)</th>
+                <th>Trabajo realizado</th>
+                <th class="th-actions">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for m in items %}
+              <tr>
+                <td><strong>{{ m.vehiculo.placa }}</strong></td>
+                <td>{{ m.fecha_mantenimiento|date:"d/m/Y" }}</td>
+                <td>{{ m.kilometraje_actual|floatformat:0 }} km</td>
+                <td>{{ m.proximo_mantenimiento_km|floatformat:0 }} km</td>
+                <td>{{ m.descripcion|truncatewords:10 }}</td>
+                <td class="td-actions">
+                  <a href="{% url 'flota-mantenimiento-edit' m.pk %}" class="btn-action btn-edit" title="Editar">
+                    <span class="mdi mdi-pencil-outline"></span>
+                  </a>
+                  <a href="{% url 'flota-mantenimiento-delete' m.pk %}" class="btn-action btn-delete" title="Eliminar">
+                    <span class="mdi mdi-delete-outline"></span>
+                  </a>
+                </td>
+              </tr>
+              {% empty %}
+              <tr>
+                <td colspan="6" class="text-center text-grey py-6">
+                  No hay mantenimientos registrados.
+                  <a href="{% url 'flota-mantenimiento-create' %}" class="text-primary">Registrar primero</a>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </v-card>
+    </v-container>
+  </v-app>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+  const { createApp } = Vue;
+  const { createVuetify } = Vuetify;
+  createApp({ delimiters: ['[[', ']]'], data() { return {}; } }).use(createVuetify()).mount('#app');
+</script>
+{% endblock %}

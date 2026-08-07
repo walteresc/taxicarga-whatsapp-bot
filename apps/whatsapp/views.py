@@ -21,7 +21,7 @@ from apps.leads.models import Lead
 from . import models as whatsapp_models
 from .models import BotSchedule, ConfiguracionBot, MensajeWhatsappProcesado, WhatsAppChannel
 from .services import download_whatsapp_image, send_whatsapp_message
-from .utils import extract_event, should_bot_reply, should_bot_handle_lead, evaluar_mixto_inteligente, _marcar_derivacion
+from .utils import extract_event, should_bot_reply, should_bot_handle_lead, evaluar_mixto_inteligente, evaluar_conversacion_avanzada, _marcar_derivacion
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +69,10 @@ def _receive_message(request):
     phone_number_id = event.get("phone_number_id", "")
     if phone_number_id:
         channel = WhatsAppChannel.objects.filter(phone_number_id=phone_number_id).first()
+        if channel is not None and not channel.activo:
+            logger.info("Mensaje ignorado: canal %s inactivo", channel.nombre)
+            _complete_message(processed)
+            return JsonResponse({"ok": True, "ignored": True, "reason": "inactive_channel"})
 
     try:
         active_lead = _active_lead(cliente)
@@ -77,18 +81,19 @@ def _receive_message(request):
             active_lead.save(update_fields=["whatsapp_channel"])
         if not active_lead and channel:
             active_lead = Lead.objects.create(cliente=cliente, estado=Lead.NUEVO, whatsapp_channel=channel)
-        bot_deberia_responder = should_bot_reply(lead=active_lead, channel=channel)
-
         if event["type"] == "image":
             active_lead = _lead_for_image(cliente, active_lead)
+            if not active_lead:
+                active_lead = Lead.objects.create(cliente=cliente, estado=Lead.NUEVO)
+            bot_deberia_responder = should_bot_reply(lead=active_lead, channel=channel)
             if not bot_deberia_responder:
-                if not active_lead:
-                    active_lead = Lead.objects.create(cliente=cliente, estado=Lead.NUEVO)
                 if not active_lead.atencion_humana:
                     _marcar_atencion_humana(active_lead)
             response = _receive_image(cliente, active_lead, event)
             _complete_message(processed)
             return response
+
+        bot_deberia_responder = should_bot_reply(lead=active_lead, channel=channel)
         if event["type"] != "text" or not event["text"]:
             logger.info("Tipo de mensaje WhatsApp no procesable: %s", event["type"])
             _complete_message(processed)
@@ -105,12 +110,39 @@ def _receive_message(request):
             _complete_message(processed)
             return JsonResponse({"ok": True, "human_takeover": True, "sent": None})
 
+        v2_blocked = active_lead and getattr(active_lead, '_v2_blocked', False)
+
         if not bot_deberia_responder:
             if not active_lead:
                 active_lead = Lead.objects.create(cliente=cliente, estado=Lead.NUEVO)
             fue_derivado = active_lead.requiere_asesor and not hasattr(active_lead, '_handoff_sent')
             if not active_lead.atencion_humana:
                 _marcar_atencion_humana(active_lead)
+
+            # V2: one‑time message (only when V2 was the blocking reason)
+            if v2_blocked:
+                v2_msg_sent = Conversacion.objects.filter(
+                    cliente=cliente,
+                    mensaje_salida=MENSAJE_V2,
+                ).exists()
+                if not v2_msg_sent:
+                    try:
+                        send_whatsapp_message(phone, MENSAJE_V2)
+                        Conversacion.objects.create(
+                            cliente=cliente,
+                            mensaje_entrada="",
+                            mensaje_salida=MENSAJE_V2,
+                            canal=Conversacion.CANAL_WHATSAPP,
+                        )
+                        logger.info(
+                            "[ConversationGuardV2]\nlead_id=%d\nmensaje=enviado",
+                            active_lead.id,
+                        )
+                    except Exception:
+                        logger.warning(
+                            "No se pudo enviar mensaje V2 para lead %d", active_lead.id,
+                        )
+
             Conversacion.objects.create(
                 cliente=cliente,
                 mensaje_entrada=message,
@@ -185,6 +217,8 @@ def _receive_message(request):
             processed.delete()
         return JsonResponse({"ok": False, "error": "processing_error"}, status=500)
 
+
+MENSAJE_V2 = "Tu consulta será revisada por un asesor."
 
 MENSAJE_DERIVACION = (
     "Gracias, ya tengo los datos principales. "
@@ -384,6 +418,7 @@ def bot_settings(request):
                     "start_time": s.start_time.strftime("%H:%M") if hasattr(s.start_time, "strftime") else str(s.start_time or ""),
                     "end_time": s.end_time.strftime("%H:%M") if hasattr(s.end_time, "strftime") else str(s.end_time or ""),
                     "is_active": s.is_active,
+                    "modo": s.modo,
                 }
                 for s in schedules
             ],
@@ -421,6 +456,19 @@ def bot_settings(request):
     return JsonResponse({"ok": True})
 
 
+def _schedule_overlaps(channel, day_of_week, modo, start_time, end_time, exclude_id=None):
+    qs = BotSchedule.objects.filter(
+        channel=channel,
+        day_of_week=day_of_week,
+        modo=modo,
+        start_time__lt=end_time,
+        end_time__gt=start_time,
+    )
+    if exclude_id:
+        qs = qs.exclude(id=exclude_id)
+    return qs.exists()
+
+
 @require_http_methods(["GET", "POST"])
 def bot_schedules(request):
     if not request.user.is_authenticated:
@@ -441,16 +489,26 @@ def bot_schedules(request):
                 "start_time": s.start_time.strftime("%H:%M") if hasattr(s.start_time, "strftime") else str(s.start_time or ""),
                 "end_time": s.end_time.strftime("%H:%M") if hasattr(s.end_time, "strftime") else str(s.end_time or ""),
                 "is_active": s.is_active,
+                "modo": s.modo,
             }
             for s in qs
         ], safe=False)
     data = json.loads(request.body)
+    start_time = datetime.strptime(data["start_time"], "%H:%M").time()
+    end_time = datetime.strptime(data["end_time"], "%H:%M").time()
+    modo = data.get("modo", "bot")
+    if _schedule_overlaps(channel, data["day_of_week"], modo, start_time, end_time):
+        return JsonResponse({
+            "error": "overlap",
+            "message": "Ya existe un horario que se solapa con este rango para el mismo canal, día y modo.",
+        }, status=400)
     schedule = BotSchedule.objects.create(
         channel=channel,
         day_of_week=data["day_of_week"],
-        start_time=datetime.strptime(data["start_time"], "%H:%M").time(),
-        end_time=datetime.strptime(data["end_time"], "%H:%M").time(),
+        start_time=start_time,
+        end_time=end_time,
         is_active=data.get("is_active", True),
+        modo=modo,
     )
     logger.info("BotSchedule creado por %s: %s", request.user, schedule)
     return JsonResponse({
@@ -459,6 +517,7 @@ def bot_schedules(request):
         "start_time": schedule.start_time.strftime("%H:%M") if hasattr(schedule.start_time, "strftime") else str(schedule.start_time or ""),
         "end_time": schedule.end_time.strftime("%H:%M") if hasattr(schedule.end_time, "strftime") else str(schedule.end_time or ""),
         "is_active": schedule.is_active,
+        "modo": schedule.modo,
     }, status=201)
 
 
@@ -468,6 +527,11 @@ def whatsapp_channels(request):
         return JsonResponse({"error": "authentication_required"}, status=403)
     if request.method == "GET":
         qs = WhatsAppChannel.objects.all().order_by("nombre")
+        filtro = request.GET.get("filter", "all")
+        if filtro == "active":
+            qs = qs.filter(activo=True)
+        elif filtro == "inactive":
+            qs = qs.filter(activo=False)
         return JsonResponse([
             {
                 "id": ch.id,
@@ -477,6 +541,7 @@ def whatsapp_channels(request):
                 "asesor_id": ch.asesor_id,
                 "asesor_nombre": str(ch.asesor) if ch.asesor else "",
                 "activo": ch.activo,
+                "lead_count": ch.leads.count(),
             }
             for ch in qs
         ], safe=False)
@@ -504,7 +569,7 @@ def whatsapp_channels(request):
     }, status=201)
 
 
-@require_http_methods(["PATCH"])
+@require_http_methods(["PATCH", "DELETE"])
 def whatsapp_channel_detail(request, channel_id):
     if not request.user.is_authenticated:
         return JsonResponse({"error": "authentication_required"}, status=403)
@@ -512,6 +577,37 @@ def whatsapp_channel_detail(request, channel_id):
         channel = WhatsAppChannel.objects.get(id=channel_id)
     except WhatsAppChannel.DoesNotExist:
         return JsonResponse({"error": "not_found"}, status=404)
+
+    if request.method == "DELETE":
+        lead_count = channel.leads.count()
+        config_count = ConfiguracionBot.objects.filter(channel=channel).count()
+        schedule_count = BotSchedule.objects.filter(channel=channel).count()
+        from apps.clientes.models import Conversacion
+        from apps.leads.models import Lead
+        conv_count = Conversacion.objects.filter(
+            cliente__in=Lead.objects.filter(whatsapp_channel=channel).values("cliente")
+        ).count()
+        has_history = lead_count > 0 or config_count > 0 or schedule_count > 0 or conv_count > 0
+        if has_history:
+            logger.warning(
+                "Eliminación bloqueada para canal %d (%s): leads=%d configs=%d schedules=%d conversaciones=%d",
+                channel_id, channel.nombre, lead_count, config_count, schedule_count, conv_count,
+            )
+            return JsonResponse({
+                "ok": False,
+                "error": "has_history",
+                "message": "Este canal tiene información histórica asociada. Se recomienda desactivarlo.",
+                "details": {
+                    "lead_count": lead_count,
+                    "config_count": config_count,
+                    "schedule_count": schedule_count,
+                    "conversacion_count": conv_count,
+                },
+            }, status=409)
+        channel.delete()
+        logger.info("WhatsAppChannel %d eliminado por %s", channel_id, request.user)
+        return JsonResponse({"ok": True, "deleted": True})
+
     data = json.loads(request.body)
     logger.info("PATCH whatsapp_channel_detail payload: %s", data)
     errors = {}
@@ -551,6 +647,7 @@ def whatsapp_channel_detail(request, channel_id):
             "asesor_id": channel.asesor_id,
             "asesor_nombre": str(channel.asesor) if channel.asesor else "",
             "activo": channel.activo,
+            "lead_count": channel.leads.count(),
         }
     })
 
@@ -581,14 +678,26 @@ def bot_schedule_detail(request, schedule_id):
         logger.info("BotSchedule %d eliminado por %s", schedule_id, request.user)
         return JsonResponse({"ok": True}, status=204)
     data = json.loads(request.body)
+    day_of_week = data.get("day_of_week", schedule.day_of_week)
+    start_time = datetime.strptime(data["start_time"], "%H:%M").time() if "start_time" in data else schedule.start_time
+    end_time = datetime.strptime(data["end_time"], "%H:%M").time() if "end_time" in data else schedule.end_time
+    modo = data.get("modo", schedule.modo)
+    channel = schedule.channel
+    if _schedule_overlaps(channel, day_of_week, modo, start_time, end_time, exclude_id=schedule.id):
+        return JsonResponse({
+            "error": "overlap",
+            "message": "Ya existe un horario que se solapa con este rango para el mismo canal, día y modo.",
+        }, status=400)
     if "day_of_week" in data:
         schedule.day_of_week = data["day_of_week"]
     if "start_time" in data:
-        schedule.start_time = datetime.strptime(data["start_time"], "%H:%M").time()
+        schedule.start_time = start_time
     if "end_time" in data:
-        schedule.end_time = datetime.strptime(data["end_time"], "%H:%M").time()
+        schedule.end_time = end_time
     if "is_active" in data:
         schedule.is_active = data["is_active"]
+    if "modo" in data:
+        schedule.modo = data["modo"]
     schedule.save()
     logger.info("BotSchedule %d actualizado por %s", schedule_id, request.user)
     return JsonResponse({
@@ -597,4 +706,5 @@ def bot_schedule_detail(request, schedule_id):
         "start_time": schedule.start_time.strftime("%H:%M"),
         "end_time": schedule.end_time.strftime("%H:%M"),
         "is_active": schedule.is_active,
+        "modo": schedule.modo,
     })

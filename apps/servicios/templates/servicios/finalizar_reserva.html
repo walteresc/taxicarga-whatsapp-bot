@@ -1,0 +1,207 @@
+{% extends "dashboard/base.html" %}
+{% load servicio_tags %}
+{% block title %}Finalizar {{ s.codigo }}{% endblock %}
+{% block content %}
+<div id="app">
+  <v-app>
+    <v-container class="py-6" style="max-width:800px;">
+      <div class="d-flex align-center justify-space-between mb-4" style="flex-wrap:wrap;gap:10px;">
+        <div class="d-flex align-center" style="gap:12px;">
+          <div class="icon-wrap" style="background:#D1FAE5;width:40px;height:40px;border-radius:9px;">
+            <span class="mdi mdi-check-circle" style="color:#059669;font-size:22px;"></span>
+          </div>
+          <span style="font-size:22px;font-weight:600;color:#1e293b;">Finalizar {{ s.codigo }}</span>
+          <span class="estado-chip" style="background:#DBEAFE;color:#1E40AF;">{{ s.get_estado_display }}</span>
+        </div>
+        <a href="{% if next_url %}{{ next_url }}{% else %}{% url 'dashboard-servicios-detail' s.pk %}{% endif %}"
+          style="padding:6px 14px;background:#fff;color:#64748b;border:0.5px solid #e2e8f0;border-radius:8px;font-size:13px;text-decoration:none;display:inline-flex;align-items:center;gap:4px;">
+          <span class="mdi mdi-arrow-left" style="font-size:15px;"></span>Volver
+        </a>
+      </div>
+
+      {% comment %}RESUMEN FINANCIERO{% endcomment %}
+      <v-card variant="outlined" class="mb-4">
+        <div class="card-header-sm">
+          <div class="icon-wrap-sm" style="background:#EFF6FF;">
+            <span class="mdi mdi-wallet" style="color:#2563EB;font-size:16px;"></span>
+          </div>
+          Resumen Financiero
+        </div>
+        <v-divider style="opacity:.4;"></v-divider>
+        <div class="card-body-sm">
+          <div style="display:flex;gap:24px;flex-wrap:wrap;">
+            <div style="flex:1;min-width:100px;">
+              <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:#64748b;">Precio Total</div>
+              <div style="font-size:22px;font-weight:700;color:#1e293b;margin-top:4px;">S/ {{ s.precio|floatformat:2 }}</div>
+            </div>
+            <div style="flex:1;min-width:100px;">
+              <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:#64748b;">Total Pagado</div>
+              <div style="font-size:22px;font-weight:700;color:#059669;margin-top:4px;">S/ {{ total_pagado|floatformat:2 }}</div>
+            </div>
+            <div style="flex:1;min-width:100px;">
+              <div style="font-size:11px;font-weight:600;text-transform:uppercase;color:#64748b;">Saldo Pendiente</div>
+              <div style="font-size:22px;font-weight:700;{% if saldo_pendiente > 0 %}color:#DC2626;{% else %}color:#059669;{% endif %}margin-top:4px;">S/ {{ saldo_pendiente|floatformat:2 }}</div>
+            </div>
+          </div>
+          {% if s.cliente %}
+          <v-divider style="opacity:.4;margin:12px 0;"></v-divider>
+          <div style="font-size:13px;color:#64748b;">
+            Cliente: <strong style="color:#1e293b;">{{ s.cliente.nombre }}</strong>
+            {% if s.cliente.telefono %} &middot; {{ s.cliente.telefono }}{% endif %}
+          </div>
+          {% endif %}
+        </div>
+      </v-card>
+
+      {% comment %}HISTORIAL DE PAGOS{% endcomment %}
+      <v-card variant="outlined" class="mb-4">
+        <div class="card-header-sm">
+          <div class="icon-wrap-sm" style="background:#F0FDF4;">
+            <span class="mdi mdi-format-list-bulleted" style="color:#059669;font-size:16px;"></span>
+          </div>
+          Historial de Pagos
+        </div>
+        <v-divider style="opacity:.4;"></v-divider>
+        <div class="card-body-sm" style="padding:0;">
+          {% if pagos %}
+          <table style="width:100%;border-collapse:collapse;font-size:13px;">
+            <thead>
+              <tr>
+                <th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;color:#64748b;border-bottom:1px solid #e2e8f0;">Concepto</th>
+                <th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;color:#64748b;border-bottom:1px solid #e2e8f0;">Método</th>
+                <th style="padding:10px 14px;text-align:right;font-size:11px;font-weight:700;text-transform:uppercase;color:#64748b;border-bottom:1px solid #e2e8f0;">Monto</th>
+                <th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;color:#64748b;border-bottom:1px solid #e2e8f0;">Fecha</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for p in pagos %}
+              <tr style="border-bottom:0.5px solid #f1f5f9;">
+                <td style="padding:10px 14px;color:#334155;">{{ p.get_concepto_display }}</td>
+                <td style="padding:10px 14px;color:#64748b;font-size:12px;">{{ p.get_metodo_pago_display }}</td>
+                <td style="padding:10px 14px;text-align:right;font-weight:600;color:#1e293b;">S/ {{ p.monto|floatformat:2 }}</td>
+                <td style="padding:10px 14px;color:#64748b;font-size:12px;">{{ p.fecha_pago|date:"d/m/Y H:i" }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          {% else %}
+          <div style="padding:24px 14px;text-align:center;color:#94a3b8;font-size:13px;">No hay pagos registrados.</div>
+          {% endif %}
+        </div>
+      </v-card>
+
+      {% comment %}FINALIZAR{% endcomment %}
+      <v-card variant="outlined" class="mb-4">
+        <div class="card-header-sm">
+          <div class="icon-wrap-sm" style="background:#D1FAE5;">
+            <span class="mdi mdi-check-circle" style="color:#059669;font-size:16px;"></span>
+          </div>
+          Confirmar Finalización
+        </div>
+        <v-divider style="opacity:.4;"></v-divider>
+        <div class="card-body-sm">
+          <form method="post">
+            {% csrf_token %}
+            {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
+
+            {% if saldo_pendiente > 0 %}
+            <div style="background:#FEF3C7;border:1px solid #FDE68A;border-radius:8px;padding:12px 16px;margin-bottom:16px;">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span class="mdi mdi-alert" style="color:#D97706;font-size:18px;"></span>
+                <span style="font-size:13px;font-weight:600;color:#92400E;">Saldo pendiente de S/ {{ saldo_pendiente|floatformat:2 }}</span>
+              </div>
+            </div>
+
+            <div style="background:#F0FDF4;border:1px solid #A7F3D0;border-radius:8px;padding:16px;margin-bottom:16px;">
+              <div style="font-size:13px;font-weight:600;color:#065F46;margin-bottom:12px;">Registrar pago final</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                <div>
+                  <label style="font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase;display:block;margin-bottom:4px;">Monto (S/)</label>
+                  <input type="number" name="monto_final" step="0.01" value="{{ saldo_pendiente|floatformat:2 }}" class="form-input" style="width:100%;padding:7px 10px;border:0.5px solid rgba(0,0,0,0.12);border-radius:8px;font-size:13px;font-weight:600;">
+                </div>
+                <div>
+                  <label style="font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase;display:block;margin-bottom:4px;">Método de Pago</label>
+                  <select name="metodo_final" class="form-input" style="width:100%;padding:7px 10px;border:0.5px solid rgba(0,0,0,0.12);border-radius:8px;font-size:13px;">
+                    <option value="yape" {% if metodo_sugerido == 'yape' %}selected{% endif %}>Yape</option>
+                    <option value="plin">Plin</option>
+                    <option value="bcp_personal">BCP Persona Natural</option>
+                    <option value="bcp_sos" {% if metodo_sugerido == 'bcp_sos' %}selected{% endif %}>BCP SOS Empresa</option>
+                    <option value="otro">Otro</option>
+                  </select>
+                </div>
+              </div>
+              <div style="margin-top:12px;">
+                <label style="font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase;display:block;margin-bottom:4px;">Observaciones</label>
+                <textarea name="obs_final" rows="2" class="form-input" style="width:100%;padding:7px 10px;border:0.5px solid rgba(0,0,0,0.12);border-radius:8px;font-size:13px;" placeholder="Obligatorio si el monto es menor al saldo pendiente"></textarea>
+              </div>
+            </div>
+            {% else %}
+            <div style="background:#D1FAE5;border:1px solid #A7F3D0;border-radius:8px;padding:12px 16px;margin-bottom:16px;">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <span class="mdi mdi-check-circle" style="color:#059669;font-size:18px;"></span>
+                <span style="font-size:13px;font-weight:600;color:#065F46;">Saldo liquidado. Puede finalizar directamente.</span>
+              </div>
+            </div>
+            {% endif %}
+
+            <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;">
+              <a href="{% url 'dashboard-servicios-detail' s.pk %}"
+                style="padding:8px 20px;border:1px solid #D1D5DB;border-radius:6px;color:#374151;text-decoration:none;font-size:14px;">
+                Cancelar
+              </a>
+              <button type="submit"
+                style="padding:8px 24px;background:#059669;color:#fff;border:none;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer;">
+                <span class="mdi mdi-check-circle" style="margin-right:4px;"></span>
+                Sí, Finalizar
+              </button>
+            </div>
+          </form>
+        </div>
+      </v-card>
+    </v-container>
+  </v-app>
+</div>
+<style>
+.estado-chip {
+  display:inline-flex;
+  padding:3px 12px;
+  border-radius:20px;
+  font-size:11px;
+  font-weight:600;
+}
+.card-header-sm {
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:12px 14px;
+  font-size:13px;
+  font-weight:600;
+  color:#1e293b;
+}
+.icon-wrap-sm {
+  width:28px;height:28px;
+  border-radius:7px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  flex-shrink:0;
+}
+.card-body-sm { padding:12px 14px; }
+.pago-concepto {
+  display:inline-flex;
+  padding:2px 8px;
+  border-radius:10px;
+  font-size:11px;
+  font-weight:600;
+  background:#F3F4F6;
+  color:#374151;
+}
+</style>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+  const { createApp } = Vue;
+  const { createVuetify } = Vuetify;
+  createApp({ delimiters: ['[[', ']]'], data() { return {}; } }).use(createVuetify()).mount('#app');
+</script>
+{% endblock %}

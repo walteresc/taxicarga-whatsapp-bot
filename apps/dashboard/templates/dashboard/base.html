@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <title>TaxiCarga | {% block title %}Dashboard{% endblock %}</title>
+  <link href="https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/vuetify@3.7.6/dist/vuetify.min.css" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: 'Roboto', sans-serif;
+      background: #eef2f4;
+      letter-spacing: 0;
+    }
+    header.dashboard-header {
+      height: 58px;
+      background-color: #263238;
+      color: #fff;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0 24px;
+      position: relative;
+      z-index: 100;
+    }
+    header.dashboard-header .system-name {
+      font-weight: 700;
+      font-size: 22px;
+    }
+    header.dashboard-header .user-menu {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      position: relative;
+    }
+    a.header-link {
+      color: #fff;
+      cursor: pointer;
+      font-weight: 500;
+      text-decoration: none;
+    }
+    .dropdown-menu {
+      position: absolute;
+      top: 100%;
+      right: 0;
+      background: #37474f;
+      border-radius: 4px;
+      padding: 8px 0;
+      min-width: 180px;
+      box-shadow: 0 4px 12px rgba(0,0,0,.3);
+      z-index: 200;
+    }
+    .dropdown-menu a {
+      display: block;
+      padding: 8px 16px;
+      color: #e0edf2;
+      text-decoration: none;
+      font-size: 14px;
+    }
+    .dropdown-menu a:hover { background: rgba(255,255,255,.1); }
+    .dropdown-menu a { display: flex; align-items: center; gap: 8px; }
+    .dropdown-menu a .mdi { font-size: 16px; opacity: 0.75; flex-shrink: 0; }
+    .dashboard-layout {
+      display: flex;
+      min-height: calc(100vh - 58px);
+    }
+    .sidebar {
+      width: 250px;
+      min-width: 250px;
+      background: #102027;
+      color: #c7d4d8;
+      display: flex;
+      flex-direction: column;
+      position: sticky;
+      top: 0;
+      align-self: flex-start;
+      height: 100vh;
+    }
+    .sidebar-nav {
+      flex: 1;
+      padding: 10px 0;
+    }
+    .sidebar-section-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: #6d8a94;
+      padding: 14px 18px 6px;
+      font-weight: 700;
+    }
+    .sidebar-link {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 18px;
+      color: #b0c4cc;
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 500;
+      transition: background .12s, color .12s;
+      border-left: 3px solid transparent;
+    }
+    .sidebar-link:hover {
+      background: rgba(255,255,255,.06);
+      color: #e0edf2;
+    }
+    .sidebar-link-active {
+      background: rgba(255,255,255,.10);
+      color: #e0edf2;
+      border-left: 3px solid #26a69a;
+    }
+    .sidebar-link .mdi { font-size: 18px; opacity: 0.85; width: 24px; text-align: center; }
+    .main-area {
+      flex: 1;
+      min-width: 0;
+      padding: 20px 24px;
+      background: #f7f9fa;
+    }
+    .v-btn { letter-spacing: 0; text-transform: none; }
+    @media (max-width: 820px) {
+      .sidebar { width: 60px; min-width: 60px; }
+      .sidebar-section-label, .sidebar-link span:last-child { display: none; }
+      .sidebar-link { justify-content: center; padding: 12px 8px; border-left: none; }
+      .sidebar-link .mdi { font-size: 22px; width: auto; }
+    }
+  </style>
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+  <header class="dashboard-header">
+    <div class="system-name">TaxiCarga</div>
+
+    {% if header_canales %}
+    <select id="header-channel-select"
+      style="max-width:280px;background:rgba(255,255,255,.08);color:#e0edf2;border:1px solid rgba(255,255,255,.2);border-radius:6px;padding:5px 10px;font-size:13px;cursor:pointer;outline:none;">
+      <option value="" style="background:#263238;color:#e0edf2;">Todos los canales</option>
+      {% for canal in header_canales %}
+      <option value="{{ canal.id }}" {% if header_channel_id == canal.id %}selected{% endif %}
+        style="background:#263238;color:#e0edf2;">{{ canal.nombre }}</option>
+      {% endfor %}
+    </select>
+    {% endif %}
+
+    <div class="user-menu">
+      <div class="header-link" id="user-name" tabindex="0" aria-haspopup="true" aria-expanded="false">
+        {{ user.get_username|default:"Usuario" }} &#x25BC;
+      </div>
+      <div class="dropdown-menu" aria-labelledby="user-name" hidden>
+        <a href="#" class="header-link">
+          <span class="mdi mdi-account-outline"></span>Mi perfil
+        </a>
+        <a href="#" class="header-link">
+          <span class="mdi mdi-lock-outline"></span>Cambiar contraseña
+        </a>
+        {% if is_admin or is_supervisor %}
+          <a href="{% url 'dashboard-admin-placeholder' %}" class="header-link">
+            <span class="mdi mdi-shield-account-outline"></span>Administración
+          </a>
+        {% endif %}
+        {% if is_admin %}
+          <a href="/admin/" target="_blank" class="header-link">
+            <span class="mdi mdi-cog-outline"></span>Admin Django
+          </a>
+        {% endif %}
+        <a href="{% url 'dashboard-logout' %}" class="header-link">
+          <span class="mdi mdi-logout"></span>Cerrar sesión
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <div class="dashboard-layout">
+    <aside class="sidebar">  
+      <nav class="sidebar-nav">
+        <div class="sidebar-section-label">GENERAL</div>
+        <a href="/dashboard/" class="sidebar-link {% if active_section == 'leads' %}sidebar-link-active{% endif %}"><span class="mdi mdi-view-dashboard-outline"></span><span>Dashboard</span></a>
+        <a href="/dashboard/leads/" class="sidebar-link {% if active_section == 'leads' %}sidebar-link-active{% endif %}"><span class="mdi mdi-account-multiple-outline"></span><span>Gestión de Leads</span></a>
+        <a href="/dashboard/servicios/" class="sidebar-link {% if active_section == 'servicios' %}sidebar-link-active{% endif %}"><span class="mdi mdi-briefcase-outline"></span><span>Reservas</span></a>
+        <a href="/dashboard/clientes/" class="sidebar-link {% if active_section == 'clientes' %}sidebar-link-active{% endif %}"><span class="mdi mdi-account-group-outline"></span><span>Clientes</span></a>
+
+        <div class="sidebar-section-label">OPERACIONES</div>
+        <a href="/dashboard/pizarra/" class="sidebar-link {% if active_section == 'pizarra' %}sidebar-link-active{% endif %}"><span class="mdi mdi-bulletin-board"></span><span>Pizarra</span></a>
+        <div class="sidebar-section-label" style="padding-top:8px;">GESTIÓN DE CAMPO</div>
+        <a href="/dashboard/campo/conductores/" class="sidebar-link {% if '/dashboard/campo/conductores/' in request.path %}sidebar-link-active{% endif %}"><span class="mdi mdi-steering"></span><span>Conductores</span></a>
+        <a href="/dashboard/campo/ayudantes/" class="sidebar-link {% if '/dashboard/campo/ayudantes/' in request.path %}sidebar-link-active{% endif %}"><span class="mdi mdi-account-hard-hat"></span><span>Ayudantes</span></a>
+        <a href="/dashboard/campo/equipos/" class="sidebar-link {% if '/dashboard/campo/equipos/' in request.path and '/frecuentes' not in request.path %}sidebar-link-active{% endif %}"><span class="mdi mdi-account-group"></span><span>Equipos de Campo</span></a>
+        <a href="/dashboard/campo/equipos-frecuentes/" class="sidebar-link {% if '/dashboard/campo/equipos-frecuentes/' in request.path %}sidebar-link-active{% endif %}"><span class="mdi mdi-star-circle-outline"></span><span>Equipos Frecuentes</span></a>
+        <div class="sidebar-section-label" style="padding-top:8px;">GESTIÓN DE FLOTA</div>
+        <a href="/dashboard/flota/vehiculos/" class="sidebar-link {% if active_section == 'flota' %}sidebar-link-active{% endif %}"><span class="mdi mdi-truck"></span><span>Vehículos</span></a>
+        <a href="/dashboard/flota/mantenimientos/" class="sidebar-link {% if active_section == 'flota' %}sidebar-link-active{% endif %}"><span class="mdi mdi-book-open-page-variant"></span><span>Mantenimientos</span></a>
+
+        <div class="sidebar-section-label">CONFIGURACIÓN</div>
+        <a href="{% url 'dashboard-whatsapp' %}" class="sidebar-link {% if active_section == 'whatsapp' %}sidebar-link-active{% endif %}"><span class="mdi mdi-robot-outline"></span><span>Bot WhatsApp</span></a>
+        <a href="{% url 'dashboard-canales' %}" class="sidebar-link {% if active_section == 'canales' %}sidebar-link-active{% endif %}"><span class="mdi mdi-whatsapp"></span><span>Canales WhatsApp</span></a>
+
+        <div class="sidebar-section-label">ANALÍTICA</div>
+        <a href="/dashboard/reportes/" class="sidebar-link {% if active_section == 'reportes' %}sidebar-link-active{% endif %}"><span class="mdi mdi-chart-bar"></span><span>Reportes</span></a>
+
+        <div class="sidebar-section-label">SISTEMA</div>
+        <a href="{% url 'dashboard-admin-placeholder' %}" class="sidebar-link {% if active_section == 'admin' %}sidebar-link-active{% endif %}"><span class="mdi mdi-shield-account-outline"></span><span>Administración</span></a>
+      </nav>
+    </aside>
+
+    <main class="main-area">
+      {% if messages %}
+        {% for message in messages %}
+          <div style="max-width:1600px;margin:0 auto;padding:12px 18px 0;">
+            <div style="background:#e8f5e9;border-left:4px solid #4caf50;padding:12px 16px;border-radius:6px;color:#1b5e20;margin-bottom:8px;">
+              {{ message }}
+            </div>
+          </div>
+        {% endfor %}
+      {% endif %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+
+  <script>
+    var trigger = document.getElementById('user-name');
+    var menu = document.querySelector('.dropdown-menu');
+
+    trigger.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (menu.hasAttribute('hidden')) {
+        menu.removeAttribute('hidden');
+        trigger.setAttribute('aria-expanded', 'true');
+      } else {
+        menu.setAttribute('hidden', '');
+        trigger.setAttribute('aria-expanded', 'false');
+      }
+    });
+
+    document.addEventListener('click', function (e) {
+      if (!e.target.closest('.user-menu')) {
+        menu.setAttribute('hidden', '');
+        trigger.setAttribute('aria-expanded', 'false');
+      }
+    });
+
+    var channelSelect = document.getElementById('header-channel-select');
+    if (channelSelect) {
+      channelSelect.addEventListener('change', function () {
+        var url = new URL(window.location);
+        if (this.value) {
+          url.searchParams.set('channel', this.value);
+        } else {
+          url.searchParams.delete('channel');
+        }
+        window.location = url.href;
+      });
+    }
+  </script>
+
+  <script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/vuetify@3.7.6/dist/vuetify.min.js"></script>
+  {% block extra_scripts %}{% endblock %}
+</body>
+</html>

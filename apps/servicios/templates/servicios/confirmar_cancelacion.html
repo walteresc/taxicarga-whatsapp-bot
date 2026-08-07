@@ -1,0 +1,64 @@
+{% extends "dashboard/base.html" %}
+{% load servicio_tags %}
+{% block title %}Cancelar {{ servicio.codigo }}{% endblock %}
+{% block content %}
+<div id="app">
+  <v-app>
+    <v-container class="py-6" style="max-width:600px;">
+      <v-card>
+        <v-card-title class="d-flex align-center pa-4">
+          <v-icon color="error" class="mr-2">mdi-close-circle</v-icon>
+          <span class="text-h5 font-weight-bold">Cancelar Reserva</span>
+        </v-card-title>
+        <v-divider></v-divider>
+        <v-card-text class="pa-4">
+          <p style="font-size:15px;margin-bottom:8px;">
+            ¿Estás seguro de cancelar la reserva
+            <strong>{{ servicio.codigo }}</strong> —
+            {{ servicio.cliente.nombre|default:"" }}?
+          </p>
+          <v-chip color="{{ servicio.estado|estado_color }}" variant="tonal" label size="small" class="mb-4">
+            {{ servicio.get_estado_display }}
+          </v-chip>
+
+          <form method="post">
+            {% csrf_token %}
+            {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
+            <label style="font-size:14px;font-weight:600;color:#37474f;display:block;margin-bottom:4px;">
+              Motivo de cancelación *
+            </label>
+            <textarea name="motivo_cancelacion" class="form-input" rows="4"
+              placeholder="Indique el motivo de la cancelación..." required></textarea>
+            <div style="font-size:12px;color:#78909c;margin-top:4px;margin-bottom:16px;">
+              El motivo es obligatorio para cancelar la reserva.
+            </div>
+
+            <div style="display:flex;justify-content:flex-end;gap:8px;">
+              <a href="{% if next_url %}{{ next_url }}{% else %}{% url 'dashboard-servicios-list' %}{% endif %}" class="v-btn v-theme--light text-none"
+                style="text-decoration:none;padding:8px 20px;border-radius:6px;border:1px solid #ccc;color:#546e7a;font-size:14px;">
+                Volver
+              </a>
+              <button type="submit" class="v-btn v-btn--elevated v-theme--light bg-error text-none"
+                style="border:none;padding:8px 20px;border-radius:6px;font-size:14px;cursor:pointer;color:#fff;">
+                <span class="mdi mdi-close-circle" style="margin-right:6px;"></span>Confirmar Cancelación
+              </button>
+            </div>
+          </form>
+        </v-card-text>
+      </v-card>
+    </v-container>
+  </v-app>
+</div>
+<style>
+.form-input { width:100%; padding:8px 12px; border:1px solid #cfd8dc; border-radius:6px; font-size:14px; color:#263238; background:#fff; box-sizing:border-box; }
+.form-input:focus { outline:none; border-color:#1565c0; box-shadow:0 0 0 2px rgba(21,101,192,.15); }
+textarea.form-input { resize:vertical; }
+</style>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+  const { createApp } = Vue;
+  const { createVuetify } = Vuetify;
+  createApp({ delimiters: ['[[', ']]'], data() { return {}; } }).use(createVuetify()).mount('#app');
+</script>
+{% endblock %}

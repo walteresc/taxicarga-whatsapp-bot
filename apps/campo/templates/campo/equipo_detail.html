@@ -1,0 +1,99 @@
+{% extends "dashboard/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block extra_head %}
+<style>
+.detail-table { width:100%; border-collapse:collapse; font-size:14px; }
+.detail-table tr { border-bottom:1px solid #f0f0f0; }
+.detail-table td { padding:10px 16px; }
+.detail-table td:first-child { font-weight:600; color:#546e7a; white-space:nowrap; width:200px; background:#fafbfc; }
+</style>
+{% endblock %}
+{% block content %}
+<div id="app">
+  <v-app>
+    <v-container class="py-6" style="max-width:1000px;">
+      <v-card class="mb-6">
+        <v-card-title class="d-flex align-center pa-4">
+          <v-icon color="primary" class="mr-2">mdi-account-group</v-icon>
+          <span class="text-h5 font-weight-bold">Equipo de Campo — {{ equipo.fecha|date:"d/m/Y" }}</span>
+          <v-spacer></v-spacer>
+          <a href="{% url 'equipo_edit' equipo.pk %}" class="v-btn v-btn--elevated v-theme--light bg-primary text-none" style="text-decoration:none;font-size:14px;padding:6px 16px;border-radius:6px;">
+            <span class="mdi mdi-pencil" style="margin-right:6px;"></span>Editar
+          </a>
+        </v-card-title>
+        <v-divider></v-divider>
+        <table class="detail-table">
+          <tr><td>Fecha</td><td>{{ equipo.fecha|date:"d/m/Y" }}</td></tr>
+          <tr><td>Vehículo</td><td>{{ equipo.vehiculo.placa }} — {{ equipo.vehiculo.marca }} {{ equipo.vehiculo.modelo }}</td></tr>
+          <tr><td>Conductor</td><td>{{ equipo.conductor.nombre }} ({{ equipo.conductor.dni }})</td></tr>
+          <tr><td>Ayudantes</td><td>{% for a in equipo.ayudantes.all %}{{ a.nombre }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</td></tr>
+          <tr><td>Estado</td><td>{% if equipo.activo %}<span class="status-badge status-active">Activo</span>{% else %}<span class="status-badge status-inactive">Inactivo</span>{% endif %}</td></tr>
+          <tr><td>Observaciones</td><td>{{ equipo.observaciones|default:"-" }}</td></tr>
+        </table>
+        <v-divider></v-divider>
+        <v-card-actions class="pa-4">
+          <v-btn variant="outlined" href="{% url 'dashboard-campo-equipos' %}">
+            <v-icon start>mdi-arrow-left</v-icon> Volver
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+
+      <v-card>
+        <v-card-title class="d-flex align-center pa-4">
+          <v-icon color="teal" class="mr-2">mdi-history</v-icon>
+          <span class="text-h5 font-weight-bold">Historial de Servicios</span>
+        </v-card-title>
+        <v-divider></v-divider>
+        <div style="overflow-x:auto;">
+          <table class="generic-table">
+            <thead>
+              <tr>
+                <th>Código</th>
+                <th>Cliente</th>
+                <th>Fecha</th>
+                <th>Origen</th>
+                <th>Destino</th>
+                <th>Precio</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for ps in servicios %}
+              <tr>
+                <td><strong>{{ ps.servicio.codigo }}</strong></td>
+                <td>{{ ps.servicio.cliente.nombre|default:ps.servicio.cliente.telefono }}</td>
+                <td>{{ ps.fecha|date:"d/m/Y" }}</td>
+                <td>{{ ps.servicio.distrito_origen|default:"-" }}</td>
+                <td>{{ ps.servicio.distrito_destino|default:"-" }}</td>
+                <td>S/ {{ ps.monto|floatformat:0 }}</td>
+                <td>
+                  <span class="status-badge
+                    {% if ps.estado_operativo == 'finalizado' %}status-active
+                    {% elif ps.estado_operativo == 'cancelado' %}status-inactive
+                    {% else %}status-pending{% endif %}">
+                    {{ ps.get_estado_operativo_display }}
+                  </span>
+                </td>
+              </tr>
+              {% empty %}
+              <tr>
+                <td colspan="7" class="text-center text-grey py-6">
+                  No hay servicios asignados a este equipo.
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </v-card>
+    </v-container>
+  </v-app>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+  const { createApp } = Vue;
+  const { createVuetify } = Vuetify;
+  createApp({ delimiters: ['[[', ']]'], data() { return {}; } }).use(createVuetify()).mount('#app');
+</script>
+{% endblock %}

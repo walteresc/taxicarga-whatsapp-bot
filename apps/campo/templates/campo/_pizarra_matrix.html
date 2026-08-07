@@ -1,0 +1,177 @@
+<div class="pizarra-container pizarra-matrix" id="pizarra-table">
+  {% for dia in dias_data %}
+  <div class="matrix-unassigned matrix-unassigned-fixed">
+    <div class="matrix-unassigned-label">
+      <span>Por asignar</span>
+      <b>{{ dia.sin_asignar|length }}</b>
+    </div>
+    <div class="matrix-unassigned-list">
+      {% for item in dia.sin_asignar %}
+      <article class="unassigned-card"
+               draggable="{% if can_edit %}true{% else %}false{% endif %}"
+               data-ps-id="{{ item.ps_id|default:'' }}"
+               data-servicio-id="{{ item.servicio_id|default:'' }}"
+               data-fecha="{{ item.fecha_iso }}"
+               data-hora="{{ item.hora }}">
+        <div class="unassigned-main">
+          <strong>{{ item.hora_display }} · {{ item.monto }}</strong>
+          <span>{{ item.codigo }} · {{ item.cliente }}</span>
+        </div>
+        {% if can_edit %}
+        {% endif %}
+      </article>
+      {% empty %}
+      <div class="matrix-unassigned-empty">
+        <span class="mdi mdi-check-circle-outline"></span>
+        Todos los servicios están asignados
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+  <div class="pizarra-scroll pizarra-matrix-scroll">
+    {% for dia in dias_data %}
+    <section id="matrix-day-{{ dia.fecha_str }}"
+             class="matrix-day{% if dia.es_hoy %} matrix-day-today{% endif %}"
+             data-fecha="{{ dia.fecha_iso }}">
+      <div class="matrix-unassigned">
+        <div class="matrix-unassigned-label">
+          <span>Por asignar</span>
+          <b>{{ dia.sin_asignar|length }}</b>
+        </div>
+        <div class="matrix-unassigned-list">
+          {% for item in dia.sin_asignar %}
+          <article class="unassigned-card"
+                   draggable="{% if can_edit %}true{% else %}false{% endif %}"
+                   data-ps-id="{{ item.ps_id|default:'' }}"
+                   data-servicio-id="{{ item.servicio_id|default:'' }}"
+                   data-fecha="{{ item.fecha_iso }}"
+                   data-hora="{{ item.hora }}">
+            <div class="unassigned-main">
+              <strong>{{ item.hora_display }} · {{ item.monto }}</strong>
+              <span>{{ item.codigo }} · {{ item.cliente }}</span>
+            </div>
+            {% if can_edit %}
+            {% endif %}
+          </article>
+          {% empty %}
+          <div class="matrix-unassigned-empty">
+            <span class="mdi mdi-check-circle-outline"></span>
+            Todos los servicios están asignados
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <table class="matrix-table">
+        <thead>
+          <tr>
+            <th class="matrix-team-heading">
+              <span>Equipos / Personas</span>
+              {% if can_edit %}
+              <button class="btn-add-equipo" data-fecha-iso="{{ dia.fecha_iso }}" title="Agregar equipo">
+                <span class="mdi mdi-plus"></span> Equipo
+              </button>
+              {% endif %}
+            </th>
+            {% for hora in horas_cabecera %}
+            <th class="matrix-hour" data-hora="{{ hora.hora }}" colspan="2">{{ hora.label }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for eq in dia.equipos %}
+          <tr class="matrix-team-row"
+              data-equipo-id="{{ eq.id }}"
+              data-fecha="{{ dia.fecha_iso }}"
+              data-n-servicios="{{ eq.n_servicios }}">
+            <th class="matrix-team th-equipo"
+                data-equipo-id="{{ eq.id }}"
+                data-fecha="{{ dia.fecha_iso }}"
+                data-n-servicios="{{ eq.n_servicios }}">
+              <div class="eq-main">
+                <span class="eq-placa"><span class="mdi mdi-truck-outline"></span>{{ eq.placa }}</span>
+              </div>
+              <div class="eq-conductor">{{ eq.conductor }}</div>
+              {% if eq.ayudantes %}
+              <div class="eq-ayudantes"><span class="eq-role">A</span>{{ eq.ayudantes }}</div>
+              {% endif %}
+              {% if can_edit %}
+              <div class="matrix-team-actions">
+                <button class="btn-edit-equipo" data-equipo-id="{{ eq.id }}" title="Editar equipo">
+                  <span class="mdi mdi-pencil-outline"></span>
+                </button>
+                <button class="btn-del-equipo" title="Eliminar equipo">
+                  <span class="mdi mdi-close"></span>
+                </button>
+              </div>
+              {% endif %}
+            </th>
+            {% for cell in eq.horas %}
+              {% if cell.tipo == 'booking' %}
+              <td class="td-booking td-booking-{{ cell.servicio_estado }}{% if cell.start_minute >= 30 %} booking-start-half{% endif %}"
+                  colspan="{{ cell.rowspan }}"
+                  data-ps-id="{{ cell.ps_id }}">
+                <div class="booking-block estado-{{ cell.servicio_estado }}"
+                     draggable="{% if can_edit %}true{% else %}false{% endif %}"
+                     data-ps-id="{{ cell.ps_id }}"
+                     data-servicio-pk="{{ cell.servicio_pk }}"
+                     data-servicio-codigo="{{ cell.servicio_codigo }}"
+                     data-cliente="{{ cell.cliente }}"
+                     data-estado="{{ cell.servicio_estado }}"
+                     data-estado-label="{{ cell.servicio_estado_label }}"
+                     data-hora="{{ cell.hora_display }}"
+                     data-hora-fin="{{ cell.hora_fin_display }}"
+                     data-duracion-hs="{{ cell.duracion_hs }}"
+                     data-precio="{{ cell.precio }}"
+                     data-origen="{{ cell.origen }}"
+                     data-destino="{{ cell.destino }}">
+                  <div class="bb-line1">
+                    <span class="bb-hora">{{ cell.hora_display }}</span>
+                    <span class="bb-badge badge-{{ cell.servicio_estado }}">{{ cell.servicio_estado_label }}</span>
+                    <span class="bb-precio">{{ cell.precio }}</span>
+                  </div>
+                  <div class="bb-cliente">{{ cell.cliente }}</div>
+                  <div class="bb-ruta">{{ cell.origen }} → {{ cell.destino }}</div>
+                  <button class="bb-btn-duracion" data-ps-id="{{ cell.ps_id }}" title="Arrastrar para cambiar duración">
+                    <span class="mdi mdi-arrow-left-right"></span>
+                  </button>
+                </div>
+              </td>
+              {% elif cell.tipo == 'empty' %}
+              <td class="td-empty matrix-slot"
+                  data-fecha="{{ cell.equipo_fecha }}"
+                  data-equipo-id="{{ cell.equipo_id }}">
+                <div class="td-half-slot" data-hora="{{ cell.hora }}">{{ cell.hora_display }}</div>
+              </td>
+              {% endif %}
+            {% endfor %}
+          </tr>
+          {% endfor %}
+          {% for filler in dia.filas_relleno %}
+          <tr class="matrix-filler-row" {% if not forloop.first %}aria-hidden="true"{% endif %}>
+            <th class="matrix-team matrix-team-empty">
+              {% if forloop.first %}
+                {% if not dia.equipos %}
+                <span class="matrix-empty-team-label">Sin equipos formados</span>
+                {% endif %}
+                {% if can_edit %}
+                <button class="btn-add-equipo btn-add-equipo-filler" data-fecha-iso="{{ dia.fecha_iso }}" title="Agregar equipo">
+                  <span class="mdi mdi-plus"></span>
+                </button>
+                {% endif %}
+              {% endif %}
+            </th>
+            {% for slot in horas_slots %}
+            <td class="matrix-slot matrix-slot-empty">
+              <div class="td-half-slot">{{ slot.label }}</div>
+            </td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+    {% endfor %}
+  </div>
+</div>

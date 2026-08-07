@@ -1,0 +1,358 @@
+{% extends "dashboard/base.html" %}
+{% block title %}{% if edit_mode %}Editar{% else %}Nuevo{% endif %} Equipo de Campo{% endblock %}
+{% block extra_head %}
+<style>
+.drag-wrap { display:flex; gap:24px; align-items:flex-start; }
+.left-panel { flex:0 0 320px; }
+.right-panel { flex:1; }
+.pool-list { display:flex; flex-direction:column; gap:4px; min-height:60px; padding:8px; background:#f8fafc; border-radius:8px; border:1px solid #e2e8f0; }
+.pool-item { display:flex; align-items:center; gap:8px; padding:8px 12px; background:#fff; border:1px solid #e2e8f0; border-radius:6px; cursor:grab; font-size:13px; color:#1e293b; transition:box-shadow .12s, opacity .12s; user-select:none; }
+.pool-item:hover { box-shadow:0 2px 6px rgba(0,0,0,.08); }
+.pool-item:active { cursor:grabbing; opacity:.7; }
+.pool-item .mdi { font-size:16px; color:#64748b; }
+.pool-item.dragging { opacity:.4; }
+.drop-zone { min-height:80px; border:2px dashed #cbd5e1; border-radius:10px; padding:10px; background:#fafbfc; transition:background .15s, border-color .15s; }
+.drop-zone.drag-over-valid { border-color:#22c55e; background:#f0fdf4; }
+.drop-zone.drag-over-invalid { border-color:#ef4444; background:#fef2f2; }
+.drop-zone.has-item { border-style:solid; border-color:#22c55e; background:#f0fdf4; }
+.drop-zone.multi.has-items { border-style:solid; border-color:#22c55e; background:#f0fdf4; }
+.zone-label { font-size:12px; font-weight:600; color:#64748b; text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px; display:flex; align-items:center; gap:6px; }
+.zone-chip { display:inline-flex; align-items:center; gap:6px; padding:6px 10px; background:#fff; border:1px solid #e2e8f0; border-radius:6px; font-size:13px; color:#1e293b; margin:2px; }
+.zone-chip .remove { cursor:pointer; color:#94a3b8; font-size:16px; line-height:1;margin-left:4px; }
+.zone-chip .remove:hover { color:#ef4444; }
+.zone-placeholder { color:#94a3b8; font-size:13px; text-align:center; padding:16px 8px; }
+.drop-zone.drag-over-valid .zone-placeholder { color:#22c55e; }
+.form-input { width:100%; padding:8px 12px; border:1px solid #cfd8dc; border-radius:6px; font-size:14px; color:#263238; background:#fff; box-sizing:border-box; }
+.form-input:focus { outline:none; border-color:#1565c0; box-shadow:0 0 0 2px rgba(21,101,192,.15); }
+textarea.form-input { resize:vertical; }
+.form-checkbox { display:inline-flex; align-items:center; cursor:pointer; }
+</style>
+{% endblock %}
+{% block content %}
+<div id="equipo-drag-app" v-cloak>
+  <v-app>
+    <v-container class="py-6" style="max-width:1200px;">
+      <v-card>
+        <v-card-title class="d-flex align-center pa-4">
+          <v-icon color="primary" class="mr-2">mdi-account-group</v-icon>
+          <span class="text-h5 font-weight-bold">{% if edit_mode %}Editar{% else %}Nuevo{% endif %} Equipo de Campo</span>
+        </v-card-title>
+        <v-divider></v-divider>
+        <v-card-text class="pa-4">
+          <form method="post" @submit.prevent="submitForm" id="equipo-form"
+            action="{% if edit_mode %}{% url 'equipo_edit' equipo_id %}{% else %}{% url 'equipo_create' %}{% endif %}">
+            {% csrf_token %}
+
+            <v-row dense class="mb-4">
+              <v-col cols="6" md="3">
+                <label class="zone-label"><span class="mdi mdi-calendar"></span> Fecha</label>
+                <input type="date" name="fecha" v-model="form.fecha" class="form-input" required>
+              </v-col>
+              <v-col cols="6" md="3" style="display:flex;align-items:flex-end;">
+                <label class="form-checkbox" style="gap:6px;cursor:pointer;">
+                  <input type="checkbox" name="activo" value="true" v-model="form.activo" true-value="true" false-value="">
+                  <span class="zone-label" style="margin-bottom:0;">Equipo activo</span>
+                </label>
+              </v-col>
+            </v-row>
+
+            {% if form.errors %}
+            <v-alert type="error" variant="tonal" class="mb-4" density="compact" closable>
+              <ul style="margin:0;padding-left:18px;">
+                {% for field, errors in form.errors.items %}
+                {% for error in errors %}
+                <li>{{ field }}: {{ error }}</li>
+                {% endfor %}
+                {% endfor %}
+              </ul>
+            </v-alert>
+            {% endif %}
+
+            <div class="drag-wrap">
+              <div class="left-panel">
+                <v-card variant="outlined" class="mb-4">
+                  <v-card-title class="text-subtitle-2 font-weight-bold pa-3" style="border-bottom:1px solid #e2e8f0;">
+                    <span class="mdi mdi-truck" style="margin-right:6px;"></span>Vehículos
+                  </v-card-title>
+                  <v-card-text class="pa-3">
+                    <div class="pool-list">
+                      <div v-for="v in available.vehiculos" :key="'v-' + v.id"
+                        class="pool-item"
+                        draggable="true"
+                        :class="{ dragging: draggingItem === 'v-' + v.id }"
+                        @dragstart="onDragStart($event, 'vehiculo', v)"
+                        @dragend="onDragEnd">
+                        <span class="mdi mdi-truck"></span>
+                        <span>[[ v.placa ]] — [[ v.marca ]] [[ v.modelo ]]</span>
+                      </div>
+                      <div v-if="available.vehiculos.length === 0" class="zone-placeholder">
+                        No hay vehículos activos
+                      </div>
+                    </div>
+                  </v-card-text>
+                </v-card>
+
+                <v-card variant="outlined" class="mb-4">
+                  <v-card-title class="text-subtitle-2 font-weight-bold pa-3" style="border-bottom:1px solid #e2e8f0;">
+                    <span class="mdi mdi-steering" style="margin-right:6px;"></span>Conductores
+                  </v-card-title>
+                  <v-card-text class="pa-3">
+                    <div class="pool-list">
+                      <div v-for="c in available.conductores" :key="'c-' + c.id"
+                        class="pool-item"
+                        draggable="true"
+                        :class="{ dragging: draggingItem === 'c-' + c.id }"
+                        @dragstart="onDragStart($event, 'conductor', c)"
+                        @dragend="onDragEnd">
+                        <span class="mdi mdi-steering"></span>
+                        <span>[[ c.nombre ]] ([[ c.dni ]])</span>
+                      </div>
+                      <div v-if="available.conductores.length === 0" class="zone-placeholder">
+                        No hay conductores activos
+                      </div>
+                    </div>
+                  </v-card-text>
+                </v-card>
+
+                <v-card variant="outlined" class="mb-4">
+                  <v-card-title class="text-subtitle-2 font-weight-bold pa-3" style="border-bottom:1px solid #e2e8f0;">
+                    <span class="mdi mdi-account-hard-hat" style="margin-right:6px;"></span>Ayudantes
+                  </v-card-title>
+                  <v-card-text class="pa-3">
+                    <div class="pool-list">
+                      <div v-for="a in available.ayudantes" :key="'a-' + a.id"
+                        class="pool-item"
+                        draggable="true"
+                        :class="{ dragging: draggingItem === 'a-' + a.id }"
+                        @dragstart="onDragStart($event, 'ayudante', a)"
+                        @dragend="onDragEnd">
+                        <span class="mdi mdi-account-hard-hat"></span>
+                        <span>[[ a.nombre ]] ([[ a.dni ]])</span>
+                      </div>
+                      <div v-if="available.ayudantes.length === 0" class="zone-placeholder">
+                        No hay ayudantes activos
+                      </div>
+                    </div>
+                  </v-card-text>
+                </v-card>
+              </div>
+
+              <div class="right-panel">
+                <v-card variant="outlined" class="mb-4">
+                  <v-card-title class="text-subtitle-2 font-weight-bold pa-3" style="border-bottom:1px solid #e2e8f0;">
+                    <span class="mdi mdi-plus-circle" style="margin-right:6px;"></span>Armar Equipo
+                  </v-card-title>
+                  <v-card-text class="pa-3">
+                    <div class="mb-4">
+                      <div class="zone-label"><span class="mdi mdi-truck"></span> Vehículo <span style="color:#94a3b8;font-weight:400;">(1)</span></div>
+                      <div class="drop-zone" :class="{ 'has-item': selected.vehiculo, 'drag-over-valid': dropState.vehiculo === 'valid', 'drag-over-invalid': dropState.vehiculo === 'invalid' }"
+                        @dragover.prevent="onDragOver($event, 'vehiculo')"
+                        @dragleave="onDragLeave('vehiculo')"
+                        @drop.prevent="onDrop($event, 'vehiculo')">
+                        <div v-if="selected.vehiculo" class="zone-chip">
+                          <span class="mdi mdi-truck" style="color:#1565c0;"></span>
+                          [[ selected.vehiculo.placa ]] — [[ selected.vehiculo.marca ]] [[ selected.vehiculo.modelo ]]
+                          <span class="remove" @click="removeItem('vehiculo')">&times;</span>
+                        </div>
+                        <div v-else class="zone-placeholder">Arrastra un vehículo aquí</div>
+                      </div>
+                    </div>
+
+                    <div class="mb-4">
+                      <div class="zone-label"><span class="mdi mdi-steering"></span> Conductor <span style="color:#94a3b8;font-weight:400;">(1)</span></div>
+                      <div class="drop-zone" :class="{ 'has-item': selected.conductor, 'drag-over-valid': dropState.conductor === 'valid', 'drag-over-invalid': dropState.conductor === 'invalid' }"
+                        @dragover.prevent="onDragOver($event, 'conductor')"
+                        @dragleave="onDragLeave('conductor')"
+                        @drop.prevent="onDrop($event, 'conductor')">
+                        <div v-if="selected.conductor" class="zone-chip">
+                          <span class="mdi mdi-steering" style="color:#1565c0;"></span>
+                          [[ selected.conductor.nombre ]] ([[ selected.conductor.dni ]])
+                          <span class="remove" @click="removeItem('conductor')">&times;</span>
+                        </div>
+                        <div v-else class="zone-placeholder">Arrastra un conductor aquí</div>
+                      </div>
+                    </div>
+
+                    <div class="mb-2">
+                      <div class="zone-label"><span class="mdi mdi-account-hard-hat"></span> Ayudantes <span style="color:#94a3b8;font-weight:400;">(varios)</span></div>
+                      <div class="drop-zone multi" :class="{ 'has-items': selected.ayudantes.length > 0, 'drag-over-valid': dropState.ayudantes === 'valid', 'drag-over-invalid': dropState.ayudantes === 'invalid' }"
+                        @dragover.prevent="onDragOver($event, 'ayudantes')"
+                        @dragleave="onDragLeave('ayudantes')"
+                        @drop.prevent="onDrop($event, 'ayudantes')">
+                        <div style="display:flex;flex-wrap:wrap;gap:4px;">
+                          <div v-for="(a, idx) in selected.ayudantes" :key="'sa-' + a.id" class="zone-chip">
+                            <span class="mdi mdi-account-hard-hat" style="color:#1565c0;"></span>
+                            [[ a.nombre ]] ([[ a.dni ]])
+                            <span class="remove" @click="removeAyudante(idx)">&times;</span>
+                          </div>
+                        </div>
+                        <div v-if="selected.ayudantes.length === 0" class="zone-placeholder">Arrastra ayudantes aquí</div>
+                      </div>
+                    </div>
+                  </v-card-text>
+                </v-card>
+
+                <v-card variant="outlined">
+                  <v-card-text class="pa-3">
+                    <label class="zone-label"><span class="mdi mdi-text"></span> Observaciones</label>
+                    <textarea v-model="form.observaciones" name="observaciones" class="form-input" rows="2" placeholder="Notas sobre el equipo..."></textarea>
+                  </v-card-text>
+                </v-card>
+              </div>
+            </div>
+
+            <input type="hidden" name="vehiculo" :value="selected.vehiculo ? selected.vehiculo.id : ''">
+            <input type="hidden" name="conductor" :value="selected.conductor ? selected.conductor.id : ''">
+            <input type="hidden" v-for="a in selected.ayudantes" :key="a.id" name="ayudantes" :value="a.id">
+
+            <v-divider class="my-4"></v-divider>
+            <div style="display:flex;justify-content:flex-end;gap:8px;">
+              <a href="{% url cancel_url %}" class="v-btn v-theme--light text-none" style="text-decoration:none;padding:8px 20px;border-radius:6px;border:1px solid #ccc;color:#546e7a;font-size:14px;">Cancelar</a>
+              <button type="submit" class="v-btn v-btn--elevated v-theme--light bg-primary text-none" style="border:none;padding:8px 20px;border-radius:6px;font-size:14px;cursor:pointer;color:#fff;" :disabled="!canSubmit">
+                <span class="mdi mdi-check" style="margin-right:6px;"></span>{% if edit_mode %}Guardar Cambios{% else %}Crear Equipo{% endif %}
+              </button>
+            </div>
+          </form>
+        </v-card-text>
+      </v-card>
+    </v-container>
+  </v-app>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+  const { createApp, ref, computed, onMounted } = Vue;
+  const { createVuetify } = Vuetify;
+
+  const initialSelected = {{ equipo_json|default:"null"|safe }};
+
+  function excludeSelected(available, selected, idKey) {
+    if (!selected) return available;
+    const ids = Array.isArray(selected) ? selected.map(s => s[idKey]) : [selected[idKey]];
+    return available.filter(a => !ids.includes(a[idKey]));
+  }
+
+  createApp({
+    delimiters: ['[[', ']]'],
+    data() {
+      const avail = {
+        vehiculos: {{ vehiculos_json|safe }},
+        conductores: {{ conductores_json|safe }},
+        ayudantes: {{ ayudantes_json|safe }},
+      };
+
+      let sel = { vehiculo: null, conductor: null, ayudantes: [] };
+      let obs = '';
+
+      if (initialSelected) {
+        sel.vehiculo = initialSelected.vehiculo || null;
+        sel.conductor = initialSelected.conductor || null;
+        sel.ayudantes = initialSelected.ayudantes || [];
+        obs = initialSelected.observaciones || '';
+
+        avail.vehiculos = excludeSelected(avail.vehiculos, sel.vehiculo, 'id');
+        avail.conductores = excludeSelected(avail.conductores, sel.conductor, 'id');
+        avail.ayudantes = excludeSelected(avail.ayudantes, sel.ayudantes, 'id');
+      }
+
+      return {
+        form: {
+          fecha: initialSelected ? (initialSelected.fecha || '') : new Date().toISOString().slice(0, 10),
+          activo: initialSelected ? (initialSelected.activo || 'true') : 'true',
+          observaciones: obs,
+        },
+        available: avail,
+        selected: sel,
+        draggingItem: null,
+        draggingType: null,
+        draggingData: null,
+        dropState: { vehiculo: null, conductor: null, ayudantes: null },
+      };
+    },
+    computed: {
+      canSubmit() {
+        return this.selected.vehiculo && this.selected.conductor && this.form.fecha;
+      }
+    },
+    methods: {
+      onDragStart(e, type, data) {
+        this.draggingType = type;
+        this.draggingData = data;
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', type + '-' + data.id);
+        this.$nextTick(() => { this.draggingItem = (type === 'vehiculo' ? 'v-' : type === 'conductor' ? 'c-' : 'a-') + data.id; });
+      },
+      onDragEnd() {
+        this.draggingItem = null;
+        this.draggingType = null;
+        this.draggingData = null;
+        this.dropState = { vehiculo: null, conductor: null, ayudantes: null };
+      },
+      onDragOver(e, zone) {
+        if (!this.draggingType) return;
+        if (zone === 'vehiculo' && this.draggingType === 'vehiculo') {
+          this.dropState.vehiculo = this.selected.vehiculo ? 'invalid' : 'valid';
+        } else if (zone === 'conductor' && this.draggingType === 'conductor') {
+          this.dropState.conductor = 'valid';
+        } else if (zone === 'ayudantes' && this.draggingType === 'ayudante') {
+          this.dropState.ayudantes = 'valid';
+        } else {
+          this.dropState[zone] = 'invalid';
+        }
+      },
+      onDragLeave(zone) {
+        this.dropState[zone] = null;
+      },
+      onDrop(e, zone) {
+        this.dropState = { vehiculo: null, conductor: null, ayudantes: null };
+        if (!this.draggingData) return;
+        if (zone === 'vehiculo' && this.draggingType === 'vehiculo' && !this.selected.vehiculo) {
+          this.selected.vehiculo = this.draggingData;
+          this.removeFromAvailable('vehiculo', this.draggingData.id);
+        } else if (zone === 'conductor' && this.draggingType === 'conductor') {
+          if (this.selected.conductor) this.returnToAvailable('conductor', this.selected.conductor);
+          this.selected.conductor = this.draggingData;
+          this.removeFromAvailable('conductor', this.draggingData.id);
+        } else if (zone === 'ayudantes' && this.draggingType === 'ayudante') {
+          if (!this.selected.ayudantes.find(a => a.id === this.draggingData.id)) {
+            this.selected.ayudantes.push(this.draggingData);
+            this.removeFromAvailable('ayudante', this.draggingData.id);
+          }
+        }
+        this.draggingItem = null;
+        this.draggingType = null;
+        this.draggingData = null;
+      },
+      removeFromAvailable(type, id) {
+        if (type === 'vehiculo') this.available.vehiculos = this.available.vehiculos.filter(v => v.id !== id);
+        else if (type === 'conductor') this.available.conductores = this.available.conductores.filter(c => c.id !== id);
+        else if (type === 'ayudante') this.available.ayudantes = this.available.ayudantes.filter(a => a.id !== id);
+      },
+      returnToAvailable(type, item) {
+        if (type === 'vehiculo') { this.available.vehiculos.push(item); }
+        else if (type === 'conductor') { this.available.conductores.push(item); }
+        else if (type === 'ayudante') { this.available.ayudantes.push(item); }
+      },
+      removeItem(type) {
+        if (type === 'vehiculo' && this.selected.vehiculo) {
+          this.returnToAvailable('vehiculo', this.selected.vehiculo);
+          this.selected.vehiculo = null;
+        } else if (type === 'conductor' && this.selected.conductor) {
+          this.returnToAvailable('conductor', this.selected.conductor);
+          this.selected.conductor = null;
+        }
+      },
+      removeAyudante(idx) {
+        const item = this.selected.ayudantes[idx];
+        if (item) {
+          this.returnToAvailable('ayudante', item);
+          this.selected.ayudantes.splice(idx, 1);
+        }
+      },
+      submitForm() {
+        document.getElementById('equipo-form').submit();
+      }
+    }
+  }).use(createVuetify()).mount('#equipo-drag-app');
+</script>
+{% endblock %}

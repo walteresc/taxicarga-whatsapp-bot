@@ -5,6 +5,10 @@ from django.utils import timezone
 class Cliente(models.Model):
     nombre = models.CharField(max_length=160, blank=True)
     telefono = models.CharField(max_length=30, unique=True)
+    documento = models.CharField(max_length=20, blank=True, default="")
+    correo = models.EmailField(max_length=200, blank=True, default="")
+    ruc = models.CharField(max_length=20, blank=True, default="")
+    razon_social = models.CharField(max_length=200, blank=True, default="")
     fecha_creacion = models.DateTimeField(auto_now_add=True)
     ultima_interaccion = models.DateTimeField(default=timezone.now)
 

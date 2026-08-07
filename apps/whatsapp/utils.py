@@ -169,6 +169,75 @@ def evaluar_mixto_inteligente(lead):
     }
 
 
+ESTADOS_AVANZADOS = [
+    "cotizado",
+    "reservado",
+    "confirmado",
+    "programado",
+    "servicio_agendado",
+]
+
+
+def evaluar_conversacion_avanzada(lead):
+    motivos = []
+    bloquear = False
+
+    if not lead:
+        return {"bloquear_bot": False, "motivos": []}
+
+    # A. Lead ya cotizado / en estado avanzado
+    if lead.estado in ESTADOS_AVANZADOS:
+        motivos.append(f"Lead en estado avanzado: {lead.estado}")
+        bloquear = True
+    if hasattr(lead, "etapa_conversacion") and lead.etapa_conversacion in ESTADOS_AVANZADOS:
+        motivos.append(f"Lead en etapa avanzada: {lead.etapa_conversacion}")
+        bloquear = True
+
+    # B. Antigüedad de conversación > 3 días
+    try:
+        from apps.clientes.models import Conversacion
+        primera = Conversacion.objects.filter(cliente=lead.cliente).order_by("fecha").first()
+        if primera:
+            dias = (timezone.now() - primera.fecha).days
+            if dias > 3:
+                motivos.append(f"Conversación iniciada hace {dias} días")
+                bloquear = True
+    except Exception:
+        pass
+
+    # C. Más de 10 mensajes (cuenta cada registro como un mensaje entrante/saliente)
+    try:
+        from apps.clientes.models import Conversacion
+        total = Conversacion.objects.filter(cliente=lead.cliente).count()
+        if total > 10:
+            motivos.append(f"Más de 10 mensajes en conversación ({total})")
+            bloquear = True
+    except Exception:
+        pass
+
+    # D. Atención humana previa
+    if lead.atencion_humana or lead.requiere_asesor or lead.bot_pausado:
+        motivos.append("Lead con atención humana previa")
+        bloquear = True
+
+    # E. Derivación previa
+    if lead.motivo_derivacion:
+        motivos.append("Lead con derivación previa")
+        bloquear = True
+
+    logger.info(
+        "[ConversationGuardV2]\n"
+        "lead_id=%d\n"
+        "motivos=%s\n"
+        "bloquear_bot=%s",
+        lead.id,
+        motivos,
+        bloquear,
+    )
+
+    return {"bloquear_bot": bloquear, "motivos": motivos}
+
+
 MENSAJE_DERIVACION_GUARD = (
     "Gracias, un asesor revisará tu consulta y te responderá en breve."
 )
@@ -344,6 +413,13 @@ def should_bot_reply(now=None, lead=None, channel=None):
             conf.save(update_fields=["override_activo", "override_modo"])
         else:
             if conf.override_modo == "force_bot":
+                if lead and evaluar_conversacion_avanzada(lead)["bloquear_bot"]:
+                    lead._v2_blocked = True
+                    logger.info(
+                        "[Bot Control]\noverride=%s\ndecision=BOT_NO_RESPONDE\nreason=v2_conversacion_avanzada",
+                        conf.override_modo,
+                    )
+                    return False
                 logger.info(
                     "[Bot Control]\noverride=%s\ndecision=BOT_RESPONDE\nreason=override_manual",
                     conf.override_modo,
@@ -367,6 +443,13 @@ def should_bot_reply(now=None, lead=None, channel=None):
                             conf.override_modo,
                         )
                         return False
+                if lead and evaluar_conversacion_avanzada(lead)["bloquear_bot"]:
+                    lead._v2_blocked = True
+                    logger.info(
+                        "[Bot Control]\noverride=%s\ndecision=BOT_NO_RESPONDE\nreason=v2_conversacion_avanzada",
+                        conf.override_modo,
+                    )
+                    return False
                 logger.info(
                     "[Bot Control]\noverride=%s\ndecision=BOT_RESPONDE\nreason=mixto_simple",
                     conf.override_modo,
@@ -400,6 +483,12 @@ def should_bot_reply(now=None, lead=None, channel=None):
                     "[Bot Control]\noverride=none | mixto_inteligente\ndecision=BOT_NO_RESPONDE\nreason=derivar_asesor",
                 )
                 return False
+        if lead and evaluar_conversacion_avanzada(lead)["bloquear_bot"]:
+            lead._v2_blocked = True
+            logger.info(
+                "[Bot Control]\noverride=none | v2_conversacion_avanzada\ndecision=BOT_NO_RESPONDE\nreason=v2_conversacion_avanzada",
+            )
+            return False
         logger.info(
             "[Bot Control]\noverride=none | mixto_inteligente | horario=%s\ndecision=BOT_RESPONDE\nreason=mixto_simple",
             rango or "legacy",
@@ -409,6 +498,13 @@ def should_bot_reply(now=None, lead=None, channel=None):
     # 5. modo bot: horarios programados (BotSchedule + legacy)
     if conf.modo_atencion == "bot":
         if dentro_horario:
+            if lead and evaluar_conversacion_avanzada(lead)["bloquear_bot"]:
+                lead._v2_blocked = True
+                logger.info(
+                    "[Bot Control]\noverride=none | horario=%s | v2_conversacion_avanzada\ndecision=BOT_NO_RESPONDE\nreason=v2_conversacion_avanzada",
+                    rango,
+                )
+                return False
             logger.info(
                 "[Bot Control]\noverride=none | horario=%s\ndecision=BOT_RESPONDE\nreason=horario_normal",
                 rango,

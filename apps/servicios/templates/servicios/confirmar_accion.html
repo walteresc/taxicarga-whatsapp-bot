@@ -1,0 +1,49 @@
+{% extends "dashboard/base.html" %}
+{% load servicio_tags %}
+{% block title %}{{ accion|capfirst }} {{ servicio.codigo }}{% endblock %}
+{% block content %}
+<div id="app">
+  <v-app>
+    <v-container class="py-6" style="max-width:600px;">
+      <v-card>
+        <v-card-title class="d-flex align-center pa-4">
+          {% if accion == "finalizar" %}
+          <v-icon color="success" class="mr-2">mdi-check-circle</v-icon>
+          {% else %}
+          <v-icon color="error" class="mr-2">mdi-close-circle</v-icon>
+          {% endif %}
+          <span class="text-h5 font-weight-bold">{{ accion|capfirst }} Reserva</span>
+        </v-card-title>
+        <v-divider></v-divider>
+        <v-card-text class="pa-4">
+          <p style="font-size:15px;margin-bottom:16px;">{{ mensaje }}</p>
+          <v-chip color="{{ servicio.estado|estado_color }}" variant="tonal" label size="small" class="mb-4">
+            {{ servicio.get_estado_display }}
+          </v-chip>
+          <form method="post">
+            {% csrf_token %}
+            <div style="display:flex;justify-content:flex-end;gap:8px;">
+              <a href="{% url 'dashboard-servicios-list' %}" class="v-btn v-theme--light text-none"
+                style="text-decoration:none;padding:8px 20px;border-radius:6px;border:1px solid #ccc;color:#546e7a;font-size:14px;">
+                Volver
+              </a>
+              <button type="submit" class="v-btn v-btn--elevated v-theme--light text-none"
+                style="border:none;padding:8px 20px;border-radius:6px;font-size:14px;cursor:pointer;color:#fff;{% if accion == 'finalizar' %}background:#2e7d32;{% else %}background:#c62828;{% endif %}">
+                <span class="mdi {% if accion == 'finalizar' %}mdi-check-circle{% else %}mdi-close-circle{% endif %}" style="margin-right:6px;"></span>
+                Sí, {{ accion }}
+              </button>
+            </div>
+          </form>
+        </v-card-text>
+      </v-card>
+    </v-container>
+  </v-app>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+  const { createApp } = Vue;
+  const { createVuetify } = Vuetify;
+  createApp({ delimiters: ['[[', ']]'], data() { return {}; } }).use(createVuetify()).mount('#app');
+</script>
+{% endblock %}

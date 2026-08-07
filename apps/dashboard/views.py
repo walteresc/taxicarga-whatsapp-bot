@@ -5,17 +5,21 @@ from django.contrib.auth import logout
 from django.contrib.auth.forms import AuthenticationForm
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import LoginView
-from django.db.models import Count, Sum
+from apps.dashboard.permissions import role_required, can_manage_pizarra,can_view_assigned_services,can_driver_update_status
+from django.db.models import Count, OuterRef, Subquery, Sum
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
+from django.views.generic.base import RedirectView
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
 from apps.clientes.models import Cliente, Conversacion
 from apps.cotizador.services import cotizar_lead
 from apps.leads.models import Lead
+from apps.servicios.services import crear_servicio_desde_lead
 from apps.whatsapp.models import BotSchedule, ConfiguracionBot, WhatsAppChannel
 from apps.whatsapp.services import send_whatsapp_message
 
@@ -23,7 +27,7 @@ from apps.whatsapp.services import send_whatsapp_message
 class DashboardLoginView(LoginView):
     template_name = "dashboard/login.html"
     authentication_form = AuthenticationForm
-    redirect_authenticated_user = True
+    # redirect_authenticated_user = True
 
 
 login_view = DashboardLoginView.as_view()
@@ -35,13 +39,24 @@ def dashboard_logout(request):
 
 
 @login_required
+#@role_required("Administrador", "Supervisor", "Asesor de Ventas", "Conductor", "Ayudante")
 def dashboard_home(request, lead_id=None):
     channel_id = request.GET.get("channel")
-    leads_qs = Lead.objects.select_related("cliente", "vendedor_asignado").order_by("-fecha_creacion")
+    if channel_id and not WhatsAppChannel.objects.filter(id=channel_id, activo=True).exists():
+        channel_id = None
+    leads_qs = Lead.objects.select_related("cliente", "vendedor_asignado").annotate(
+        _num_conversaciones=Count("cliente__conversaciones"),
+    ).order_by("-fecha_creacion")
     if channel_id:
         leads_qs = leads_qs.filter(whatsapp_channel_id=channel_id)
     leads = leads_qs
     selected_lead = _selected_lead(leads, lead_id)
+    if lead_id and not selected_lead:
+        redirect_url = reverse("dashboard-home")
+        if channel_id:
+            redirect_url += f"?channel={channel_id}"
+        messages.warning(request, "El lead no pertenece al canal seleccionado.")
+        return redirect(redirect_url)
     grouped_leads = {
         "pendientes": leads.filter(
             estado__in=[Lead.NUEVO, Lead.EN_CONVERSACION, Lead.DATOS_INCOMPLETOS]
@@ -59,8 +74,9 @@ def dashboard_home(request, lead_id=None):
         "prioridades": Lead.PRIORIDADES,
         "dashboard_data": _dashboard_payload(grouped_leads, selected_lead, request.user, channel_id),
         "channel_id": channel_id,
+        "active_section": "leads",
     }
-    return render(request, "dashboard/home.html", context)
+    return render(request, "dashboard/leads.html", context)
 
 
 @login_required
@@ -147,6 +163,15 @@ def lead_action(request, lead_id):
             messages.success(request, "Lead marcado como perdido.")
         else:
             messages.error(request, "Ingresa el motivo de perdida.")
+    elif action == "crear_servicio":
+        if lead.estado not in (Lead.COTIZADO, Lead.ASIGNADO, Lead.CERRADO):
+            messages.error(request, "El lead debe estar cotizado, asignado o cerrado para crear un servicio.")
+        else:
+            servicio, created = crear_servicio_desde_lead(lead, usuario=request.user)
+            if created:
+                messages.success(request, f"Servicio {servicio.codigo} creado desde el lead.")
+            else:
+                messages.info(request, f"El servicio {servicio.codigo} ya existía para este lead.")
     else:
         messages.error(request, "Accion no reconocida.")
 
@@ -155,8 +180,11 @@ def lead_action(request, lead_id):
 
 def _selected_lead(leads, lead_id):
     if lead_id:
-        return get_object_or_404(leads, id=lead_id)
-    return leads.first()
+        try:
+            return leads.get(id=lead_id)
+        except Lead.DoesNotExist:
+            return None
+    return None
 
 
 def _conversaciones(lead):
@@ -198,7 +226,7 @@ def _dashboard_payload(grouped_leads, selected_lead, user, channel_id=None):
     canales = list(WhatsAppChannel.objects.filter(activo=True))
     channel = None
     if channel_id:
-        channel = WhatsAppChannel.objects.filter(id=channel_id).first()
+        channel = WhatsAppChannel.objects.filter(id=channel_id, activo=True).first()
     conf = ConfiguracionBot.obtener(channel=channel)
     schedule_filters = {}
     if channel:
@@ -212,6 +240,7 @@ def _dashboard_payload(grouped_leads, selected_lead, user, channel_id=None):
                 "numero_visible": ch.numero_visible,
                 "asesor_nombre": str(ch.asesor) if ch.asesor else "Sin asesor",
                 "activo": ch.activo,
+                "lead_count": ch.leads.count(),
             }
             for ch in canales
         ],
@@ -227,31 +256,31 @@ def _dashboard_payload(grouped_leads, selected_lead, user, channel_id=None):
                 "label": "Pendientes",
                 "color": "amber-darken-3",
                 "icon": "mdi-clock-outline",
-                "leads": [_lead_payload(lead) for lead in grouped_leads["pendientes"]],
+                "leads": [_lead_payload(lead, channel_id) for lead in grouped_leads["pendientes"]],
             },
             {
                 "key": "cotizados",
                 "label": "Cotizados",
                 "color": "blue-darken-2",
                 "icon": "mdi-file-document-check-outline",
-                "leads": [_lead_payload(lead) for lead in grouped_leads["cotizados"]],
+                "leads": [_lead_payload(lead, channel_id) for lead in grouped_leads["cotizados"]],
             },
             {
                 "key": "asignados",
                 "label": "Asignados",
                 "color": "teal-darken-2",
                 "icon": "mdi-account-check-outline",
-                "leads": [_lead_payload(lead) for lead in grouped_leads["asignados"]],
+                "leads": [_lead_payload(lead, channel_id) for lead in grouped_leads["asignados"]],
             },
             {
                 "key": "cerrados",
                 "label": "Cerrados",
                 "color": "slate",
                 "icon": "mdi-archive-check-outline",
-                "leads": [_lead_payload(lead) for lead in grouped_leads["cerrados"]],
+                "leads": [_lead_payload(lead, channel_id) for lead in grouped_leads["cerrados"]],
             },
         ],
-        "selectedLead": _lead_payload(selected_lead) if selected_lead else None,
+        "selectedLead": _lead_payload(selected_lead, channel_id) if selected_lead else None,
         "conversations": conversations,
         "messages": _message_payloads(conversations),
         "states": [{"value": value, "label": label} for value, label in Lead.ESTADOS],
@@ -454,8 +483,11 @@ def create_lead(request):
     return redirect("dashboard-lead-detail", lead_id=lead.id)
 
 
-def _lead_payload(lead):
+def _lead_payload(lead, channel_id=None):
     completion = _completion_payload(lead)
+    detail_url = f"/dashboard/leads/{lead.id}/"
+    if channel_id:
+        detail_url += f"?channel={channel_id}"
     return {
         "id": lead.id,
         "cliente": lead.cliente.nombre or lead.cliente.telefono,
@@ -493,6 +525,7 @@ def _lead_payload(lead):
         "motivoDerivacion": lead.motivo_derivacion or "",
         "botPausado": lead.bot_pausado,
         "guardPausado": lead.bot_pausado and "WhatsApp Business" in (lead.motivo_derivacion or ""),
+        "conversacionAvanzada": _conversacion_avanzada(lead),
         "whatsappChannel": lead.whatsapp_channel_id,
         "fechaDerivacion": _datetime_label(lead.fecha_derivacion),
         "fechaUltimoSeguimiento": _datetime_label(lead.fecha_ultimo_seguimiento),
@@ -501,7 +534,7 @@ def _lead_payload(lead):
         "seguimientoVencido": _is_overdue(lead),
         "seguimientoHoy": _is_due_today(lead),
         "completion": completion,
-        "detailUrl": f"/dashboard/leads/{lead.id}/",
+        "detailUrl": detail_url,
         "actionUrl": f"/dashboard/leads/{lead.id}/accion/",
     }
 
@@ -569,6 +602,21 @@ def _latest_quote_payload(lead):
         "explicacion": quote.explicacion,
         "fecha": _datetime_label(quote.fecha_creacion),
     }
+
+
+def _conversacion_avanzada(lead):
+    from apps.whatsapp.utils import ESTADOS_AVANZADOS
+    if lead.estado in ESTADOS_AVANZADOS:
+        return True
+    if hasattr(lead, "etapa_conversacion") and lead.etapa_conversacion in ESTADOS_AVANZADOS:
+        return True
+    if lead.atencion_humana or lead.requiere_asesor or lead.bot_pausado:
+        return True
+    if lead.motivo_derivacion:
+        return True
+    if lead.fecha_creacion and (timezone.now() - lead.fecha_creacion).days > 3:
+        return True
+    return False
 
 
 def _conversation_payload(conversation):
@@ -821,6 +869,63 @@ def _close_lost(lead, reason, user):
         update_fields.append("vendedor_asignado")
     lead.save(update_fields=update_fields)
     return True
+
+
+@login_required
+def placeholder_campo(request):
+    return render(request, "campo/placeholder.html", {
+        "active_section": "campo",
+        "title": "Gestión de Campo",
+        "icon": "mdi-map-marker-outline",
+        "description": "Próximamente: asignación de rutas, seguimiento de unidades y coordinación con personal de campo.",
+    })
+
+
+@login_required
+def placeholder_personal(request):
+    return render(request, "campo/placeholder.html", {
+        "active_section": "personal",
+        "title": "Gestión de Personal",
+        "icon": "mdi-account-group-outline",
+        "description": "Próximamente: administración de conductores, ayudantes, horarios y asignación de personal.",
+    })
+
+
+@login_required
+def placeholder_reportes(request):
+    return render(request, "campo/placeholder.html", {
+        "active_section": "reportes",
+        "title": "Reportes",
+        "icon": "mdi-chart-bar",
+        "description": "Próximamente: reportes de ventas, desempeño, ingresos y análisis de datos.",
+    })
+
+
+@login_required
+def placeholder_admin(request):
+    return render(request, "campo/placeholder.html", {
+        "active_section": "admin",
+        "title": "Administración",
+        "icon": "mdi-shield-account-outline",
+        "description": "Próximamente: configuración del sistema, usuarios, roles y parámetros generales.",
+    })
+
+
+@login_required
+def placeholder_whatsapp(request):
+    return render(request, "dashboard/whatsapp.html", {
+        "active_section": "whatsapp",
+    })
+
+
+@login_required
+def placeholder_canales(request):
+    return render(request, "campo/placeholder.html", {
+        "active_section": "canales",
+        "title": "Canales WhatsApp",
+        "icon": "mdi-whatsapp",
+        "description": "Próximamente: administración de canales WhatsApp, números, asignación de asesores y estado.",
+    })
 
 
 def _default_quote_message(lead, price):

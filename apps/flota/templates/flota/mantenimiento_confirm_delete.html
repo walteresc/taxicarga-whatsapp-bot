@@ -1,0 +1,40 @@
+{% extends "dashboard/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div id="app">
+  <v-app>
+    <v-container class="py-6" style="max-width:600px;">
+      <v-card>
+        <v-card-title class="d-flex align-center pa-4">
+          <v-icon color="error" class="mr-2">mdi-alert-circle-outline</v-icon>
+          <span class="text-h5 font-weight-bold">Eliminar Mantenimiento</span>
+        </v-card-title>
+        <v-divider></v-divider>
+        <v-card-text class="pa-4">
+          <p style="font-size:15px;color:#37474f;">
+            ¿Estás seguro de eliminar el mantenimiento de
+            <strong>{{ mantenimiento.vehiculo.placa }}</strong>
+            del {{ mantenimiento.fecha_mantenimiento|date:"d/m/Y" }}?
+          </p>
+          <p style="font-size:13px;color:#78909c;">Esta acción no se puede deshacer.</p>
+        </v-card-text>
+        <v-divider></v-divider>
+        <form method="post" class="pa-4" style="display:flex;justify-content:flex-end;gap:8px;">
+          {% csrf_token %}
+          <a href="{% url 'dashboard-flota-mantenimientos' %}" class="v-btn v-theme--light text-none" style="text-decoration:none;padding:8px 20px;border-radius:6px;border:1px solid #ccc;color:#546e7a;font-size:14px;">Cancelar</a>
+          <button type="submit" class="v-btn v-btn--elevated v-theme--light bg-error text-none" style="border:none;padding:8px 20px;border-radius:6px;font-size:14px;cursor:pointer;color:#fff;">
+            <span class="mdi mdi-delete" style="margin-right:6px;"></span>Eliminar
+          </button>
+        </form>
+      </v-card>
+    </v-container>
+  </v-app>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+  const { createApp } = Vue;
+  const { createVuetify } = Vuetify;
+  createApp({ delimiters: ['[[', ']]'], data() { return {}; } }).use(createVuetify()).mount('#app');
+</script>
+{% endblock %}

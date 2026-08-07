@@ -1,0 +1,50 @@
+{% extends "dashboard/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block extra_head %}
+<style>
+.detail-table { width:100%; border-collapse:collapse; font-size:14px; }
+.detail-table tr { border-bottom:1px solid #f0f0f0; }
+.detail-table td { padding:10px 16px; }
+.detail-table td:first-child { font-weight:600; color:#546e7a; white-space:nowrap; width:200px; background:#fafbfc; }
+</style>
+{% endblock %}
+{% block content %}
+<div id="app">
+  <v-app>
+    <v-container class="py-6" style="max-width:800px;">
+      <v-card>
+        <v-card-title class="d-flex align-center pa-4">
+          <v-icon color="primary" class="mr-2">mdi-information-outline</v-icon>
+          <span class="text-h5 font-weight-bold">{{ title }}</span>
+          <v-spacer></v-spacer>
+          <a href="{% url edit_url_name entity.pk %}" class="v-btn v-btn--elevated v-theme--light bg-primary text-none" style="text-decoration:none;font-size:14px;padding:6px 16px;border-radius:6px;">
+            <span class="mdi mdi-pencil" style="margin-right:6px;"></span>Editar
+          </a>
+        </v-card-title>
+        <v-divider></v-divider>
+        <table class="detail-table">
+          {% for label, value in fields %}
+          <tr>
+            <td>{{ label }}</td>
+            <td>{{ value }}</td>
+          </tr>
+          {% endfor %}
+        </table>
+        <v-divider></v-divider>
+        <v-card-actions class="pa-4">
+          <v-btn variant="outlined" href="{% url list_url_name %}">
+            <v-icon start>mdi-arrow-left</v-icon> Volver
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-container>
+  </v-app>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+  const { createApp } = Vue;
+  const { createVuetify } = Vuetify;
+  createApp({ delimiters: ['[[', ']]'], data() { return {}; } }).use(createVuetify()).mount('#app');
+</script>
+{% endblock %}

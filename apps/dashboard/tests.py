@@ -1,8 +1,10 @@
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
 from django.test import TestCase
 from django.utils import timezone
 from django.urls import reverse
 from unittest.mock import patch
+import re
 
 from apps.clientes.models import Cliente, Conversacion
 from apps.leads.models import Lead
@@ -26,7 +28,7 @@ class DashboardTests(TestCase):
         )
 
     def test_dashboard_requiere_login(self):
-        response = self.client.get(reverse("dashboard-home"))
+        response = self.client.get(reverse("dashboard-leads"))
 
         self.assertEqual(response.status_code, 302)
         self.assertIn("/dashboard/login/", response["Location"])
@@ -47,6 +49,11 @@ class DashboardTests(TestCase):
 
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response["Location"], "/dashboard/")
+
+    def test_dashboard_root_redirige_a_leads(self):
+        response = self.client.get(reverse("dashboard-home"))
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], "/dashboard/leads/")
 
     def test_dashboard_muestra_lead_y_conversacion(self):
         self.client.force_login(self.user)
@@ -110,7 +117,7 @@ class DashboardTests(TestCase):
             fecha_cierre=timezone.now(),
         )
 
-        response = self.client.get(reverse("dashboard-home"))
+        response = self.client.get(reverse("dashboard-leads"))
         stats = response.context["dashboard_data"]["stats"]
 
         self.assertEqual(stats["cerrados"], 1)
@@ -373,6 +380,82 @@ class DashboardTests(TestCase):
             ).exists()
         )
         send_mock.assert_called_once_with(self.cliente.telefono, "Claro, lo reviso y le confirmo.")
+
+    def test_dashboard_leads_funciona(self):
+        self.client.force_login(self.user)
+        response = self.client.get(reverse("dashboard-leads"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "v-app")
+        self.assertContains(response, "TaxiCarga")
+        self.assertEqual(response.context["active_section"], "leads")
+
+    def test_dashboard_leads_requiere_login(self):
+        response = self.client.get(reverse("dashboard-leads"))
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/dashboard/login/", response["Location"])
+
+    def test_placeholder_campo(self):
+        self.client.force_login(self.user)
+        response = self.client.get(reverse("dashboard-campo"))
+        self.assertEqual(response.status_code, 302)
+
+    def test_placeholder_pizarra(self):
+        group, _ = Group.objects.get_or_create(name="Administrador")
+        self.user.groups.add(group)
+        self.client.force_login(self.user)
+        response = self.client.get(reverse("dashboard-pizarra"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Pizarra")
+
+    def test_placeholder_reportes(self):
+        self.client.force_login(self.user)
+        response = self.client.get(reverse("dashboard-reportes"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Reportes")
+        self.assertContains(response, "Módulo en construcción")
+
+    def test_placeholder_admin(self):
+        self.client.force_login(self.user)
+        response = self.client.get(reverse("dashboard-admin-placeholder"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Administración")
+        self.assertContains(response, "Módulo en construcción")
+
+    def test_placeholders_requieren_login(self):
+        for name in ["dashboard-campo", "dashboard-pizarra", "dashboard-reportes", "dashboard-admin-placeholder"]:
+            response = self.client.get(reverse(name))
+            self.assertEqual(response.status_code, 302)
+            self.assertIn("/dashboard/login/", response["Location"])
+
+    def test_sidebar_visible_en_leads(self):
+        self.client.force_login(self.user)
+        response = self.client.get(reverse("dashboard-leads"))
+        self.assertContains(response, "sidebar")
+        self.assertContains(response, "Panel Comercial")
+        self.assertContains(response, "Cerrar sesión")
+
+    def test_sidebar_visible_en_placeholder(self):
+        self.client.force_login(self.user)
+        for name in ["dashboard-reportes", "dashboard-admin-placeholder"]:
+            response = self.client.get(reverse(name))
+            self.assertContains(response, "sidebar")
+            self.assertContains(response, "Panel Comercial")
+
+    def test_sidebar_visible_en_servicios(self):
+        self.client.force_login(self.user)
+        from apps.clientes.models import Cliente
+        from apps.leads.models import Lead
+        from apps.servicios.models import Servicio
+        cliente = Cliente.objects.create(nombre="Test", telefono="51999000001")
+        lead = Lead.objects.create(cliente=cliente, estado=Lead.COTIZADO)
+        servicio = Servicio.objects.create(
+            lead_origen=lead, cliente=cliente, tipo_servicio="flete",
+            distrito_origen="A", distrito_destino="B",
+        )
+        response = self.client.get(reverse("dashboard-servicios-list"))
+        self.assertContains(response, "sidebar")
+        self.assertContains(response, "Panel Comercial")
+        self.assertContains(response, "Gestión de Servicios")
 
     @patch("apps.dashboard.views.send_whatsapp_message")
     def test_enviar_cotizacion_actualiza_precio_y_conversacion(self, send_mock):

@@ -1,0 +1,147 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Clientes{% endblock %}
+{% block content %}
+<div id="app">
+  <v-app>
+    <v-container class="py-6" style="max-width:1200px;">
+      <v-card class="mb-4">
+        <div class="d-flex align-center px-6 pt-5 pb-4" style="border-bottom:1px solid #f1f5f9;">
+          <div class="d-flex align-center" style="gap:12px;">
+            <div class="icon-wrap" style="background:#EEF2FF;">
+              <span class="mdi mdi-account-group" style="color:#4F46E5;font-size:20px;"></span>
+            </div>
+            <h1 style="font-size:20px;font-weight:700;color:#1e293b;margin:0;">Clientes</h1>
+          </div>
+          <v-spacer></v-spacer>
+          <a href="{% url 'cliente_crear' %}"
+            style="display:inline-flex;align-items:center;gap:6px;padding:8px 18px;background:#2563EB;color:#fff;border-radius:8px;text-decoration:none;font-size:14px;font-weight:600;">
+            <span class="mdi mdi-plus" style="font-size:16px;"></span>
+            Nuevo Cliente
+          </a>
+        </div>
+
+        <div class="px-6 py-3" style="border-bottom:1px solid #f1f5f9;">
+          <form method="get" class="d-flex align-center" style="gap:8px;">
+            <input type="text" name="q" placeholder="Buscar por nombre o teléfono"
+              value="{{ q }}"
+              style="flex:1;min-width:200px;padding:7px 12px;border:0.5px solid rgba(0,0,0,0.12);border-radius:8px;font-size:13px;outline:none;">
+            <button type="submit"
+              style="padding:7px 16px;background:#EEF2FF;color:#4F46E5;border:0.5px solid #C7D2FE;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">
+              Buscar
+            </button>
+            <a href="{% url 'cliente_lista' %}"
+              style="padding:7px 16px;background:#fff;color:#64748b;border:0.5px solid #e2e8f0;border-radius:8px;font-size:13px;text-decoration:none;">
+              Limpiar
+            </a>
+          </form>
+        </div>
+
+        <div class="px-6 py-4">
+          <table class="crm-table">
+            <thead>
+              <tr>
+                <th>Nombre</th>
+                <th>Teléfono</th>
+                <th>Documento</th>
+                <th>Correo</th>
+                <th>Última interacción</th>
+                <th style="text-align:center;">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for c in clientes %}
+              <tr class="crm-row">
+                <td>
+                  <div style="display:flex;align-items:center;gap:10px;">
+                    {% with pk_mod=c.pk|divisibleby:"5" %}
+                    {% if pk_mod %}
+                    <div class="avatar" style="background:#F0FDF4;color:#059669;">{{ c.nombre|slice:":2"|upper }}</div>
+                    {% elif c.pk|add:"-1"|divisibleby:"5" %}
+                    <div class="avatar" style="background:#FCE7F3;color:#BE185D;">{{ c.nombre|slice:":2"|upper }}</div>
+                    {% elif c.pk|add:"-2"|divisibleby:"5" %}
+                    <div class="avatar" style="background:#EDE9FE;color:#7C3AED;">{{ c.nombre|slice:":2"|upper }}</div>
+                    {% elif c.pk|add:"-3"|divisibleby:"5" %}
+                    <div class="avatar" style="background:#FEF3C7;color:#92400E;">{{ c.nombre|slice:":2"|upper }}</div>
+                    {% else %}
+                    <div class="avatar" style="background:#EEF2FF;color:#4F46E5;">{{ c.nombre|slice:":2"|upper }}</div>
+                    {% endif %}
+                    {% endwith %}
+                    <div>
+                      <div class="cell-primary">{{ c.nombre|default:"-" }}</div>
+                    </div>
+                  </div>
+                </td>
+                <td>{{ c.telefono|default:"-" }}</td>
+                <td>{{ c.documento|default:"-" }}</td>
+                <td><span class="cell-email" title="{{ c.correo }}">{{ c.correo|default:"-" }}</span></td>
+                <td class="cell-muted">{{ c.ultima_interaccion|date:"j M Y"|default:"-" }}</td>
+                <td style="text-align:center;white-space:nowrap;">
+                  <a href="{% url 'cliente_editar' c.pk %}" class="action-icon" style="color:#4F46E5;" title="Editar">
+                    <span class="mdi mdi-pencil-outline"></span>
+                  </a>
+                  <a href="{% url 'cliente_eliminar' c.pk %}" class="action-icon" style="color:#DC2626;" title="Eliminar">
+                    <span class="mdi mdi-trash-can-outline"></span>
+                  </a>
+                </td>
+              </tr>
+              {% empty %}
+              <tr>
+                <td colspan="6" style="text-align:center;padding:48px 16px;color:#94a3b8;">
+                  <div style="font-size:40px;margin-bottom:8px;opacity:.4;">
+                    <span class="mdi mdi-account-group-outline"></span>
+                  </div>
+                  <div style="font-size:15px;font-weight:600;color:#64748b;">No se encontraron clientes</div>
+                  <div style="font-size:13px;margin-top:4px;">
+                    <a href="{% url 'cliente_crear' %}" style="color:#4F46E5;text-decoration:none;font-weight:600;">Cree el primer cliente</a>
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% if page_obj.has_other_pages %}
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 16px; border-top:0.5px solid rgba(0,0,0,0.08); font-size:13px;">
+          <span style="color:#6B7280">
+            Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }} ({{ page_obj.paginator.count }} registros)
+          </span>
+          <div style="display:flex; gap:4px;">
+            {% if page_obj.has_previous %}
+            <a href="?{% for key,val in request.GET.items %}{% if key != 'page' %}{{ key }}={{ val }}&{% endif %}{% endfor %}page={{ page_obj.previous_page_number }}"
+               style="padding:5px 10px; border:1px solid #D1D5DB; border-radius:6px; color:#374151; text-decoration:none; font-size:12px;">
+              ‹ Anterior
+            </a>
+            {% endif %}
+            {% if page_obj.has_next %}
+            <a href="?{% for key,val in request.GET.items %}{% if key != 'page' %}{{ key }}={{ val }}&{% endif %}{% endfor %}page={{ page_obj.next_page_number }}"
+               style="padding:5px 10px; border:1px solid #D1D5DB; border-radius:6px; color:#374151; text-decoration:none; font-size:12px;">
+              Siguiente ›
+            </a>
+            {% endif %}
+          </div>
+        </div>
+        {% endif %}
+      </v-card>
+    </v-container>
+  </v-app>
+</div>
+<style>
+.crm-table { width:100%; border-collapse:collapse; font-size:13px; }
+.crm-table thead th { padding:10px 12px; text-align:left; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:#64748b; border-bottom:1px solid #e2e8f0; white-space:nowrap; }
+.crm-table tbody td { padding:10px 12px; border-bottom:0.5px solid #f1f5f9; color:#334155; vertical-align:middle; }
+.crm-row:hover { background:#F8FAFC; }
+.cell-primary { font-weight:500; color:#1e293b; }
+.cell-muted { font-size:12px; color:#94a3b8; }
+.cell-email { display:inline-block; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; vertical-align:middle; }
+.avatar { width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:600; flex-shrink:0; }
+.action-icon { display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; border-radius:50%; text-decoration:none; font-size:16px; transition:background .12s; }
+.action-icon:hover { background:#F1F5F9; }
+</style>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+  const { createApp } = Vue;
+  const { createVuetify } = Vuetify;
+  createApp({ delimiters: ['[[', ']]'], data() { return {}; } }).use(createVuetify()).mount('#app');
+</script>
+{% endblock %}

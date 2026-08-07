@@ -1,0 +1,1047 @@
+{% extends "dashboard/base.html" %}
+{% block title %}{{ titulo }}{% endblock %}
+{% block extra_head %}
+<style>
+:root {
+  --accent: #4F46E5;
+  --accent-light: #EEF2FF;
+  --green: #059669;
+  --green-light: #F0FDF4;
+  --amber: #D97706;
+  --amber-light: #FFFBEB;
+  --green-dark: #16A34A;
+  --blue: #2563EB;
+  --blue-light: #EFF6FF;
+  --border: 0.5px solid rgba(0,0,0,0.08);
+  --radius-card: 12px;
+  --radius-input: 8px;
+  --radius-pill: 20px;
+}
+.reserva-card {
+  border-radius: var(--radius-card) !important;
+  border: var(--border);
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0,0,0,.04) !important;
+}
+.card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 20px 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #1e293b;
+}
+.icon-wrap {
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.card-body { padding: 12px 20px 20px; }
+.field-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.field-row-top { align-items: flex-start; }
+.field-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #475569;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.fl110 { width: 110px; }
+.fl72 { width: 72px; }
+.fl50 { width: 50px; }
+.fl140 { width: 140px; }
+.c-input {
+  width: 100%;
+  padding: 7px 12px;
+  border: 0.5px solid rgba(0,0,0,0.12);
+  border-radius: var(--radius-input);
+  font-size: 14px;
+  color: #1e293b;
+  background: #fff;
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
+  font-family: inherit;
+}
+.c-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(79,70,229,.12);
+}
+.c-input-xs { max-width: 100px; }
+.c-input-sm { max-width: 200px; }
+textarea.c-input { resize: vertical; line-height: 1.5; }
+select.c-input { cursor: pointer; appearance: auto; }
+.pill-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 14px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: var(--radius-pill);
+  font-size: 13px;
+  cursor: pointer;
+  background: #fff;
+  color: #475569;
+  transition: all .12s;
+  user-select: none;
+}
+.pill:hover { border-color: var(--accent); background: var(--accent-light); }
+.pill input { display: none; }
+.pill input:checked + span { font-weight: 600; }
+.pill:has(input:checked) { border-color: var(--accent); background: var(--accent-light); color: var(--accent); }
+.pill-green:has(input:checked) { border-color: var(--green); background: var(--green-light); color: var(--green); }
+.pill-amber:has(input:checked) { border-color: var(--amber); background: var(--amber-light); color: var(--amber); }
+.chip-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.check-chip {
+  display: inline-flex;
+  cursor: pointer;
+  user-select: none;
+}
+.chip-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 14px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: var(--radius-pill);
+  font-size: 13px;
+  background: #fff;
+  color: #475569;
+  transition: all .12s;
+}
+.check-chip:hover .chip-label { border-color: var(--accent); background: var(--accent-light); }
+.check-chip input { display: none; }
+.check-chip input:checked + .chip-label {
+  background: #F0FDF4;
+  border-color: #059669;
+  color: #059669;
+  font-weight: 600;
+}
+.estado-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 14px;
+  background: #FEF3C7;
+  color: #92400E;
+  border: 1px solid #FDE68A;
+  border-radius: 20px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  font-weight: 700;
+}
+.section-subtitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: #64748b;
+  margin-bottom: 10px;
+}
+.section-subtitle .dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.empresa-toggle-wrap {
+  border-top: 1px dashed #e2e8f0;
+  margin-top: 8px;
+  padding-top: 8px;
+}
+.empresa-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #64748b;
+  user-select: none;
+}
+.empresa-toggle .mdi { transition: transform .2s; font-size: 18px; }
+.empresa-toggle.open .mdi { transform: rotate(90deg); }
+.empresa-content { overflow: hidden; transition: max-height .25s ease; max-height: 0; }
+.empresa-content.open { max-height: 300px; }
+.field-error { color: #dc2626; font-size: 12px; margin-top: 2px; }
+.client-search-wrap { position: relative; flex: 1; }
+.client-results { position:absolute; top:100%; left:0; right:0; z-index:9999; background:#fff; border:1px solid #E5E7EB; border-radius:8px; max-height:220px; overflow-y:auto; box-shadow:0 4px 16px rgba(0,0,0,.10); margin-top:4px; }
+.client-result-item { padding:10px 14px; cursor:pointer; border-bottom:1px solid #f1f5f9; font-size:13px; }
+.client-result-item:hover { background: var(--accent-light); }
+.client-result-item .name { font-weight:600; color:var(--accent); }
+.client-result-item .phone { color:#64748b; font-size:12px; }
+.price-wrap { display: flex; align-items: stretch; }
+.price-prefix {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  background: #f1f5f9;
+  border: 0.5px solid rgba(0,0,0,0.12);
+  border-right: none;
+  border-radius: var(--radius-input) 0 0 var(--radius-input);
+  font-size: 14px;
+  color: #64748b;
+  font-weight: 600;
+}
+.price-wrap .c-input {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+.badge-existente {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  background: #F0FDF4;
+  border: 1px solid #059669;
+  color: #16A34A;
+  font-size: 11px;
+  border-radius: 20px;
+  font-weight: 600;
+}
+.badge-existente .mdi { font-size: 14px; }
+.badge-nuevo {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  background: #EFF6FF;
+  border: 1px solid #2563EB;
+  color: #1D4ED8;
+  font-size: 11px;
+  border-radius: 20px;
+  font-weight: 600;
+}
+.badge-nuevo .mdi { font-size: 14px; }
+.client-result-divider {
+  height: 1px;
+  background: #e2e8f0;
+  margin: 4px 0;
+}
+.client-result-action {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  transition: background .12s;
+}
+.client-result-action:hover { background: #F8FAFC; }
+.client-result-close {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  color: #6B7280;
+  border-bottom: 1px solid #F3F4F6;
+  transition: background .12s, color .12s;
+}
+.client-result-close:hover { background: #F9FAFB; color: #374151; }
+.quick-pill {
+  padding: 5px 12px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  cursor: pointer;
+  background: #fff;
+  color: #475569;
+  transition: all .12s;
+  user-select: none;
+}
+.quick-pill:hover { border-color: var(--accent); background: var(--accent-light); }
+.quick-pill.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.v-divider-vert {
+  width: 1px;
+  background: rgba(0,0,0,0.06);
+  align-self: stretch;
+}
+@media (max-width: 768px) {
+  .card-body { padding: 10px 14px 16px; }
+  .field-row { flex-direction: column; align-items: stretch; gap: 4px; }
+  .field-label { width: auto !important; }
+  .client-search-wrap { width: 100%; }
+  .v-divider-vert { display: none; }
+  .fl140 { width: auto; }
+}
+</style>
+{% endblock %}
+{% block content %}
+<div id="app">
+  <v-app>
+    <v-container class="py-6" style="max-width:960px;">
+      {% comment %}ENCABEZADO{% endcomment %}
+      <div class="d-flex align-center justify-space-between mb-4" style="flex-wrap:wrap;gap:10px;">
+        <div class="d-flex align-center ga-3" style="flex-wrap:wrap;">
+          <h1 style="font-size:24px;font-weight:500;color:#0f172a;margin:0;">{{ titulo }}</h1>
+          {% if editando %}
+          <span class="estado-chip">{{ form.instance.get_estado_display|default:"Pendiente" }}</span>
+          {% else %}
+          <span class="estado-chip">Pendiente</span>
+          {% endif %}
+        </div>
+        <div class="d-flex" style="gap:8px;">
+          <a href="{% if next_url %}{{ next_url }}{% else %}{% url 'dashboard-servicios-list' %}{% endif %}"
+            style="padding:8px 18px;background:#fff;color:#64748b;border:0.5px solid #e2e8f0;border-radius:8px;font-size:14px;text-decoration:none;font-weight:500;">
+            Cancelar
+          </a>
+          <button type="submit" form="reserva-form"
+            style="padding:8px 18px;background:#4F46E5;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">
+            {{ submit_label }}
+          </button>
+        </div>
+      </div>
+
+      <form method="post" id="reserva-form">
+        {% csrf_token %}
+        {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
+        {{ form.lead_origen }}
+        {{ form.cliente_id }}
+
+        {% if form.non_field_errors %}
+        <v-alert type="error" variant="tonal" class="mb-4" closable>
+          {% for err in form.non_field_errors %}<div>{{ err }}</div>{% endfor %}
+        </v-alert>
+        {% endif %}
+
+        {% comment %}CARD 1 — CLIENTE{% endcomment %}
+        <v-card class="reserva-card mb-4">
+          <div class="card-header">
+            <div class="icon-wrap" style="background:#EEF2FF;">
+              <span class="mdi mdi-account" style="color:#4F46E5;font-size:18px;"></span>
+            </div>
+            Datos del Cliente
+            <span v-if="clienteSeleccionado" class="badge-existente" style="margin-left:8px;">
+              <span class="mdi mdi-check-circle" style="font-size:14px;"></span>
+              Cliente existente
+            </span>
+            <span v-if="nuevoCliente" class="badge-nuevo" style="margin-left:8px;">
+              <span class="mdi mdi-plus-circle" style="font-size:14px;"></span>
+              + Nuevo cliente
+            </span>
+            {% if editando %}
+            <v-spacer></v-spacer>
+            <a href="#" @click.prevent="clienteExpandido = !clienteExpandido"
+              style="font-size:12px;color:#4F46E5;text-decoration:none;font-weight:500;display:inline-flex;align-items:center;gap:4px;">
+              <span class="mdi" :class="clienteExpandido ? 'mdi-chevron-up' : 'mdi-pencil-outline'"></span>
+              [[ clienteExpandido ? 'Ocultar datos' : 'Modificar datos' ]]
+            </a>
+            {% endif %}
+          </div>
+          <v-divider class="mx-4 mt-2" style="opacity:.4;"></v-divider>
+          {% if editando %}
+          <div v-if="clienteExpandido" class="card-body" style="overflow:hidden;">
+          {% else %}
+          <div class="card-body">
+          {% endif %}
+            <div class="field-row">
+              <span class="field-label fl110">Nombre *</span>
+              <div class="client-search-wrap">
+                <input type="text" name="cliente_nombre" id="id_cliente_nombre"
+                  class="c-input" placeholder="Buscar o escribir nombre"
+                  value="{{ form.cliente_nombre.value|default:'' }}" required
+                  v-model="clienteNombre" @input="buscarClientes"
+                  @blur="setTimeout(() => resultados = [], 200)">
+                <div class="client-results" v-if="resultados.length > 0">
+                  <div class="client-result-close" @click="resultados = []">
+                    <span class="mdi mdi-close" style="font-size:14px;"></span>
+                    <span>Cerrar sugerencias</span>
+                  </div>
+                  <div class="client-result-item" v-for="c in resultados" :key="c.id"
+                    @click="seleccionarCliente(c)">
+                    <div class="name">[[ c.nombre ]]</div>
+                    <div class="phone">[[ c.telefono ]] · [[ c.documento || 'Sin DNI' ]]</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            {% if form.cliente_nombre.errors %}
+            <div class="field-error" style="margin:-4px 0 4px 120px;">{{ form.cliente_nombre.errors.0 }}</div>
+            {% endif %}
+
+            <div class="field-row">
+              <span class="field-label fl110">Teléfono *</span>
+              <div class="client-search-wrap">
+                <input type="text" name="cliente_telefono" id="id_cliente_telefono"
+                  class="c-input" placeholder="999 999 999"
+                  value="{{ form.cliente_telefono.value|default:'' }}" required
+                  v-model="clienteTelefono"
+                  @blur="setTimeout(() => resultadosTelefono = [], 200)">
+                <div class="client-results" v-if="resultadosTelefono.length > 0">
+                  <div class="client-result-close" @click="resultadosTelefono = []">
+                    <span class="mdi mdi-close" style="font-size:14px;"></span>
+                    <span>Cerrar sugerencias</span>
+                  </div>
+                  <div class="client-result-item" v-for="c in resultadosTelefono" :key="c.id"
+                    @click="seleccionarCliente(c)">
+                    <div class="name">[[ c.nombre ]]</div>
+                    <div class="phone">[[ c.telefono ]] · [[ c.documento || 'Sin DNI' ]]</div>
+                  </div>
+                  <div class="client-result-divider"></div>
+                  <div class="client-result-item client-result-action" @click="registrarNuevoCliente()">
+                    <span class="mdi mdi-plus-circle-outline" style="font-size:15px;color:#4F46E5;"></span>
+                    <span style="color:#4F46E5;font-weight:500;font-size:13px;">Registrar como nuevo cliente</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            {% if form.cliente_telefono.errors %}
+            <div class="field-error" style="margin:-4px 0 4px 120px;">{{ form.cliente_telefono.errors.0 }}</div>
+            {% endif %}
+
+            <div class="field-row">
+              <span class="field-label fl110">Documento</span>
+              <div class="client-search-wrap">
+                <input type="text" name="cliente_documento" class="c-input c-input-sm"
+                  placeholder="DNI / CE" value="{{ form.cliente_documento.value|default:'' }}"
+                  v-model="clienteDocumento"
+                  @blur="setTimeout(() => resultadosDocumento = [], 200)">
+                <div class="client-results" v-if="resultadosDocumento.length > 0">
+                  <div class="client-result-close" @click="resultadosDocumento = []">
+                    <span class="mdi mdi-close" style="font-size:14px;"></span>
+                    <span>Cerrar sugerencias</span>
+                  </div>
+                  <div class="client-result-item" v-for="c in resultadosDocumento" :key="c.id"
+                    @click="seleccionarCliente(c)">
+                    <div class="name">[[ c.nombre ]]</div>
+                    <div class="phone">[[ c.telefono ]] · [[ c.documento || 'Sin DNI' ]]</div>
+                  </div>
+                  <div class="client-result-divider"></div>
+                  <div class="client-result-item client-result-action" @click="registrarNuevoCliente()">
+                    <span class="mdi mdi-plus-circle-outline" style="font-size:15px;color:#4F46E5;"></span>
+                    <span style="color:#4F46E5;font-weight:500;font-size:13px;">Registrar como nuevo cliente</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="empresa-toggle-wrap">
+              <div class="empresa-toggle" :class="{ open: empresaOpen }" @click="empresaOpen = !empresaOpen">
+                <span class="mdi mdi-chevron-right"></span>
+                Datos de empresa
+              </div>
+            </div>
+            <div class="empresa-content" :class="{ open: empresaOpen }">
+              <div class="field-row" style="margin-top:8px;">
+                <span class="field-label fl110">Correo</span>
+                <input type="email" name="cliente_correo" class="c-input c-input-sm"
+                  placeholder="correo@ejemplo.com" value="{{ form.cliente_correo.value|default:'' }}">
+              </div>
+              <div class="field-row">
+                <span class="field-label fl110">RUC</span>
+                <input type="text" name="cliente_ruc" class="c-input c-input-sm"
+                  placeholder="RUC" value="{{ form.cliente_ruc.value|default:'' }}">
+              </div>
+              <div class="field-row">
+                <span class="field-label fl110">Razón social</span>
+                <input type="text" name="cliente_razon_social" class="c-input c-input-sm"
+                  placeholder="Razón social" value="{{ form.cliente_razon_social.value|default:'' }}">
+              </div>
+            </div>
+          </div>
+        </v-card>
+
+        {% comment %}CARD 2 — ORIGEN Y DESTINO{% endcomment %}
+        <v-card class="reserva-card mb-4">
+          <div class="card-header">
+            <div class="icon-wrap" style="background:#F0FDF4;">
+              <span class="mdi mdi-routes" style="color:#059669;font-size:18px;"></span>
+            </div>
+            Origen y Destino
+          </div>
+          <v-divider class="mx-4 mt-2" style="opacity:.4;"></v-divider>
+          <div class="card-body">
+            <v-row no-gutters>
+              <v-col cols="12" md="6" class="pr-md-4">
+                <div class="section-subtitle">
+                  <span class="dot" style="background:#4F46E5;"></span> Origen
+                </div>
+                <div class="field-row">
+                  <span class="field-label fl72">Dirección *</span>
+                  <input type="text" name="direccion_origen"
+                    class="c-input" placeholder="Av. Ejemplo 123"
+                    value="{{ form.direccion_origen.value|default:'' }}" maxlength="255"
+                    id="id_direccion_origen">
+                </div>
+                {% if form.direccion_origen.errors %}
+                <div class="field-error" style="margin:-4px 0 4px 82px;">{{ form.direccion_origen.errors.0 }}</div>
+                {% endif %}
+                <div class="field-row">
+                  <span class="field-label fl72">Piso *</span>
+                  <input type="text" name="piso_origen"
+                    class="c-input c-input-xs" placeholder="Piso 3"
+                    value="{{ form.piso_origen.value|default:'' }}" maxlength="20"
+                    id="id_piso_origen">
+                </div>
+                {% if form.piso_origen.errors %}
+                <div class="field-error" style="margin:-4px 0 4px 82px;">{{ form.piso_origen.errors.0 }}</div>
+                {% endif %}
+                <div class="field-row">
+                  <span class="field-label fl72">Acceso *</span>
+                  <div style="display:none;">
+                    {% for checkbox in form.acceso_origen_opciones %}
+                    <label class="pill">
+                      {{ checkbox.tag }}
+                      <span>{{ checkbox.choice_label }}</span>
+                    </label>
+                    {% endfor %}
+                  </div>
+                  <v-select
+                    :items="accesoItems"
+                    v-model="accesoOrigen"
+                    density="compact"
+                    variant="outlined"
+                    hide-details
+                    style="max-width:280px;"
+                  ></v-select>
+                </div>
+                {% if form.acceso_origen_opciones.errors %}
+                <div class="field-error" style="margin:-4px 0 4px 82px;">{{ form.acceso_origen_opciones.errors.0 }}</div>
+                {% endif %}
+              </v-col>
+
+              <v-col cols="12" md="1" class="d-none d-md-flex justify-center pa-0">
+                <div class="v-divider-vert"></div>
+              </v-col>
+
+              <v-col cols="12" md="5" class="pl-md-4">
+                <div class="section-subtitle" style="margin-top:16px;">
+                  <span class="dot" style="background:#059669;"></span> Destino
+                </div>
+                <div class="field-row">
+                  <span class="field-label fl72">Dirección *</span>
+                  <input type="text" name="direccion_destino"
+                    class="c-input" placeholder="Av. Destino 456"
+                    value="{{ form.direccion_destino.value|default:'' }}" maxlength="255"
+                    id="id_direccion_destino">
+                </div>
+                {% if form.direccion_destino.errors %}
+                <div class="field-error" style="margin:-4px 0 4px 82px;">{{ form.direccion_destino.errors.0 }}</div>
+                {% endif %}
+                <div class="field-row">
+                  <span class="field-label fl72">Piso *</span>
+                  <input type="text" name="piso_destino"
+                    class="c-input c-input-xs" placeholder="Piso 5"
+                    value="{{ form.piso_destino.value|default:'' }}" maxlength="20"
+                    id="id_piso_destino">
+                </div>
+                {% if form.piso_destino.errors %}
+                <div class="field-error" style="margin:-4px 0 4px 82px;">{{ form.piso_destino.errors.0 }}</div>
+                {% endif %}
+                <div class="field-row">
+                  <span class="field-label fl72">Acceso *</span>
+                  <div style="display:none;">
+                    {% for checkbox in form.acceso_destino_opciones %}
+                    <label class="pill">
+                      {{ checkbox.tag }}
+                      <span>{{ checkbox.choice_label }}</span>
+                    </label>
+                    {% endfor %}
+                  </div>
+                  <v-select
+                    :items="accesoItems"
+                    v-model="accesoDestino"
+                    density="compact"
+                    variant="outlined"
+                    hide-details
+                    style="max-width:280px;"
+                  ></v-select>
+                </div>
+                {% if form.acceso_destino_opciones.errors %}
+                <div class="field-error" style="margin:-4px 0 4px 82px;">{{ form.acceso_destino_opciones.errors.0 }}</div>
+                {% endif %}
+              </v-col>
+            </v-row>
+          </div>
+        </v-card>
+
+        {% comment %}CARD 3 — CARGA Y CONDICIONES{% endcomment %}
+        <v-card class="reserva-card mb-4">
+          <div class="card-header">
+            <div class="icon-wrap" style="background:#FFFBEB;">
+              <span class="mdi mdi-package-variant" style="color:#D97706;font-size:18px;"></span>
+            </div>
+            Carga y Condiciones
+          </div>
+          <v-divider class="mx-4 mt-2" style="opacity:.4;"></v-divider>
+          <div class="card-body">
+            <div class="field-row field-row-top">
+              <span class="field-label fl140" style="margin-top:6px;">Detalle de carga *</span>
+              <textarea name="detalle_carga" class="c-input" rows="3"
+                placeholder="Describa la carga a transportar"
+                id="id_detalle_carga">{{ form.detalle_carga.value|default:'' }}</textarea>
+            </div>
+            {% if form.detalle_carga.errors %}
+            <div class="field-error" style="margin:-4px 0 4px 150px;">{{ form.detalle_carga.errors.0 }}</div>
+            {% endif %}
+
+            <v-divider class="my-3" style="opacity:.3;"></v-divider>
+
+            <v-row>
+              <v-col cols="12" md="6">
+                <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin-bottom:8px;">Tipo de embalaje</div>
+                <div class="pill-group">
+                  {% for radio in form.tipo_embalaje %}
+                  <label class="pill">
+                    {{ radio.tag }}
+                    <span>{{ radio.choice_label }}</span>
+                  </label>
+                  {% endfor %}
+                </div>
+                {% if form.tipo_embalaje.errors %}
+                <div class="field-error" style="margin-top:4px;">{{ form.tipo_embalaje.errors.0 }}</div>
+                {% endif %}
+              </v-col>
+              <v-col cols="12" md="6">
+                <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin-bottom:8px;">Requisitos especiales</div>
+                <div class="chip-group" id="reqEspecialesGroup">
+                  {% for checkbox in form.requisitos_especiales %}
+                  <label class="check-chip">
+                    <input type="checkbox" name="requisitos_especiales"
+                      value="{{ checkbox.choice_label|lower }}"
+                      id="chk-{{ checkbox.choice_label|lower }}"
+                      {% if checkbox.choice_label|lower == "ninguno" and not form.is_bound or checkbox.choice_label|lower in form.requisitos_especiales.value %}checked{% endif %}>
+                    <span class="chip-label">{{ checkbox.choice_label }}</span>
+                  </label>
+                  {% endfor %}
+                </div>
+                {% if form.requisitos_especiales.errors %}
+                <div class="field-error" style="margin-top:4px;">{{ form.requisitos_especiales.errors.0 }}</div>
+                {% endif %}
+                <div style="font-size:11px;color:#94a3b8;margin-top:4px;">
+                  Si selecciona EPP, SCTR u Otros, "Ninguno" se desactiva automáticamente.
+                </div>
+              </v-col>
+            </v-row>
+          </div>
+        </v-card>
+
+        {% comment %}CARD 4 — PRECIO Y COMPROBANTE{% endcomment %}
+        <v-card class="reserva-card mb-4">
+          <div class="card-header">
+            <div class="icon-wrap" style="background:#F0FDF4;">
+              <span class="mdi mdi-receipt" style="color:#16A34A;font-size:18px;"></span>
+            </div>
+            Precio y Comprobante
+          </div>
+          <v-divider class="mx-4 mt-2" style="opacity:.4;"></v-divider>
+          <div class="card-body">
+            <v-row>
+              <v-col cols="12" md="4">
+                <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin-bottom:6px;">Precio *</div>
+                <div class="price-wrap">
+                  <span class="price-prefix">S/</span>
+                  <input type="number" name="precio"
+                    class="c-input" step="0.01" min="0" placeholder="0.00"
+                    value="{{ form.precio.value|default:'' }}" id="id_precio">
+                </div>
+                {% if form.precio.errors %}
+                <div class="field-error" style="margin-top:2px;">{{ form.precio.errors.0 }}</div>
+                {% endif %}
+              </v-col>
+              <v-col cols="12" md="8">
+                <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin-bottom:6px;">Comprobante de pago</div>
+                <div class="pill-group">
+                  {% for radio in form.tipo_comprobante %}
+                  <label class="pill">
+                    {{ radio.tag }}
+                    <span>{{ radio.choice_label }}</span>
+                  </label>
+                  {% endfor %}
+                </div>
+                {% if form.tipo_comprobante.errors %}
+                <div class="field-error" style="margin-top:2px;">{{ form.tipo_comprobante.errors.0 }}</div>
+                {% endif %}
+              </v-col>
+            </v-row>
+          </div>
+        </v-card>
+
+        {% comment %}CARD 5 — PROGRAMACIÓN{% endcomment %}
+        <v-card class="reserva-card mb-4">
+          <div class="card-header">
+            <div class="icon-wrap" style="background:#EFF6FF;">
+              <span class="mdi mdi-calendar-clock" style="color:#2563EB;font-size:18px;"></span>
+            </div>
+            Programación
+          </div>
+          <v-divider class="mx-4 mt-2" style="opacity:.4;"></v-divider>
+          <div class="card-body">
+            <div class="d-flex flex-wrap ga-2 mb-3" id="quickDates">
+              <button type="button" class="quick-pill"
+                v-for="d in quickDates" :key="d.value"
+                :class="{ active: selectedDate === d.value }"
+                @click="setDate(d.value)">
+                [[ d.label ]]
+              </button>
+            </div>
+            <div class="d-flex flex-wrap ga-3 align-center">
+              <div class="field-row" style="margin-bottom:0;">
+                <span class="field-label fl50">Fecha *</span>
+                <input type="date" name="fecha_servicio" id="fechaInput"
+                  class="c-input" :value="selectedDate"
+                  @change="selectedDate = $event.target.value">
+              </div>
+              <div class="field-row" style="margin-bottom:0;">
+                <span class="field-label fl50">Hora *</span>
+                <select name="horario_servicio" id="id_horario_servicio" class="c-input" style="min-width:150px;">
+                  <option value="">Seleccionar</option>
+                  <option v-for="t in timeOptions" :key="t.value"
+                    :value="t.value" :selected="t.value === '{{ form.horario_servicio.value|default:'' }}'">
+                    [[ t.label ]]
+                  </option>
+                </select>
+              </div>
+            </div>
+            {% if form.fecha_servicio.errors %}
+            <div class="field-error" style="margin-top:4px;">{{ form.fecha_servicio.errors.0 }}</div>
+            {% endif %}
+            {% if form.horario_servicio.errors %}
+            <div class="field-error" style="margin-top:4px;">{{ form.horario_servicio.errors.0 }}</div>
+            {% endif %}
+          </div>
+        </v-card>
+
+        {% comment %}CARD 6 — OBSERVACIONES{% endcomment %}
+        <v-card class="reserva-card mb-4">
+          <div class="card-header">
+            <div class="icon-wrap" style="background:#f1f5f9;">
+              <span class="mdi mdi-note-text" style="color:#64748b;font-size:18px;"></span>
+            </div>
+            Observaciones
+          </div>
+          <v-divider class="mx-4 mt-2" style="opacity:.4;"></v-divider>
+          <div class="card-body">
+            <textarea name="observaciones" class="c-input" rows="3"
+              placeholder="Información adicional para el equipo operativo..."
+              id="id_observaciones">{{ form.observaciones.value|default:'' }}</textarea>
+          </div>
+          <v-divider style="opacity:.4;"></v-divider>
+          <div class="d-flex justify-end pa-4" style="gap:8px;">
+            <a href="{% if next_url %}{{ next_url }}{% else %}{% url 'dashboard-servicios-list' %}{% endif %}"
+              style="padding:8px 18px;background:#fff;color:#64748b;border:0.5px solid #e2e8f0;border-radius:8px;font-size:14px;text-decoration:none;font-weight:500;">
+              Cancelar
+            </a>
+            <button type="submit"
+              style="padding:8px 18px;background:#4F46E5;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">
+              {{ submit_label }}
+            </button>
+          </div>
+        </v-card>
+
+        {% comment %}ASIGNACIÓN OPERATIVA{% endcomment %}
+        <v-card class="reserva-card mb-4">
+          <div class="card-body" style="padding:12px 20px;">
+            <div class="d-flex align-center ga-2" style="font-size:13px;color:#64748b;">
+              <span class="mdi mdi-account-group" style="font-size:18px;flex-shrink:0;"></span>
+              La asignación a un equipo de campo se realizará desde el módulo Pizarra.
+              Esta reserva quedará en estado "Pendiente" hasta que se asigne.
+            </div>
+          </div>
+        </v-card>
+
+      </form>
+    </v-container>
+  </v-app>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+(function() {
+  const timeOpts = [];
+  for (let h = 0; h < 24; h++) {
+    for (let m = 0; m < 60; m += 30) {
+      const hh = String(h).padStart(2, '0');
+      const mm = String(m).padStart(2, '0');
+      const period = h < 12 ? 'AM' : 'PM';
+      const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+      timeOpts.push({ value: hh + ':' + mm, label: h12 + ':' + mm + ' ' + period });
+    }
+  }
+  const quickDates = [];
+  const today = new Date();
+  for (let i = 0; i < 6; i++) {
+    const d = new Date(today);
+    d.setDate(today.getDate() + i);
+    const dayNames = ['Dom', 'Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab'];
+    quickDates.push({ label: dayNames[d.getDay()] + ' ' + d.getDate(), value: d.toISOString().slice(0,10) });
+  }
+
+  function initAccesoValue(name) {
+    var checks = document.querySelectorAll('[name="' + name + '"]');
+    var checked = [];
+    checks.forEach(function(cb) { if (cb.checked) checked.push(cb.value); });
+    if (checked.includes('ascensor') && checked.includes('escaleras') && checked.includes('sogas')) return 'ascensor+escaleras+sogas';
+    if (checked.includes('ascensor') && checked.includes('escaleras')) return 'ascensor+escaleras';
+    if (checked.includes('escaleras') && checked.includes('sogas')) return 'escaleras+sogas';
+    if (checked.includes('ascensor') && checked.includes('sogas')) return 'ascensor+sogas';
+    if (checked.includes('ascensor')) return 'ascensor';
+    if (checked.includes('escaleras')) return 'escaleras';
+    if (checked.includes('sogas')) return 'sogas';
+    return '';
+  }
+
+  const { createApp } = Vue;
+  const { createVuetify } = Vuetify;
+
+  createApp({
+    delimiters: ['[[', ']]'],
+    data() {
+      const fechaInput = document.getElementById('fechaInput');
+      return {
+        clienteNombre: document.getElementById('id_cliente_nombre')?.value || '',
+        clienteTelefono: document.getElementById('id_cliente_telefono')?.value || '',
+        clienteDocumento: document.querySelector('[name=cliente_documento]')?.value || '',
+        clienteId: document.querySelector('[name=cliente_id]')?.value || '',
+        resultados: [],
+        resultadosTelefono: [],
+        resultadosDocumento: [],
+        timeoutId: null,
+        phoneTimeoutId: null,
+        docTimeoutId: null,
+        clienteSeleccionado: {% if editando %}!!document.querySelector('[name=cliente_id]')?.value{% else %}false{% endif %},
+        nuevoCliente: false,
+        _isSettingCliente: false,
+        empresaOpen: {% if editando %}(document.querySelector('[name=cliente_correo]')?.value || document.querySelector('[name=cliente_ruc]')?.value || document.querySelector('[name=cliente_razon_social]')?.value) ? true : false{% else %}false{% endif %},
+        {% if editando %}clienteExpandido: false,{% endif %}
+        selectedDate: fechaInput?.value || quickDates[0]?.value || '',
+        quickDates: quickDates,
+        timeOptions: timeOpts,
+        accesoItems: [
+          { title: 'Ascensor', value: 'ascensor' },
+          { title: 'Escaleras', value: 'escaleras' },
+          { title: 'Sogas', value: 'sogas' },
+          { title: 'Ascensor + Escaleras', value: 'ascensor+escaleras' },
+          { title: 'Escaleras + Sogas', value: 'escaleras+sogas' },
+          { title: 'Ascensor + Sogas', value: 'ascensor+sogas' },
+          { title: 'Ascensor + Escaleras + Sogas', value: 'ascensor+escaleras+sogas' },
+        ],
+        accesoOrigen: '{{ form.acceso_origen_opciones.value|default:""|join:"+" }}',
+        accesoDestino: '{{ form.acceso_destino_opciones.value|default:""|join:"+" }}',
+      };
+    },
+    mounted() {
+      this.syncAcceso('acceso_origen_opciones', this.accesoOrigen);
+      this.syncAcceso('acceso_destino_opciones', this.accesoDestino);
+    },
+    methods: {
+      async buscarClientes() {
+        clearTimeout(this.timeoutId);
+        this.timeoutId = setTimeout(async () => {
+          const q = this.clienteNombre;
+          if (q.length < 2) { this.resultados = []; return; }
+          try {
+            const r = await fetch('/dashboard/servicios/buscar-clientes/?q=' + encodeURIComponent(q));
+            const data = await r.json();
+            this.resultados = data.results;
+          } catch(e) { this.resultados = []; }
+        }, 400);
+      },
+      async buscarPorTelefono() {
+        clearTimeout(this.phoneTimeoutId);
+        this.phoneTimeoutId = setTimeout(async () => {
+          const q = this.clienteTelefono;
+          if (q.length < 6) { this.resultadosTelefono = []; return; }
+          try {
+            const r = await fetch('/dashboard/servicios/buscar-clientes/?q=' + encodeURIComponent(q));
+            const data = await r.json();
+            if (data.results && data.results.length > 5) data.results = data.results.slice(0, 5);
+            this.resultadosTelefono = data.results || [];
+          } catch(e) { this.resultadosTelefono = []; }
+        }, 400);
+      },
+      async buscarPorDocumento() {
+        clearTimeout(this.docTimeoutId);
+        this.docTimeoutId = setTimeout(async () => {
+          const q = this.clienteDocumento;
+          if (q.length < 4) { this.resultadosDocumento = []; return; }
+          try {
+            const r = await fetch('/dashboard/servicios/buscar-clientes/?q=' + encodeURIComponent(q));
+            const data = await r.json();
+            if (data.results && data.results.length > 5) data.results = data.results.slice(0, 5);
+            this.resultadosDocumento = data.results || [];
+          } catch(e) { this.resultadosDocumento = []; }
+        }, 400);
+      },
+      seleccionarCliente(c) {
+        this._isSettingCliente = true;
+        this.clienteId = c.id;
+        this.clienteNombre = c.nombre;
+        this.clienteTelefono = c.telefono;
+        this.clienteDocumento = c.documento || '';
+        this.clienteSeleccionado = true;
+        this.nuevoCliente = false;
+        document.getElementById('id_cliente_nombre').value = c.nombre;
+        document.getElementById('id_cliente_telefono').value = c.telefono;
+        document.querySelector('[name=cliente_id]').value = c.id;
+        document.querySelector('[name=cliente_documento]').value = c.documento || '';
+        var cor = document.querySelector('[name=cliente_correo]');
+        if (cor) cor.value = c.correo || '';
+        var ruc = document.querySelector('[name=cliente_ruc]');
+        if (ruc) ruc.value = c.ruc || '';
+        var rs = document.querySelector('[name=cliente_razon_social]');
+        if (rs) rs.value = c.razon_social || '';
+        this.resultados = [];
+        this.resultadosTelefono = [];
+        this.resultadosDocumento = [];
+        if (c.correo || c.ruc || c.razon_social) this.empresaOpen = true;
+        this._isSettingCliente = false;
+      },
+      registrarNuevoCliente() {
+        this._isSettingCliente = true;
+        this.clienteId = '';
+        this.clienteNombre = '';
+        this.clienteSeleccionado = false;
+        this.nuevoCliente = true;
+        document.getElementById('id_cliente_nombre').value = '';
+        document.querySelector('[name=cliente_id]').value = '';
+        document.querySelector('[name=cliente_documento]').value = '';
+        document.querySelector('[name=cliente_correo]').value = '';
+        document.querySelector('[name=cliente_ruc]').value = '';
+        document.querySelector('[name=cliente_razon_social]').value = '';
+        this.empresaOpen = false;
+        this.resultados = [];
+        this.resultadosTelefono = [];
+        this.resultadosDocumento = [];
+        this._isSettingCliente = false;
+      },
+      limpiarCamposCliente() {
+        this.clienteId = '';
+        this.clienteDocumento = '';
+        this.clienteSeleccionado = false;
+        this.nuevoCliente = false;
+        this.resultadosTelefono = [];
+        this.resultadosDocumento = [];
+        document.querySelector('[name=cliente_id]').value = '';
+        document.querySelector('[name=cliente_documento]').value = '';
+        document.querySelector('[name=cliente_correo]').value = '';
+        document.querySelector('[name=cliente_ruc]').value = '';
+        document.querySelector('[name=cliente_razon_social]').value = '';
+        this.empresaOpen = false;
+      },
+      setDate(value) {
+        this.selectedDate = value;
+        var fi = document.getElementById('fechaInput');
+        if (fi) fi.value = value;
+      },
+      syncAcceso(name, value) {
+        var checks = document.querySelectorAll('[name="' + name + '"]');
+        checks.forEach(function(cb) { cb.checked = false; });
+        var parts = value ? value.split('+') : [];
+        checks.forEach(function(cb) {
+          if (parts.includes(cb.value)) cb.checked = true;
+        });
+      },
+    },
+    watch: {
+      clienteNombre() {
+        if (this._isSettingCliente) return;
+        this.clienteId = '';
+        this.clienteDocumento = '';
+        this.clienteSeleccionado = false;
+        this.nuevoCliente = false;
+        this.resultadosTelefono = [];
+        this.resultadosDocumento = [];
+        document.querySelector('[name=cliente_id]').value = '';
+        document.querySelector('[name=cliente_documento]').value = '';
+        document.querySelector('[name=cliente_correo]').value = '';
+        document.querySelector('[name=cliente_ruc]').value = '';
+        document.querySelector('[name=cliente_razon_social]').value = '';
+        this.empresaOpen = false;
+      },
+      clienteTelefono() {
+        if (this._isSettingCliente) return;
+        this.limpiarCamposCliente();
+        this.buscarPorTelefono();
+      },
+      clienteDocumento() {
+        if (this._isSettingCliente) return;
+        this.limpiarCamposCliente();
+        this.buscarPorDocumento();
+      },
+      accesoOrigen(val) {
+        this.syncAcceso('acceso_origen_opciones', val);
+      },
+      accesoDestino(val) {
+        this.syncAcceso('acceso_destino_opciones', val);
+      },
+    },
+  }).use(createVuetify()).mount('#app');
+
+  // Close search dropdowns on outside click
+  document.addEventListener('click', function(e) {
+    var app = document.querySelector('#app');
+    if (!app || !app.__vue_app__) return;
+    var vm = app.__vue_app__._instance?.proxy;
+    if (!vm) return;
+    [['id_cliente_nombre', 'resultados'], ['id_cliente_telefono', 'resultadosTelefono'], ['id_cliente_documento', 'resultadosDocumento']].forEach(function(pair) {
+      var wrap = document.getElementById(pair[0])?.closest('.client-search-wrap');
+      if (wrap && !wrap.contains(e.target)) vm[pair[1]] = [];
+    });
+  });
+  // Close dropdowns on Escape / Tab
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' || e.key === 'Tab') {
+      var app = document.querySelector('#app');
+      if (!app || !app.__vue_app__) return;
+      var vm = app.__vue_app__._instance?.proxy;
+      if (vm) { vm.resultados = []; vm.resultadosTelefono = []; vm.resultadosDocumento = []; }
+    }
+  });
+
+  // Requisitos especiales logic
+  (function() {
+    var ninguno = document.querySelector('input[id*="ninguno"]')
+               || document.querySelector('input[value="ninguno"]');
+    var especiales = [
+      document.querySelector('input[id*="epp"]')   || document.querySelector('input[value="epp"]'),
+      document.querySelector('input[id*="sctr"]')  || document.querySelector('input[value="sctr"]'),
+      document.querySelector('input[id*="otros"]') || document.querySelector('input[value="otros"]'),
+    ].filter(Boolean);
+
+    if (!ninguno || especiales.length === 0) return;
+
+    especiales.forEach(function(chk) {
+      chk.addEventListener('change', function() {
+        if (this.checked) {
+          ninguno.checked = false;
+          ninguno.dispatchEvent(new Event('change'));
+        } else {
+          if (especiales.every(function(c) { return !c.checked; })) {
+            ninguno.checked = true;
+          }
+        }
+      });
+    });
+
+    ninguno.addEventListener('change', function() {
+      if (this.checked) {
+        especiales.forEach(function(c) { c.checked = false; });
+      }
+      if (!this.checked && especiales.every(function(c) { return !c.checked; })) {
+        this.checked = true;
+      }
+    });
+  })();
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,610 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Bot WhatsApp{% endblock %}
+{% block content %}
+<style>
+  .channel-card { cursor: pointer; transition: transform .15s, box-shadow .15s; }
+  .channel-card:hover { transform: translateY(-3px); box-shadow: 0 6px 20px rgba(0,0,0,.12); }
+  .config-section { margin-bottom: 24px; }
+  .day-chip { margin: 2px; }
+</style>
+<div id="whatsapp-app" v-cloak>
+  <v-app>
+    <v-main>
+      <v-container fluid>
+        <v-row>
+          <v-col cols="12">
+            <div class="d-flex align-center ga-3 mb-4">
+              <v-icon color="teal-darken-2" size="36">mdi-robot-outline</v-icon>
+              <div>
+                <div class="text-h5 font-weight-bold">[[ pageTitle ]]</div>
+                <div class="text-caption text-medium-emphasis">[[ pageSubtitle ]]</div>
+              </div>
+              <v-spacer></v-spacer>
+              <v-btn v-if="channelId" variant="text" prepend-icon="mdi-arrow-left" @click="volver">Todos los canales</v-btn>
+            </div>
+          </v-col>
+        </v-row>
+
+        {# --- STATE: Sin canal seleccionado --- #}
+        <template v-if="!channelId">
+          <v-row>
+            <v-col cols="12" sm="6" md="4" lg="3" v-for="ch in channels" :key="ch.id">
+              <v-card class="channel-card" @click="seleccionarCanal(ch.id)">
+                <v-card-title class="d-flex align-center ga-2 py-3">
+                  <v-icon :color="ch.activo ? 'teal-darken-2' : 'grey'">mdi-whatsapp</v-icon>
+                  <span class="text-subtitle-1 font-weight-bold">[[ ch.nombre ]]</span>
+                  <v-spacer></v-spacer>
+                  <v-icon :color="ch.activo ? 'teal-darken-2' : 'grey'">mdi-chevron-right</v-icon>
+                </v-card-title>
+                <v-divider></v-divider>
+                <v-card-text class="pb-2">
+                  <div class="d-flex align-center ga-2 mb-1">
+                    <span class="text-caption text-medium-emphasis">Estado:</span>
+                    <v-chip size="x-small" :color="ch.bot_activo ? 'green-darken-2' : 'grey'" variant="tonal">
+                      [[ ch.bot_activo ? 'Activo' : 'Inactivo' ]]
+                    </v-chip>
+                  </div>
+                  <div class="d-flex align-center ga-2">
+                    <span class="text-caption text-medium-emphasis">Modo:</span>
+                    <span class="text-caption">[[ ch.modo_label ]]</span>
+                  </div>
+                </v-card-text>
+              </v-card>
+            </v-col>
+          </v-row>
+          <v-row v-if="!loading && !channels.length">
+            <v-col cols="12" class="text-center py-8">
+              <v-icon size="64" color="grey-lighten-2">mdi-whatsapp</v-icon>
+              <p class="text-h6 text-medium-emphasis mt-4">No hay canales configurados</p>
+              <p class="text-body-2 text-grey">Crea un canal desde el Admin Django para empezar.</p>
+            </v-col>
+          </v-row>
+          <v-row v-if="loading">
+            <v-col cols="12" class="text-center py-8">
+              <v-progress-circular indeterminate color="teal-darken-2"></v-progress-circular>
+              <p class="text-body-2 text-grey mt-3">Cargando canales...</p>
+            </v-col>
+          </v-row>
+        </template>
+
+        {# --- STATE: Canal seleccionado — Configuración --- #}
+        <template v-if="channelId && config">
+          <v-row>
+            <v-col cols="12" md="8">
+              {# --- General --- #}
+              <v-sheet class="pa-4 config-section" rounded="lg" border>
+                <div class="text-subtitle-1 font-weight-bold mb-3 d-flex align-center ga-2">
+                  <v-icon color="teal-darken-2">mdi-cog-outline</v-icon> General
+                </div>
+
+                <div class="d-flex align-center ga-2 mb-2">
+                  <v-icon color="teal-darken-2">mdi-robot</v-icon>
+                  <span class="text-body-2 font-weight-medium">Bot automático</span>
+                  <v-spacer></v-spacer>
+                  <v-switch
+                    :model-value="modoActivo === 'bot'"
+                    @update:model-value="toggleModo('bot')"
+                    color="teal-darken-2"
+                    hide-details
+                    density="compact"
+                  ></v-switch>
+                  <span
+                    :style="modoActivo === 'bot' ? 'color:#00796B; font-weight:700;' : 'color:#9e9e9e;'"
+                    class="text-caption"
+                  >[[ modoActivo === 'bot' ? '\u25cf Activo' : '\u25cb Inactivo' ]]</span>
+                </div>
+
+                <div class="d-flex align-center ga-2 mb-2">
+                  <v-icon color="teal-darken-2">mdi-robot-happy</v-icon>
+                  <span class="text-body-2 font-weight-medium">Bot mixto inteligente</span>
+                  <v-spacer></v-spacer>
+                  <v-switch
+                    :model-value="modoActivo === 'mixto'"
+                    @update:model-value="toggleModo('mixto')"
+                    color="teal-darken-2"
+                    hide-details
+                    density="compact"
+                  ></v-switch>
+                  <span
+                    :style="modoActivo === 'mixto' ? 'color:#00796B; font-weight:700;' : 'color:#9e9e9e;'"
+                    class="text-caption"
+                  >[[ modoActivo === 'mixto' ? '\u25cf Activo' : '\u25cb Inactivo' ]]</span>
+                </div>
+
+                <v-chip v-if="modoActivo === null" color="grey" variant="tonal" size="small" class="mt-1">
+                  <v-icon start size="14">mdi-account</v-icon> Modo manual activo
+                </v-chip>
+
+                <div class="mt-3" style="position:relative;">
+                  <v-textarea v-model="config.mensaje_fuera_horario" label="Mensaje fuera de horario" variant="outlined" density="compact" rows="2" hide-details @blur="guardarMensajeFueraHorario"></v-textarea>
+                  <v-chip v-if="mensajeSavedChip" color="success" size="x-small" variant="tonal" class="mt-1">
+                    <v-icon start size="12">mdi-check</v-icon> Guardado
+                  </v-chip>
+                </div>
+              </v-sheet>
+
+              {# --- Horarios programados --- #}
+              <v-sheet class="pa-4 config-section" rounded="lg" border>
+                <div class="text-subtitle-1 font-weight-bold mb-3 d-flex align-center ga-2">
+                  <v-icon color="teal-darken-2">mdi-timetable</v-icon> Horarios programados
+                </div>
+
+                <v-tabs v-model="scheduleTab" color="teal-darken-2" density="compact" class="mb-2">
+                  <v-tab value="bot">Bot automático</v-tab>
+                  <v-tab value="mixto">Bot mixto inteligente</v-tab>
+                </v-tabs>
+
+                <v-window v-model="scheduleTab">
+                  <v-window-item v-for="modo in ['bot','mixto']" :key="modo" :value="modo">
+                    <div v-for="dia in diasSemana" :key="modo + '-' + dia.value">
+                      <div class="d-flex align-center ga-2 mb-1 mt-3">
+                        <span class="text-body-2 font-weight-bold">[[ dia.label ]]</span>
+                        <v-spacer></v-spacer>
+                        <v-btn size="x-small" icon="mdi-plus" color="teal-darken-2" variant="tonal"
+                          @click="mostrarForm(modo, dia.value, null)"></v-btn>
+                      </div>
+
+                      <div v-for="(sched, idx) in schedulesByModoYDia(modo, dia.value)" :key="sched.id || idx"
+                        class="d-flex align-center ga-2 mb-1 pl-2">
+                        <template v-if="formVisible.modo === modo && formVisible.dia === dia.value && formVisible.editingId === sched.id">
+                          <v-text-field v-model="formData.start_time" type="time" density="compact"
+                            variant="outlined" hide-details style="min-width:100px;"></v-text-field>
+                          <v-text-field v-model="formData.end_time" type="time" density="compact"
+                            variant="outlined" hide-details style="min-width:100px;"></v-text-field>
+                          <v-btn size="x-small" color="teal-darken-2" variant="tonal"
+                            :loading="savingSchedule" @click="guardarRango(modo)">Guardar</v-btn>
+                          <v-btn size="x-small" variant="text" @click="cancelarForm">Cancelar</v-btn>
+                        </template>
+                        <template v-else>
+                          <v-chip variant="outlined" size="small" class="flex-grow-1">
+                            <span class="text-caption">[[ sched.start_time ]] – [[ sched.end_time ]]</span>
+                          </v-chip>
+                          <v-btn size="x-small" icon="mdi-pencil" variant="text"
+                            @click="mostrarForm(modo, dia.value, sched)"></v-btn>
+                          <v-btn size="x-small" icon="mdi-delete" variant="text" color="red-lighten-2"
+                            @click="confirmarEliminar(modo, dia.value, idx, sched)"></v-btn>
+                        </template>
+                      </div>
+
+                      <div v-if="formVisible.modo === modo && formVisible.dia === dia.value && formVisible.editingId === null"
+                        class="d-flex align-center ga-2 mb-2 pa-2 bg-grey-lighten-4 rounded">
+                        <v-text-field v-model="formData.start_time" type="time" density="compact"
+                          variant="outlined" hide-details style="min-width:100px;"></v-text-field>
+                        <v-text-field v-model="formData.end_time" type="time" density="compact"
+                          variant="outlined" hide-details style="min-width:100px;"></v-text-field>
+                        <v-btn size="x-small" color="teal-darken-2" variant="tonal"
+                          :loading="savingSchedule" @click="guardarRango(modo)">Guardar</v-btn>
+                        <v-btn size="x-small" variant="text" @click="cancelarForm">Cancelar</v-btn>
+                      </div>
+
+                      <div v-if="!schedulesByModoYDia(modo, dia.value).length && !(formVisible.modo === modo && formVisible.dia === dia.value && formVisible.editingId === null)"
+                        class="text-caption text-medium-emphasis pl-2 mb-1">
+                        Sin horarios
+                      </div>
+                    </div>
+                  </v-window-item>
+                </v-window>
+
+                <v-dialog v-model="deleteDialog" max-width="400">
+                  <v-card>
+                    <v-card-title class="text-body-1 font-weight-bold">¿Eliminar horario?</v-card-title>
+                    <v-card-text class="text-body-2">
+                      Se eliminará el rango [[ deleteTarget?.start_time ]] – [[ deleteTarget?.end_time ]].
+                    </v-card-text>
+                    <v-card-actions>
+                      <v-spacer></v-spacer>
+                      <v-btn variant="text" @click="deleteDialog = false">Cancelar</v-btn>
+                      <v-btn color="red-lighten-2" variant="tonal" :loading="deletingSchedule"
+                        @click="ejecutarEliminar">Eliminar</v-btn>
+                    </v-card-actions>
+                  </v-card>
+                </v-dialog>
+              </v-sheet>
+            </v-col>
+
+            <v-col cols="12" md="4">
+              {# --- Info del canal --- #}
+              <v-sheet class="pa-4 config-section" rounded="lg" border>
+                <div class="text-subtitle-1 font-weight-bold mb-3 d-flex align-center ga-2">
+                  <v-icon color="teal-darken-2">mdi-information-outline</v-icon> Canal
+                </div>
+                <div class="text-body-2" v-if="channelInfo">
+                  <div class="d-flex justify-space-between mb-1">
+                    <span class="text-medium-emphasis">Nombre:</span>
+                    <span>[[ channelInfo.nombre ]]</span>
+                  </div>
+                  <div class="d-flex justify-space-between mb-1">
+                    <span class="text-medium-emphasis">Teléfono:</span>
+                    <span>[[ channelInfo.numero_visible || channelInfo.phone_number_id ]]</span>
+                  </div>
+                  <div class="d-flex justify-space-between mb-1">
+                    <span class="text-medium-emphasis">Asesor:</span>
+                    <span>[[ channelInfo.asesor_nombre || 'Sin asignar' ]]</span>
+                  </div>
+                  <div class="d-flex justify-space-between">
+                    <span class="text-medium-emphasis">Estado:</span>
+                    <v-chip size="x-small" :color="channelInfo.activo ? 'green-darken-2' : 'grey'" variant="tonal">[[ channelInfo.activo ? 'Activo' : 'Inactivo' ]]</v-chip>
+                  </div>
+                </div>
+              </v-sheet>
+
+              {# --- Override temporal --- #}
+              <v-sheet class="pa-4 config-section" rounded="lg" border>
+                <div class="text-subtitle-1 font-weight-bold mb-3 d-flex align-center ga-2">
+                  <v-icon color="orange-darken-2">mdi-calendar-clock</v-icon> Override temporal
+                </div>
+
+                <div class="d-flex align-center ga-2 mb-2">
+                  <v-icon color="orange-darken-2">mdi-lightning-bolt</v-icon>
+                  <span class="text-body-2 font-weight-medium">Forzar Bot automático</span>
+                  <v-spacer></v-spacer>
+                  <v-switch
+                    :model-value="overrideActivoModo === 'force_bot'"
+                    @update:model-value="toggleOverride('force_bot')"
+                    color="orange-darken-2"
+                    hide-details
+                    density="compact"
+                  ></v-switch>
+                  <span
+                    :style="overrideActivoModo === 'force_bot' ? 'color:#e65100; font-weight:700;' : 'color:#9e9e9e;'"
+                    class="text-caption"
+                  >[[ overrideActivoModo === 'force_bot' ? '\u26a1 Forzando ahora' : '\u25cb Inactivo' ]]</span>
+                </div>
+
+                <div class="d-flex align-center ga-2 mb-2">
+                  <v-icon color="orange-darken-2">mdi-lightning-bolt</v-icon>
+                  <span class="text-body-2 font-weight-medium">Forzar Bot mixto inteligente</span>
+                  <v-spacer></v-spacer>
+                  <v-switch
+                    :model-value="overrideActivoModo === 'force_mixto'"
+                    @update:model-value="toggleOverride('force_mixto')"
+                    color="orange-darken-2"
+                    hide-details
+                    density="compact"
+                  ></v-switch>
+                  <span
+                    :style="overrideActivoModo === 'force_mixto' ? 'color:#e65100; font-weight:700;' : 'color:#9e9e9e;'"
+                    class="text-caption"
+                  >[[ overrideActivoModo === 'force_mixto' ? '\u26a1 Forzando ahora' : '\u25cb Inactivo' ]]</span>
+                </div>
+
+                <v-chip v-if="overrideActivoModo === null" color="grey" variant="tonal" size="small" class="mt-1">
+                  Sin override activo
+                </v-chip>
+
+                <template v-if="overrideActivoModo !== null">
+                  <v-divider class="mb-3 mt-3"></v-divider>
+
+                  <v-row>
+                    <v-col cols="12" sm="6">
+                      <v-text-field v-model="overrideDesde" label="Fecha inicio (opcional)" type="datetime-local" variant="outlined" density="compact" hide-details @update:model-value="overrideDirty=true"></v-text-field>
+                    </v-col>
+                    <v-col cols="12" sm="6">
+                      <v-text-field v-model="overrideHasta" label="Fecha fin (opcional)" type="datetime-local" variant="outlined" density="compact" hide-details @update:model-value="overrideDirty=true"></v-text-field>
+                    </v-col>
+                  </v-row>
+
+                  <v-row class="mt-2">
+                    <v-col cols="12">
+                      <v-text-field v-model="overrideMotivo" label="Motivo (opcional)" variant="outlined" density="compact" hide-details @update:model-value="overrideDirty=true"></v-text-field>
+                    </v-col>
+                  </v-row>
+
+                  <v-row v-if="overrideDirty" class="mt-2">
+                    <v-col cols="12">
+                      <v-btn color="orange-darken-2" variant="tonal" block size="small" :loading="saving" @click="guardarOverride">
+                        <v-icon start>mdi-content-save</v-icon> Guardar
+                      </v-btn>
+                    </v-col>
+                  </v-row>
+                </template>
+              </v-sheet>
+            </v-col>
+          </v-row>
+        </template>
+      </v-container>
+    </v-main>
+  </v-app>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  function getCSRFToken() {
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    if (meta) return meta.getAttribute('content');
+    const cookie = document.cookie.split('; ').find(function(r){return r.startsWith('csrftoken=');});
+    return cookie ? cookie.split('=')[1] : '';
+  }
+
+  const diasMap = [
+    {value: 0, label: 'Lunes'},
+    {value: 1, label: 'Martes'},
+    {value: 2, label: 'Miércoles'},
+    {value: 3, label: 'Jueves'},
+    {value: 4, label: 'Viernes'},
+    {value: 5, label: 'Sábado'},
+    {value: 6, label: 'Domingo'},
+  ];
+
+  const { createApp } = Vue;
+  const { createVuetify } = Vuetify;
+  createApp({
+    delimiters: ['[[', ']]'],
+    data() {
+      return {
+        channelId: null,
+        channels: [],
+        config: null,
+        channelInfo: null,
+        loading: true,
+        saving: false,
+        scheduleTab: 'bot',
+        diasSemana: [
+          {value: 0, label: 'Lunes'},
+          {value: 1, label: 'Martes'},
+          {value: 2, label: 'Miércoles'},
+          {value: 3, label: 'Jueves'},
+          {value: 4, label: 'Viernes'},
+          {value: 5, label: 'Sábado'},
+          {value: 6, label: 'Domingo'},
+        ],
+        formVisible: { modo: null, dia: null, editingId: null },
+        formData: { start_time: '09:00', end_time: '17:00' },
+        deleteDialog: false,
+        deleteTarget: null,
+        savingSchedule: false,
+        deletingSchedule: false,
+        modoActivo: null,
+        overrideActivoModo: null,
+        overrideDesde: '',
+        overrideHasta: '',
+        overrideMotivo: '',
+        overrideDirty: false,
+        mensajeSavedChip: false,
+      };
+    },
+    computed: {
+      pageTitle() {
+        if (this.channelId && this.channelInfo) {
+          return 'Configuración del Bot - ' + this.channelInfo.nombre;
+        }
+        return 'Configuración del Bot';
+      },
+      pageSubtitle() {
+        if (!this.channelId) {
+          return 'Selecciona un canal para configurar el bot';
+        }
+        return 'Modo ' + this.modoLabel + ' · ' + (this.config && this.config.bot_activo ? 'Activo' : 'Inactivo');
+      },
+      modoLabel() {
+        if (!this.config || !this.config.modos_atencion) return '';
+        const found = this.config.modos_atencion.find(function(m){return m.value === this.config.modo_atencion;}.bind(this));
+        return found ? found.label : this.config.modo_atencion;
+      },
+      schedulesPorModo() {
+        if (!this.config || !this.config.schedules) return {};
+        const result = {};
+        var self = this;
+        this.diasSemana.forEach(function(dia) {
+          result[dia.value] = (self.config.schedules || []).filter(function(s) {
+            return s.day_of_week === dia.value && s.modo === self.scheduleTab;
+          });
+        });
+        return result;
+      }
+    },
+    mounted() {
+      const params = new URLSearchParams(window.location.search);
+      this.channelId = params.get('channel') || null;
+      if (this.channelId) {
+        this.cargarConfig();
+        this.cargarInfoCanal();
+      } else {
+        this.cargarCanales();
+      }
+    },
+    methods: {
+      async cargarCanales() {
+        this.loading = true;
+        try {
+          const res = await fetch('/api/whatsapp-channels/?filter=active');
+          const data = await res.json();
+          const results = await Promise.all(data.map(async function(ch) {
+            try {
+              const r = await fetch('/api/bot-settings/?channel=' + ch.id);
+              const cfg = await r.json();
+              return Object.assign({}, ch, {
+                bot_activo: cfg.bot_activo,
+                modo_label: (cfg.modos_atencion.find(function(m){return m.value === cfg.modo_atencion;}) || {}).label || cfg.modo_atencion
+              });
+            } catch(e) {
+              return Object.assign({}, ch, {bot_activo: false, modo_label: 'Sin config'});
+            }
+          }));
+          this.channels = results;
+        } catch(e) {
+          console.error('Error cargando canales:', e);
+        }
+        this.loading = false;
+      },
+      async cargarConfig() {
+        if (!this.channelId) return;
+        this.loading = true;
+        try {
+          const res = await fetch('/api/bot-settings/?channel=' + this.channelId);
+          const data = await res.json();
+          this.config = data;
+          this.modoActivo = data.bot_activo ? (data.modo_atencion === 'mixto' ? 'mixto' : 'bot') : null;
+          this.overrideActivoModo = data.override_activo ? data.override_modo : null;
+          this.overrideDesde = data.override_desde ? data.override_desde.substring(0,16) : '';
+          this.overrideHasta = data.override_hasta ? data.override_hasta.substring(0,16) : '';
+          this.overrideMotivo = data.override_motivo || '';
+          this.overrideDirty = false;
+        } catch(e) {
+          console.error('Error cargando config:', e);
+        }
+        this.loading = false;
+      },
+      async cargarInfoCanal() {
+        if (!this.channelId) return;
+        try {
+          const res = await fetch('/api/whatsapp-channels/');
+          const data = await res.json();
+          this.channelInfo = data.find(function(ch){return ch.id == this.channelId;}.bind(this));
+        } catch(e) {
+          console.error('Error cargando info canal:', e);
+        }
+      },
+      seleccionarCanal(id) {
+        const url = new URL(window.location);
+        url.searchParams.set('channel', id);
+        window.location = url.href;
+      },
+      volver() {
+        const url = new URL(window.location);
+        url.searchParams.delete('channel');
+        window.location = url.href;
+      },
+      toggleModo(modo) {
+        if (this.modoActivo === modo) {
+          this.modoActivo = null;
+        } else {
+          this.modoActivo = modo;
+        }
+        var payload = {
+          modo_atencion: this.modoActivo === null ? 'humano' : (this.modoActivo === 'bot' ? 'bot' : 'mixto'),
+          bot_activo: this.modoActivo !== null,
+        };
+        fetch('/api/bot-settings/?channel=' + this.channelId, {
+          method: 'PATCH',
+          headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCSRFToken()},
+          body: JSON.stringify(payload)
+        }).catch(function(e){ console.error(e); });
+      },
+      toggleOverride(modo) {
+        if (this.overrideActivoModo === modo) {
+          this.overrideActivoModo = null;
+          this.overrideDirty = false;
+          this.guardarOverride();
+        } else {
+          this.overrideActivoModo = modo;
+          this.overrideDesde = '';
+          this.overrideHasta = '';
+          this.overrideMotivo = '';
+          this.overrideDirty = false;
+          this.guardarOverride();
+        }
+      },
+      guardarOverride() {
+        this.saving = true;
+        var payload = {
+          override_activo: this.overrideActivoModo !== null,
+          override_modo: this.overrideActivoModo || 'none',
+          override_motivo: this.overrideMotivo || '',
+          override_desde: this.overrideDesde ? new Date(this.overrideDesde).toISOString() : null,
+          override_hasta: this.overrideHasta ? new Date(this.overrideHasta).toISOString() : null,
+        };
+        fetch('/api/bot-settings/?channel=' + this.channelId, {
+          method: 'PATCH',
+          headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCSRFToken()},
+          body: JSON.stringify(payload)
+        }).then(function(r) {
+          if (!r.ok) throw new Error('Error al guardar override');
+          return this.cargarConfig();
+        }.bind(this)).catch(function(e) { console.error(e); })
+        .finally(function() { this.saving = false; }.bind(this));
+      },
+      guardarMensajeFueraHorario() {
+        fetch('/api/bot-settings/?channel=' + this.channelId, {
+          method: 'PATCH',
+          headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCSRFToken()},
+          body: JSON.stringify({ mensaje_fuera_horario: this.config.mensaje_fuera_horario })
+        }).then(function(r) {
+          if (!r.ok) throw new Error('Error');
+          this.mensajeSavedChip = true;
+          setTimeout(function() { this.mensajeSavedChip = false; }.bind(this), 2000);
+        }.bind(this)).catch(function(e) { console.error(e); });
+      },
+      schedulesByModoYDia(modo, diaValue) {
+        if (!this.config || !this.config.schedules) return [];
+        return this.config.schedules.filter(function(s) {
+          return s.day_of_week === diaValue && s.modo === modo;
+        });
+      },
+      mostrarForm(modo, dia, sched) {
+        this.formVisible = {
+          modo: modo,
+          dia: dia,
+          editingId: sched ? sched.id : null,
+        };
+        this.formData = {
+          start_time: sched ? sched.start_time : '09:00',
+          end_time: sched ? sched.end_time : '17:00',
+        };
+      },
+      cancelarForm() {
+        this.formVisible = { modo: null, dia: null, editingId: null };
+        this.formData = { start_time: '09:00', end_time: '17:00' };
+      },
+      async guardarRango(modo) {
+        if (!this.formData.start_time || !this.formData.end_time) return;
+        this.savingSchedule = true;
+        try {
+          var payload = {
+            day_of_week: this.formVisible.dia,
+            start_time: this.formData.start_time,
+            end_time: this.formData.end_time,
+            modo: modo,
+            is_active: true,
+          };
+          if (this.formVisible.editingId) {
+            await fetch('/api/bot-schedules/' + this.formVisible.editingId + '/', {
+              method: 'PATCH',
+              headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCSRFToken()},
+              body: JSON.stringify(payload)
+            });
+          } else {
+            var res = await fetch('/api/bot-schedules/?channel=' + this.channelId, {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json', 'X-CSRFToken': getCSRFToken()},
+              body: JSON.stringify(payload)
+            });
+            if (!res.ok) {
+              var errData = await res.json();
+              if (errData.error === 'overlap') {
+                alert(errData.message);
+                this.savingSchedule = false;
+                return;
+              }
+            }
+          }
+          this.cancelarForm();
+          this.cargarConfig();
+        } catch(e) { console.error(e); }
+        this.savingSchedule = false;
+      },
+      confirmarEliminar(modo, dia, idx, sched) {
+        this.deleteTarget = { modo: modo, dia: dia, idx: idx, id: sched.id, start_time: sched.start_time, end_time: sched.end_time };
+        this.deleteDialog = true;
+      },
+      async ejecutarEliminar() {
+        if (!this.deleteTarget) return;
+        this.deletingSchedule = true;
+        try {
+          if (this.deleteTarget.id) {
+            await fetch('/api/bot-schedules/' + this.deleteTarget.id + '/', {
+              method: 'DELETE',
+              headers: {'X-CSRFToken': getCSRFToken()}
+            });
+          }
+          this.deleteDialog = false;
+          this.deleteTarget = null;
+          this.cargarConfig();
+        } catch(e) { console.error(e); }
+        this.deletingSchedule = false;
+      }
+    }
+  }).use(createVuetify()).mount('#whatsapp-app');
+</script>
+{% endblock %}

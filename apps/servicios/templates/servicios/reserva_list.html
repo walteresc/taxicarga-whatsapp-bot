@@ -1,0 +1,275 @@
+{% extends "dashboard/base.html" %}
+{% load servicio_tags %}
+{% block title %}Reservas{% endblock %}
+{% block content %}
+
+{% comment %}HEADER{% endcomment %}
+<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
+  <div style="display:flex;align-items:center;gap:12px;">
+    <div style="width:36px;height:36px;border-radius:9px;display:flex;align-items:center;justify-content:center;background:#EEF2FF;">
+      <span class="mdi mdi-truck" style="color:#4F46E5;font-size:20px;"></span>
+    </div>
+    <h1 style="font-size:20px;font-weight:700;color:#1e293b;margin:0;">Reservas</h1>
+  </div>
+  <a href="{% url 'dashboard-servicios-create' %}"
+    style="display:inline-flex;align-items:center;gap:6px;padding:8px 18px;background:#2563EB;color:#fff;border-radius:8px;text-decoration:none;font-size:14px;font-weight:600;">
+    <span class="mdi mdi-plus" style="font-size:16px;"></span>
+    Nueva Reserva
+  </a>
+</div>
+
+{% comment %}TARJETAS DE MÉTRICAS{% endcomment %}
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px;">
+  <div style="background:#fff;border:0.5px solid rgba(0,0,0,0.08);border-radius:10px;padding:12px 16px;">
+    <div style="font-size:11px;color:#6B7280;font-weight:500;margin-bottom:4px;">Total reservas</div>
+    <div style="font-size:22px;font-weight:600;color:#111827;">{{ total_reservas }}</div>
+    <div style="font-size:11px;color:#9CA3AF;margin-top:2px;">este mes</div>
+  </div>
+  <div style="background:#fff;border:0.5px solid rgba(0,0,0,0.08);border-radius:10px;padding:12px 16px;">
+    <div style="font-size:11px;color:#6B7280;font-weight:500;margin-bottom:4px;">Saldo pendiente</div>
+    <div style="font-size:22px;font-weight:600;color:#D97706;">S/ {{ total_saldo|floatformat:2 }}</div>
+    <div style="font-size:11px;color:#9CA3AF;margin-top:2px;">por cobrar</div>
+  </div>
+  <div style="background:#fff;border:0.5px solid rgba(0,0,0,0.08);border-radius:10px;padding:12px 16px;">
+    <div style="font-size:11px;color:#6B7280;font-weight:500;margin-bottom:4px;">Total cobrado</div>
+    <div style="font-size:22px;font-weight:600;color:#059669;">S/ {{ total_cobrado|floatformat:2 }}</div>
+    <div style="font-size:11px;color:#9CA3AF;margin-top:2px;">pagos registrados</div>
+  </div>
+  <div style="background:#fff;border:0.5px solid rgba(0,0,0,0.08);border-radius:10px;padding:12px 16px;">
+    <div style="font-size:11px;color:#6B7280;font-weight:500;margin-bottom:4px;">Sin precio</div>
+    <div style="font-size:22px;font-weight:600;color:#6B7280;">{{ sin_precio }}</div>
+    <div style="font-size:11px;color:#9CA3AF;margin-top:2px;">requieren cotización</div>
+  </div>
+</div>
+
+{% comment %}CARD DE FILTROS{% endcomment %}
+<div style="background:#fff;border:0.5px solid rgba(0,0,0,0.08);border-radius:10px;padding:12px 16px;margin-bottom:14px;">
+  <form method="get" id="filter-form" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+    <input type="text" name="q" placeholder="Buscar cliente / teléfono / código"
+      value="{{ filtro_q }}"
+      style="flex:1;min-width:160px;padding:7px 12px;border:0.5px solid rgba(0,0,0,0.12);border-radius:8px;font-size:13px;outline:none;">
+    <select name="estado"
+      style="width:150px;padding:7px 12px;border:0.5px solid rgba(0,0,0,0.12);border-radius:8px;font-size:13px;outline:none;background:#fff;">
+      <option value="">Todos los estados</option>
+      {% for key, label in estados %}
+      <option value="{{ key }}" {% if filtro_estado == key %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <input type="date" name="fecha_desde" value="{{ filtro_fecha_desde }}"
+      style="width:140px;padding:7px 12px;border:0.5px solid rgba(0,0,0,0.12);border-radius:8px;font-size:13px;outline:none;">
+    <input type="date" name="fecha_hasta" value="{{ filtro_fecha_hasta }}"
+      style="width:140px;padding:7px 12px;border:0.5px solid rgba(0,0,0,0.12);border-radius:8px;font-size:13px;outline:none;">
+    <select name="asignado"
+      style="width:130px;padding:7px 12px;border:0.5px solid rgba(0,0,0,0.12);border-radius:8px;font-size:13px;outline:none;background:#fff;">
+      <option value="">Todos</option>
+      <option value="si" {% if filtro_asignado == 'si' %}selected{% endif %}>Asignado</option>
+      <option value="no" {% if filtro_asignado == 'no' %}selected{% endif %}>Sin asignar</option>
+    </select>
+    <select name="estado_pago"
+      style="width:130px;padding:7px 12px;border:0.5px solid rgba(0,0,0,0.12);border-radius:8px;font-size:13px;outline:none;background:#fff;">
+      <option value="">Todo pago</option>
+      <option value="pagado" {% if filtro_estado_pago == 'pagado' %}selected{% endif %}>Pagado</option>
+      <option value="amortizado" {% if filtro_estado_pago == 'amortizado' %}selected{% endif %}>Amortizado</option>
+      <option value="pendiente" {% if filtro_estado_pago == 'pendiente' %}selected{% endif %}>Pendiente</option>
+      <option value="sin_precio" {% if filtro_estado_pago == 'sin_precio' %}selected{% endif %}>Sin precio</option>
+    </select>
+    <a href="{% url 'dashboard-servicios-list' %}"
+      style="padding:7px 16px;background:#fff;color:#64748b;border:0.5px solid #e2e8f0;border-radius:8px;font-size:13px;text-decoration:none;white-space:nowrap;">
+      Limpiar
+    </a>
+  </form>
+</div>
+
+{% comment %}TABLA DE RESERVAS{% endcomment %}
+<div style="background:#fff;border:0.5px solid rgba(0,0,0,0.08);border-radius:10px;overflow:hidden;">
+  <div style="overflow-x:auto;">
+    <table id="tabla-reservas" style="width:100%;border-collapse:collapse;font-size:13px;">
+      <thead style="background:rgba(0,0,0,0.02);">
+        <tr>
+          <th style="font-size:10px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:0.06em;padding:9px 14px;white-space:nowrap;text-align:left;border-bottom:0.5px solid #E5E7EB;">Código</th>
+          <th style="font-size:10px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:0.06em;padding:9px 14px;white-space:nowrap;text-align:left;border-bottom:0.5px solid #E5E7EB;">Cliente</th>
+          <th style="font-size:10px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:0.06em;padding:9px 14px;white-space:nowrap;text-align:left;border-bottom:0.5px solid #E5E7EB;">Origen → Destino</th>
+          <th style="font-size:10px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:0.06em;padding:9px 14px;white-space:nowrap;text-align:left;border-bottom:0.5px solid #E5E7EB;">Fecha</th>
+          <th style="font-size:10px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:0.06em;padding:9px 14px;white-space:nowrap;text-align:right;border-bottom:0.5px solid #E5E7EB;">Precio</th>
+          <th style="font-size:10px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:0.06em;padding:9px 14px;white-space:nowrap;text-align:right;border-bottom:0.5px solid #E5E7EB;">Pagado</th>
+          <th style="font-size:10px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:0.06em;padding:9px 14px;white-space:nowrap;text-align:right;border-bottom:0.5px solid #E5E7EB;">Saldo</th>
+          <th style="font-size:10px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:0.06em;padding:9px 14px;white-space:nowrap;text-align:left;border-bottom:0.5px solid #E5E7EB;">Pago</th>
+          <th style="font-size:10px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:0.06em;padding:9px 14px;white-space:nowrap;text-align:left;border-bottom:0.5px solid #E5E7EB;">Estado</th>
+          <th style="font-size:10px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:0.06em;padding:9px 14px;white-space:nowrap;text-align:center;border-bottom:0.5px solid #E5E7EB;">Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in servicios %}
+        <tr style="transition:background 0.12s;">
+          <td style="padding:9px 14px;border-bottom:0.5px solid #F3F4F6;vertical-align:middle;">
+            <a href="{% url 'dashboard-servicios-detail' s.pk %}" style="color:#4F46E5;font-weight:600;font-size:13px;white-space:nowrap;text-decoration:none;">{{ s.codigo }}</a>
+          </td>
+          <td style="padding:9px 14px;border-bottom:0.5px solid #F3F4F6;vertical-align:middle;">
+            <div style="font-weight:500;font-size:13px;color:#111827;">{{ s.cliente.nombre|default:"-" }}</div>
+            <div style="font-size:11px;color:#6B7280;margin-top:1px;">{{ s.cliente.telefono|default:"" }}</div>
+          </td>
+          <td style="padding:9px 14px;border-bottom:0.5px solid #F3F4F6;vertical-align:middle;">
+            <div style="max-width:130px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px;color:#6B7280;" title="{{ s.direccion_origen }}">{{ s.direccion_origen|default:"-"|truncatechars:28 }}</div>
+            <div style="max-width:130px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11px;color:#9CA3AF;margin-top:1px;" title="{{ s.direccion_destino }}">→ {{ s.direccion_destino|default:""|truncatechars:28 }}</div>
+          </td>
+          <td style="padding:9px 14px;border-bottom:0.5px solid #F3F4F6;vertical-align:middle;">
+            <div style="font-size:12px;color:#111827;">{{ s.fecha_servicio|date:"d/m/Y"|default:"—" }}</div>
+            <div style="font-size:11px;color:#6B7280;">{{ s.horario_servicio|default:"—" }}</div>
+          </td>
+          <td style="padding:9px 14px;border-bottom:0.5px solid #F3F4F6;vertical-align:middle;text-align:right;font-variant-numeric:tabular-nums;">
+            {% if s.precio %}
+            <span style="font-size:13px;font-weight:600;color:#111827;">S/ {{ s.precio|floatformat:2 }}</span>
+            {% else %}
+            <span style="color:#9CA3AF;">—</span>
+            {% endif %}
+          </td>
+          <td style="padding:9px 14px;border-bottom:0.5px solid #F3F4F6;vertical-align:middle;text-align:right;font-variant-numeric:tabular-nums;">
+            {% if s.total_pagado > 0 %}
+            <span style="font-size:13px;font-weight:600;color:#059669;">S/ {{ s.total_pagado|floatformat:2 }}</span>
+            {% else %}
+            <span style="color:#9CA3AF;">—</span>
+            {% endif %}
+          </td>
+          <td style="padding:9px 14px;border-bottom:0.5px solid #F3F4F6;vertical-align:middle;text-align:right;font-variant-numeric:tabular-nums;">
+            {% if not s.precio %}
+            <span style="color:#9CA3AF;">—</span>
+            {% elif s.saldo_pendiente == 0 %}
+            <span style="font-size:13px;font-weight:600;color:#059669;">S/ 0</span>
+            {% elif s.total_pagado > 0 %}
+            <span style="font-size:13px;font-weight:600;color:#D97706;">S/ {{ s.saldo_pendiente|floatformat:2 }}</span>
+            {% else %}
+            <span style="font-size:13px;font-weight:600;color:#DC2626;">S/ {{ s.saldo_pendiente|floatformat:2 }}</span>
+            {% endif %}
+          </td>
+          <td style="padding:9px 14px;border-bottom:0.5px solid #F3F4F6;vertical-align:middle;">
+            {% if s.estado_pago == 'pagado' %}
+            <span style="font-size:10px;font-weight:600;padding:3px 9px;border-radius:20px;background:#D1FAE5;color:#065F46;border:1px solid #6EE7B7;white-space:nowrap;">✓ Pagado</span>
+            {% elif s.estado_pago == 'amortizado' %}
+            <span style="font-size:10px;font-weight:600;padding:3px 9px;border-radius:20px;background:#DBEAFE;color:#1E40AF;border:1px solid #93C5FD;white-space:nowrap;">◑ Amortizado</span>
+            {% elif s.estado_pago == 'pendiente' %}
+            <span style="font-size:10px;font-weight:600;padding:3px 9px;border-radius:20px;background:#FEF3C7;color:#92400E;border:1px solid #FCD34D;white-space:nowrap;">⚠ Pendiente</span>
+            {% else %}
+            <span style="font-size:10px;font-weight:600;padding:3px 9px;border-radius:20px;background:#F3F4F6;color:#6B7280;border:1px solid #E5E7EB;white-space:nowrap;">— Sin precio</span>
+            {% endif %}
+          </td>
+          <td style="padding:9px 14px;border-bottom:0.5px solid #F3F4F6;vertical-align:middle;">
+            {% if s.estado == 'pendiente' %}
+            <span style="display:inline-flex;padding:3px 12px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap;background:#FEF3C7;color:#92400E;">{{ s.get_estado_display }}</span>
+            {% elif s.estado == 'programado' %}
+            <span style="display:inline-flex;padding:3px 12px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap;background:#DBEAFE;color:#1E40AF;">{{ s.get_estado_display }}</span>
+            {% elif s.estado == 'asignado' %}
+            <span style="display:inline-flex;padding:3px 12px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap;background:#EDE9FE;color:#5B21B6;">{{ s.get_estado_display }}</span>
+            {% elif s.estado == 'en_ruta' %}
+            <span style="display:inline-flex;align-items:center;gap:4px;padding:3px 12px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap;background:#D1FAE5;color:#065F46;"><span class="pulse-dot" style="width:6px;height:6px;border-radius:50%;background:#059669;display:inline-block;animation:pulse-badge 1.5s infinite;"></span>{{ s.get_estado_display }}</span>
+            {% elif s.estado == 'finalizado' %}
+            <span style="display:inline-flex;padding:3px 12px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap;background:#F3F4F6;color:#374151;">{{ s.get_estado_display }}</span>
+            {% elif s.estado == 'cancelado' %}
+            <span style="display:inline-flex;padding:3px 12px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap;background:#FEE2E2;color:#991B1B;">{{ s.get_estado_display }}</span>
+            {% else %}
+            <span style="display:inline-flex;padding:3px 12px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap;background:#F3F4F6;color:#6B7280;">{{ s.get_estado_display }}</span>
+            {% endif %}
+          </td>
+          <td style="padding:9px 14px;border-bottom:0.5px solid #F3F4F6;vertical-align:middle;text-align:center;white-space:nowrap;">
+            <a href="{% url 'dashboard-servicios-detail' s.pk %}" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;text-decoration:none;font-size:16px;color:#2563EB;" title="Ver detalle">
+              <span class="mdi mdi-eye-outline"></span>
+            </a>
+            <a href="{% url 'dashboard-servicios-edit' s.pk %}" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;text-decoration:none;font-size:16px;color:#4F46E5;" title="Editar">
+              <span class="mdi mdi-pencil-outline"></span>
+            </a>
+            {% if s.estado != 'finalizado' and s.estado != 'cancelado' %}
+            <a href="{% url 'dashboard-servicios-finalizar' s.pk %}" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;text-decoration:none;font-size:16px;color:#059669;" title="Completar">
+              <span class="mdi mdi-check-circle-outline"></span>
+            </a>
+            <a href="{% url 'dashboard-servicios-cancelar' s.pk %}" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;text-decoration:none;font-size:16px;color:#DC2626;" title="Cancelar">
+              <span class="mdi mdi-close-circle-outline"></span>
+            </a>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="10" style="text-align:center;padding:48px 16px;color:#94a3b8;">
+            <div style="font-size:40px;margin-bottom:8px;opacity:.4;">
+              <span class="mdi mdi-truck-check-outline"></span>
+            </div>
+            <div style="font-size:15px;font-weight:600;color:#64748b;">No se encontraron reservas</div>
+            <div style="font-size:13px;margin-top:4px;">Intente ajustar los filtros de búsqueda.</div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% comment %}PAGINACIÓN + CONTEO{% endcomment %}
+  <div style="display:flex;justify-content:space-between;align-items:center;padding:11px 16px;border-top:0.5px solid rgba(0,0,0,0.06);">
+    <span style="font-size:12px;color:#6B7280;">
+      {{ page_obj.paginator.count }} reservas encontradas
+    </span>
+    {% if page_obj.has_other_pages %}
+    <div style="display:flex;gap:4px;align-items:center;">
+      <span style="font-size:12px;color:#6B7280;margin-right:6px;">Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
+      {% if page_obj.has_previous %}
+      <a href="?{% for key,val in request.GET.items %}{% if key != 'page' %}{{ key }}={{ val }}&{% endif %}{% endfor %}page={{ page_obj.previous_page_number }}"
+         style="padding:5px 10px;border:1px solid #D1D5DB;border-radius:6px;color:#374151;text-decoration:none;font-size:12px;">
+        ‹ Anterior
+      </a>
+      {% endif %}
+      {% if page_obj.has_next %}
+      <a href="?{% for key,val in request.GET.items %}{% if key != 'page' %}{{ key }}={{ val }}&{% endif %}{% endfor %}page={{ page_obj.next_page_number }}"
+         style="padding:5px 10px;border:1px solid #D1D5DB;border-radius:6px;color:#374151;text-decoration:none;font-size:12px;">
+        Siguiente ›
+      </a>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% comment %}HOVER EN FILAS (inline style tag no soporta hover, usar style tag aparte){% endcomment %}
+<style>
+  #tabla-reservas tbody tr:hover td { background:rgba(0,0,0,0.02); }
+  .action-icon-hover:hover { background:#F1F5F9; }
+  @keyframes pulse-badge {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+</style>
+
+{% endblock %}
+{% block extra_scripts %}
+<script>
+(function() {
+  const form = document.getElementById('filter-form');
+  if (!form) return;
+
+  let submitTimer = null;
+
+  function doSubmit() {
+    clearTimeout(submitTimer);
+    form.submit();
+  }
+
+  function debouncedSubmit(delay) {
+    clearTimeout(submitTimer);
+    submitTimer = setTimeout(doSubmit, delay);
+  }
+
+  // Text search: debounced auto-submit while typing (500ms)
+  const qInput = form.querySelector('[name="q"]');
+  if (qInput) {
+    qInput.addEventListener('input', function() {
+      debouncedSubmit(500);
+    });
+  }
+
+  // Selects and date inputs: auto-submit on change
+  form.querySelectorAll('[name="estado"], [name="asignado"], [name="estado_pago"], [name="fecha_desde"], [name="fecha_hasta"]').forEach(function(el) {
+    el.addEventListener('change', function() {
+      clearTimeout(submitTimer);
+      doSubmit();
+    });
+  });
+})();
+</script>
+{% endblock %}

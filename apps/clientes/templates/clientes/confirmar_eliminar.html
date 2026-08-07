@@ -1,0 +1,48 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Eliminar Cliente{% endblock %}
+{% block content %}
+<div id="app">
+  <v-app>
+    <v-container class="py-6" style="max-width:500px;">
+      <v-card class="reserva-card">
+        <div class="card-header">
+          <div class="icon-wrap" style="background:#FEF2F2;">
+            <span class="mdi mdi-account-remove" style="color:#DC2626;font-size:18px;"></span>
+          </div>
+          Eliminar Cliente
+        </div>
+        <v-divider class="mx-4 mt-2" style="opacity:.4;"></v-divider>
+        <div class="card-body" style="text-align:center;padding:32px 20px;">
+          <div style="font-size:48px;color:#DC2626;margin-bottom:16px;opacity:.8;">
+            <span class="mdi mdi-alert-circle-outline"></span>
+          </div>
+          <h2 style="font-size:18px;font-weight:600;color:#1e293b;margin:0 0 8px;">
+            ¿Eliminar a {{ cliente.nombre|default:cliente.telefono }}?
+          </h2>
+          <p style="color:#94a3b8;font-size:14px;margin:0 0 24px;">
+            Esta acción no se puede deshacer.
+          </p>
+          <form method="post" style="display:flex;gap:10px;justify-content:center;">
+            {% csrf_token %}
+            <a href="{% url 'cliente_lista' %}"
+              style="padding:8px 20px;background:#fff;color:#64748b;border:0.5px solid #e2e8f0;border-radius:8px;font-size:14px;text-decoration:none;font-weight:500;">
+              Cancelar
+            </a>
+            <button type="submit"
+              style="padding:8px 24px;background:#DC2626;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">
+              Eliminar
+            </button>
+          </form>
+        </div>
+      </v-card>
+    </v-container>
+  </v-app>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+  const { createApp } = Vue;
+  const { createVuetify } = Vuetify;
+  createApp({ delimiters: ['[[', ']]'], data() { return {}; } }).use(createVuetify()).mount('#app');
+</script>
+{% endblock %}

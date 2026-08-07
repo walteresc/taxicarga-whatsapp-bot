@@ -1,0 +1,102 @@
+{% extends "dashboard/base.html" %}
+{% load campo_tags %}
+{% block title %}{{ title }}{% endblock %}
+{% block extra_head %}
+<style>
+.generic-table { width:100%; border-collapse:collapse; font-size:14px; }
+.generic-table th { text-align:left; padding:12px 16px; font-weight:600; color:#546e7a; font-size:12px; text-transform:uppercase; letter-spacing:.05em; border-bottom:1px solid #e0e0e0; white-space:nowrap; }
+.generic-table td { padding:10px 16px; border-bottom:1px solid #f0f0f0; color:#263238; }
+.generic-table tbody tr:hover { background:#f5f7f8; }
+.th-actions, .td-actions { text-align:center; width:100px; white-space:nowrap; }
+.btn-action { display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; border-radius:50%; text-decoration:none; font-size:18px; margin:0 2px; transition:background .12s; }
+.btn-view { color:#0284c7; }
+.btn-view:hover { background:#e0f2fe; }
+.btn-edit { color:#1565c0; }
+.btn-edit:hover { background:#e3f2fd; }
+.btn-toggle-off { color:#c62828; }
+.btn-toggle-off:hover { background:#ffebee; }
+.btn-toggle-on { color:#2e7d32; }
+.btn-toggle-on:hover { background:#e8f5e9; }
+.status-badge { display:inline-block; padding:2px 10px; border-radius:12px; font-size:12px; font-weight:600; }
+.status-active { background:#e8f5e9; color:#2e7d32; }
+.status-inactive { background:#ffebee; color:#c62828; }
+</style>
+{% endblock %}
+{% block content %}
+<div id="app">
+  <v-app>
+    <v-container class="py-6" style="max-width:1200px;">
+      <v-card>
+        <v-card-title class="d-flex align-center pa-4">
+          <span class="text-h5 font-weight-bold">{{ title }}</span>
+          <v-spacer></v-spacer>
+          <a href="{% url create_url %}" class="v-btn v-btn--elevated v-theme--light bg-primary text-none" style="text-decoration:none;font-size:14px;padding:6px 16px;border-radius:6px;">
+            <span class="mdi mdi-plus" style="margin-right:6px;"></span>Nuevo
+          </a>
+        </v-card-title>
+        <v-divider></v-divider>
+        <div style="overflow-x:auto;">
+          <table class="generic-table">
+            <thead>
+              <tr>
+                {% for f in field_config %}
+                  <th>{{ f.label }}</th>
+                {% endfor %}
+                <th class="th-actions">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for item in items %}
+              <tr>
+                {% for f in field_config %}
+                  <td>
+                    {% with val=item|getattr:f.name %}
+                    {% if f.type == "boolean" %}
+                      <span class="status-badge {% if val %}status-active{% else %}status-inactive{% endif %}">
+                        {{ val|yesno:"Sí,No" }}
+                      </span>
+                    {% elif f.type == "date" %}
+                      {{ val|date:"d/m/Y" }}
+                    {% else %}
+                      {{ val|default:"-" }}
+                    {% endif %}
+                    {% endwith %}
+                  </td>
+                {% endfor %}
+                <td class="td-actions">
+                  {% if detail_url_name %}
+                  <a href="{% url detail_url_name item.pk %}" class="btn-action btn-view" title="Ver detalle">
+                    <span class="mdi mdi-eye-outline"></span>
+                  </a>
+                  {% endif %}
+                  <a href="{% url edit_url_name item.pk %}" class="btn-action btn-edit" title="Editar">
+                    <span class="mdi mdi-pencil-outline"></span>
+                  </a>
+                  <a href="{% url toggle_url_name item.pk %}" class="btn-action {% if item.activo %}btn-toggle-off{% else %}btn-toggle-on{% endif %}" title="{% if item.activo %}Desactivar{% else %}Activar{% endif %}">
+                    <span class="mdi {% if item.activo %}mdi-close-circle-outline{% else %}mdi-check-circle-outline{% endif %}"></span>
+                  </a>
+                </td>
+              </tr>
+              {% empty %}
+              <tr>
+                <td colspan="{{ field_config|length|add:1 }}" class="text-center text-grey py-6">
+                  No hay registros.
+                  <a href="{% url create_url %}" class="text-primary">Crear primero</a>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </v-card>
+    </v-container>
+  </v-app>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+  const { createApp } = Vue;
+  const { createVuetify } = Vuetify;
+  createApp({ delimiters: ['[[', ']]'], data() { return {}; } }).use(createVuetify()).mount('#app');
+</script>
+{% endblock %}

@@ -1,0 +1,113 @@
+{% extends "dashboard/base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block extra_head %}
+<style>
+.detail-table { width:100%; border-collapse:collapse; font-size:14px; }
+.detail-table tr { border-bottom:1px solid #f0f0f0; }
+.detail-table td { padding:10px 16px; }
+.detail-table td:first-child { font-weight:600; color:#546e7a; white-space:nowrap; width:220px; background:#fafbfc; }
+.status-badge { display:inline-block; padding:2px 10px; border-radius:12px; font-size:12px; font-weight:600; }
+.status-active { background:#e8f5e9; color:#2e7d32; }
+.status-inactive { background:#ffebee; color:#c62828; }
+.status-warning { background:#fff3e0; color:#e65100; }
+.mt-card td { padding:10px 16px; border-bottom:1px solid #f0f0f0; font-size:14px; color:#263238; }
+</style>
+{% endblock %}
+{% block content %}
+<div id="app">
+  <v-app>
+    <v-container class="py-6" style="max-width:1000px;">
+      <v-card class="mb-6">
+        <v-card-title class="d-flex align-center pa-4">
+          <v-icon color="primary" class="mr-2">mdi-truck</v-icon>
+          <span class="text-h5 font-weight-bold">{{ vehiculo.placa }} — {{ vehiculo.marca }} {{ vehiculo.modelo }}</span>
+          <v-spacer></v-spacer>
+          <a href="{% url 'flota-vehiculo-edit' vehiculo.pk %}" class="v-btn v-btn--elevated v-theme--light bg-primary text-none" style="text-decoration:none;font-size:14px;padding:6px 16px;border-radius:6px;margin-right:6px;">
+            <span class="mdi mdi-pencil" style="margin-right:6px;"></span>Editar
+          </a>
+          <a href="{% url 'flota-mantenimiento-create' %}?vehiculo={{ vehiculo.pk }}" class="v-btn v-btn--elevated v-theme--light bg-teal-darken-1 text-none" style="text-decoration:none;font-size:14px;padding:6px 16px;border-radius:6px;color:#fff;">
+            <span class="mdi mdi-wrench" style="margin-right:6px;"></span>Registrar Mantenimiento
+          </a>
+        </v-card-title>
+        <v-divider></v-divider>
+        <table class="detail-table">
+          <tr><td>Placa</td><td><strong>{{ vehiculo.placa }}</strong></td></tr>
+          <tr><td>Marca</td><td>{{ vehiculo.marca }}</td></tr>
+          <tr><td>Modelo</td><td>{{ vehiculo.modelo }}</td></tr>
+          <tr><td>Año</td><td>{{ vehiculo.anio|default:"-" }}</td></tr>
+          <tr><td>Capacidad</td><td>{{ vehiculo.capacidad_toneladas }} t {% if vehiculo.capacidad_m3 %} / {{ vehiculo.capacidad_m3 }} m³{% endif %}</td></tr>
+          <tr><td>Vencimiento SOAT</td><td>{% if vehiculo.fecha_vencimiento_soat %}{{ vehiculo.fecha_vencimiento_soat|date:"d/m/Y" }}{% else %}-{% endif %}</td></tr>
+          <tr><td>Vencimiento RTV</td><td>{% if vehiculo.fecha_vencimiento_rtv %}{{ vehiculo.fecha_vencimiento_rtv|date:"d/m/Y" }}{% else %}-{% endif %}</td></tr>
+          <tr><td>Vencimiento Extintor</td><td>{% if vehiculo.fecha_vencimiento_extintor %}{{ vehiculo.fecha_vencimiento_extintor|date:"d/m/Y" }}{% else %}-{% endif %}</td></tr>
+          <tr><td>Estado</td><td>{% if vehiculo.activo %}<span class="status-badge status-active">Activo</span>{% else %}<span class="status-badge status-inactive">Inactivo</span>{% endif %}</td></tr>
+          <tr><td>Observaciones</td><td>{{ vehiculo.observaciones|default:"-" }}</td></tr>
+        </table>
+        <v-divider></v-divider>
+        <v-card-actions class="pa-4">
+          <v-btn variant="outlined" href="{% url 'dashboard-flota-vehiculos' %}">
+            <v-icon start>mdi-arrow-left</v-icon> Volver
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+
+      <v-card>
+        <v-card-title class="d-flex align-center pa-4">
+          <v-icon color="teal" class="mr-2">mdi-book-open-page-variant</v-icon>
+          <span class="text-h5 font-weight-bold">Historial de Mantenimientos</span>
+          <v-spacer></v-spacer>
+          <a href="{% url 'flota-mantenimiento-create' %}?vehiculo={{ vehiculo.pk }}" class="v-btn v-btn--elevated v-theme--light bg-teal-darken-1 text-none" style="text-decoration:none;font-size:13px;padding:4px 12px;border-radius:6px;color:#fff;">
+            <span class="mdi mdi-plus" style="margin-right:4px;"></span>Nuevo
+          </a>
+        </v-card-title>
+        <v-divider></v-divider>
+        <div style="overflow-x:auto;">
+          <table class="detail-table">
+            <thead>
+              <tr style="background:#f5f7f8;">
+                <th style="text-align:left;padding:10px 16px;font-size:12px;text-transform:uppercase;color:#546e7a;">Fecha</th>
+                <th style="text-align:left;padding:10px 16px;font-size:12px;text-transform:uppercase;color:#546e7a;">Kilometraje</th>
+                <th style="text-align:left;padding:10px 16px;font-size:12px;text-transform:uppercase;color:#546e7a;">Próximo (km)</th>
+                <th style="text-align:left;padding:10px 16px;font-size:12px;text-transform:uppercase;color:#546e7a;">Trabajo realizado</th>
+                <th style="text-align:left;padding:10px 16px;font-size:12px;text-transform:uppercase;color:#546e7a;">Observaciones</th>
+                <th style="text-align:center;padding:10px 16px;font-size:12px;text-transform:uppercase;color:#546e7a;width:80px;">Acción</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for m in mantenimientos %}
+              <tr>
+                <td><strong>{{ m.fecha_mantenimiento|date:"d/m/Y" }}</strong></td>
+                <td>{{ m.kilometraje_actual|floatformat:0 }} km</td>
+                <td>{{ m.proximo_mantenimiento_km|floatformat:0 }} km</td>
+                <td>{{ m.descripcion|linebreaksbr }}</td>
+                <td>{{ m.observaciones|default:"-" }}</td>
+                <td style="text-align:center;white-space:nowrap;">
+                  <a href="{% url 'flota-mantenimiento-edit' m.pk %}" class="btn-action btn-edit" title="Editar" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;text-decoration:none;color:#1565c0;">
+                    <span class="mdi mdi-pencil-outline"></span>
+                  </a>
+                  <a href="{% url 'flota-mantenimiento-delete' m.pk %}" class="btn-action" title="Eliminar" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;text-decoration:none;color:#c62828;">
+                    <span class="mdi mdi-delete-outline"></span>
+                  </a>
+                </td>
+              </tr>
+              {% empty %}
+              <tr>
+                <td colspan="6" class="text-center text-grey py-6">
+                  No hay mantenimientos registrados para este vehículo.
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </v-card>
+    </v-container>
+  </v-app>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+  const { createApp } = Vue;
+  const { createVuetify } = Vuetify;
+  createApp({ delimiters: ['[[', ']]'], data() { return {}; } }).use(createVuetify()).mount('#app');
+</script>
+{% endblock %}

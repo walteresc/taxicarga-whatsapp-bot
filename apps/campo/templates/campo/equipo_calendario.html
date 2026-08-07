@@ -1,0 +1,1078 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Equipos de Campo{% endblock %}
+
+{% block extra_head %}
+<style>
+.ec-page { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
+
+/* Topbar */
+.ec-topbar {
+  display: grid; grid-template-columns: minmax(220px, auto) minmax(0, 1fr) auto;
+  align-items: center; margin-bottom: 18px; gap: 18px;
+}
+.ec-topbar h1 { font-size: 22px; font-weight: 600; color: #1a1a2e; margin: 0 0 2px; }
+.ec-topbar .fecha-display { font-size: 14px; color: #546e7a; }
+.ec-nav-btns { display: flex; gap: 8px; align-items: center; }
+.ec-nav-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 7px 14px; border-radius: 8px; border: 1.5px solid #c5cae9;
+  background: #fff; color: #3949AB; font-size: 13px; font-weight: 500;
+  cursor: pointer; text-decoration: none; transition: background .15s, border-color .15s;
+}
+.ec-nav-btn:hover { background: #e8eaf6; border-color: #3949AB; }
+.ec-nav-btn.hoy { background: #3949AB; color: #fff; border-color: #3949AB; }
+.ec-nav-btn.hoy:hover { background: #283593; }
+
+/* Day Tabs */
+.ec-tabs-wrap { overflow-x: auto; scrollbar-width: thin; }
+.ec-tabs { display: flex; gap: 5px; padding: 3px 0; min-width: max-content; }
+.ec-tab {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 5px 9px; border-radius: 8px; border: 1px solid #e0e0e0;
+  background: #fff; cursor: pointer; text-decoration: none;
+  min-width: 54px; transition: all .15s; color: #546e7a;
+}
+.ec-tab:hover { border-color: #3949AB; background: #e8eaf6; color: #3949AB; }
+.ec-tab .tab-dow { font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; }
+.ec-tab .tab-date { font-size: 12px; font-weight: 700; margin: 1px 0; }
+.ec-tab .tab-n {
+  font-size: 9px; line-height: 15px; background: #eceff1; color: #607d8b;
+  border-radius: 20px; padding: 0 5px; min-width: 15px; text-align: center;
+}
+.ec-tab.tab-hoy { border-color: #7986CB; }
+.ec-tab.tab-hoy .tab-dow { color: #3949AB; }
+.ec-tab.tab-activo {
+  background: linear-gradient(135deg, #3949AB, #5C6BC0);
+  border-color: #3949AB; color: #fff;
+}
+.ec-tab.tab-activo .tab-n { background: rgba(255,255,255,.25); color: #fff; }
+
+/* Section titles */
+.ec-section-title {
+  font-size: 16px; font-weight: 600; color: #1e293b;
+  margin: 0 0 12px; display: flex; align-items: center; gap: 8px;
+}
+.ec-section-title .mdi { font-size: 20px; color: #3949AB; }
+.ec-divider { border: none; border-top: 1.5px solid #e2e8f0; margin: 24px 0; }
+
+/* SECTION 1: Equipos de hoy - cards */
+.ec-cards {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 300px));
+  gap: 12px; align-items: start;
+}
+.ec-card {
+  background: #fff; border: 1px solid #e8eaf6; border-radius: 10px;
+  box-shadow: 0 2px 7px rgba(30,41,59,.07);
+  overflow: hidden; display: flex; flex-direction: column;
+  transition: box-shadow .2s, transform .2s;
+}
+.ec-card:hover { box-shadow: 0 7px 20px rgba(30,41,59,.13); transform: translateY(-2px); }
+.ec-card-header {
+  background: linear-gradient(135deg, #EFF6FF, #DBEAFE);
+  padding: 9px 12px; display: flex; align-items: center; justify-content: space-between;
+}
+.ec-card-placa { font-size: 14px; font-weight: 700; color: #1D4ED8; letter-spacing: .8px; }
+.ec-card-badge { font-size: 11px; background: rgba(37,99,235,.13); color: #1D4ED8; border-radius: 20px; padding: 2px 8px; }
+.ec-card-body { padding: 11px 12px; flex: 1; }
+.ec-conductor-row { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+.ec-avatar {
+  width: 32px; height: 32px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; color: #fff; flex-shrink: 0;
+}
+.ec-avatar.av-conductor { background: #8B5CF6; }
+.ec-avatar.av-ayu   { background: #F59E0B; }
+.ec-avatar.av-cond-ayu { background: #8B5CF6; }
+.ec-conductor-info { min-width: 0; }
+.ec-conductor-name { font-size: 13px; font-weight: 600; color: #1e293b; }
+.ec-badge-label {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 4px; margin-top: 2px;
+}
+.ec-badge-label.conductor { background: #EDE9FE; color: #5B21B6; }
+.ec-badge-label.ayudante  { background: #FFF7ED; color: #C2410C; }
+.ec-badge-label.cond-ayu  { background: #EDE9FE; color: #5B21B6; }
+.ec-ayudantes { margin-top: 6px; }
+.ec-ayu-label { font-size: 9px; color: #94a3b8; text-transform: uppercase; letter-spacing: .4px; margin-bottom: 4px; }
+.ec-ayu-list { display: flex; flex-wrap: wrap; gap: 4px; }
+.ec-ayu-chip {
+  display: flex; align-items: center; gap: 5px;
+  background: #f1f5f9; border-radius: 20px; padding: 3px 8px 3px 3px;
+  font-size: 11px; color: #334155;
+}
+.ec-ayu-chip .ec-avatar { width: 20px; height: 20px; font-size: 9px; }
+.ec-card-footer {
+  padding: 8px 12px; border-top: 1px solid #f1f5f9;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+}
+.ec-reservas-txt { font-size: 12px; color: #64748b; }
+.ec-footer-btns { display: flex; gap: 6px; }
+.ec-btn-sm {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 5px 10px; border-radius: 6px; border: none;
+  font-size: 12px; font-weight: 500; cursor: pointer;
+  text-decoration: none; transition: background .15s;
+}
+.ec-btn-ver { background: #e0f2fe; color: #0369a1; }
+.ec-btn-ver:hover { background: #bae6fd; }
+.ec-btn-edit { background: #ede9fe; color: #6d28d9; }
+.ec-btn-edit:hover { background: #ddd6fe; }
+.ec-btn-del { background: #fee2e2; color: #b91c1c; }
+.ec-btn-del:hover { background: #fecaca; }
+.ec-empty { grid-column: 1 / -1; text-align: center; padding: 48px 20px; color: #90a4ae; }
+.ec-empty .mdi { font-size: 52px; display: block; margin-bottom: 12px; }
+
+/* SECTION 2: Formar nuevo equipo */
+.ec-form-section {
+  position: relative; overflow: hidden;
+  background: linear-gradient(145deg, #F8FAFF 0%, #FFFFFF 42%, #F8FAFC 100%);
+  border: 1px solid #dfe4f5; border-radius: 16px;
+  box-shadow: 0 8px 28px rgba(57,73,171,.09); padding: 20px;
+}
+.ec-form-section::before {
+  content: ""; position: absolute; inset: 0 0 auto 0; height: 4px;
+  background: linear-gradient(90deg, #2563EB 0 33%, #8B5CF6 33% 66%, #F59E0B 66%);
+}
+
+/* Equipo en formación + validaciones */
+.ec-form-status-grid {
+  display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(280px, .8fr);
+  gap: 14px; margin-bottom: 16px;
+}
+.ec-status-panel {
+  background: #fff; border: 1px solid #dfe4f5; border-radius: 12px;
+  padding: 14px; box-shadow: 0 2px 8px rgba(57,73,171,.05);
+}
+.ec-status-panel-title {
+  display: flex; align-items: center; gap: 7px;
+  margin-bottom: 10px; color: #334155; font-size: 12px;
+  font-weight: 700; text-transform: uppercase; letter-spacing: .4px;
+}
+.ec-status-panel-title .mdi { color: #3949AB; font-size: 18px; }
+.ec-summary-bar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  min-height: 40px;
+}
+.ec-summary-item {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 13px; color: #334155; font-weight: 500;
+}
+.ec-summary-item .mdi { font-size: 18px; }
+.ec-summary-item.vehicle .mdi, .ec-summary-item.vehicle strong { color: #2563EB; }
+.ec-summary-item.driver .mdi, .ec-summary-item.driver strong { color: #8B5CF6; }
+.ec-summary-item .empy { color: #94a3b8; font-style: italic; }
+.ec-summary-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 10px 3px 8px; border-radius: 20px;
+  font-size: 12px; font-weight: 500;
+}
+.ec-summary-chip.ayu { background: #FFF7ED; color: #C2410C; }
+.ec-summary-chip.cond-ayu { background: #EDE9FE; color: #5B21B6; }
+.ec-summary-chip .mdi { font-size: 14px; }
+.ec-summary-chip button {
+  background: none; border: none; cursor: pointer;
+  color: #94a3b8; font-size: 14px; line-height: 1; padding: 0; margin-left: 2px;
+}
+.ec-summary-chip button:hover { color: #DC2626; }
+
+/* Validation bar */
+.ec-val-bar {
+  padding: 10px 12px; border-radius: 8px; font-size: 13px;
+  display: flex; align-items: center; gap: 8px; transition: all .2s;
+  min-height: 40px;
+}
+.ec-val-bar.gray { background: #F8FAFC; border: 1.5px solid #e2e8f0; color: #9CA3AF; }
+.ec-val-bar.green { background: #F0FDF4; border: 1.5px solid #86efac; color: #065F46; }
+.ec-val-bar.red { background: #FEF2F2; border: 1.5px solid #fca5a5; color: #991B1B; }
+.ec-val-bar .mdi { font-size: 18px; flex-shrink: 0; }
+
+/* 3 columns */
+.ec-columns-wrap { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 12px; }
+.ec-col {
+  background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+  display: flex; flex-direction: column; overflow: hidden;
+  box-shadow: 0 3px 12px rgba(30,41,59,.05);
+  transition: border-color .15s, box-shadow .15s, transform .15s;
+}
+.ec-col:hover { border-color: #c5cae9; box-shadow: 0 7px 18px rgba(30,41,59,.09); transform: translateY(-1px); }
+.ec-col-header {
+  padding: 11px 14px; font-size: 14px; font-weight: 700;
+  background: #F8FAFC; border-bottom: 1px solid #e2e8f0;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.ec-col:nth-child(1) .ec-col-header { background: #EFF6FF; color: #1E40AF; border-top: 3px solid #2563EB; }
+.ec-col:nth-child(2) .ec-col-header { background: #F5F3FF; color: #5B21B6; border-top: 3px solid #8B5CF6; }
+.ec-col:nth-child(3) .ec-col-header { background: #FFF7ED; color: #9A3412; border-top: 3px solid #F59E0B; }
+.ec-col-header .mdi { font-size: 18px; }
+.ec-col-search {
+  padding: 8px 10px; border-bottom: 1px solid #e2e8f0;
+}
+.ec-col-search input {
+  width: 100%; padding: 8px 10px; border: 1px solid #d1d5db;
+  border-radius: 8px; font-size: 13px; outline: none; background: #F8FAFC;
+  box-sizing: border-box;
+}
+.ec-col-search input:focus { border-color: #3949AB; background: #fff; box-shadow: 0 0 0 3px rgba(57,73,171,.1); }
+.ec-col-list {
+  flex: 1; overflow-y: auto; max-height: 320px;
+}
+.ec-col-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 12px; border-bottom: 1px solid #f1f5f9;
+  transition: background .1s;
+}
+.ec-col-item:hover { background: #F8FAFC; }
+.ec-col-item.checked-c { background: #EFF6FF; }
+.ec-col-item.checked-a { background: #F5F3FF; }
+.ec-col-item.checked-ayu { background: #FFF7ED; }
+
+.ec-avatar-sm {
+  width: 32px; height: 32px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; color: #fff; flex-shrink: 0;
+}
+.ec-avatar-sm.libre { background: #F3F4F6; color: #9CA3AF; }
+.ec-col:nth-child(1) .ec-avatar-sm.activo,
+.ec-col:nth-child(1) .ec-avatar-sm.multi { background: #DBEAFE; color: #2563EB; }
+.ec-col:nth-child(2) .ec-avatar-sm.activo,
+.ec-col:nth-child(2) .ec-avatar-sm.multi { background: #EDE9FE; color: #8B5CF6; }
+.ec-col:nth-child(3) .ec-avatar-sm.activo,
+.ec-col:nth-child(3) .ec-avatar-sm.multi { background: #FFEDD5; color: #F59E0B; }
+
+.ec-item-info { min-width: 0; flex: 1; }
+.ec-item-name { font-size: 13px; font-weight: 500; color: #1e293b; }
+.ec-item-status { font-size: 11px; color: #94a3b8; }
+.ec-assignment-status { display: inline-flex; align-items: center; gap: 5px; }
+.ec-assignment-dots { display: inline-flex; align-items: center; gap: 3px; }
+.ec-assignment-dot {
+  width: 7px; height: 7px; border-radius: 50%; background: #D946EF;
+  box-shadow: 0 0 0 2px #FAE8FF;
+}
+.ec-item-extra { font-size: 10px; color: #94a3b8; }
+
+/* Radio (vehicle) */
+.ec-radio-wrap { position: relative; }
+.ec-radio-wrap input[type="radio"] {
+  appearance: none; width: 18px; height: 18px; border: 2px solid #d1d5db;
+  border-radius: 50%; margin: 0; cursor: pointer; flex-shrink: 0;
+  transition: all .15s;
+}
+.ec-radio-wrap input[type="radio"]:checked {
+  border-color: #2563EB; background: #2563EB;
+  box-shadow: inset 0 0 0 3px #fff;
+}
+
+/* Checkboxes (conductor C/A, ayudante) */
+.ec-check-c, .ec-check-a, .ec-check-ayu {
+  appearance: none; width: 18px; height: 18px;
+  border: 2px solid #d1d5db; border-radius: 4px; margin: 0;
+  cursor: pointer; flex-shrink: 0; transition: all .15s;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 700; color: #fff;
+}
+.ec-check-c::after { content: "C"; color: #9CA3AF; }
+.ec-check-c:checked { border-color: #8B5CF6; background: #8B5CF6; }
+.ec-check-c:checked::after { color: #fff; }
+.ec-check-a { border-radius: 4px; }
+.ec-check-a::after { content: "A"; color: #9CA3AF; }
+.ec-check-a:checked { border-color: #7C3AED; background: #7C3AED; }
+.ec-check-a:checked::after { color: #fff; }
+.ec-check-a:disabled { opacity: .3; cursor: not-allowed; }
+.ec-check-ayu:checked { border-color: #F59E0B; background: #F59E0B; }
+.ec-check-ayu:checked::after { content: "✓"; color: #fff; font-size: 12px; }
+
+.ec-check-label { font-size: 10px; color: #94a3b8; margin: 0 1px; }
+.ec-checks-group { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+
+/* Legend */
+.ec-legend {
+  display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+  padding: 9px 14px; background: #fff; border: 1px dashed #cbd5e1; border-radius: 8px;
+  font-size: 11px; color: #64748b; margin-bottom: 16px;
+}
+.ec-legend-dot {
+  display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 3px;
+}
+
+/* Footer */
+.ec-form-footer {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px; background: #EEF2FF; border-radius: 10px;
+}
+.ec-form-footer input {
+  flex: 1; padding: 9px 12px; border: 1px solid #c5cae9;
+  border-radius: 8px; font-size: 13px; outline: none; background: #fff;
+}
+.ec-form-footer input:focus { border-color: #3949AB; box-shadow: 0 0 0 3px rgba(57,73,171,.1); }
+.ec-btn-primary {
+  padding: 9px 24px; border-radius: 8px; border: none;
+  background: linear-gradient(135deg, #4F46E5, #4338CA);
+  color: #fff; font-size: 14px; font-weight: 600; cursor: pointer;
+  white-space: nowrap; transition: opacity .15s;
+}
+.ec-btn-primary:hover { opacity: .9; }
+.ec-btn-primary:disabled { opacity: .4; cursor: not-allowed; }
+
+/* Snackbar */
+#ec-snack {
+  position: fixed; bottom: 24px; right: 24px;
+  padding: 13px 20px; border-radius: 10px; font-size: 14px;
+  color: #fff; font-weight: 500; box-shadow: 0 4px 16px rgba(0,0,0,.2);
+  z-index: 3000; transition: opacity .3s, transform .3s;
+  opacity: 0; transform: translateY(12px); pointer-events: none;
+}
+#ec-snack.show { opacity: 1; transform: translateY(0); }
+#ec-snack.ok    { background: #059669; }
+#ec-snack.error { background: #DC2626; }
+#ec-snack.warn  { background: #D97706; }
+
+@media (max-width: 900px) {
+  .ec-topbar { grid-template-columns: 1fr auto; }
+  .ec-tabs-wrap { grid-column: 1 / -1; grid-row: 2; }
+  .ec-columns-wrap { grid-template-columns: 1fr 1fr; }
+  .ec-form-status-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 600px) {
+  .ec-topbar { display: flex; align-items: stretch; flex-direction: column; gap: 10px; }
+  .ec-nav-btns { justify-content: space-between; }
+  .ec-columns-wrap { grid-template-columns: 1fr; }
+  .ec-cards { grid-template-columns: 1fr; }
+  .ec-form-footer { align-items: stretch; flex-direction: column; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="ec-page">
+
+  <!-- Topbar -->
+  <div class="ec-topbar">
+    <div>
+      <h1>Equipos de Campo</h1>
+      <div class="fecha-display">{{ fecha_display }}</div>
+    </div>
+
+    <div class="ec-tabs-wrap">
+      <div class="ec-tabs">
+        {% for tab in dias_tabs %}
+        <a href="?fecha={{ tab.fecha_str }}"
+           class="ec-tab{% if tab.activo %} tab-activo{% elif tab.es_hoy %} tab-hoy{% endif %}">
+          <span class="tab-dow">{{ tab.nombre_dia }}</span>
+          <span class="tab-date">{{ tab.fecha_display }}</span>
+          <span class="tab-n">{{ tab.n_equipos }}</span>
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="ec-nav-btns">
+      <a href="?fecha={{ prev_fecha }}" class="ec-nav-btn">
+        <span class="mdi mdi-chevron-left"></span> Anterior
+      </a>
+      <a href="?fecha={{ hoy_str }}" class="ec-nav-btn hoy">Hoy</a>
+      <a href="?fecha={{ next_fecha }}" class="ec-nav-btn">
+        Siguiente <span class="mdi mdi-chevron-right"></span>
+      </a>
+    </div>
+  </div>
+
+  <!-- === SECTION 1: Equipos de hoy === -->
+  <h2 class="ec-section-title"><span class="mdi mdi-truck"></span> Equipos de hoy</h2>
+
+  <div class="ec-cards" id="ec-cards">
+    {% for eq in equipos_data %}
+    <div class="ec-card">
+      <div class="ec-card-header">
+        <span class="ec-card-placa">{{ eq.placa }}</span>
+        {% if eq.n_reservas > 0 %}
+        <span class="ec-card-badge">
+          {{ eq.n_reservas }} reserva{% if eq.n_reservas != 1 %}s{% endif %}
+        </span>
+        {% endif %}
+      </div>
+
+      <div class="ec-card-body">
+        <div class="ec-conductor-row">
+          <div class="ec-avatar av-conductor">{{ eq.conductor_iniciales }}</div>
+          <div class="ec-conductor-info">
+            <div class="ec-conductor-name">{{ eq.conductor_nombre }}</div>
+            <span class="ec-badge-label conductor">Conductor</span>
+          </div>
+        </div>
+
+        {% if eq.ayudantes_display %}
+        <div class="ec-ayudantes">
+          <div class="ec-ayu-label">Ayudantes</div>
+          <div class="ec-ayu-list">
+            {% for ayu in eq.ayudantes_display %}
+            <div class="ec-ayu-chip">
+              <div class="ec-avatar {% if ayu.tipo == 'conductor_ayudante' %}av-cond-ayu{% else %}av-ayu{% endif %}">
+                {{ ayu.iniciales }}
+              </div>
+              {{ ayu.nombre }}
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+        {% endif %}
+      </div>
+
+      <div class="ec-card-footer">
+        <span class="ec-reservas-txt">
+          {% if eq.n_reservas == 0 %}Sin reservas
+          {% elif eq.n_reservas == 1 %}1 reserva
+          {% else %}{{ eq.n_reservas }} reservas{% endif %}
+        </span>
+        {% if can_edit %}
+        <div class="ec-footer-btns">
+          <a href="{% url 'equipo_detail' pk=eq.id %}" class="ec-btn-sm ec-btn-ver">
+            <span class="mdi mdi-eye-outline"></span> Ver
+          </a>
+          <button class="ec-btn-sm ec-btn-edit btn-edit" data-id="{{ eq.id }}" type="button">
+            <span class="mdi mdi-pencil-outline"></span> Editar
+          </button>
+          <button class="ec-btn-sm ec-btn-del btn-del"
+                  data-id="{{ eq.id }}"
+                  data-placa="{{ eq.placa }}"
+                  data-n="{{ eq.n_reservas }}"
+                  type="button">
+            <span class="mdi mdi-trash-can-outline"></span> Eliminar
+          </button>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% empty %}
+    <div class="ec-empty">
+      <span class="mdi mdi-truck-outline"></span>
+      No hay equipos formados para este día.
+    </div>
+    {% endfor %}
+  </div>
+
+  <hr class="ec-divider">
+
+  <!-- === SECTION 2: Formar nuevo equipo === -->
+  {% if can_edit %}
+  <h2 class="ec-section-title"><span class="mdi mdi-plus-circle"></span> Formar nuevo equipo</h2>
+
+  <div class="ec-form-section" id="ec-form-section">
+
+    <div class="ec-form-status-grid">
+      <div class="ec-status-panel">
+        <div class="ec-status-panel-title">
+          <span class="mdi mdi-account-group"></span> Equipo en formación
+        </div>
+        <div class="ec-summary-bar" id="ec-summary-bar">
+          <span class="ec-summary-item vehicle">
+            <span class="mdi mdi-truck"></span> Vehículo:
+            <span id="summary-vehiculo" class="empy">sin elegir</span>
+          </span>
+          <span class="mdi mdi-arrow-right" style="color:#94a3b8;font-size:16px;"></span>
+          <span class="ec-summary-item driver">
+            <span class="mdi mdi-account-tie"></span> Conductor:
+            <span id="summary-conductor" class="empy">sin elegir</span>
+          </span>
+          <span class="ec-summary-item" id="summary-ayus-wrap" style="display:none">
+            <span class="mdi mdi-account-multiple" style="color:#F59E0B"></span>
+            <span id="summary-ayus"></span>
+          </span>
+        </div>
+      </div>
+
+      <div class="ec-status-panel">
+        <div class="ec-status-panel-title">
+          <span class="mdi mdi-shield-check-outline"></span> Alertas y validaciones
+        </div>
+        <div class="ec-val-bar gray" id="ec-val-bar">
+          <span class="mdi mdi-information-outline"></span>
+          <span id="ec-val-text">Selecciona un vehículo y un conductor para continuar</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3 columns -->
+    <div class="ec-columns-wrap">
+
+      <!-- COLUMN 1: Vehicle -->
+      <div class="ec-col">
+        <div class="ec-col-header">
+          <span><span class="mdi mdi-truck" style="color:#2563EB"></span> Vehículo</span>
+        </div>
+        <div class="ec-col-search">
+          <input type="text" id="ec-search-v" placeholder="Buscar vehículo..." autocomplete="off">
+        </div>
+        <div class="ec-col-list" id="ec-col-v">
+          {% for v in vehiculos_list %}
+          <div class="ec-col-item" data-id="{{ v.id }}" data-name="{{ v.placa }}">
+            <div class="ec-radio-wrap">
+              <input type="radio" name="vehiculo" value="{{ v.id }}" class="ec-radio-v">
+            </div>
+            <div class="ec-avatar-sm {{ v.status }}"><span class="mdi mdi-truck"></span></div>
+            <div class="ec-item-info">
+              <div class="ec-item-name">{{ v.placa }} — {{ v.marca }}</div>
+              <div class="ec-item-status">
+                {% if v.n_hoy == 0 %}Sin asignar
+                {% else %}<span class="ec-assignment-status">Asignado:
+                  <span class="ec-assignment-dots" data-count="{{ v.n_hoy }}"></span>
+                </span>{% endif %}
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- COLUMN 2: Conductor -->
+      <div class="ec-col">
+        <div class="ec-col-header">
+          <span><span class="mdi mdi-account-tie" style="color:#8B5CF6;"></span> Conductor</span>
+          <span style="font-size:10px;color:#94a3b8;font-weight:400">C=Conductor · A=Ayudante</span>
+        </div>
+        <div class="ec-col-search">
+          <input type="text" id="ec-search-c" placeholder="Buscar conductor..." autocomplete="off">
+        </div>
+        <div class="ec-col-list" id="ec-col-c">
+          {% for c in conductores_list %}
+          <div class="ec-col-item" data-id="{{ c.id }}" data-name="{{ c.nombre }}">
+            <div class="ec-checks-group">
+              <label title="Conductor principal">
+                <input type="checkbox" class="ec-check-c" value="{{ c.id }}">
+              </label>
+              <label title="Agregar como ayudante">
+                <input type="checkbox" class="ec-check-a" value="{{ c.id }}">
+              </label>
+            </div>
+            <div class="ec-avatar-sm {{ c.status }}">{{ c.nombre|first|upper }}</div>
+            <div class="ec-item-info">
+              <div class="ec-item-name">{{ c.nombre }}</div>
+              <div class="ec-item-status">
+                {% if c.n_hoy == 0 %}Sin asignar
+                {% else %}<span class="ec-assignment-status">Asignado:
+                  <span class="ec-assignment-dots" data-count="{{ c.n_hoy }}"></span>
+                </span>{% endif %}
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <!-- COLUMN 3: Ayudantes -->
+      <div class="ec-col">
+        <div class="ec-col-header">
+          <span><span class="mdi mdi-account-multiple" style="color:#F59E0B;"></span> Ayudantes</span>
+        </div>
+        <div class="ec-col-search">
+          <input type="text" id="ec-search-a" placeholder="Buscar ayudante..." autocomplete="off">
+        </div>
+        <div class="ec-col-list" id="ec-col-a">
+          {% for a in ayudantes_list %}
+          <div class="ec-col-item" data-id="{{ a.id }}" data-name="{{ a.nombre }}">
+            <label>
+              <input type="checkbox" class="ec-check-ayu" value="{{ a.id }}">
+            </label>
+            <div class="ec-avatar-sm {{ a.status }}">{{ a.nombre|first|upper }}</div>
+            <div class="ec-item-info">
+              <div class="ec-item-name">{{ a.nombre }}</div>
+              <div class="ec-item-status">
+                {% if a.n_hoy == 0 %}Sin asignar
+                {% else %}<span class="ec-assignment-status">Asignado:
+                  <span class="ec-assignment-dots" data-count="{{ a.n_hoy }}"></span>
+                </span>{% endif %}
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Legend -->
+    <div class="ec-legend">
+      <span><span class="ec-legend-dot" style="background:#F3F4F6;border:1px solid #d1d5db"></span> Sin asignar</span>
+      <span><span class="ec-legend-dot" style="background:#D946EF"></span> Cada círculo = 1 asignación</span>
+      <span class="mdi mdi-checkbox-marked" style="color:#8B5CF6;font-size:14px;"></span> C = Conductor del equipo
+      <span class="mdi mdi-checkbox-marked" style="color:#7C3AED;font-size:14px;"></span> A = Ayudante del equipo
+    </div>
+
+    <!-- Footer -->
+    <div class="ec-form-footer">
+      <input type="text" id="ec-obs" placeholder="Observaciones (opcional)" autocomplete="off">
+      <button class="ec-btn-sm" id="ec-btn-cancel-edit" type="button" hidden>Cancelar edición</button>
+      <button class="ec-btn-primary" id="ec-btn-crear" disabled>
+        <span class="mdi mdi-check"></span> Crear Equipo
+      </button>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Snackbar -->
+<div id="ec-snack"></div>
+{{ equipos_data|json_script:"ec-equipos-data" }}
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function () {
+'use strict';
+
+var FECHA_ISO   = "{{ fecha_iso }}";
+var CAN_EDIT    = {% if can_edit %}true{% else %}false{% endif %};
+var CSRF        = document.querySelector('meta[name="csrf-token"]').content;
+var COMBIS_EX   = {{ combinaciones_existentes_json|safe }};
+var EQUIPOS_DATA = JSON.parse(document.getElementById('ec-equipos-data').textContent || '[]');
+
+var URL_CREAR   = "{% url 'equipo-crear-ajax' %}";
+var URL_EDIT_TPL = "{% url 'equipo-editar-ajax' pk=99999 %}";
+var URL_DEL_TPL = "{% url 'equipo-eliminar-ajax' pk=99999 %}";
+function delUrl(pk) { return URL_DEL_TPL.replace('/99999/', '/' + pk + '/'); }
+function editUrl(pk) { return URL_EDIT_TPL.replace('/99999/', '/' + pk + '/'); }
+
+/* State */
+var state = {
+  editingId: null,
+  vehiculoId: null,
+  vehiculoPlaca: null,
+  conductorId: null,
+  conductorNombre: null,
+  conductorAyudanteIds: [],
+  ayudanteIds: []
+};
+
+/* Snackbar */
+var _snackT;
+function showSnack(msg, type) {
+  var el = document.getElementById('ec-snack');
+  el.textContent = msg;
+  el.className = (type || 'ok') + ' show';
+  clearTimeout(_snackT);
+  _snackT = setTimeout(function () { el.classList.remove('show'); }, 3600);
+}
+
+/* Shortcuts */
+var $ = function(id) { return document.getElementById(id); };
+
+var _duplicateAlertT;
+function showDuplicateAlert() {
+  var bar = $('ec-val-bar');
+  var txt = $('ec-val-text');
+  bar.className = 'ec-val-bar red';
+  txt.innerHTML = '<span class="mdi mdi-alert-circle"></span> <strong>Esta combinaci\u00f3n veh\u00edculo + conductor ya existe hoy.</strong> No se puede duplicar. La \u00faltima selecci\u00f3n fue descartada.';
+  clearTimeout(_duplicateAlertT);
+  _duplicateAlertT = setTimeout(updateValidation, 3200);
+}
+
+function combinationExists(vehiculoId, conductorId) {
+  if (!vehiculoId || !conductorId) return false;
+  return COMBIS_EX.some(function (c) {
+    return c.equipo_id !== state.editingId &&
+      c.vehiculo_id === vehiculoId && c.conductor_id === conductorId;
+  });
+}
+
+document.querySelectorAll('.ec-assignment-dots').forEach(function (container) {
+  var count = parseInt(container.dataset.count, 10) || 0;
+  for (var i = 0; i < count; i += 1) {
+    var dot = document.createElement('span');
+    dot.className = 'ec-assignment-dot';
+    container.appendChild(dot);
+  }
+});
+
+/* Summary update */
+function updateSummary() {
+  var sv = $('summary-vehiculo');
+  var sc = $('summary-conductor');
+  sv.innerHTML = state.vehiculoPlaca ? '<strong>' + state.vehiculoPlaca + '</strong>' : '<span class="empy">sin elegir</span>';
+  sc.innerHTML = state.conductorNombre ? '<strong>' + state.conductorNombre + '</strong>' : '<span class="empy">sin elegir</span>';
+
+  var wrap = $('summary-ayus-wrap');
+  var cont = $('summary-ayus');
+  var chips = [];
+  state.conductorAyudanteIds.forEach(function (id) {
+    var el = document.querySelector('#ec-col-c .ec-col-item[data-id="' + id + '"]');
+    if (el) chips.push('<span class="ec-summary-chip cond-ayu"><span class="mdi mdi-account-tie"></span> ' + el.dataset.name + ' <span style="font-size:10px;opacity:.7">(cond.)</span></span>');
+  });
+  state.ayudanteIds.forEach(function (id) {
+    var el = document.querySelector('#ec-col-a .ec-col-item[data-id="' + id + '"]');
+    if (el) chips.push('<span class="ec-summary-chip ayu"><span class="mdi mdi-account"></span> ' + el.dataset.name + '</span>');
+  });
+  if (chips.length) {
+    cont.innerHTML = chips.join(' ');
+    wrap.style.display = '';
+  } else {
+    wrap.style.display = 'none';
+  }
+}
+
+/* Validation */
+function updateValidation() {
+  var bar = $('ec-val-bar');
+  var txt = $('ec-val-text');
+  var btn = $('ec-btn-crear');
+
+  if (!state.vehiculoId || !state.conductorId) {
+    bar.className = 'ec-val-bar gray';
+    txt.textContent = 'Selecciona un vehículo y un conductor para continuar';
+    btn.disabled = true;
+    return;
+  }
+
+  if (combinationExists(state.vehiculoId, state.conductorId)) {
+    bar.className = 'ec-val-bar red';
+    txt.innerHTML = '<span class="mdi mdi-alert-circle"></span> <strong>Esta combinaci\u00f3n veh\u00edculo + conductor ya existe hoy.</strong> No se puede duplicar.';
+    btn.disabled = true;
+    return;
+  }
+
+  bar.className = 'ec-val-bar green';
+  txt.innerHTML = '<span class="mdi mdi-check-circle"></span> Listo para ' +
+    (state.editingId ? 'guardar cambios de' : 'crear') + ' <strong>' +
+    state.vehiculoPlaca + '</strong> con <strong>' + state.conductorNombre + '</strong>.';
+  btn.disabled = false;
+}
+
+/* Column highlight helpers */
+function clearHighlights(col) {
+  col.querySelectorAll('.ec-col-item').forEach(function (item) {
+    item.classList.remove('checked-c', 'checked-a', 'checked-ayu');
+  });
+}
+
+function refreshHighlights() {
+  /* Vehiculo */
+  document.querySelectorAll('#ec-col-v .ec-col-item').forEach(function (item) {
+    item.classList.toggle('checked-c', parseInt(item.dataset.id) === state.vehiculoId);
+  });
+  /* Conductor C highlight + A highlight */
+  document.querySelectorAll('#ec-col-c .ec-col-item').forEach(function (item) {
+    var id = parseInt(item.dataset.id);
+    item.classList.toggle('checked-c', id === state.conductorId);
+    item.classList.toggle('checked-a', state.conductorAyudanteIds.indexOf(id) !== -1);
+  });
+  /* Ayudante highlight */
+  document.querySelectorAll('#ec-col-a .ec-col-item').forEach(function (item) {
+    var id = parseInt(item.dataset.id);
+    item.classList.toggle('checked-ayu', state.ayudanteIds.indexOf(id) !== -1);
+  });
+}
+
+/* --- Event Handlers --- */
+
+/* Vehiculo radios */
+document.querySelectorAll('.ec-radio-v').forEach(function (radio) {
+  radio.addEventListener('change', function () {
+    if (!this.checked) return;
+    var item = this.closest('.ec-col-item');
+    var nextVehiculoId = parseInt(item.dataset.id);
+    if (combinationExists(nextVehiculoId, state.conductorId)) {
+      this.checked = false;
+      if (state.vehiculoId) {
+        var previous = document.querySelector('.ec-radio-v[value="' + state.vehiculoId + '"]');
+        if (previous) previous.checked = true;
+      }
+      refreshHighlights();
+      showDuplicateAlert();
+      return;
+    }
+    state.vehiculoId = nextVehiculoId;
+    state.vehiculoPlaca = item.dataset.name;
+    updateSummary();
+    updateValidation();
+    refreshHighlights();
+  });
+});
+
+/* Search: vehicle */
+var searchV = $('ec-search-v');
+if (searchV) {
+  searchV.addEventListener('input', function () {
+    var q = this.value.toLowerCase().trim();
+    document.querySelectorAll('#ec-col-v .ec-col-item').forEach(function (item) {
+      item.style.display = (!q || item.dataset.name.toLowerCase().indexOf(q) !== -1) ? '' : 'none';
+    });
+  });
+}
+
+/* Conductor C checkboxes */
+document.querySelectorAll('.ec-check-c').forEach(function (cb) {
+  cb.addEventListener('change', function () {
+    var item = this.closest('.ec-col-item');
+    var cid = parseInt(item.dataset.id);
+    if (this.checked) {
+      if (combinationExists(state.vehiculoId, cid)) {
+        this.checked = false;
+        refreshHighlights();
+        showDuplicateAlert();
+        return;
+      }
+      // Uncheck all other C checkboxes
+      document.querySelectorAll('.ec-check-c').forEach(function (other) {
+        if (other !== cb) other.checked = false;
+      });
+      // Remove this conductor from ayudante list if present
+      var idx = state.conductorAyudanteIds.indexOf(cid);
+      if (idx !== -1) {
+        state.conductorAyudanteIds.splice(idx, 1);
+        var aCb = item.querySelector('.ec-check-a');
+        if (aCb) aCb.checked = false;
+      }
+      state.conductorId = cid;
+      state.conductorNombre = item.dataset.name;
+    } else {
+      state.conductorId = null;
+      state.conductorNombre = null;
+    }
+    updateSummary();
+    updateValidation();
+    refreshHighlights();
+  });
+});
+
+/* Conductor A checkboxes */
+document.querySelectorAll('.ec-check-a').forEach(function (cb) {
+  cb.addEventListener('change', function () {
+    var item = this.closest('.ec-col-item');
+    var cid = parseInt(item.dataset.id);
+    if (this.checked) {
+      if (state.conductorAyudanteIds.indexOf(cid) === -1) {
+        state.conductorAyudanteIds.push(cid);
+      }
+    } else {
+      var idx = state.conductorAyudanteIds.indexOf(cid);
+      if (idx !== -1) state.conductorAyudanteIds.splice(idx, 1);
+    }
+    updateSummary();
+    updateValidation();
+    refreshHighlights();
+  });
+});
+
+/* Disable A when C is checked for same conductor, and vice versa */
+function refreshConductorCheckboxes() {
+  document.querySelectorAll('#ec-col-c .ec-col-item').forEach(function (item) {
+    var id = parseInt(item.dataset.id);
+    var cCb = item.querySelector('.ec-check-c');
+    var aCb = item.querySelector('.ec-check-a');
+    if (cCb && aCb) {
+      // If C is checked, disable A for this conductor (can't be both)
+      if (cCb.checked) {
+        aCb.disabled = true;
+        if (aCb.checked) {
+          aCb.checked = false;
+          var idx = state.conductorAyudanteIds.indexOf(id);
+          if (idx !== -1) state.conductorAyudanteIds.splice(idx, 1);
+        }
+      } else {
+        aCb.disabled = false;
+      }
+      // If A is checked, disable C (can't be both)
+      if (aCb.checked) {
+        cCb.disabled = true;
+      } else {
+        cCb.disabled = false;
+      }
+    }
+  });
+}
+
+/* Override refreshHighlights to include checkbox states */
+var _origRefresh = refreshHighlights;
+refreshHighlights = function () {
+  refreshConductorCheckboxes();
+  document.querySelectorAll('#ec-col-v .ec-col-item').forEach(function (item) {
+    item.classList.toggle('checked-c', parseInt(item.dataset.id) === state.vehiculoId);
+  });
+  document.querySelectorAll('#ec-col-c .ec-col-item').forEach(function (item) {
+    var id = parseInt(item.dataset.id);
+    item.classList.toggle('checked-c', id === state.conductorId);
+    item.classList.toggle('checked-a', state.conductorAyudanteIds.indexOf(id) !== -1);
+  });
+  document.querySelectorAll('#ec-col-a .ec-col-item').forEach(function (item) {
+    var id = parseInt(item.dataset.id);
+    item.classList.toggle('checked-ayu', state.ayudanteIds.indexOf(id) !== -1);
+  });
+  updateSummary();
+  updateValidation();
+};
+
+/* Search: conductor */
+var searchC = $('ec-search-c');
+if (searchC) {
+  searchC.addEventListener('input', function () {
+    var q = this.value.toLowerCase().trim();
+    document.querySelectorAll('#ec-col-c .ec-col-item').forEach(function (item) {
+      item.style.display = (!q || item.dataset.name.toLowerCase().indexOf(q) !== -1) ? '' : 'none';
+    });
+  });
+}
+
+/* Ayudante checkboxes */
+document.querySelectorAll('.ec-check-ayu').forEach(function (cb) {
+  cb.addEventListener('change', function () {
+    var item = this.closest('.ec-col-item');
+    var aid = parseInt(item.dataset.id);
+    if (this.checked) {
+      if (state.ayudanteIds.indexOf(aid) === -1) state.ayudanteIds.push(aid);
+    } else {
+      var idx = state.ayudanteIds.indexOf(aid);
+      if (idx !== -1) state.ayudanteIds.splice(idx, 1);
+    }
+    updateSummary();
+    refreshHighlights();
+  });
+});
+
+/* Search: ayudante */
+var searchA = $('ec-search-a');
+if (searchA) {
+  searchA.addEventListener('input', function () {
+    var q = this.value.toLowerCase().trim();
+    document.querySelectorAll('#ec-col-a .ec-col-item').forEach(function (item) {
+      item.style.display = (!q || item.dataset.name.toLowerCase().indexOf(q) !== -1) ? '' : 'none';
+    });
+  });
+}
+
+/* AJAX */
+function postJSON(url, body) {
+  return fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+    body: JSON.stringify(body),
+  });
+}
+
+function resetForm() {
+  state.editingId = null;
+  state.vehiculoId = null;
+  state.vehiculoPlaca = null;
+  state.conductorId = null;
+  state.conductorNombre = null;
+  state.conductorAyudanteIds = [];
+  state.ayudanteIds = [];
+  document.querySelectorAll('.ec-radio-v, .ec-check-c, .ec-check-a, .ec-check-ayu').forEach(function (input) {
+    input.checked = false;
+    input.disabled = false;
+  });
+  $('ec-obs').value = '';
+  $('ec-btn-crear').innerHTML = '<span class="mdi mdi-check"></span> Crear Equipo';
+  $('ec-btn-cancel-edit').setAttribute('hidden', '');
+  refreshHighlights();
+}
+
+function editarEquipo(id) {
+  var equipo = EQUIPOS_DATA.find(function (item) { return item.id === id; });
+  if (!equipo) return;
+  resetForm();
+  state.editingId = id;
+  state.vehiculoId = equipo.vehiculo_id;
+  state.vehiculoPlaca = equipo.placa;
+  state.conductorId = equipo.conductor_id;
+  state.conductorNombre = equipo.conductor_nombre;
+  state.ayudanteIds = (equipo.ayudante_ids || []).slice();
+  state.conductorAyudanteIds = (equipo.conductor_ayudante_ids || []).slice();
+  $('ec-obs').value = equipo.observaciones || '';
+  var vehiculoRadio = document.querySelector('.ec-radio-v[value="' + state.vehiculoId + '"]');
+  if (vehiculoRadio) vehiculoRadio.checked = true;
+  document.querySelectorAll('.ec-check-c').forEach(function (input) {
+    input.checked = parseInt(input.value) === state.conductorId;
+  });
+  document.querySelectorAll('.ec-check-a').forEach(function (input) {
+    input.checked = state.conductorAyudanteIds.indexOf(parseInt(input.value)) !== -1;
+  });
+  document.querySelectorAll('.ec-check-ayu').forEach(function (input) {
+    input.checked = state.ayudanteIds.indexOf(parseInt(input.value)) !== -1;
+  });
+  $('ec-btn-crear').innerHTML = '<span class="mdi mdi-content-save"></span> Guardar cambios';
+  $('ec-btn-cancel-edit').removeAttribute('hidden');
+  refreshHighlights();
+  $('ec-form-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/* Crear o editar */
+function crearEquipo() {
+  var btn = $('ec-btn-crear');
+  if (!btn || btn.disabled) return;
+  btn.disabled = true;
+  btn.innerHTML = 'Creando\u2026';
+
+  postJSON(state.editingId ? editUrl(state.editingId) : URL_CREAR, {
+    fecha: FECHA_ISO,
+    vehiculo_id: state.vehiculoId,
+    conductor_id: state.conductorId,
+    conductor_ayudante_ids: state.conductorAyudanteIds,
+    ayudante_ids: state.ayudanteIds,
+    observaciones: ($('ec-obs') || {}).value || '',
+  }).then(function (r) {
+    return r.json().then(function (d) { return { ok: r.ok, data: d }; });
+  }).then(function (res) {
+    if (!res.ok) {
+      showSnack(res.data.error || 'Error al crear equipo', 'error');
+      btn.disabled = false;
+      btn.innerHTML = state.editingId
+        ? '<span class="mdi mdi-content-save"></span> Guardar cambios'
+        : '<span class="mdi mdi-check"></span> Crear Equipo';
+      return;
+    }
+    var msgs = (res.data.warnings || []).slice();
+    showSnack((state.editingId ? 'Equipo actualizado.' : 'Equipo creado.') +
+      (msgs.length ? ' ' + msgs.join(' ') : ''), msgs.length ? 'warn' : 'ok');
+    setTimeout(function () { window.location.reload(); }, 900);
+  }).catch(function () {
+    showSnack('Error de red', 'error');
+    btn.disabled = false;
+    btn.innerHTML = state.editingId
+      ? '<span class="mdi mdi-content-save"></span> Guardar cambios'
+      : '<span class="mdi mdi-check"></span> Crear Equipo';
+  });
+}
+
+/* Eliminar */
+function eliminarEquipo(id, placa, n) {
+  var msg = n > 0
+    ? '\u00bfEliminar equipo ' + placa + '? Las ' + n + ' reserva(s) quedar\u00e1n sin equipo asignado.'
+    : '\u00bfEliminar equipo ' + placa + '? Esta acci\u00f3n no se puede deshacer.';
+  if (!confirm(msg)) return;
+  postJSON(delUrl(id), {}).then(function (r) {
+    return r.json().then(function (d) { return { ok: r.ok, data: d }; });
+  }).then(function (res) {
+    if (res.ok) {
+      showSnack(n > 0 ? 'Equipo eliminado (reservas sin equipo)' : 'Equipo eliminado', 'ok');
+      setTimeout(function () { window.location.reload(); }, 700);
+    } else {
+      showSnack((res.data && res.data.error) || 'Error al eliminar', 'error');
+    }
+  }).catch(function () { showSnack('Error de red', 'error'); });
+}
+
+/* Event binding */
+if (CAN_EDIT) {
+  var cards = $('ec-cards');
+  if (cards) {
+    cards.addEventListener('click', function (e) {
+      var editBtn = e.target.closest('.btn-edit');
+      if (editBtn) {
+        editarEquipo(Number(editBtn.dataset.id));
+        return;
+      }
+      var btn = e.target.closest('.btn-del');
+      if (!btn) return;
+      eliminarEquipo(Number(btn.dataset.id), btn.dataset.placa, Number(btn.dataset.n || 0));
+    });
+  }
+
+  var btnCrear = $('ec-btn-crear');
+  if (btnCrear) btnCrear.addEventListener('click', crearEquipo);
+  var btnCancelEdit = $('ec-btn-cancel-edit');
+  if (btnCancelEdit) btnCancelEdit.addEventListener('click', resetForm);
+}
+
+/* Init */
+refreshHighlights();
+
+})();
+</script>
+{% endblock %}

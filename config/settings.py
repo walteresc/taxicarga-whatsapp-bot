@@ -13,7 +13,7 @@ def env_bool(name, default=False):
 
 SECRET_KEY = config("SECRET_KEY", default="django-insecure-dev-only-change-me")
 DEBUG = env_bool("DJANGO_DEBUG", default=True)
-ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="localhost,127.0.0.1").split(",")
+ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="localhost,127.0.0.1,testserver").split(",")
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -29,6 +29,9 @@ INSTALLED_APPS = [
     "apps.whatsapp",
     "apps.ia",
     "apps.dashboard",
+    "apps.servicios",
+    "apps.campo",
+    "apps.flota",
 ]
 
 LOGIN_URL = "/dashboard/login/"
@@ -53,11 +56,12 @@ TEMPLATES = [
         "DIRS": [],
         "APP_DIRS": True,
         "OPTIONS": {
-            "context_processors": [
-                "django.template.context_processors.request",
-                "django.contrib.auth.context_processors.auth",
-                "django.contrib.messages.context_processors.messages",
-            ],
+"context_processors": [
+                 "django.template.context_processors.request",
+                 "django.contrib.auth.context_processors.auth",
+                 "django.contrib.messages.context_processors.messages",
+                 "apps.dashboard.context_processors.user_roles",
+             ],
         },
     },
 ]

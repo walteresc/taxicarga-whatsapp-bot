@@ -1,0 +1,956 @@
+{% extends "dashboard/base.html" %}
+{% load servicio_tags %}
+{% block title %}{{ s.codigo }} - Reserva{% endblock %}
+{% block content %}
+
+{% comment %}HEADER{% endcomment %}
+<div class="page-header">
+  <div class="page-header-left">
+    <div class="icon-box" style="background:#EEF2FF;">
+      <span class="mdi mdi-truck" style="color:#4F46E5;font-size:20px;"></span>
+    </div>
+    <span class="page-title">{{ s.codigo }}</span>
+    {% if s.estado == 'pendiente' %}
+    <span class="badge" style="background:#FEF3C7;color:#92400E;">{{ s.get_estado_display }}</span>
+    {% elif s.estado == 'programado' %}
+    <span class="badge" style="background:#DBEAFE;color:#1E40AF;">{{ s.get_estado_display }}</span>
+    {% elif s.estado == 'en_ruta' or s.estado == 'asignado' %}
+    <span class="badge" style="background:#D1FAE5;color:#065F46;">{{ s.get_estado_display }}</span>
+    {% elif s.estado == 'finalizado' or s.estado == 'completado' %}
+    <span class="badge" style="background:#F3F4F6;color:#374151;">{{ s.get_estado_display }}</span>
+    {% elif s.estado == 'cancelado' %}
+    <span class="badge" style="background:#FEE2E2;color:#991B1B;">{{ s.get_estado_display }}</span>
+    {% else %}
+    <span class="badge">{{ s.get_estado_display }}</span>
+    {% endif %}
+  </div>
+  <div class="page-header-right">
+    <a href="{% if next_url %}{{ next_url }}{% else %}{% url 'dashboard-servicios-list' %}{% endif %}" class="btn-outline">← Volver</a>
+    {% if s.estado != 'finalizado' and s.estado != 'cancelado' %}
+    <button onclick="confirmarFinalizar()" class="btn-success" style="padding:8px 16px;border:none;cursor:pointer;font-family:inherit;font-size:13px;">✓ Finalizar</button>
+    <a href="{% url 'dashboard-servicios-cancelar' s.pk %}{% if next_url %}?next={{ next_url }}{% endif %}" class="btn-danger">✕ Cancelar</a>
+    {% endif %}
+    <a href="{% url 'dashboard-servicios-edit' s.pk %}{% if next_url %}?next={{ next_url }}{% endif %}" class="btn-primary">✎ Editar</a>
+  </div>
+</div>
+
+{% comment %}GRID 2 COLUMNAS{% endcomment %}
+<div class="detail-grid">
+
+  {% comment %}COLUMNA IZQUIERDA{% endcomment %}
+  <div class="detail-left">
+
+    {% comment %}CARD: ORIGEN Y DESTINO{% endcomment %}
+    <div class="detail-card">
+      <div class="origen-destino-grid">
+        <div class="od-col">
+          <div class="od-title" style="color:#4F46E5;">
+            <span class="od-dot" style="background:#4F46E5;"></span>ORIGEN
+          </div>
+          <div class="field-value">{{ s.direccion_origen|default:"-" }}</div>
+          {% if s.piso_origen %}<div class="field-meta">Piso {{ s.piso_origen }}</div>{% endif %}
+          {% if s.acceso_origen_opciones %}<div class="field-meta">{{ s.acceso_origen_opciones|join:", " }}</div>{% endif %}
+        </div>
+        <div class="od-divider"></div>
+        <div class="od-col">
+          <div class="od-title" style="color:#059669;">
+            <span class="od-dot" style="background:#059669;"></span>DESTINO
+          </div>
+          <div class="field-value">{{ s.direccion_destino|default:"-" }}</div>
+          {% if s.piso_destino %}<div class="field-meta">Piso {{ s.piso_destino }}</div>{% endif %}
+          {% if s.acceso_destino_opciones %}<div class="field-meta">{{ s.acceso_destino_opciones|join:", " }}</div>{% endif %}
+        </div>
+      </div>
+    </div>
+
+    {% comment %}CARD: CARGA Y CONDICIONES{% endcomment %}
+    <div class="detail-card">
+      <div class="detail-card-header">
+        <span class="mdi mdi-package-variant" style="color:#D97706;font-size:16px;"></span>
+        Carga y Condiciones
+      </div>
+      <div class="detail-card-body">
+        <div class="field-group">
+          <div class="field-label">Detalle de carga</div>
+          <div class="field-value">{{ s.detalle_carga|linebreaksbr|default:"-" }}</div>
+        </div>
+        <div class="field-group" style="margin-top:10px;">
+          <div class="field-label">Embalaje</div>
+          <div class="field-value">{{ s.get_tipo_embalaje_display|default:"-" }}</div>
+        </div>
+        {% if s.requisitos_especiales %}
+        <div class="field-group" style="margin-top:10px;">
+          <div class="field-label">Requisitos especiales</div>
+          <div class="field-value">{{ s.requisitos_especiales|join:", " }}</div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    {% comment %}CARD: HISTORIAL DE PAGOS + FORMULARIO COLAPSABLE{% endcomment %}
+    <div class="detail-card">
+      <div class="detail-card-header">
+        <span class="mdi mdi-format-list-bulleted" style="color:#059669;font-size:16px;"></span>
+        Historial de Pagos
+      </div>
+      <div class="detail-card-body" style="padding:0;">
+        {% if pagos %}
+        {% for p in pagos %}
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:0.5px solid #F3F4F6;">
+          <div>
+            {% if p.concepto == 'descuento' or p.concepto == 'ajuste' %}
+            <span style="font-size:10px;font-weight:600;padding:2px 8px;border-radius:20px;background:#FEE2E2;color:#991B1B;border:1px solid #FECACA;">{{ p.get_concepto_display }}</span>
+            {% else %}
+            <span style="font-size:10px;font-weight:600;padding:2px 8px;border-radius:20px;background:#D1FAE5;color:#065F46;border:1px solid #6EE7B7;">{{ p.get_concepto_display }}</span>
+            {% endif %}
+            <span style="font-size:11px;color:#6B7280;margin-left:6px;">{{ p.get_metodo_pago_display }} · {{ p.fecha_pago|date:"d/m/Y H:i" }}</span>
+            {% if p.observaciones %}
+            <div style="font-size:11px;color:#9CA3AF;margin-top:2px;font-style:italic;">{{ p.observaciones }}</div>
+            {% endif %}
+          </div>
+          {% if p.concepto == 'descuento' or p.concepto == 'ajuste' %}
+          <span style="font-size:14px;font-weight:600;color:#DC2626;white-space:nowrap;">- S/ {{ p.monto|floatformat:2 }}</span>
+          {% else %}
+          <span style="font-size:14px;font-weight:600;color:#059669;white-space:nowrap;">+ S/ {{ p.monto|floatformat:2 }}</span>
+          {% endif %}
+        </div>
+        {% endfor %}
+        {% else %}
+        <div style="padding:24px 16px;text-align:center;color:#9CA3AF;font-size:13px;">No hay pagos registrados.</div>
+        {% endif %}
+
+        {% if s.estado != 'finalizado' and s.estado != 'cancelado' %}
+        <div style="display:flex;border-top:0.5px solid #E5E7EB;">
+          <div id="triggerPago" onclick="toggleSeccion('pago')" style="flex:1;padding:10px 16px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;color:#4F46E5;border-right:0.5px solid #E5E7EB;background:#F9FAFB;">
+            <span>💳</span>
+            <span>Registrar pago</span>
+            <span id="arrowPago" style="margin-left:auto;">▼</span>
+          </div>
+          <div id="triggerDescuento" onclick="toggleSeccion('descuento')" style="flex:1;padding:10px 16px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;color:#DC2626;background:#F9FAFB;">
+            <span>🏷</span>
+            <span>Registrar descuento</span>
+            <span id="arrowDescuento" style="margin-left:auto;">▼</span>
+          </div>
+        </div>
+
+        {% comment %}FORM PAGO{% endcomment %}
+        <div id="formPago" style="display:none;padding:14px 16px;border-top:0.5px solid #E5E7EB;">
+          <form method="post" action="{% url 'dashboard-servicios-pago' s.pk %}{% if next_url %}?next={{ next_url }}{% endif %}">
+            {% csrf_token %}
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+
+              <div>
+                <label class="field-label">Concepto</label>
+                <select name="concepto" id="conceptoPago" onchange="onConceptoChange()" style="width:100%;padding:7px 10px;border:0.5px solid rgba(0,0,0,0.12);border-radius:8px;font-size:13px;">
+                  <option value="adelanto">Adelanto</option>
+                  <option value="parcial" selected>Pago Parcial</option>
+                  <option value="final">Pago Total</option>
+                </select>
+              </div>
+
+              <div>
+                <label class="field-label">Método de pago</label>
+                <select name="metodo_pago" class="form-input" style="width:100%;padding:7px 10px;border:0.5px solid rgba(0,0,0,0.12);border-radius:8px;font-size:13px;">
+                  <option value="yape" {% if s.tipo_comprobante not in 'boleta factura' %}selected{% endif %}>Yape</option>
+                  <option value="plin">Plin</option>
+                  <option value="bcp_personal">BCP Persona Natural</option>
+                  <option value="bcp_sos" {% if s.tipo_comprobante in 'boleta factura' %}selected{% endif %}>BCP SOS Empresa</option>
+                  <option value="otro">Otro</option>
+                </select>
+              </div>
+
+              <div>
+                <label class="field-label">Monto (S/)</label>
+                <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap;">
+                  <button type="button" onclick="setPorcentaje(10)" class="pct-btn" data-pct="10" style="font-size:11px;font-weight:500;padding:4px 12px;border-radius:20px;border:0.5px solid #D1D5DB;background:#fff;cursor:pointer;font-family:inherit;color:#374151;">10%</button>
+                  <button type="button" onclick="setPorcentaje(20)" class="pct-btn" data-pct="20" style="font-size:11px;font-weight:500;padding:4px 12px;border-radius:20px;border:0.5px solid #D1D5DB;background:#fff;cursor:pointer;font-family:inherit;color:#374151;">20%</button>
+                  <button type="button" onclick="setPorcentaje(50)" class="pct-btn" data-pct="50" style="font-size:11px;font-weight:500;padding:4px 12px;border-radius:20px;border:0.5px solid #D1D5DB;background:#fff;cursor:pointer;font-family:inherit;color:#374151;">50%</button>
+                  <button type="button" onclick="setPorcentaje(100)" class="pct-btn" data-pct="100" style="font-size:11px;font-weight:500;padding:4px 12px;border-radius:20px;border:0.5px solid #D1D5DB;background:#fff;cursor:pointer;font-family:inherit;color:#374151;">100%</button>
+                </div>
+                <input type="number" name="monto" id="montoPago" placeholder="0.00" step="0.01" min="0.01" style="width:100%;padding:7px 10px;border:0.5px solid rgba(0,0,0,0.12);border-radius:8px;font-size:13px;font-weight:600;" required>
+                <div style="font-size:11px;color:#6B7280;margin-top:4px;">Saldo pendiente: <strong style="color:#D97706;">S/ {{ s.saldo_pendiente|floatformat:2 }}</strong></div>
+              </div>
+
+              <div>
+                <label class="field-label">Fecha de pago</label>
+                <div style="display:flex;gap:6px;margin-bottom:6px;">
+                  <button type="button" class="fecha-btn" onclick="setFecha(-1, event)" style="font-size:11px;padding:4px 10px;border-radius:20px;border:0.5px solid #D1D5DB;background:#fff;cursor:pointer;font-family:inherit;">Ayer</button>
+                  <button type="button" class="fecha-btn" onclick="setFecha(0, event)" style="font-size:11px;padding:4px 10px;border-radius:20px;border:0.5px solid #4F46E5;background:#EEF2FF;cursor:pointer;font-family:inherit;color:#4F46E5;">Hoy</button>
+                </div>
+                <input type="datetime-local" id="fechaPagoInput" name="fecha_pago" class="form-input" style="width:100%;padding:7px 10px;border:0.5px solid rgba(0,0,0,0.12);border-radius:8px;font-size:13px;">
+              </div>
+
+            </div>
+
+            <div style="margin-top:10px;">
+              <label class="field-label">Observaciones</label>
+              <textarea name="observaciones" rows="2" class="form-input" style="width:100%;padding:7px 10px;border:0.5px solid rgba(0,0,0,0.12);border-radius:8px;font-size:13px;" placeholder="Opcional"></textarea>
+            </div>
+            <div style="margin-top:12px;display:flex;justify-content:flex-end;">
+              <button type="submit" style="padding:7px 18px;background:#2563EB;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">Registrar Pago</button>
+            </div>
+          </form>
+        </div>
+
+        {% comment %}FORM DESCUENTO{% endcomment %}
+        <div id="formDescuento" style="display:none;padding:14px 16px;border-top:2px solid #FEE2E2;background:#FFF8F8;">
+          <form method="post" action="{% url 'dashboard-servicios-pago' s.pk %}{% if next_url %}?next={{ next_url }}{% endif %}">
+            {% csrf_token %}
+            <input type="hidden" name="concepto" value="descuento">
+            <div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;color:#991B1B;display:flex;gap:8px;">
+              <span>⚠</span>
+              <span>El descuento reduce el saldo pendiente. Las observaciones son <strong>obligatorias</strong>.</span>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+              <div>
+                <label class="field-label">Monto del descuento (S/)</label>
+                <input type="number" name="monto" step="0.01" min="0.01" class="form-input" style="width:100%;padding:7px 10px;border:0.5px solid rgba(0,0,0,0.12);border-radius:8px;font-size:13px;font-weight:600;" required>
+              </div>
+              <div>
+                <label class="field-label">Método</label>
+                <select name="metodo_pago" class="form-input" style="width:100%;padding:7px 10px;border:0.5px solid rgba(0,0,0,0.12);border-radius:8px;font-size:13px;">
+                  <option value="otro" selected>Otro</option>
+                  <option value="yape">Yape</option>
+                  <option value="plin">Plin</option>
+                  <option value="bcp_personal">BCP Persona Natural</option>
+                  <option value="bcp_sos">BCP SOS Empresa</option>
+                </select>
+              </div>
+              <div>
+                <label class="field-label">Fecha</label>
+                <div style="display:flex;gap:6px;margin-bottom:6px;">
+                  <button type="button" class="fecha-btn" onclick="setFechaDescuento(-1, event)" style="font-size:11px;padding:4px 10px;border-radius:20px;border:0.5px solid #D1D5DB;background:#fff;cursor:pointer;font-family:inherit;">Ayer</button>
+                  <button type="button" class="fecha-btn" onclick="setFechaDescuento(0, event)" style="font-size:11px;padding:4px 10px;border-radius:20px;border:0.5px solid #991B1B;background:#FEF2F2;cursor:pointer;font-family:inherit;color:#991B1B;">Hoy</button>
+                </div>
+                <input type="datetime-local" id="fechaDescuentoInput" name="fecha_pago" class="form-input" style="width:100%;padding:7px 10px;border:0.5px solid rgba(0,0,0,0.12);border-radius:8px;font-size:13px;">
+              </div>
+            </div>
+            <div style="margin-top:10px;">
+              <label class="field-label">Observaciones <span style="color:#DC2626;">*</span></label>
+              <textarea name="observaciones" rows="2" class="form-input" style="width:100%;padding:7px 10px;border:0.5px solid rgba(0,0,0,0.12);border-radius:8px;font-size:13px;" required placeholder="Motivo del descuento (obligatorio)"></textarea>
+            </div>
+            <div style="margin-top:12px;display:flex;justify-content:flex-end;">
+              <button type="submit" style="padding:7px 18px;background:#FEE2E2;color:#991B1B;border:1px solid #DC2626;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;">Registrar Descuento</button>
+            </div>
+          </form>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    {% comment %}BOTONES DE ACCIÓN (FOOTER){% endcomment %}
+    {% if s.estado != 'finalizado' and s.estado != 'cancelado' %}
+    <div class="detail-card" style="padding:14px 16px;display:flex;justify-content:flex-end;gap:8px;margin-top:4px;">
+      <a href="{% if next_url %}{{ next_url }}{% else %}{% url 'dashboard-servicios-list' %}{% endif %}" class="btn-outline" style="padding:8px 18px;font-size:13px;">← Volver</a>
+      <a href="{% url 'dashboard-servicios-edit' s.pk %}{% if next_url %}?next={{ next_url }}{% endif %}" class="btn-primary" style="padding:8px 18px;font-size:13px;">✎ Editar</a>
+      <button onclick="confirmarFinalizar()" class="btn-success" style="padding:8px 18px;font-size:13px;border:none;cursor:pointer;font-family:inherit;">✓ Finalizar</button>
+      <button onclick="confirmarCancelar()" class="btn-danger" style="padding:8px 18px;font-size:13px;border:none;cursor:pointer;font-family:inherit;">✕ Cancelar</button>
+    </div>
+    {% endif %}
+
+  </div>
+
+  {% comment %}COLUMNA DERECHA{% endcomment %}
+  <div class="detail-right">
+
+    {% comment %}CARD: CLIENTE{% endcomment %}
+    <div class="detail-card">
+      <div class="detail-card-header">
+        <span class="mdi mdi-account" style="color:#4F46E5;font-size:16px;"></span>
+        Cliente
+      </div>
+      <div class="detail-card-body">
+        <div style="font-weight:500;font-size:14px;color:#111827;margin-bottom:6px;">{{ s.cliente.nombre|default:"-" }}</div>
+        {% if s.cliente.telefono %}
+        <div class="field-group">
+          <div class="field-label">Teléfono</div>
+          <div class="field-value">{{ s.cliente.telefono }}</div>
+        </div>
+        {% endif %}
+        {% if s.cliente.documento %}
+        <div class="field-group">
+          <div class="field-label">Documento</div>
+          <div class="field-value">{{ s.cliente.documento }}</div>
+        </div>
+        {% endif %}
+        {% if s.cliente.correo %}
+        <div class="field-group">
+          <div class="field-label">Correo</div>
+          <div class="field-value">{{ s.cliente.correo }}</div>
+        </div>
+        {% endif %}
+        {% if s.cliente.ruc %}
+        <div class="field-group">
+          <div class="field-label">RUC</div>
+          <div class="field-value">{{ s.cliente.ruc }}</div>
+        </div>
+        {% endif %}
+        {% if s.cliente.razon_social %}
+        <div class="field-group">
+          <div class="field-label">Razón social</div>
+          <div class="field-value">{{ s.cliente.razon_social }}</div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    {% comment %}CARD: RESUMEN FINANCIERO{% endcomment %}
+    <div class="detail-card">
+      <div class="detail-card-header">
+        <span class="mdi mdi-cash" style="color:#2563EB;font-size:16px;"></span>
+        Resumen Financiero
+      </div>
+      <div class="detail-card-body">
+        <div class="fin-row">
+          <span class="fin-label">Precio total</span>
+          <span class="fin-value">{% if s.precio %}S/ {{ s.precio|floatformat:2 }}{% else %}—{% endif %}</span>
+        </div>
+        <div class="fin-row">
+          <span class="fin-label">Total Pagado</span>
+          <span class="fin-value" style="color:{% if s.total_pagado > 0 %}#059669{% else %}#6B7280{% endif %};">S/ {{ s.total_pagado|floatformat:2 }}</span>
+        </div>
+        {% if s.total_descuentos > 0 %}
+        <div class="fin-row">
+          <span class="fin-label">Total descuentos</span>
+          <span class="fin-value" style="color:#DC2626;">- S/ {{ s.total_descuentos|floatformat:2 }}</span>
+        </div>
+        {% endif %}
+        <div class="fin-row">
+          <span class="fin-label">Fecha</span>
+          <span class="fin-value">{{ s.fecha_servicio|date:"d/m/Y"|default:"—" }}</span>
+        </div>
+        <div class="fin-row">
+          <span class="fin-label">Comprobante</span>
+          <span class="fin-value">{{ s.get_tipo_comprobante_display|default:"Ninguno" }}</span>
+        </div>
+
+        <div style="margin-top:12px;padding:10px 14px;border-radius:8px;{% if s.saldo_pendiente == 0 %}background:#F0FDF4;border:1px solid #86EFAC;{% else %}background:#FEF3C7;border:1px solid #FDE68A;{% endif %}">
+          <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;{% if s.saldo_pendiente == 0 %}color:#065F46;{% else %}color:#92400E;{% endif %}">
+            {% if s.saldo_pendiente == 0 %}✓ Pagado completo{% else %}⚠ Saldo pendiente{% endif %}
+          </div>
+          <div style="font-size:22px;font-weight:700;{% if s.saldo_pendiente == 0 %}color:#065F46;{% else %}color:#92400E;{% endif %}">S/ {{ s.saldo_pendiente|floatformat:2 }}</div>
+        </div>
+
+        <div style="text-align:center;margin-top:10px;">
+          {% if s.estado_pago == 'pagado' %}
+          <span class="estado-badge" style="background:#D1FAE5;color:#065F46;">Pagado</span>
+          {% elif s.estado_pago == 'amortizado' %}
+          <span class="estado-badge" style="background:#DBEAFE;color:#1E40AF;">Amortizado</span>
+          {% elif s.estado_pago == 'pendiente' %}
+          <span class="estado-badge" style="background:#FEF3C7;color:#92400E;">Pendiente</span>
+          {% else %}
+          <span class="estado-badge" style="background:#F3F4F6;color:#6B7280;">Sin precio</span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    {% comment %}CARD: INFORMACIÓN{% endcomment %}
+    <div class="detail-card">
+      <div class="detail-card-header">
+        <span class="mdi mdi-information" style="color:#059669;font-size:16px;"></span>
+        Información
+      </div>
+      <div class="detail-card-body">
+        <div class="field-group">
+          <div class="field-label">Asesor</div>
+          <div class="field-value">{% if s.asesor %}{{ s.asesor.get_full_name|default:s.asesor.username }}{% else %}-{% endif %}</div>
+        </div>
+        <div class="field-group" style="margin-top:8px;">
+          <div class="field-label">Estado</div>
+          <div class="field-value">
+            {% if s.estado == 'pendiente' %}
+            <span class="badge-sm" style="background:#FEF3C7;color:#92400E;">{{ s.get_estado_display }}</span>
+            {% elif s.estado == 'programado' %}
+            <span class="badge-sm" style="background:#DBEAFE;color:#1E40AF;">{{ s.get_estado_display }}</span>
+            {% elif s.estado == 'en_ruta' or s.estado == 'asignado' %}
+            <span class="badge-sm" style="background:#D1FAE5;color:#065F46;">{{ s.get_estado_display }}</span>
+            {% elif s.estado == 'finalizado' or s.estado == 'completado' %}
+            <span class="badge-sm" style="background:#F3F4F6;color:#374151;">{{ s.get_estado_display }}</span>
+            {% elif s.estado == 'cancelado' %}
+            <span class="badge-sm" style="background:#FEE2E2;color:#991B1B;">{{ s.get_estado_display }}</span>
+            {% else %}
+            <span class="badge-sm">{{ s.get_estado_display }}</span>
+            {% endif %}
+          </div>
+        </div>
+        {% if s.lead_origen %}
+        <div class="field-group" style="margin-top:8px;">
+          <div class="field-label">Lead origen</div>
+          <div class="field-value"><a href="/dashboard/leads/{{ s.lead_origen.id }}/" style="color:#4F46E5;text-decoration:none;">#{{ s.lead_origen.id }}</a></div>
+        </div>
+        {% endif %}
+        {% if s.motivo_cancelacion %}
+        <div class="field-group" style="margin-top:8px;">
+          <div class="field-label">Motivo cancelación</div>
+          <div class="field-value" style="font-size:12px;color:#DC2626;">{{ s.motivo_cancelacion|linebreaksbr }}</div>
+        </div>
+        {% endif %}
+        {% if s.observaciones %}
+        <div class="field-group" style="margin-top:8px;">
+          <div class="field-label">Observaciones</div>
+          <div class="field-value" style="font-size:12px;">{{ s.observaciones|linebreaksbr }}</div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    {% comment %}CARD: AUDITORÍA{% endcomment %}
+    <div class="detail-card">
+      <div class="detail-card-header">
+        <span class="mdi mdi-clock-outline" style="color:#6B7280;font-size:16px;"></span>
+        Auditoría
+      </div>
+      <div class="detail-card-body">
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:#6B7280;">
+          <span>Creado</span>
+          <span>{{ s.fecha_creacion|date:"d/m/Y H:i" }}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:#6B7280;margin-top:6px;">
+          <span>Actualizado</span>
+          <span>{{ s.fecha_actualizacion|date:"d/m/Y H:i" }}</span>
+        </div>
+        {% if s.fecha_actualizacion_estado %}
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:#6B7280;margin-top:6px;">
+          <span>Cambio estado</span>
+          <span>{{ s.fecha_actualizacion_estado|date:"d/m/Y H:i" }}</span>
+        </div>
+        {% endif %}
+        {% if s.atendido_por %}
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:#6B7280;margin-top:6px;">
+          <span>Atendido por</span>
+          <span>{% if s.atendido_por %}{{ s.atendido_por.get_full_name|default:s.atendido_por.username }}{% else %}-{% endif %}</span>
+        </div>
+        {% endif %}
+        {% if s.usuario_actualizacion %}
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:#6B7280;margin-top:6px;">
+          <span>Actualizado por</span>
+          <span>{% if s.usuario_actualizacion %}{{ s.usuario_actualizacion.get_full_name|default:s.usuario_actualizacion.username }}{% else %}-{% endif %}</span>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+{% comment %}MODAL PAGO FINAL{% endcomment %}
+<div id="modalDescuento" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:12px;padding:24px;width:440px;max-width:92vw;box-shadow:0 20px 40px rgba(0,0,0,0.15);">
+
+    {% comment %}HEADER{% endcomment %}
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px;">
+      <span style="font-size:18px;">💳</span>
+      <span style="font-size:16px;font-weight:600;color:#111827;">Registrar Pago Final</span>
+    </div>
+    <div style="font-size:12px;color:#6B7280;margin-bottom:16px;">{{ s.codigo }} · {{ s.cliente.nombre|default:"-" }}</div>
+
+    {% comment %}SALDO DESTACADO{% endcomment %}
+    <div style="background:#FEF3C7;border:1px solid #FDE68A;border-radius:8px;padding:10px 14px;margin-bottom:16px;">
+      <div style="font-size:11px;font-weight:600;color:#92400E;text-transform:uppercase;letter-spacing:.05em;">Saldo pendiente</div>
+      <div style="font-size:22px;font-weight:700;color:#92400E;margin-top:2px;">S/ {{ s.saldo_pendiente|floatformat:2 }}</div>
+    </div>
+
+    {% comment %}FORM{% endcomment %}
+    <form method="POST" action="{% url 'dashboard-servicios-pago' s.pk %}{% if next_url %}?next={{ next_url }}{% endif %}">
+      {% csrf_token %}
+      <input type="hidden" name="concepto" value="final">
+      <input type="hidden" name="finalizar_tras_pago" value="1">
+
+      {% comment %}MONTO{% endcomment %}
+      <div style="margin-bottom:10px;">
+        <label style="font-size:10px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:4px;">MONTO (S/)</label>
+        <input type="number" name="monto" id="montoFinal" value="{{ s.saldo_pendiente|floatformat:2 }}" step="0.01" min="0.01" style="width:100%;font-size:14px;font-weight:600;padding:8px 10px;border:0.5px solid #D1D5DB;border-radius:7px;font-family:inherit;outline:none;">
+      </div>
+
+      {% comment %}MÉTODO{% endcomment %}
+      <div style="margin-bottom:10px;">
+        <label style="font-size:10px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:4px;">CUENTA DE DESTINO</label>
+        <select name="metodo_pago" id="metodoPago" style="width:100%;font-size:13px;padding:8px 10px;border:0.5px solid #D1D5DB;border-radius:7px;font-family:inherit;outline:none;">
+          <option value="yape" {% if s.tipo_comprobante not in 'boleta factura' %}selected{% endif %}>Yape</option>
+          <option value="plin">Plin</option>
+          <option value="bcp_personal">BCP Persona Natural</option>
+          <option value="bcp_sos" {% if s.tipo_comprobante in 'boleta factura' %}selected{% endif %}>BCP SOS Empresa</option>
+          <option value="otro">Otro</option>
+        </select>
+      </div>
+
+      {% comment %}FECHA{% endcomment %}
+      <div style="margin-bottom:10px;">
+        <label style="font-size:10px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:4px;">FECHA DE PAGO</label>
+        <div style="display:flex;gap:6px;margin-bottom:6px;">
+          <button type="button" class="fecha-btn-modal" onclick="setFechaFinal(-1, event)" style="font-size:11px;padding:4px 10px;border-radius:20px;border:0.5px solid #D1D5DB;background:#fff;cursor:pointer;font-family:inherit;">Ayer</button>
+          <button type="button" class="fecha-btn-modal" onclick="setFechaFinal(0, event)" style="font-size:11px;padding:4px 10px;border-radius:20px;border:0.5px solid #4F46E5;background:#EEF2FF;cursor:pointer;font-family:inherit;color:#4F46E5;">Hoy</button>
+        </div>
+        <input type="datetime-local" name="fecha_pago" id="fechaFinalInput" style="width:100%;padding:7px 10px;border:0.5px solid #D1D5DB;border-radius:7px;font-size:13px;font-family:inherit;">
+      </div>
+
+      {% comment %}ALERTA DESCUENTO{% endcomment %}
+      <div id="alertaDescuento" style="display:none;background:#FEE2E2;border:1px solid #FECACA;border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:12px;color:#991B1B;line-height:1.5;">
+        ⚠ El monto ingresado (S/ <span id="montoIngresado"></span>) es menor al saldo pendiente (S/ <span id="saldoRef"></span>).
+        <br>
+        <strong>Debes registrar primero un descuento por la diferencia de S/ <span id="diferencia"></span> antes de finalizar.</strong>
+        <br><br>
+        <a href="#" onclick="abrirFormDescuento()" style="color:#991B1B;font-weight:600;text-decoration:underline;">→ Registrar descuento ahora</a>
+      </div>
+
+      {% comment %}OBSERVACIONES{% endcomment %}
+      <div style="margin-bottom:14px;">
+        <label style="font-size:10px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:4px;">OBSERVACIONES</label>
+        <textarea name="observaciones" rows="2" placeholder="Opcional..." style="width:100%;font-size:13px;padding:8px 10px;border:0.5px solid #D1D5DB;border-radius:7px;font-family:inherit;outline:none;resize:vertical;"></textarea>
+      </div>
+
+      {% comment %}FOOTER{% endcomment %}
+      <div style="display:flex;justify-content:flex-end;gap:8px;border-top:0.5px solid #E5E7EB;padding-top:14px;">
+        <button type="button" onclick="document.getElementById('modalDescuento').style.display='none'" style="font-size:13px;padding:8px 16px;border-radius:8px;border:1px solid #D1D5DB;background:#fff;cursor:pointer;font-family:inherit;color:#374151;">Cancelar</button>
+        <button type="submit" id="btnFinalizar" style="font-size:13px;padding:8px 16px;border-radius:8px;border:none;background:#4F46E5;color:#fff;cursor:pointer;font-family:inherit;font-weight:500;">Registrar Pago y Finalizar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<style>
+:root {
+  --text-primary: #111827;
+  --text-muted: #6B7280;
+  --border-color: #E5E7EB;
+  --bg-card: #fff;
+}
+
+.page-header {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  flex-wrap:wrap;
+  gap:10px;
+  margin-bottom:16px;
+}
+.page-header-left {
+  display:flex;
+  align-items:center;
+  gap:10px;
+}
+.page-header-right {
+  display:flex;
+  gap:6px;
+  align-items:center;
+}
+.page-title {
+  font-size:20px;
+  font-weight:700;
+  color:#1e293b;
+}
+.icon-box {
+  width:36px;height:36px;
+  border-radius:9px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  flex-shrink:0;
+}
+.badge {
+  display:inline-flex;
+  padding:3px 12px;
+  border-radius:20px;
+  font-size:11px;
+  font-weight:600;
+  white-space:nowrap;
+}
+.badge-sm {
+  display:inline-flex;
+  padding:2px 8px;
+  border-radius:20px;
+  font-size:10px;
+  font-weight:600;
+  white-space:nowrap;
+}
+.estado-badge {
+  display:inline-flex;
+  padding:3px 14px;
+  border-radius:20px;
+  font-size:11px;
+  font-weight:600;
+}
+.btn-outline {
+  padding:6px 14px;
+  background:#fff;
+  color:#6B7280;
+  border:0.5px solid var(--border-color);
+  border-radius:8px;
+  font-size:13px;
+  text-decoration:none;
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+}
+.btn-outline:hover { background:#F9FAFB; }
+.btn-success {
+  padding:6px 14px;
+  background:#D1FAE5;
+  color:#065F46;
+  border:1px solid #059669;
+  border-radius:8px;
+  font-size:13px;
+  text-decoration:none;
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+  font-weight:500;
+}
+.btn-success:hover { background:#A7F3D0; }
+.btn-danger {
+  padding:6px 14px;
+  background:#FEE2E2;
+  color:#991B1B;
+  border:1px solid #DC2626;
+  border-radius:8px;
+  font-size:13px;
+  text-decoration:none;
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+  font-weight:500;
+}
+.btn-danger:hover { background:#FECACA; }
+.btn-primary {
+  padding:6px 14px;
+  background:#fff;
+  color:#4F46E5;
+  border:0.5px solid #C7D2FE;
+  border-radius:8px;
+  font-size:13px;
+  text-decoration:none;
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+  font-weight:500;
+}
+.btn-primary:hover { background:#EEF2FF; }
+
+.detail-grid {
+  display:grid;
+  grid-template-columns:1fr 380px;
+  gap:16px;
+  align-items:start;
+}
+
+.detail-right {
+  position:sticky;
+  top:16px;
+}
+
+.detail-card {
+  background:var(--bg-card);
+  border:0.5px solid var(--border-color);
+  border-radius:12px;
+  overflow:hidden;
+  margin-bottom:14px;
+}
+.detail-card-header {
+  padding:11px 16px;
+  border-bottom:0.5px solid var(--border-color);
+  display:flex;
+  align-items:center;
+  gap:9px;
+  font-size:13px;
+  font-weight:600;
+  color:#1e293b;
+}
+.detail-card-body {
+  padding:14px 16px;
+}
+
+.field-label {
+  font-size:10px;
+  font-weight:600;
+  color:var(--text-muted);
+  text-transform:uppercase;
+  letter-spacing:0.06em;
+  display:block;
+  margin-bottom:2px;
+}
+.field-value {
+  font-size:13px;
+  color:var(--text-primary);
+}
+.field-meta {
+  font-size:12px;
+  color:#6B7280;
+  margin-top:2px;
+}
+.field-group + .field-group { margin-top:8px; }
+
+.fin-row {
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  padding:4px 0;
+}
+.fin-label {
+  font-size:12px;
+  color:#6B7280;
+}
+.fin-value {
+  font-size:13px;
+  font-weight:600;
+  color:var(--text-primary);
+  font-variant-numeric:tabular-nums;
+}
+
+/* Origen / Destino */
+.origen-destino-grid {
+  display:grid;
+  grid-template-columns:1fr 1px 1fr;
+  gap:0;
+  min-height:80px;
+}
+.od-col {
+  padding:16px;
+}
+.od-divider {
+  width:1px;
+  background:var(--border-color);
+  align-self:stretch;
+}
+.od-title {
+  font-size:10px;
+  font-weight:700;
+  letter-spacing:0.08em;
+  display:flex;
+  align-items:center;
+  gap:6px;
+  margin-bottom:8px;
+}
+.od-dot {
+  width:8px;
+  height:8px;
+  border-radius:50%;
+  display:inline-block;
+}
+
+/* (pagos: ahora inline styles) */
+
+@media (max-width:768px) {
+  .detail-grid {
+    grid-template-columns:1fr !important;
+  }
+  .detail-right {
+    position:static;
+  }
+  .origen-destino-grid {
+    grid-template-columns:1fr !important;
+  }
+  .od-divider {
+    width:auto;
+    height:1px;
+    align-self:stretch;
+  }
+  .page-header {
+    flex-direction:column;
+    align-items:flex-start;
+  }
+}
+</style>
+
+<script>
+const SALDO_PENDIENTE = {{ s.saldo_pendiente|default:0|stringformat:".2f" }};
+const SERVICIO_ID = {{ s.pk }};
+const NEXT_URL = '{{ next_url|escapejs }}';
+
+document.addEventListener('DOMContentLoaded', function() {
+  window.toggleSeccion = function(cual) {
+    const formPago      = document.getElementById('formPago');
+    const formDescuento = document.getElementById('formDescuento');
+    const arrowP = document.getElementById('arrowPago');
+    const arrowD = document.getElementById('arrowDescuento');
+    const trigP  = document.getElementById('triggerPago');
+    const trigD  = document.getElementById('triggerDescuento');
+    if (cual === 'pago') {
+      const abriendo = formPago.style.display === 'none';
+      formPago.style.display      = abriendo ? 'block' : 'none';
+      formDescuento.style.display = 'none';
+      arrowP.textContent = abriendo ? '▲' : '▼';
+      arrowD.textContent = '▼';
+      trigP.style.background = abriendo ? '#EEF2FF' : '#F9FAFB';
+      trigD.style.background = '#F9FAFB';
+      if (abriendo) setFechaDefault();
+    } else {
+      const abriendo = formDescuento.style.display === 'none';
+      formDescuento.style.display = abriendo ? 'block' : 'none';
+      formPago.style.display      = 'none';
+      arrowD.textContent = abriendo ? '▲' : '▼';
+      arrowP.textContent = '▼';
+      trigD.style.background = abriendo ? '#FEF2F2' : '#F9FAFB';
+      trigP.style.background = '#F9FAFB';
+      if (abriendo) setFechaDescuentoDefault();
+    }
+  };
+  // Listener monto en modal de finalización
+  const montoInput = document.getElementById('montoFinal');
+  if (montoInput) {
+    montoInput.addEventListener('input', validarMonto);
+    validarMonto();
+  }
+  setFechaDefault();
+  // Si venimos del modal de descuento (abrirFormDescuento)
+  if (window._abrirDescuento) {
+    window.toggleSeccion('descuento');
+    const montoInput = document.querySelector('#formDescuento input[name="monto"]');
+    if (montoInput && window._montoDescuento) {
+      montoInput.value = window._montoDescuento;
+    }
+    window._abrirDescuento = false;
+    window._montoDescuento = null;
+  }
+});
+
+function setFecha(offset, event) {
+  const d = new Date();
+  d.setDate(d.getDate() + offset);
+  d.setSeconds(0); d.setMilliseconds(0);
+  const pad = n => String(n).padStart(2,'0');
+  const val = d.getFullYear() + '-' +
+    pad(d.getMonth()+1) + '-' + pad(d.getDate()) +
+    'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  const el = document.getElementById('fechaPagoInput');
+  if (el) el.value = val;
+  document.querySelectorAll('.fecha-btn')
+    .forEach(b => { b.style.background = '#fff'; b.style.borderColor = '#D1D5DB'; b.style.color = '#374151'; });
+  if (event && event.target) {
+    event.target.style.background = '#EEF2FF';
+    event.target.style.borderColor = '#4F46E5';
+    event.target.style.color = '#4F46E5';
+  }
+}
+
+function setFechaFinal(offset, event) {
+  const d = new Date();
+  d.setDate(d.getDate() + offset);
+  d.setSeconds(0); d.setMilliseconds(0);
+  const pad = n => String(n).padStart(2,'0');
+  const val = d.getFullYear() + '-' +
+    pad(d.getMonth()+1) + '-' + pad(d.getDate()) +
+    'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  const el = document.getElementById('fechaFinalInput');
+  if (el) el.value = val;
+  document.querySelectorAll('.fecha-btn-modal')
+    .forEach(b => { b.style.background = '#fff'; b.style.borderColor = '#D1D5DB'; b.style.color = '#374151'; });
+  if (event && event.target) {
+    event.target.style.background = '#EEF2FF';
+    event.target.style.borderColor = '#4F46E5';
+    event.target.style.color = '#4F46E5';
+  }
+}
+
+function setFechaDefault() {
+  const d = new Date(); d.setSeconds(0);
+  const pad = n => String(n).padStart(2,'0');
+  const val = d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+
+    pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes());
+  ['fechaPagoInput','fechaFinalInput','fechaDescuentoInput']
+    .forEach(id => { const el = document.getElementById(id);
+      if (el && !el.value) el.value = val; });
+}
+
+function setFechaDescuento(offset, event) {
+  const d = new Date();
+  d.setDate(d.getDate() + offset);
+  d.setSeconds(0); d.setMilliseconds(0);
+  const pad = n => String(n).padStart(2,'0');
+  const val = d.getFullYear() + '-' +
+    pad(d.getMonth()+1) + '-' + pad(d.getDate()) +
+    'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  const el = document.getElementById('fechaDescuentoInput');
+  if (el) el.value = val;
+  document.querySelectorAll('.fecha-btn')
+    .forEach(b => { b.style.background = '#fff'; b.style.borderColor = '#D1D5DB'; b.style.color = '#374151'; });
+  if (event && event.target) {
+    event.target.style.background = '#FEF2F2';
+    event.target.style.borderColor = '#991B1B';
+    event.target.style.color = '#991B1B';
+  }
+}
+
+function setFechaDescuentoDefault() {
+  const d = new Date(); d.setSeconds(0);
+  const pad = n => String(n).padStart(2,'0');
+  const val = d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+
+    pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes());
+  const el = document.getElementById('fechaDescuentoInput');
+  if (el && !el.value) el.value = val;
+}
+
+function validarMonto() {
+  const monto = parseFloat(document.getElementById('montoFinal').value) || 0;
+  const alerta  = document.getElementById('alertaDescuento');
+  const btnFinal = document.getElementById('btnFinalizar');
+  const diff = SALDO_PENDIENTE - monto;
+
+  if (monto > 0 && monto < SALDO_PENDIENTE) {
+    document.getElementById('montoIngresado').textContent = monto.toFixed(2);
+    document.getElementById('saldoRef').textContent = SALDO_PENDIENTE.toFixed(2);
+    document.getElementById('diferencia').textContent = diff.toFixed(2);
+    alerta.style.display = 'block';
+    btnFinal.disabled = true;
+    btnFinal.style.opacity = '0.5';
+    btnFinal.style.cursor = 'not-allowed';
+  } else {
+    alerta.style.display = 'none';
+    btnFinal.disabled = false;
+    btnFinal.style.opacity = '1';
+    btnFinal.style.cursor = 'pointer';
+  }
+}
+
+function setPorcentaje(pct) {
+  const monto = SALDO_PENDIENTE * pct / 100;
+  document.getElementById('montoPago').value = monto.toFixed(2);
+  document.querySelectorAll('.pct-btn').forEach(b => {
+    const isActive = parseInt(b.dataset.pct) === pct;
+    b.style.background  = isActive ? '#EEF2FF' : '#fff';
+    b.style.borderColor = isActive ? '#4F46E5' : '#D1D5DB';
+    b.style.color       = isActive ? '#4F46E5' : '#374151';
+    b.style.fontWeight  = isActive ? '600' : '500';
+  });
+}
+
+function onConceptoChange() {
+  const concepto = document.getElementById('conceptoPago').value;
+  if (concepto === 'final') {
+    document.getElementById('montoPago').value = SALDO_PENDIENTE.toFixed(2);
+    setPorcentaje(100);
+  } else {
+    document.getElementById('montoPago').value = '';
+    document.querySelectorAll('.pct-btn').forEach(b => {
+      b.style.background  = '#fff';
+      b.style.borderColor = '#D1D5DB';
+      b.style.color       = '#374151';
+      b.style.fontWeight  = '500';
+    });
+  }
+}
+
+function abrirFormDescuento() {
+  document.getElementById('modalDescuento').style.display = 'none';
+  const monto = parseFloat(document.getElementById('montoFinal').value) || 0;
+  const diff = SALDO_PENDIENTE - monto;
+  window._abrirDescuento = true;
+  window._montoDescuento = diff.toFixed(2);
+  toggleSeccion('descuento');
+}
+
+function confirmarFinalizar() {
+  document.getElementById('modalDescuento').style.display = 'flex';
+  validarMonto();
+}
+
+function confirmarCancelar() {
+  var url = '/dashboard/servicios/' + SERVICIO_ID + '/cancelar/';
+  if (NEXT_URL) url += '?next=' + encodeURIComponent(NEXT_URL);
+  window.location.href = url;
+}
+</script>
+
+{% endblock %}
+{% block extra_scripts %}{% endblock %}

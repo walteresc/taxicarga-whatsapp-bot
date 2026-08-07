@@ -1323,3 +1323,269 @@ class ConversationGuardTests(TestCase):
         lead = self._lead()
         result = should_bot_handle_lead(lead=lead, incoming_message="cuanto cuesta una mudanza de surco a miraflores")
         self.assertTrue(result["allow_bot"])
+
+
+class ConversationGuardV2Tests(TestCase):
+    def setUp(self):
+        self.cliente = Cliente.objects.create(telefono="51900000999", nombre="V2 Test")
+        self.conf = ConfiguracionBot.obtener()
+        self.conf.bot_activo = True
+        self.conf.modo_atencion = "bot"
+        self.conf.hora_inicio_bot = "00:00"
+        self.conf.hora_fin_bot = "23:59"
+        for dia in ["lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"]:
+            setattr(self.conf, f"{dia}_activo", True)
+        self.conf.save()
+        self.ahora = timezone.make_aware(
+            datetime(2026, 6, 10, 14, 0),
+            timezone.get_current_timezone(),
+        )
+
+    def _lead(self, **kwargs):
+        defaults = {"cliente": self.cliente, "estado": Lead.NUEVO}
+        defaults.update(kwargs)
+        return Lead.objects.create(**defaults)
+
+    def _conversacion(self, days_ago=0):
+        conv = Conversacion.objects.create(
+            cliente=self.cliente,
+            mensaje_entrada="test",
+            mensaje_salida="",
+            canal=Conversacion.CANAL_WHATSAPP,
+        )
+        if days_ago:
+            Conversacion.objects.filter(pk=conv.pk).update(
+                fecha=self.ahora - timedelta(days=days_ago),
+            )
+        return conv
+
+    # lead cotizado → bloquea
+    def test_lead_cotizado_bloquea(self):
+        lead = self._lead(estado=Lead.COTIZADO)
+        self.assertFalse(should_bot_reply(now=self.ahora, lead=lead))
+
+    # lead reservado → bloquea
+    def test_lead_reservado_bloquea(self):
+        lead = self._lead(etapa_conversacion=Lead.ETAPA_RESERVADO)
+        self.assertFalse(should_bot_reply(now=self.ahora, lead=lead))
+
+    # lead con 15 mensajes → bloquea
+    def test_lead_15_mensajes_bloquea(self):
+        lead = self._lead()
+        for _ in range(15):
+            self._conversacion(days_ago=0)
+        self.assertFalse(should_bot_reply(now=self.ahora, lead=lead))
+
+    # lead con conversación de 5 días → bloquea
+    def test_lead_5_dias_bloquea(self):
+        self._conversacion(days_ago=5)
+        lead = self._lead()
+        self.assertFalse(should_bot_reply(now=self.ahora, lead=lead))
+
+    # lead atencion_humana=True → bloquea
+    def test_atencion_humana_bloquea(self):
+        lead = self._lead(atencion_humana=True)
+        self.assertFalse(should_bot_reply(now=self.ahora, lead=lead))
+
+    # lead nuevo con 2 mensajes → no bloquea
+    def test_lead_nuevo_2_mensajes_no_bloquea(self):
+        lead = self._lead()
+        for _ in range(2):
+            self._conversacion(days_ago=0)
+        self.assertTrue(should_bot_reply(now=self.ahora, lead=lead))
+
+
+class ChannelManagementTests(TestCase):
+    def setUp(self):
+        from django.contrib.auth.models import User
+        self.user = User.objects.create_user(username="admin", password="pass")
+        self.client.login(username="admin", password="pass")
+
+    def _create_channel(self, **kwargs):
+        defaults = {"nombre": "Test", "phone_number_id": "999999", "numero_visible": "51999999999"}
+        defaults.update(kwargs)
+        return WhatsAppChannel.objects.create(**defaults)
+
+    def test_eliminar_canal_sin_leads(self):
+        ch = self._create_channel()
+        resp = self.client.delete(f"/api/whatsapp-channels/{ch.id}/")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data["deleted"])
+        self.assertFalse(WhatsAppChannel.objects.filter(id=ch.id).exists())
+
+    def test_eliminar_canal_con_leads_bloqueado(self):
+        ch = self._create_channel()
+        cliente = Cliente.objects.create(telefono="51900000001")
+        Lead.objects.create(cliente=cliente, whatsapp_channel=ch)
+        resp = self.client.delete(f"/api/whatsapp-channels/{ch.id}/")
+        self.assertEqual(resp.status_code, 409)
+        data = resp.json()
+        self.assertEqual(data["error"], "has_history")
+        self.assertTrue(WhatsAppChannel.objects.filter(id=ch.id).exists())
+
+    def test_desactivar_conserva_historial(self):
+        ch = self._create_channel()
+        cliente = Cliente.objects.create(telefono="51900000002")
+        Lead.objects.create(cliente=cliente, whatsapp_channel=ch)
+        Conversacion.objects.create(cliente=cliente, mensaje_entrada="test")
+        resp = self.client.patch(
+            f"/api/whatsapp-channels/{ch.id}/",
+            {"activo": False},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        ch.refresh_from_db()
+        self.assertFalse(ch.activo)
+        self.assertEqual(ch.leads.count(), 1)
+        self.assertTrue(Conversacion.objects.filter(cliente=cliente).exists())
+
+    def test_canal_inactivo_ignora_mensajes(self):
+        ch = self._create_channel(activo=False)
+        payload = {
+            "object": "whatsapp_business_account",
+            "entry": [{
+                "changes": [{
+                    "value": {
+                        "messaging_product": "whatsapp",
+                        "metadata": {"phone_number_id": "999999"},
+                        "messages": [{
+                            "from": "51988776655",
+                            "id": "wamid.inactive-1",
+                            "type": "text",
+                            "text": {"body": "Hola"},
+                        }],
+                    },
+                }],
+            }],
+        }
+        resp = self.client.post(
+            reverse("whatsapp-webhook"),
+            payload,
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertEqual(data.get("reason"), "inactive_channel")
+        self.assertFalse(Lead.objects.filter(cliente__telefono="51988776655").exists())
+
+    def test_canal_inactivo_no_aparece_en_selector_principal(self):
+        activo = self._create_channel(nombre="Activo", phone_number_id="111")
+        inactivo = self._create_channel(nombre="Inactivo", phone_number_id="222", activo=False)
+        from apps.dashboard.views import _dashboard_payload
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        user = User.objects.create_user(username="test2", password="pass")
+        payload = _dashboard_payload(
+            grouped_leads={"pendientes": [], "cotizados": [], "asignados": [], "cerrados": []},
+            selected_lead=None,
+            user=user,
+        )
+        canales_ids = [c["id"] for c in payload["canales"]]
+        self.assertIn(activo.id, canales_ids)
+        self.assertNotIn(inactivo.id, canales_ids)
+
+    def test_canal_inactivo_sigue_en_gestionar_canales(self):
+        activo = self._create_channel(nombre="Activo", phone_number_id="333")
+        inactivo = self._create_channel(nombre="Inactivo", phone_number_id="444", activo=False)
+        resp = self.client.get("/api/whatsapp-channels/")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        ids = [ch["id"] for ch in data]
+        self.assertIn(activo.id, ids)
+        self.assertIn(inactivo.id, ids)
+
+    def test_canal_reactivado_vuelve_a_selector_principal(self):
+        ch = self._create_channel(nombre="Reactivable", phone_number_id="555", activo=False)
+        self.client.patch(
+            f"/api/whatsapp-channels/{ch.id}/",
+            {"activo": True},
+            content_type="application/json",
+        )
+        from apps.dashboard.views import _dashboard_payload
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        user = User.objects.create_user(username="test3", password="pass")
+        payload = _dashboard_payload(
+            grouped_leads={"pendientes": [], "cotizados": [], "asignados": [], "cerrados": []},
+            selected_lead=None,
+            user=user,
+        )
+        ids = [c["id"] for c in payload["canales"]]
+        self.assertIn(ch.id, ids)
+
+    def test_dashboard_ignora_channel_id_inactivo(self):
+        inactivo = self._create_channel(nombre="Inactivo", phone_number_id="666", activo=False)
+        from apps.dashboard.views import _dashboard_payload
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        user = User.objects.create_user(username="test4", password="pass")
+        payload = _dashboard_payload(
+            grouped_leads={"pendientes": [], "cotizados": [], "asignados": [], "cerrados": []},
+            selected_lead=None,
+            user=user,
+            channel_id=inactivo.id,
+        )
+        self.assertIsNone(payload.get("channel_id"), "channel_id debería ser None para canal inactivo")
+
+    def test_lead_de_canal_a_no_se_abre_con_canal_b(self):
+        canal_a = self._create_channel(nombre="A", phone_number_id="aaa")
+        canal_b = self._create_channel(nombre="B", phone_number_id="bbb")
+        cliente = Cliente.objects.create(telefono="51900000999")
+        lead = Lead.objects.create(cliente=cliente, whatsapp_channel=canal_a)
+        url = f"/dashboard/leads/{lead.id}/?channel={canal_b.id}"
+        resp = self.client.get(url)
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn(f"channel={canal_b.id}", resp.url)
+        self.assertNotIn(f"/leads/{lead.id}", resp.url)
+
+    def test_cambiar_canal_elimina_lead_seleccionado(self):
+        from django.urls import reverse
+        url = reverse("dashboard-home")
+        resp = self.client.get(url + "?channel=999")
+        self.assertEqual(resp.status_code, 200)
+        import json as j
+        html = resp.content.decode()
+        marker = 'id="dashboard-data"'
+        start = html.index(marker) + len(marker)
+        start = html.index(">", start) + 1
+        end = html.index("</script>", start)
+        data = j.loads(html[start:end].strip())
+        self.assertIsNone(data.get("selectedLead"))
+
+    def test_url_final_al_cambiar_canal_es_dashboard_sin_lead(self):
+        canal = self._create_channel(nombre="C", phone_number_id="ccc")
+        url = f"/dashboard/?channel={canal.id}"
+        resp = self.client.get(url)
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(f"channel={canal.id}", resp.request["QUERY_STRING"])
+        import json as j
+        html = resp.content.decode()
+        marker = 'id="dashboard-data"'
+        start = html.index(marker) + len(marker)
+        start = html.index(">", start) + 1
+        end = html.index("</script>", start)
+        data = j.loads(html[start:end].strip())
+        self.assertEqual(data.get("channel_id"), canal.id)
+        self.assertIsNone(data.get("selectedLead"))
+
+    def test_seleccionar_canal_nuevo_no_conserva_lead_anterior(self):
+        canal_a = self._create_channel(nombre="D", phone_number_id="ddd")
+        canal_b = self._create_channel(nombre="E", phone_number_id="eee")
+        cliente = Cliente.objects.create(telefono="51900000888")
+        lead = Lead.objects.create(cliente=cliente, whatsapp_channel=canal_a)
+        url = f"/dashboard/leads/{lead.id}/?channel={canal_a.id}"
+        resp = self.client.get(url)
+        self.assertEqual(resp.status_code, 200)
+        url_b = f"/dashboard/?channel={canal_b.id}"
+        resp_b = self.client.get(url_b)
+        self.assertEqual(resp_b.status_code, 200)
+        import json as j
+        html = resp_b.content.decode()
+        marker = 'id="dashboard-data"'
+        start = html.index(marker) + len(marker)
+        start = html.index(">", start) + 1
+        end = html.index("</script>", start)
+        data = j.loads(html[start:end].strip())
+        self.assertEqual(data.get("channel_id"), canal_b.id)
+        self.assertIsNone(data.get("selectedLead"))
