@@ -1,6 +1,9 @@
+from unittest import skipUnless
+
 from django.contrib.auth import get_user_model
-from django.db import IntegrityError
-from django.test import TestCase
+from django.db import IntegrityError, connection
+from django.test import TestCase, TransactionTestCase, skipUnlessDBFeature
+from django.test.utils import CaptureQueriesContext
 
 from apps.clientes.models import Cliente
 from apps.cotizador.models import SolicitudCotizacion
@@ -13,7 +16,7 @@ from .domain import (
     obtener_o_crear_conversacion,
     tomar_conversacion,
 )
-from .models import AuditoriaWhatsApp, ConversacionWhatsApp, MensajeWhatsApp
+from .models import AuditoriaWhatsApp, ConversacionWhatsApp, MensajeWhatsApp, WhatsAppChannel
 
 
 class ConversationStateTests(TestCase):
@@ -77,3 +80,31 @@ class ConversationStateTests(TestCase):
                 direccion=MensajeWhatsApp.ENTRANTE,
                 origen=MensajeWhatsApp.ORIGEN_CLIENTE,
             )
+
+
+@skipUnless(connection.vendor == "postgresql", "PostgreSQL-only row-lock regression tests.")
+@skipUnlessDBFeature("has_select_for_update_of")
+class PostgreSQLLeadLockRegressionTests(TransactionTestCase):
+    def _assert_lead_only_lock(self, lead):
+        with CaptureQueriesContext(connection) as captured:
+            conversation = obtener_o_crear_conversacion(lead)
+        lock_sql = " ".join(
+            query["sql"] for query in captured.captured_queries if "FOR UPDATE" in query["sql"]
+        )
+        self.assertIn('FOR UPDATE OF "leads_lead"', lock_sql)
+        return conversation
+
+    def test_nullable_channel_does_not_expand_for_update_lock(self):
+        cliente = Cliente.objects.create(telefono="pg-lock-null")
+        lead = Lead.objects.create(cliente=cliente, whatsapp_channel=None)
+        conversation = self._assert_lead_only_lock(lead)
+        self.assertIsNone(conversation.channel_id)
+
+    def test_related_channel_keeps_lead_only_lock(self):
+        cliente = Cliente.objects.create(telefono="pg-lock-channel")
+        channel = WhatsAppChannel.objects.create(
+            nombre="PG lock channel", phone_number_id="pg-lock-channel", activo=True
+        )
+        lead = Lead.objects.create(cliente=cliente, whatsapp_channel=channel)
+        conversation = self._assert_lead_only_lock(lead)
+        self.assertEqual(conversation.channel_id, channel.id)

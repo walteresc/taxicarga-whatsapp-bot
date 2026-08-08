@@ -25,7 +25,7 @@ INSTRUCCIONES_RETORNO_BOT = {
 
 def obtener_o_crear_conversacion(lead):
     with transaction.atomic():
-        lead = Lead.objects.select_for_update().select_related("cliente", "whatsapp_channel").get(pk=lead.pk)
+        lead = Lead.objects.select_for_update(of=("self",)).select_related("cliente", "whatsapp_channel").get(pk=lead.pk)
         conversacion = (
             ConversacionWhatsApp.objects.select_for_update()
             .filter(lead=lead)
@@ -169,7 +169,7 @@ def cerrar_conversacion(conversacion_id, actor):
 
 def _bloquear_conversacion(conversacion_id):
     return (
-        ConversacionWhatsApp.objects.select_for_update()
+        ConversacionWhatsApp.objects.select_for_update(of=("self",))
         .select_related("lead")
         .get(pk=conversacion_id)
     )
