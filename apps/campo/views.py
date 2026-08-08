@@ -1111,6 +1111,21 @@ def pizarra(request):
                     total_activas += 1
                     if cell.get('servicio_estado') == 'pendiente':
                         total_pendientes += 1
+
+            # Calcular indicadores de criticidad
+            saldo_pendiente = Decimal('0')
+            sin_precio = False
+            for ps in getattr(eq, 'servicios_list', []):
+                servicio = ps.servicio if hasattr(ps, 'servicio') else None
+                if servicio:
+                    if not servicio.precio:
+                        sin_precio = True
+                    else:
+                        total_pagado = getattr(servicio, 'total_pagado', Decimal('0')) or Decimal('0')
+                        saldo = (servicio.precio or Decimal('0')) - total_pagado
+                        if saldo > 0:
+                            saldo_pendiente += saldo
+
             equipos_list.append({
                 'id': eq.id,
                 'placa': eq.vehiculo.placa,
@@ -1125,6 +1140,8 @@ def pizarra(request):
                 'observaciones': eq.observaciones or "",
                 'horas': cells,
                 'n_servicios': len(getattr(eq, 'servicios_list', [])),
+                'saldo_pendiente': str(saldo_pendiente) if saldo_pendiente > 0 else None,
+                'sin_precio': sin_precio,
             })
 
         dias_data.append({

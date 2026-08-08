@@ -1,29 +1,131 @@
 {% extends "dashboard/base.html" %}
 {% block title %}Mi Programación{% endblock %}
+{% block extra_head %}
+<style>
+  .prog-container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+  .prog-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 28px; }
+  .prog-header h1 { font-size: 28px; font-weight: 700; color: #1e293b; margin: 0; }
+  .prog-timeline { display: flex; flex-direction: column; gap: 16px; }
+  .prog-item {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 20px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    transition: all 0.2s ease;
+  }
+  .prog-item:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    border-color: #cbd5e1;
+  }
+  .prog-time-block {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 100px;
+    padding: 12px;
+    background: linear-gradient(135deg, #2563eb, #7c3aed);
+    border-radius: 8px;
+    color: #fff;
+  }
+  .prog-time-block .time { font-size: 18px; font-weight: 700; }
+  .prog-time-block .period { font-size: 12px; font-weight: 600; opacity: 0.9; }
+  .prog-info { flex: 1; min-width: 0; }
+  .prog-codigo { font-size: 16px; font-weight: 700; color: #1e293b; }
+  .prog-details {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+    margin-top: 12px;
+    font-size: 13px;
+    color: #64748b;
+  }
+  .prog-detail { display: flex; align-items: center; gap: 8px; }
+  .prog-detail-label { font-weight: 600; }
+  .prog-status {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    background: #e0e7ff;
+    color: #3730a3;
+  }
+  .prog-empty {
+    padding: 60px 24px;
+    text-align: center;
+  }
+  .prog-empty-icon { font-size: 48px; margin-bottom: 16px; opacity: 0.2; }
+  .prog-empty-text { color: #64748b; font-size: 14px; }
+  @media (max-width: 650px) {
+    .prog-container { padding: 16px; }
+    .prog-item {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+    .prog-time-block { width: 100%; flex-direction: row; justify-content: space-between; }
+    .prog-details { grid-template-columns: 1fr; }
+  }
+</style>
+{% endblock %}
 {% block content %}
 <div id="app">
   <v-app>
-    <v-container class="py-4">
-      <div class="text-h6 font-weight-bold mb-3">Mi Programación</div>
-      <v-card>
-        <v-list density="compact">
-          {% for prog in programaciones %}
-          <v-list-item>
-            <v-list-item-title>
-              {% if prog.servicio %}{{ prog.servicio.codigo }}{% else %}Programación{% endif %}
-            </v-list-item-title>
-            <v-list-item-subtitle>
-              {{ prog.fecha }} {{ prog.hora_inicio }} - {{ prog.hora_fin|default:"" }}
-            </v-list-item-subtitle>
-          </v-list-item>
-          {% empty %}
-          <v-list-item>
-            <v-list-item-title class="text-medium-emphasis">No hay programaciones asignadas</v-list-item-title>
-          </v-list-item>
-          {% endfor %}
-        </v-list>
-      </v-card>
-    </v-container>
+    <div class="prog-container">
+      <div class="prog-header">
+        <h1>📅 Mi Programación</h1>
+      </div>
+      {% if programaciones %}
+      <div class="prog-timeline">
+        {% for prog in programaciones %}
+        <div class="prog-item">
+          <div class="prog-time-block">
+            <span class="time">{{ prog.hora_inicio|time:"H:i"|default:"--:--" }}</span>
+            <span class="period">{{ prog.fecha|date:"d/m" }}</span>
+          </div>
+          <div class="prog-info">
+            <div class="prog-codigo">
+              {% if prog.servicio %}
+                🚗 {{ prog.servicio.codigo }}
+              {% else %}
+                📋 Programación
+              {% endif %}
+            </div>
+            <div class="prog-details">
+              {% if prog.hora_fin %}
+              <div class="prog-detail">
+                <span class="prog-detail-label">Duración:</span>
+                <span>{{ prog.hora_inicio|time:"H:i" }} - {{ prog.hora_fin|time:"H:i" }}</span>
+              </div>
+              {% endif %}
+              {% if prog.servicio %}
+              <div class="prog-detail">
+                <span class="prog-detail-label">Cliente:</span>
+                <span>{{ prog.servicio.cliente.nombre|default:prog.servicio.cliente.telefono }}</span>
+              </div>
+              <div class="prog-detail">
+                <span class="prog-detail-label">Ruta:</span>
+                <span>{{ prog.servicio.direccion_origen|truncatechars:25 }}</span>
+              </div>
+              {% endif %}
+            </div>
+          </div>
+          <div class="prog-status">
+            {{ prog.get_estado_display }}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="prog-empty">
+        <div class="prog-empty-icon">📭</div>
+        <div class="prog-empty-text">No hay programaciones asignadas. ¡Tu calendario está despejado!</div>
+      </div>
+      {% endif %}
+    </div>
   </v-app>
 </div>
 {% endblock %}

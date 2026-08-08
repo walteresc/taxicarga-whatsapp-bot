@@ -1,27 +1,142 @@
 {% extends "dashboard/base.html" %}
 {% block title %}Mis Servicios{% endblock %}
+{% block extra_head %}
+<style>
+  .servicios-container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+  .servicios-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 28px; }
+  .servicios-header h1 { font-size: 28px; font-weight: 700; color: #1e293b; margin: 0; }
+  .servicios-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
+  .servicio-card {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 20px;
+    transition: all 0.2s ease;
+    text-decoration: none;
+    color: inherit;
+    display: flex;
+    flex-direction: column;
+    cursor: pointer;
+  }
+  .servicio-card:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    border-color: #cbd5e1;
+    transform: translateY(-2px);
+  }
+  .servicio-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; }
+  .servicio-codigo {
+    font-size: 16px;
+    font-weight: 700;
+    color: #1e293b;
+  }
+  .servicio-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .servicio-badge.pendiente { background: #fef3c7; color: #92400e; }
+  .servicio-badge.programado { background: #dbeafe; color: #1e40af; }
+  .servicio-badge.asignado { background: #d1fae5; color: #065f46; }
+  .servicio-badge.en_ruta { background: #e0e7ff; color: #3730a3; }
+  .servicio-badge.finalizado { background: #dbeafe; color: #0c4a6e; }
+  .servicio-badge.cancelado { background: #fee2e2; color: #991b1b; }
+  .servicio-info {
+    display: grid;
+    gap: 12px;
+    margin-bottom: 16px;
+    flex: 1;
+  }
+  .servicio-info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .servicio-info-label {
+    font-size: 12px;
+    color: #64748b;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .servicio-info-value {
+    font-size: 14px;
+    color: #334155;
+    font-weight: 600;
+  }
+  .servicio-cliente { font-size: 14px; color: #64748b; margin-bottom: 12px; }
+  .servicio-ruta { font-size: 13px; color: #64748b; }
+  .servicio-progress {
+    width: 100%;
+    height: 6px;
+    background: #e2e8f0;
+    border-radius: 3px;
+    overflow: hidden;
+    margin-top: 12px;
+  }
+  .servicio-progress-bar { height: 100%; background: linear-gradient(90deg, #2563eb, #1d4ed8); }
+  .servicios-empty {
+    grid-column: 1 / -1;
+    padding: 60px 24px;
+    text-align: center;
+  }
+  .servicios-empty-icon { font-size: 48px; margin-bottom: 16px; opacity: 0.2; }
+  .servicios-empty-text { color: #64748b; font-size: 14px; }
+  @media (max-width: 650px) {
+    .servicios-container { padding: 16px; }
+    .servicios-grid { grid-template-columns: 1fr; }
+  }
+</style>
+{% endblock %}
 {% block content %}
 <div id="app">
   <v-app>
-    <v-container class="py-4">
-      <div class="text-h6 font-weight-bold mb-3">Mis Servicios</div>
-      <v-card>
-        <v-list density="compact">
-          {% for servicio in servicios %}
-          <v-list-item>
-            <v-list-item-title>
-              <a href="{% url 'detalle-servicio' servicio.pk %}" class="text-decoration-none">{{ servicio.codigo }}</a>
-            </v-list-item-title>
-            <v-list-item-subtitle>{{ servicio.estado }}</v-list-item-subtitle>
-          </v-list-item>
-          {% empty %}
-          <v-list-item>
-            <v-list-item-title class="text-medium-emphasis">No hay servicios asignados</v-list-item-title>
-          </v-list-item>
-          {% endfor %}
-        </v-list>
-      </v-card>
-    </v-container>
+    <div class="servicios-container">
+      <div class="servicios-header">
+        <h1>🚗 Mis Servicios</h1>
+      </div>
+      {% if servicios %}
+      <div class="servicios-grid">
+        {% for servicio in servicios %}
+        <a href="{% url 'detalle-servicio' servicio.pk %}" class="servicio-card">
+          <div class="servicio-header">
+            <div class="servicio-codigo">{{ servicio.codigo }}</div>
+            <span class="servicio-badge {{ servicio.estado }}">{{ servicio.get_estado_display }}</span>
+          </div>
+          <div class="servicio-cliente">📍 {{ servicio.cliente.nombre|default:servicio.cliente.telefono }}</div>
+          <div class="servicio-info">
+            <div class="servicio-info-row">
+              <span class="servicio-info-label">Ruta</span>
+              <span class="servicio-info-value">{{ servicio.direccion_origen|default:'?' }} → {{ servicio.direccion_destino|default:'?' }}</span>
+            </div>
+            {% if servicio.fecha_servicio %}
+            <div class="servicio-info-row">
+              <span class="servicio-info-label">📅 Fecha</span>
+              <span class="servicio-info-value">{{ servicio.fecha_servicio|date:'d/m/Y' }}</span>
+            </div>
+            {% endif %}
+            {% if servicio.precio %}
+            <div class="servicio-info-row">
+              <span class="servicio-info-label">💰 Precio</span>
+              <span class="servicio-info-value">S/ {{ servicio.precio }}</span>
+            </div>
+            {% endif %}
+          </div>
+          <div class="servicio-progress">
+            <div class="servicio-progress-bar" style="width: 65%;"></div>
+          </div>
+        </a>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="servicios-empty">
+        <div class="servicios-empty-icon">🎯</div>
+        <div class="servicios-empty-text">No hay servicios asignados. ¡Espera a que se asignen nuevos servicios!</div>
+      </div>
+      {% endif %}
+    </div>
   </v-app>
 </div>
 {% endblock %}

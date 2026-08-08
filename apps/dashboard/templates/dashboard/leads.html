@@ -2,17 +2,88 @@
 {% block content %}
 {{ dashboard_data|json_script:"dashboard-data" }}
 <style>
-  .kanban-column .v-card { height: 100%; }
+  .kanban-column .v-card {
+    height: 100%;
+    border: 1px solid #e2e8f0 !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04) !important;
+    transition: all 0.2s ease;
+  }
+  .kanban-column .v-card:hover {
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08) !important;
+    border-color: #cbd5e1 !important;
+  }
   .kanban-column .v-list { max-height: 72vh; overflow-y: auto; }
-  .kanban-column .v-card-title { border-radius: 8px 8px 0 0; padding: 12px 16px; }
-  .metric-surface { border-left: 3px solid; transition: transform .15s; }
-  .metric-surface:hover { transform: translateY(-2px); }
-  .lead-card { cursor: pointer; }
-  .lead-card:hover { background: #f5f5f5; }
-  .lead-card.selected { background: #e0f2fe !important; border-left: 3px solid #0284c7; }
-  .lead-card.selected:hover { background: #bae6fd !important; }
-  .detail-label { font-size: .75rem; color: #64748b; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
-  .detail-value { font-size: .9rem; color: #1e293b; }
+  .kanban-column .v-card-title {
+    border-radius: 8px 8px 0 0;
+    padding: 14px 16px !important;
+    font-weight: 700 !important;
+    font-size: 14px !important;
+  }
+  .metric-surface {
+    border: 1px solid #e2e8f0 !important;
+    border-left: 4px solid !important;
+    transition: all 0.2s ease;
+    background: #fff !important;
+  }
+  .metric-surface:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08) !important;
+    border-color: #cbd5e1 !important;
+  }
+  .lead-card {
+    cursor: pointer;
+    transition: all 0.15s ease;
+    border-left: 3px solid transparent;
+  }
+  .lead-card:hover {
+    background: #f8fafc !important;
+    border-left-color: #cbd5e1;
+  }
+  .lead-card.selected {
+    background: #dbeafe !important;
+    border-left-color: #2563eb !important;
+    font-weight: 600;
+  }
+  .lead-card.selected:hover {
+    background: #bae6fd !important;
+  }
+  .detail-label {
+    font-size: 0.75rem;
+    color: #64748b;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .detail-value {
+    font-size: 0.95rem;
+    color: #1e293b;
+    font-weight: 500;
+  }
+
+  .toolbar-menu { display: none; }
+  @media (max-width: 599px) {
+    .toolbar-menu { display: flex; }
+    .toolbar-buttons { display: none; }
+  }
+  @media (min-width: 600px) {
+    .toolbar-menu { display: none !important; }
+    .toolbar-buttons { display: flex; }
+  }
+
+  .kanban-board {
+    overflow-x: auto;
+    padding-bottom: 12px;
+  }
+  @media (max-width: 899px) {
+    .kanban-board {
+      display: flex;
+      overflow-x: auto;
+    }
+    .kanban-column {
+      min-width: 280px;
+      flex: 0 0 auto;
+    }
+  }
 </style>
 <div id="dashboard-app" v-cloak>
   <div class="sr-only chat-timeline" aria-hidden="true">Datos para cotizar · Checklist comercial · Falta pedir · Datos comerciales · Guardar datos comerciales · Recalcular precio recomendado · Cierre comercial · Cerrar venta · Marcar perdido · Ingresos · Ticket promedio · Conversion · Nuevo lead · Buscar lead · Exportar · Proximo seguimiento · Respuestas rapidas · Pedir fotos · Administración · Módulo en construcción</div>
@@ -22,9 +93,11 @@
         {# --- FILA 1: Toolbar compacto --- #}
         <v-row>
           <v-col cols="12">
-            <div class="d-flex align-center ga-2 flex-wrap justify-space-between" style="min-height:36px;">
+            <div class="d-flex align-center ga-2 justify-space-between" style="min-height:36px;">
               <v-btn color="teal-lighten-4" variant="flat" prepend-icon="mdi-plus" @click="newLeadDialog = true" size="small">Nuevo lead</v-btn>
-              <div class="d-flex align-center ga-2 flex-wrap">
+
+              {# Botones desktop #}
+              <div class="toolbar-buttons d-flex align-center ga-2 flex-wrap">
                 <template v-if="data.channel_id">
                   <v-btn
                     :color="overrideToolbarModo === 'force_bot' ? 'teal-darken-2' : ''"
@@ -65,22 +138,89 @@
                 </template>
                 <v-btn href="/admin/" variant="tonal" color="white" prepend-icon="mdi-shield-account-outline" size="small">Admin</v-btn>
               </div>
+
+              {# Menu móvil #}
+              <v-menu class="toolbar-menu" v-if="data.channel_id">
+                <template v-slot:activator="{ props }">
+                  <v-btn icon="mdi-menu" variant="text" v-bind="props" size="small"></v-btn>
+                </template>
+                <v-list density="compact">
+                  <v-list-item @click="toggleOverride('force_bot')" :active="overrideToolbarModo === 'force_bot'" title="Bot automático">
+                    <template v-slot:prepend>
+                      <v-icon icon="mdi-robot"></v-icon>
+                    </template>
+                  </v-list-item>
+                  <v-list-item @click="toggleOverride('force_mixto')" :active="overrideToolbarModo === 'force_mixto'" title="Bot mixto">
+                    <template v-slot:prepend>
+                      <v-icon icon="mdi-robot-happy"></v-icon>
+                    </template>
+                  </v-list-item>
+                  <v-list-item @click="setManual" :active="overrideToolbarModo === null" title="Modo manual">
+                    <template v-slot:prepend>
+                      <v-icon icon="mdi-account"></v-icon>
+                    </template>
+                  </v-list-item>
+                  <v-divider class="my-2"></v-divider>
+                  <v-list-item href="/admin/" title="Admin">
+                    <template v-slot:prepend>
+                      <v-icon icon="mdi-shield-account-outline"></v-icon>
+                    </template>
+                  </v-list-item>
+                </v-list>
+              </v-menu>
+              <v-menu class="toolbar-menu" v-else>
+                <template v-slot:activator="{ props }">
+                  <v-btn icon="mdi-menu" variant="text" v-bind="props" size="small"></v-btn>
+                </template>
+                <v-list density="compact">
+                  <v-list-item disabled title="Bot automático">
+                    <template v-slot:prepend>
+                      <v-icon icon="mdi-robot"></v-icon>
+                    </template>
+                  </v-list-item>
+                  <v-list-item disabled title="Bot mixto">
+                    <template v-slot:prepend>
+                      <v-icon icon="mdi-robot-happy"></v-icon>
+                    </template>
+                  </v-list-item>
+                  <v-list-item disabled title="Modo manual">
+                    <template v-slot:prepend>
+                      <v-icon icon="mdi-account"></v-icon>
+                    </template>
+                  </v-list-item>
+                  <v-divider class="my-2"></v-divider>
+                  <v-list-item href="/admin/" title="Admin">
+                    <template v-slot:prepend>
+                      <v-icon icon="mdi-shield-account-outline"></v-icon>
+                    </template>
+                  </v-list-item>
+                </v-list>
+              </v-menu>
             </div>
           </v-col>
         </v-row>
 
-        {# --- FILA 2: Métricas compactas --- #}
+        {# --- FILA 2: Métricas compactas + Auto-refresh indicator --- #}
+        <v-row class="mt-2 align-center">
+          <v-col cols="12" class="d-flex justify-space-between align-center pb-0">
+            <div></div>
+            <div v-if="lastRefresh" class="text-caption text-medium-emphasis" style="color: #94a3b8;">
+              <span class="mdi mdi-sync" style="font-size: 12px; margin-right: 4px;"></span>
+              Actualizado hace segundos
+            </div>
+          </v-col>
+        </v-row>
         <v-row class="mt-2">
-          <v-col v-for="metric in metrics" :key="metric.key" cols="6" sm="4" md="2">
+          <v-col v-for="metric in metrics" :key="metric.key" cols="6" xs="6" sm="4" md="2">
             <v-sheet class="metric-surface pa-3" rounded="lg" border :style="{ borderLeftColor: metric.borderColor }">
-              <div class="d-flex align-center justify-space-between">
-                <div>
-                  <div class="text-caption text-medium-emphasis">[[ metric.label ]]</div>
+              <div class="d-flex align-center justify-space-between gap-2">
+                <div style="min-width: 0;">
+                  <div class="text-caption text-medium-emphasis" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">[[ metric.label ]]</div>
                   <div class="text-h5 font-weight-bold mt-1">[[ metric.value ]]</div>
                   <v-progress-linear :model-value="metric.progressValue" height="4" :color="metric.progressColor" class="mt-2" rounded></v-progress-linear>
                 </div>
-                <v-avatar :color="metric.color" variant="tonal" rounded="lg">
-                  <v-icon :icon="metric.icon"></v-icon>
+                <v-avatar :color="metric.color" variant="tonal" rounded="lg" size="small">
+                  <v-icon :icon="metric.icon" size="small"></v-icon>
                 </v-avatar>
               </div>
             </v-sheet>
@@ -88,9 +228,9 @@
         </v-row>
 
         {# --- FILA 3: Kanban de Leads --- #}
-        <v-row class="mt-4 kanban-board">
-          <v-col v-for="group in data.groups" :key="group.key" cols="12" md="3" class="kanban-column">
-            <v-card>
+        <v-row class="mt-4 kanban-board" style="flex-wrap: nowrap; overflow-x: auto;">
+          <v-col v-for="group in data.groups" :key="group.key" cols="12" xs="12" sm="6" md="auto" class="kanban-column" style="flex: 0 0 auto; min-width: 280px; max-width: 100%;">
+            <v-card style="height: 100%;">
               <v-card-title class="d-flex align-center ga-2" :style="{ backgroundColor: cardTitleBg(group.key) }">
                 <v-icon :color="group.color">[[ group.icon ]]</v-icon>
                 <span class="text-subtitle-2 font-weight-bold">[[ group.label ]]</span>
@@ -273,6 +413,8 @@
         overrideGuardadoChip: false,
         selectedLead: null,
         leadDetailDialog: false,
+        autoRefreshInterval: null,
+        lastRefresh: null,
       };
     },
     mounted() {
@@ -305,6 +447,13 @@
         { key:'cerrados',   label:'Cerrados',       value:stats.cerrados,   color:'grey lighten-1',  icon:'mdi-archive',              borderColor:'#bdbdbd', progressValue:(stats.cerrados/total)*100,   progressColor:'grey' },
         { key:'perdidos',   label:'Perdidos',       value:stats.perdidos,   color:'red lighten-1',   icon:'mdi-close-circle',         borderColor:'#ef5350', progressValue:(stats.perdidos/total)*100,   progressColor:'red' },
       ] : [];
+
+      this.initAutoRefresh();
+    },
+    beforeUnmount() {
+      if (this.autoRefreshInterval) {
+        clearInterval(this.autoRefreshInterval);
+      }
     },
     watch: {
       leadDetailDialog(val) {
@@ -401,6 +550,39 @@
           asignados:  '#e8f5e9',
           cerrados:   '#f5f5f5'
         }[key] || '#fff';
+      },
+      initAutoRefresh() {
+        this.autoRefreshInterval = setInterval(function() {
+          this.refreshMetrics();
+        }.bind(this), 30000);
+      },
+      refreshMetrics() {
+        const url = new URL(window.location);
+        const params = new URLSearchParams(url.search);
+        fetch('/api/dashboard/stats/?' + params.toString(), {
+          headers: {'Accept': 'application/json'}
+        })
+        .then(r => r.json())
+        .then(data => {
+          if (data.stats) {
+            const stats = data.stats;
+            const total = ['pendientes','cotizados','asignados','cerrados','perdidos']
+              .reduce(function(s, k) { return s + (typeof stats[k] === 'number' ? stats[k] : 0); }, 0);
+            if (total > 0) {
+              this.metrics = [
+                { key:'pendientes', label:'Pendientes',     value:stats.pendientes, color:'teal lighten-1', icon:'mdi-calendar-clock',        borderColor:'#26a69a', progressValue:(stats.pendientes/total)*100, progressColor:'teal' },
+                { key:'cotizados',  label:'Cotizados',      value:stats.cotizados,  color:'blue lighten-1',  icon:'mdi-file-document-check',  borderColor:'#42a5f5', progressValue:(stats.cotizados/total)*100,  progressColor:'blue' },
+                { key:'asignados',  label:'Asignados',      value:stats.asignados,  color:'green lighten-1', icon:'mdi-account-check',        borderColor:'#66bb6a', progressValue:(stats.asignados/total)*100,  progressColor:'green' },
+                { key:'cerrados',   label:'Cerrados',       value:stats.cerrados,   color:'grey lighten-1',  icon:'mdi-archive',              borderColor:'#bdbdbd', progressValue:(stats.cerrados/total)*100,   progressColor:'grey' },
+                { key:'perdidos',   label:'Perdidos',       value:stats.perdidos,   color:'red lighten-1',   icon:'mdi-close-circle',         borderColor:'#ef5350', progressValue:(stats.perdidos/total)*100,   progressColor:'red' },
+              ];
+              this.lastRefresh = new Date();
+            }
+          }
+        })
+        .catch(function(e) {
+          console.error('Auto-refresh failed:', e);
+        });
       }
     }
   }).use(createVuetify()).mount('#dashboard-app');

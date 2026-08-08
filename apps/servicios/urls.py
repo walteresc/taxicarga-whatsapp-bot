@@ -11,4 +11,6 @@ urlpatterns = [
     path("<int:pk>/finalizar/", views.finalizar_reserva, name="dashboard-servicios-finalizar"),
     path("<int:pk>/cancelar/", views.cancelar_reserva, name="dashboard-servicios-cancelar"),
     path("<int:pk>/pago/", views.registrar_pago, name="dashboard-servicios-pago"),
+    path("<int:pk>/ajax/estado/", views.cambiar_estado_ajax, name="dashboard-servicios-estado-ajax"),
+    path("<int:pk>/ajax/pago/", views.registrar_pago_ajax, name="dashboard-servicios-pago-ajax"),
 ]

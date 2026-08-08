@@ -1072,6 +1072,37 @@ def _default_quote_message(lead, price):
     )
 
 
+@login_required
+def stats_api(request):
+    """API endpoint para auto-refresh de estadísticas."""
+    channel_id = request.GET.get("channel")
+    stats = _stats()
+
+    # Filtrar por canal si se especifica
+    if channel_id:
+        try:
+            channel = WhatsAppChannel.objects.get(id=channel_id, activo=True)
+            channel_stats = dict(
+                Lead.objects.filter(whatsapp_channel=channel)
+                .values_list("estado")
+                .annotate(total=Count("id"))
+            )
+            stats = {
+                "pendientes": sum(
+                    channel_stats.get(status, 0)
+                    for status in [Lead.NUEVO, Lead.EN_CONVERSACION, Lead.DATOS_INCOMPLETOS]
+                ),
+                "cotizados": channel_stats.get(Lead.COTIZADO, 0),
+                "asignados": channel_stats.get(Lead.ASIGNADO, 0),
+                "cerrados": channel_stats.get(Lead.CERRADO, 0),
+                "perdidos": channel_stats.get(Lead.PERDIDO, 0),
+            }
+        except WhatsAppChannel.DoesNotExist:
+            pass
+
+    return JsonResponse({"stats": stats})
+
+
 def _decimal_or_none(value):
     try:
         return Decimal(str(value).strip())

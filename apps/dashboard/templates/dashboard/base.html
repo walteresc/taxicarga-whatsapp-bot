@@ -79,6 +79,29 @@
       top: 0;
       align-self: flex-start;
       height: 100vh;
+      transition: width 0.3s ease;
+      overflow: hidden;
+    }
+    .sidebar.collapsed {
+      width: 60px;
+      min-width: 60px;
+    }
+    .sidebar-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255,255,255,0.08);
+      border: none;
+      color: #c7d4d8;
+      cursor: pointer;
+      font-size: 18px;
+      padding: 12px;
+      transition: all 0.2s;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    .sidebar-toggle:hover {
+      background: rgba(255,255,255,0.12);
+      color: #e0edf2;
     }
     .sidebar-nav {
       flex: 1;
@@ -91,6 +114,13 @@
       color: #6d8a94;
       padding: 14px 18px 6px;
       font-weight: 700;
+      transition: opacity 0.3s ease;
+    }
+    .sidebar.collapsed .sidebar-section-label {
+      opacity: 0;
+      height: 0;
+      padding: 0;
+      margin: 0;
     }
     .sidebar-link {
       display: flex;
@@ -103,6 +133,7 @@
       font-weight: 500;
       transition: background .12s, color .12s;
       border-left: 3px solid transparent;
+      white-space: nowrap;
     }
     .sidebar-link:hover {
       background: rgba(255,255,255,.06);
@@ -113,7 +144,22 @@
       color: #e0edf2;
       border-left: 3px solid #26a69a;
     }
-    .sidebar-link .mdi { font-size: 18px; opacity: 0.85; width: 24px; text-align: center; }
+    .sidebar-link .mdi { font-size: 18px; opacity: 0.85; width: 24px; text-align: center; flex-shrink: 0; }
+    .sidebar-link span:last-child {
+      transition: opacity 0.3s ease;
+    }
+    .sidebar.collapsed .sidebar-link {
+      padding: 12px 8px;
+      justify-content: center;
+      border-left: none;
+    }
+    .sidebar.collapsed .sidebar-link span:last-child {
+      display: none;
+    }
+    .sidebar.collapsed .sidebar-link .mdi {
+      font-size: 22px;
+      width: auto;
+    }
     .main-area {
       flex: 1;
       min-width: 0;
@@ -174,7 +220,8 @@
   </header>
 
   <div class="dashboard-layout">
-    <aside class="sidebar">  
+    <aside class="sidebar" id="sidebar">
+      <button class="sidebar-toggle" id="sidebar-toggle" title="Expandir/Contraer">☰</button>
       <nav class="sidebar-nav">
         <div class="sidebar-section-label">GENERAL</div>
         <a href="/dashboard/" class="sidebar-link {% if active_section == 'leads' %}sidebar-link-active{% endif %}"><span class="mdi mdi-view-dashboard-outline"></span><span>Dashboard</span></a>
@@ -259,6 +306,25 @@
         window.location = url.href;
       });
     }
+
+    // Sidebar toggle
+    var sidebar = document.getElementById('sidebar');
+    var toggleBtn = document.getElementById('sidebar-toggle');
+    var isCollapsed = localStorage.getItem('sidebar-collapsed') === 'true';
+
+    if (isCollapsed) {
+      sidebar.classList.add('collapsed');
+      toggleBtn.textContent = '⟩';
+    } else {
+      toggleBtn.textContent = '☰';
+    }
+
+    toggleBtn.addEventListener('click', function() {
+      sidebar.classList.toggle('collapsed');
+      isCollapsed = sidebar.classList.contains('collapsed');
+      localStorage.setItem('sidebar-collapsed', isCollapsed);
+      toggleBtn.textContent = isCollapsed ? '⟩' : '☰';
+    });
   </script>
 
   <script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"></script>

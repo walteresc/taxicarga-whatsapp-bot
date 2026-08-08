@@ -411,16 +411,80 @@
     updateEquipoButton();
   }
 
+  function validarEquipo() {
+    if (equipoState.mode === 'dia') return { valid: false, message: '' };
+    if (equipoState.mode === 'frecuentes') return { valid: !!equipoState.frecuenteId, message: '' };
+
+    var errors = [];
+    var warnings = [];
+    var fecha = eqFechaIso ? eqFechaIso.value : '';
+
+    if (equipoState.vehiculoId && equipoState.conductorId) {
+      // Validar si ya existe equipo con mismo vehículo + conductor en el mismo día
+      var existe = EQUIPOS_DIA.some(function (eq) {
+        return eq.fecha === fecha &&
+               eq.vehiculo_id === equipoState.vehiculoId &&
+               eq.conductor_id === equipoState.conductorId &&
+               eq.id !== equipoState.editingId;
+      });
+      if (existe) {
+        errors.push('⚠ Equipo con este vehículo y conductor ya existe hoy');
+      }
+
+      // Validar if conductor aparece en ayudantes
+      if (equipoState.conductorAyudanteIds.indexOf(equipoState.conductorId) !== -1) {
+        errors.push('❌ El conductor no puede ser su propio ayudante');
+      }
+
+      // Avisar si vehículo está en otro conductor
+      var otroCondVehículo = EQUIPOS_DIA.some(function (eq) {
+        return eq.fecha === fecha &&
+               eq.vehiculo_id === equipoState.vehiculoId &&
+               eq.conductor_id !== equipoState.conductorId &&
+               eq.id !== equipoState.editingId;
+      });
+      if (otroCondVehículo) {
+        warnings.push('⚠ Este vehículo tiene otro conductor el mismo día');
+      }
+
+      // Avisar si conductor tiene múltiples equipos
+      var multEquipo = EQUIPOS_DIA.filter(function (eq) {
+        return eq.fecha === fecha &&
+               eq.conductor_id === equipoState.conductorId &&
+               eq.id !== equipoState.editingId;
+      }).length > 0;
+      if (multEquipo) {
+        warnings.push('⚠ Este conductor tiene otro equipo el mismo día');
+      }
+    }
+
+    var message = '';
+    if (errors.length) {
+      message = errors.join(' · ');
+    } else if (warnings.length) {
+      message = warnings.join(' · ');
+    }
+
+    return {
+      valid: errors.length === 0 && (equipoState.formadoId || (equipoState.vehiculoId && equipoState.conductorId)),
+      message: message,
+      isWarning: errors.length === 0 && warnings.length > 0
+    };
+  }
+
   function updateEquipoButton() {
     if (!btnAgregarEquipo) return;
-    if (equipoState.mode === 'dia') {
-      btnAgregarEquipo.disabled = true;
-    } else if (equipoState.mode === 'frecuentes') {
-      btnAgregarEquipo.disabled = !equipoState.frecuenteId;
-    } else {
-      btnAgregarEquipo.disabled = equipoState.formadoId
-        ? false
-        : !(equipoState.vehiculoId && equipoState.conductorId);
+    var validation = validarEquipo();
+    btnAgregarEquipo.disabled = !validation.valid;
+
+    if (eqWarning) {
+      if (validation.message) {
+        eqWarning.textContent = validation.message;
+        eqWarning.className = 'form-warning' + (validation.isWarning ? ' form-warning-alert' : ' form-warning-error');
+        eqWarning.removeAttribute('hidden');
+      } else {
+        eqWarning.setAttribute('hidden', '');
+      }
     }
   }
 

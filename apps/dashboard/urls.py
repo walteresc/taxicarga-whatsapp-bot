@@ -18,6 +18,7 @@ from .views import (
     placeholder_canales,
     placeholder_reportes,
     placeholder_whatsapp,
+    stats_api,
     whatsapp_configuracion,
     whatsapp_conversaciones_base,
 )
@@ -35,6 +36,7 @@ urlpatterns = [
     path("leads/nuevo/", create_lead, name="dashboard-lead-create"),
     path("leads/<int:lead_id>/", dashboard_home, name="dashboard-lead-detail"),
     path("leads/<int:lead_id>/accion/", lead_action, name="dashboard-lead-action"),
+    path("api/stats/", stats_api, name="api-stats"),
     path("servicios/", include("apps.servicios.urls")),
     path("clientes/", include("apps.clientes.urls_dashboard")),
     path("pizarra/", pizarra, name="dashboard-pizarra"),

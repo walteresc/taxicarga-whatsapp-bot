@@ -91,13 +91,27 @@
             <th class="matrix-team th-equipo"
                 data-equipo-id="{{ eq.id }}"
                 data-fecha="{{ dia.fecha_iso }}"
-                data-n-servicios="{{ eq.n_servicios }}">
+                data-n-servicios="{{ eq.n_servicios }}"
+                title="Conductor: {{ eq.conductor }} | Servicios: {{ eq.n_servicios }}">
               <div class="eq-main">
                 <span class="eq-placa"><span class="mdi mdi-truck-outline"></span>{{ eq.placa }} | {{ eq.conductor }}</span>
               </div>
               {% if eq.ayudantes %}
               <div class="eq-ayudantes"><span class="eq-role">A</span>{{ eq.ayudantes }}</div>
               {% endif %}
+              <div class="eq-badges">
+                {% if eq.n_servicios == 0 %}
+                <span class="badge-equipo badge-disponible" title="Equipo disponible">✓</span>
+                {% else %}
+                <span class="badge-equipo badge-ocupado" title="{{ eq.n_servicios }} servicios">{{ eq.n_servicios }}</span>
+                {% endif %}
+                {% if eq.saldo_pendiente %}
+                <span class="badge-equipo badge-warning" title="⚠ S/{{ eq.saldo_pendiente }} pendiente">⚠</span>
+                {% endif %}
+                {% if eq.sin_precio %}
+                <span class="badge-equipo badge-critical" title="❌ Sin precio">✗</span>
+                {% endif %}
+              </div>
               {% if can_edit %}
               <div class="matrix-team-actions">
                 <button class="btn-edit-equipo" data-equipo-id="{{ eq.id }}" title="Editar equipo">

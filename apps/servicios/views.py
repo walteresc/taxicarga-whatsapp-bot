@@ -9,6 +9,7 @@ from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.views.decorators.http import require_http_methods
 
 from apps.dashboard.permissions import role_required
 from apps.clientes.models import Cliente
@@ -432,3 +433,98 @@ def buscar_clientes(request):
             "razon_social": c.razon_social,
         })
     return JsonResponse({"results": results})
+
+
+# ---------------------------------------------------------------------------
+# AJAX: Cambiar estado de reserva
+# ---------------------------------------------------------------------------
+
+@login_required
+@role_required("Administrador", "Supervisor", "Asesor de Ventas")
+@require_http_methods(["POST"])
+def cambiar_estado_ajax(request, pk):
+    try:
+        servicio = get_object_or_404(Servicio, pk=pk)
+        nuevo_estado = request.POST.get("estado", "").strip()
+
+        if nuevo_estado not in dict(ESTADOS_SERVICIO):
+            return JsonResponse({"status": "error", "message": "Estado inválido"}, status=400)
+
+        # Validar transiciones permitidas
+        if servicio.estado in (SERVICIO_FINALIZADO, SERVICIO_CANCELADO):
+            return JsonResponse(
+                {"status": "error", "message": "No se puede cambiar estado de reservas finalizadas o canceladas"},
+                status=409
+            )
+
+        servicio.estado = nuevo_estado
+        servicio.usuario_actualizacion = request.user
+        servicio.fecha_actualizacion_estado = timezone.now()
+        servicio.save(update_fields=["estado", "usuario_actualizacion", "fecha_actualizacion_estado"])
+
+        return JsonResponse({
+            "status": "ok",
+            "nuevo_estado": nuevo_estado,
+            "estado_display": servicio.get_estado_display(),
+        })
+    except Exception as e:
+        return JsonResponse({"status": "error", "message": str(e)}, status=500)
+
+
+# ---------------------------------------------------------------------------
+# AJAX: Registrar pago
+# ---------------------------------------------------------------------------
+
+@login_required
+@role_required("Administrador", "Supervisor", "Asesor de Ventas")
+@require_http_methods(["POST"])
+def registrar_pago_ajax(request, pk):
+    try:
+        servicio = get_object_or_404(Servicio, pk=pk)
+        monto_str = request.POST.get("monto", "").strip()
+        concepto = request.POST.get("concepto", "parcial").strip()
+        metodo = request.POST.get("metodo", "yape").strip()
+        observaciones = request.POST.get("observaciones", "").strip()
+
+        if not monto_str:
+            return JsonResponse({"status": "error", "message": "Monto requerido"}, status=400)
+
+        try:
+            monto = Decimal(monto_str)
+        except:
+            return JsonResponse({"status": "error", "message": "Monto inválido"}, status=400)
+
+        if monto <= 0:
+            return JsonResponse({"status": "error", "message": "Monto debe ser mayor a 0"}, status=400)
+
+        # Validar que no exceda saldo
+        total_pagado, saldo = _resumen_pagos(servicio)
+        if monto > saldo:
+            return JsonResponse(
+                {"status": "error", "message": f"Monto excede saldo ({saldo})"},
+                status=409
+            )
+
+        pago = PagoReserva.objects.create(
+            servicio=servicio,
+            concepto=concepto,
+            metodo_pago=metodo,
+            monto=monto,
+            fecha_pago=timezone.now(),
+            observaciones=observaciones,
+            usuario_registro=request.user,
+        )
+
+        # Recalcular
+        nuevo_total_pagado, nuevo_saldo = _resumen_pagos(servicio)
+
+        return JsonResponse({
+            "status": "ok",
+            "message": f"Pago de S/ {monto} registrado",
+            "monto": str(monto),
+            "total_pagado": str(nuevo_total_pagado),
+            "saldo_pendiente": str(nuevo_saldo),
+            "estado_pago": servicio.estado_pago,
+        })
+    except Exception as e:
+        return JsonResponse({"status": "error", "message": str(e)}, status=500)

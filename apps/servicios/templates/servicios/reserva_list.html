@@ -86,21 +86,23 @@
     <table id="tabla-reservas" style="width:100%;border-collapse:collapse;font-size:13px;">
       <thead style="background:rgba(0,0,0,0.02);">
         <tr>
+          <th style="font-size:10px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:0.06em;padding:9px 14px;white-space:nowrap;text-align:left;border-bottom:0.5px solid #E5E7EB;width:30px;"></th>
           <th style="font-size:10px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:0.06em;padding:9px 14px;white-space:nowrap;text-align:left;border-bottom:0.5px solid #E5E7EB;">Código</th>
           <th style="font-size:10px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:0.06em;padding:9px 14px;white-space:nowrap;text-align:left;border-bottom:0.5px solid #E5E7EB;">Cliente</th>
           <th style="font-size:10px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:0.06em;padding:9px 14px;white-space:nowrap;text-align:left;border-bottom:0.5px solid #E5E7EB;">Origen → Destino</th>
           <th style="font-size:10px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:0.06em;padding:9px 14px;white-space:nowrap;text-align:left;border-bottom:0.5px solid #E5E7EB;">Fecha</th>
           <th style="font-size:10px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:0.06em;padding:9px 14px;white-space:nowrap;text-align:right;border-bottom:0.5px solid #E5E7EB;">Precio</th>
-          <th style="font-size:10px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:0.06em;padding:9px 14px;white-space:nowrap;text-align:right;border-bottom:0.5px solid #E5E7EB;">Pagado</th>
           <th style="font-size:10px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:0.06em;padding:9px 14px;white-space:nowrap;text-align:right;border-bottom:0.5px solid #E5E7EB;">Saldo</th>
-          <th style="font-size:10px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:0.06em;padding:9px 14px;white-space:nowrap;text-align:left;border-bottom:0.5px solid #E5E7EB;">Pago</th>
           <th style="font-size:10px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:0.06em;padding:9px 14px;white-space:nowrap;text-align:left;border-bottom:0.5px solid #E5E7EB;">Estado</th>
           <th style="font-size:10px;font-weight:600;color:#6B7280;text-transform:uppercase;letter-spacing:0.06em;padding:9px 14px;white-space:nowrap;text-align:center;border-bottom:0.5px solid #E5E7EB;">Acciones</th>
         </tr>
       </thead>
       <tbody>
         {% for s in servicios %}
-        <tr style="transition:background 0.12s;">
+        <tr class="reserva-row" data-reserva-id="{{ s.pk }}" style="transition:background 0.12s;">
+          <td style="padding:6px 10px;border-bottom:0.5px solid #F3F4F6;text-align:center;cursor:pointer;">
+            <button class="toggle-expandible" type="button" style="background:none;border:none;cursor:pointer;color:#94a3b8;font-size:16px;">▶</button>
+          </td>
           <td style="padding:9px 14px;border-bottom:0.5px solid #F3F4F6;vertical-align:middle;">
             <a href="{% url 'dashboard-servicios-detail' s.pk %}" style="color:#4F46E5;font-weight:600;font-size:13px;white-space:nowrap;text-decoration:none;">{{ s.codigo }}</a>
           </td>
@@ -124,13 +126,6 @@
             {% endif %}
           </td>
           <td style="padding:9px 14px;border-bottom:0.5px solid #F3F4F6;vertical-align:middle;text-align:right;font-variant-numeric:tabular-nums;">
-            {% if s.total_pagado > 0 %}
-            <span style="font-size:13px;font-weight:600;color:#059669;">S/ {{ s.total_pagado|floatformat:2 }}</span>
-            {% else %}
-            <span style="color:#9CA3AF;">—</span>
-            {% endif %}
-          </td>
-          <td style="padding:9px 14px;border-bottom:0.5px solid #F3F4F6;vertical-align:middle;text-align:right;font-variant-numeric:tabular-nums;">
             {% if not s.precio %}
             <span style="color:#9CA3AF;">—</span>
             {% elif s.saldo_pendiente == 0 %}
@@ -139,17 +134,6 @@
             <span style="font-size:13px;font-weight:600;color:#D97706;">S/ {{ s.saldo_pendiente|floatformat:2 }}</span>
             {% else %}
             <span style="font-size:13px;font-weight:600;color:#DC2626;">S/ {{ s.saldo_pendiente|floatformat:2 }}</span>
-            {% endif %}
-          </td>
-          <td style="padding:9px 14px;border-bottom:0.5px solid #F3F4F6;vertical-align:middle;">
-            {% if s.estado_pago == 'pagado' %}
-            <span style="font-size:10px;font-weight:600;padding:3px 9px;border-radius:20px;background:#D1FAE5;color:#065F46;border:1px solid #6EE7B7;white-space:nowrap;">✓ Pagado</span>
-            {% elif s.estado_pago == 'amortizado' %}
-            <span style="font-size:10px;font-weight:600;padding:3px 9px;border-radius:20px;background:#DBEAFE;color:#1E40AF;border:1px solid #93C5FD;white-space:nowrap;">◑ Amortizado</span>
-            {% elif s.estado_pago == 'pendiente' %}
-            <span style="font-size:10px;font-weight:600;padding:3px 9px;border-radius:20px;background:#FEF3C7;color:#92400E;border:1px solid #FCD34D;white-space:nowrap;">⚠ Pendiente</span>
-            {% else %}
-            <span style="font-size:10px;font-weight:600;padding:3px 9px;border-radius:20px;background:#F3F4F6;color:#6B7280;border:1px solid #E5E7EB;white-space:nowrap;">— Sin precio</span>
             {% endif %}
           </td>
           <td style="padding:9px 14px;border-bottom:0.5px solid #F3F4F6;vertical-align:middle;">
@@ -186,9 +170,47 @@
             {% endif %}
           </td>
         </tr>
+        <tr class="reserva-expandible" data-reserva-id="{{ s.pk }}" style="display:none;">
+          <td colspan="9" style="padding:16px 14px;background:rgba(79,70,229,0.02);border-bottom:0.5px solid #F3F4F6;">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+              <div>
+                <div style="font-weight:600;color:#111827;margin-bottom:10px;font-size:13px;">Cambiar Estado</div>
+                <form class="form-cambiar-estado" data-reserva-id="{{ s.pk }}" style="display:flex;gap:8px;align-items:flex-end;">
+                  {% csrf_token %}
+                  <select name="estado" style="flex:1;padding:7px 12px;border:0.5px solid #D1D5DB;border-radius:6px;font-size:12px;outline:none;">
+                    <option value="">-- Seleccionar estado --</option>
+                    <option value="pendiente">Pendiente</option>
+                    <option value="programado">Programado</option>
+                    <option value="asignado">Asignado</option>
+                    <option value="en_ruta">En ruta</option>
+                    <option value="finalizado">Finalizado</option>
+                    <option value="cancelado">Cancelado</option>
+                  </select>
+                  <button type="submit" style="padding:7px 16px;background:#2563EB;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;">Cambiar</button>
+                  <span class="msg-estado" style="font-size:11px;color:#059669;"></span>
+                </form>
+              </div>
+              <div>
+                <div style="font-weight:600;color:#111827;margin-bottom:10px;font-size:13px;">Registrar Pago</div>
+                <form class="form-registrar-pago" data-reserva-id="{{ s.pk }}" style="display:flex;gap:8px;align-items:flex-end;">
+                  {% csrf_token %}
+                  <input type="number" name="monto" placeholder="Monto" step="0.01" style="width:100px;padding:7px 12px;border:0.5px solid #D1D5DB;border-radius:6px;font-size:12px;outline:none;">
+                  <select name="metodo" style="width:100px;padding:7px 12px;border:0.5px solid #D1D5DB;border-radius:6px;font-size:12px;outline:none;">
+                    <option value="yape">Yape</option>
+                    <option value="bcp_sos">BCP</option>
+                    <option value="efectivo">Efectivo</option>
+                    <option value="transferencia">Transferencia</option>
+                  </select>
+                  <button type="submit" style="padding:7px 16px;background:#059669;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;">Pagar</button>
+                  <span class="msg-pago" style="font-size:11px;color:#059669;"></span>
+                </form>
+              </div>
+            </div>
+          </td>
+        </tr>
         {% empty %}
         <tr>
-          <td colspan="10" style="text-align:center;padding:48px 16px;color:#94a3b8;">
+          <td colspan="9" style="text-align:center;padding:48px 16px;color:#94a3b8;">
             <div style="font-size:40px;margin-bottom:8px;opacity:.4;">
               <span class="mdi mdi-truck-check-outline"></span>
             </div>
@@ -228,26 +250,31 @@
 
 {% comment %}HOVER EN FILAS (inline style tag no soporta hover, usar style tag aparte){% endcomment %}
 <style>
-  #tabla-reservas tbody tr:hover td { background:rgba(0,0,0,0.02); }
+  #tabla-reservas tbody tr.reserva-row:hover td { background:rgba(0,0,0,0.02); }
   .action-icon-hover:hover { background:#F1F5F9; }
   @keyframes pulse-badge {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.3; }
   }
+  .toggle-expandible { font-size:12px;transition:transform 0.2s; }
+  .toggle-expandible.open { transform:rotate(90deg); }
+  .reserva-expandible { background:rgba(79,70,229,0.02); }
 </style>
 
 {% endblock %}
 {% block extra_scripts %}
 <script>
+'use strict';
 (function() {
-  const form = document.getElementById('filter-form');
-  if (!form) return;
+  const tabla = document.getElementById('tabla-reservas');
+  if (!tabla) return;
 
+  const filterForm = document.getElementById('filter-form');
   let submitTimer = null;
 
   function doSubmit() {
     clearTimeout(submitTimer);
-    form.submit();
+    filterForm.submit();
   }
 
   function debouncedSubmit(delay) {
@@ -255,19 +282,133 @@
     submitTimer = setTimeout(doSubmit, delay);
   }
 
-  // Text search: debounced auto-submit while typing (500ms)
-  const qInput = form.querySelector('[name="q"]');
-  if (qInput) {
-    qInput.addEventListener('input', function() {
-      debouncedSubmit(500);
+  if (filterForm) {
+    const qInput = filterForm.querySelector('[name="q"]');
+    if (qInput) {
+      qInput.addEventListener('input', function() {
+        debouncedSubmit(500);
+      });
+    }
+    filterForm.querySelectorAll('[name="estado"], [name="asignado"], [name="estado_pago"], [name="fecha_desde"], [name="fecha_hasta"]').forEach(function(el) {
+      el.addEventListener('change', function() {
+        clearTimeout(submitTimer);
+        doSubmit();
+      });
     });
   }
 
-  // Selects and date inputs: auto-submit on change
-  form.querySelectorAll('[name="estado"], [name="asignado"], [name="estado_pago"], [name="fecha_desde"], [name="fecha_hasta"]').forEach(function(el) {
-    el.addEventListener('change', function() {
-      clearTimeout(submitTimer);
-      doSubmit();
+  // Event delegation: toggle expandible
+  tabla.addEventListener('click', function(e) {
+    const btn = e.target.closest('.toggle-expandible');
+    if (!btn) return;
+
+    const row = btn.closest('.reserva-row');
+    const reservaId = row.dataset.reservaId;
+    const expandible = tabla.querySelector(`.reserva-expandible[data-reserva-id="${reservaId}"]`);
+
+    if (!expandible) return;
+
+    const isOpen = expandible.style.display !== 'none';
+    expandible.style.display = isOpen ? 'none' : 'table-row';
+    btn.classList.toggle('open', !isOpen);
+  });
+
+  // Event delegation: cambiar estado
+  tabla.addEventListener('submit', function(e) {
+    if (!e.target.classList.contains('form-cambiar-estado')) return;
+    e.preventDefault();
+
+    const form = e.target;
+    const reservaId = form.dataset.reservaId;
+    const estado = form.querySelector('[name="estado"]').value;
+    const msgEl = form.querySelector('.msg-estado');
+
+    if (!estado) {
+      msgEl.textContent = '⚠ Selecciona un estado';
+      msgEl.style.color = '#DC2626';
+      return;
+    }
+
+    const csrftoken = form.querySelector('[name="csrfmiddlewaretoken"]').value;
+    const formData = new FormData();
+    formData.append('estado', estado);
+    formData.append('csrfmiddlewaretoken', csrftoken);
+
+    msgEl.textContent = 'Guardando...';
+    msgEl.style.color = '#94a3b8';
+
+    fetch(`/dashboard/servicios/${reservaId}/ajax/estado/`, {
+      method: 'POST',
+      body: formData,
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.status === 'ok') {
+        msgEl.textContent = '✓ Estado actualizado';
+        msgEl.style.color = '#059669';
+        const row = tabla.querySelector(`.reserva-row[data-reserva-id="${reservaId}"]`);
+        if (row) {
+          setTimeout(() => location.reload(), 800);
+        }
+      } else {
+        msgEl.textContent = '✗ ' + (data.message || 'Error');
+        msgEl.style.color = '#DC2626';
+      }
+    })
+    .catch(err => {
+      msgEl.textContent = '✗ Error de conexión';
+      msgEl.style.color = '#DC2626';
+      console.error(err);
+    });
+  });
+
+  // Event delegation: registrar pago
+  tabla.addEventListener('submit', function(e) {
+    if (!e.target.classList.contains('form-registrar-pago')) return;
+    e.preventDefault();
+
+    const form = e.target;
+    const reservaId = form.dataset.reservaId;
+    const monto = form.querySelector('[name="monto"]').value;
+    const metodo = form.querySelector('[name="metodo"]').value;
+    const msgEl = form.querySelector('.msg-pago');
+
+    if (!monto || parseFloat(monto) <= 0) {
+      msgEl.textContent = '⚠ Ingresa monto válido';
+      msgEl.style.color = '#DC2626';
+      return;
+    }
+
+    const csrftoken = form.querySelector('[name="csrfmiddlewaretoken"]').value;
+    const formData = new FormData();
+    formData.append('monto', monto);
+    formData.append('metodo', metodo);
+    formData.append('concepto', 'parcial');
+    formData.append('csrfmiddlewaretoken', csrftoken);
+
+    msgEl.textContent = 'Guardando...';
+    msgEl.style.color = '#94a3b8';
+
+    fetch(`/dashboard/servicios/${reservaId}/ajax/pago/`, {
+      method: 'POST',
+      body: formData,
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (data.status === 'ok') {
+        msgEl.textContent = `✓ Pago registrado (Saldo: S/${data.saldo_pendiente})`;
+        msgEl.style.color = '#059669';
+        form.querySelector('[name="monto"]').value = '';
+        setTimeout(() => location.reload(), 800);
+      } else {
+        msgEl.textContent = '✗ ' + (data.message || 'Error');
+        msgEl.style.color = '#DC2626';
+      }
+    })
+    .catch(err => {
+      msgEl.textContent = '✗ Error de conexión';
+      msgEl.style.color = '#DC2626';
+      console.error(err);
     });
   });
 })();
