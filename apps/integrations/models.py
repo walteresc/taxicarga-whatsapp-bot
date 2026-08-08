@@ -347,7 +347,12 @@ class ExternalMessageMapping(models.Model):
 
     class Meta:
         constraints = [
-            models.UniqueConstraint(fields=["provider", "account_scope", "external_id"], condition=models.Q(external_id__isnull=False) & ~models.Q(external_id=""), name="int_ext_message_uniq")
+            models.UniqueConstraint(fields=["provider", "account_scope", "external_id"], condition=models.Q(external_id__isnull=False) & ~models.Q(external_id=""), name="int_ext_message_uniq"),
+            models.UniqueConstraint(
+                fields=["provider", "account_scope", "whatsapp_message"],
+                condition=models.Q(whatsapp_message__isnull=False),
+                name="int_msg_local_provider_uniq",
+            ),
         ]
 
 

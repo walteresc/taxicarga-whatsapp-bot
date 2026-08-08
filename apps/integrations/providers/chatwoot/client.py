@@ -73,13 +73,17 @@ class ChatwootClient:
     def headers(self):
         return {"api_access_token": self.config.access_token, "Content-Type": "application/json"}
 
-    def _request(self, method, endpoint, *, json=None):
+    def _request(self, method, endpoint, *, json=None, params=None):
         url = f"{self.config.base_url}{endpoint}"
+        request_kwargs = {
+            "headers": self.headers,
+            "json": json,
+            "timeout": (self.config.connect_timeout, self.config.read_timeout),
+        }
+        if params is not None:
+            request_kwargs["params"] = params
         try:
-            response = self.session.request(
-                method, url, headers=self.headers, json=json,
-                timeout=(self.config.connect_timeout, self.config.read_timeout),
-            )
+            response = self.session.request(method, url, **request_kwargs)
         except requests.Timeout as exc:
             raise ChatwootTimeoutError("Chatwoot request timed out.", method=method, endpoint=endpoint) from exc
         except requests.ConnectionError as exc:
@@ -136,3 +140,71 @@ class ChatwootClient:
         account = self.get_account()
         inbox = self.get_inbox() if self.config.inbox_id else None
         return account, inbox
+
+    def search_contacts(self, query):
+        payload = self._request(
+            "GET", f"/api/v1/accounts/{self.config.account_id}/contacts/search", params={"q": query}
+        )
+        return payload.get("payload", [])
+
+    def get_contact(self, contact_id):
+        return self._request("GET", f"/api/v1/accounts/{self.config.account_id}/contacts/{contact_id}")
+
+    def create_contact(self, *, inbox_id, identifier, name, email=""):
+        payload = {"inbox_id": int(inbox_id), "identifier": identifier, "name": name}
+        if email:
+            payload["email"] = email
+        return self._request("POST", f"/api/v1/accounts/{self.config.account_id}/contacts", json=payload)
+
+    def create_contact_inbox(self, *, contact_id, inbox_id, source_id):
+        return self._request(
+            "POST",
+            f"/api/v1/accounts/{self.config.account_id}/contacts/{contact_id}/contact_inboxes",
+            json={"inbox_id": int(inbox_id), "source_id": source_id},
+        )
+
+    def get_conversation(self, conversation_id):
+        return self._request(
+            "GET", f"/api/v1/accounts/{self.config.account_id}/conversations/{conversation_id}"
+        )
+
+    def list_conversations(self, *, inbox_id):
+        payload = self._request(
+            "GET", f"/api/v1/accounts/{self.config.account_id}/conversations",
+            params={"inbox_id": int(inbox_id), "status": "all", "assignee_type": "all"},
+        )
+        return payload.get("data", {}).get("payload", [])
+
+    def create_conversation(self, *, source_id, inbox_id, contact_id, canonical_id):
+        return self._request(
+            "POST", f"/api/v1/accounts/{self.config.account_id}/conversations",
+            json={
+                "source_id": source_id,
+                "inbox_id": int(inbox_id),
+                "contact_id": int(contact_id),
+                "status": "open",
+                "additional_attributes": {"taxicarga_conversation_id": canonical_id},
+            },
+        )
+
+    def list_messages(self, conversation_id):
+        payload = self._request(
+            "GET", f"/api/v1/accounts/{self.config.account_id}/conversations/{conversation_id}/messages"
+        )
+        return payload.get("payload", [])
+
+    def create_message(self, *, conversation_id, content, message_type, canonical_id):
+        return self._request(
+            "POST",
+            f"/api/v1/accounts/{self.config.account_id}/conversations/{conversation_id}/messages",
+            json={
+                "content": content,
+                "message_type": message_type,
+                "private": False,
+                "content_type": "text",
+                "content_attributes": {
+                    "taxicarga_message_id": canonical_id,
+                    "taxicarga_origin": "django_projection",
+                },
+            },
+        )
