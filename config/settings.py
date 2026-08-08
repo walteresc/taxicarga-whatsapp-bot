@@ -32,6 +32,7 @@ INSTALLED_APPS = [
     "apps.servicios",
     "apps.campo",
     "apps.flota",
+    "apps.integrations",
 ]
 
 LOGIN_URL = "/dashboard/login/"
@@ -103,6 +104,13 @@ WHATSAPP_VERIFY_TOKEN = config("WHATSAPP_VERIFY_TOKEN", default="")
 WHATSAPP_ACCESS_TOKEN = config("WHATSAPP_ACCESS_TOKEN", default="")
 WHATSAPP_PHONE_NUMBER_ID = config("WHATSAPP_PHONE_NUMBER_ID", default="")
 WHATSAPP_API_VERSION = config("WHATSAPP_API_VERSION", default="v20.0")
+
+CHATWOOT_INTEGRATION_ENABLED = env_bool("CHATWOOT_INTEGRATION_ENABLED", default=False)
+CHATWOOT_SHADOW_SYNC_ENABLED = env_bool("CHATWOOT_SHADOW_SYNC_ENABLED", default=False)
+CHATWOOT_AGENT_OUTBOUND_ENABLED = env_bool("CHATWOOT_AGENT_OUTBOUND_ENABLED", default=False)
+META_OUTBOX_ENABLED = env_bool("META_OUTBOX_ENABLED", default=False)
+BOT_GENERATION_LEASE_ENABLED = env_bool("BOT_GENERATION_LEASE_ENABLED", default=False)
+CHATWOOT_RETURN_TO_BOT_ENABLED = env_bool("CHATWOOT_RETURN_TO_BOT_ENABLED", default=False)
 
 LOGGING = {
     "version": 1,
