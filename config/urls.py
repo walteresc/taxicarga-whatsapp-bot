@@ -20,5 +20,6 @@ urlpatterns = [
     path("api/whatsapp-channels/asesores/", whatsapp_channel_asesores, name="api-whatsapp-channel-asesores"),
     path("api/whatsapp-channels/<int:channel_id>/", whatsapp_channel_detail, name="api-whatsapp-channel-detail"),
     path("webhook/whatsapp/", include("apps.whatsapp.urls")),
+    path("webhooks/chatwoot/", include("apps.integrations.urls")),
     path("<path:any>", root_redirect),  # catch-all — must be last
 ]

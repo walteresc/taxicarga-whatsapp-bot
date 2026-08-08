@@ -1,4 +1,6 @@
 from io import StringIO
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import Mock, patch
 
 import requests
@@ -34,6 +36,7 @@ def config(**overrides):
 
 def response(status=200, payload=None):
     result = Mock(status_code=status, headers={"X-Request-Id": "request-1"})
+    result.content = b"{}"
     result.json.return_value = {} if payload is None else payload
     return result
 
@@ -151,6 +154,78 @@ class ChatwootHTTPTests(SimpleTestCase):
             with self.assertRaises(ChatwootAPIError):
                 ChatwootClient(config=config(), session=session).get_account()
 
+    def test_webhook_is_created_with_only_message_created(self):
+        session = Mock()
+        session.request.side_effect = [
+            response(payload={"payload": {"webhooks": []}}),
+            response(payload={"payload": {"webhook": {"id": 8, "secret": "generated"}}}),
+        ]
+        client = ChatwootClient(config=config(), session=session)
+
+        webhook, created, updated = client.ensure_webhook(
+            name="TaxiCarga Django Sandbox",
+            url="https://django.test/webhooks/chatwoot/",
+            subscriptions=["message_created"],
+        )
+
+        self.assertEqual(webhook["id"], 8)
+        self.assertTrue(created)
+        self.assertFalse(updated)
+        self.assertEqual(session.request.call_args_list[1].kwargs["json"]["subscriptions"], ["message_created"])
+
+    def test_webhook_is_reused_and_subscription_corrected(self):
+        existing = {
+            "id": 8,
+            "name": "TaxiCarga Django Sandbox",
+            "url": "https://django.test/webhooks/chatwoot/",
+            "subscriptions": ["message_created", "conversation_created"],
+        }
+        session = Mock()
+        session.request.side_effect = [
+            response(payload={"payload": {"webhooks": [existing]}}),
+            response(payload={"payload": {"webhook": {**existing, "subscriptions": ["message_created"]}}}),
+        ]
+        client = ChatwootClient(config=config(), session=session)
+
+        _webhook, created, updated = client.ensure_webhook(
+            name=existing["name"], url=existing["url"], subscriptions=["message_created"]
+        )
+
+        self.assertFalse(created)
+        self.assertTrue(updated)
+        self.assertEqual(session.request.call_args_list[1].args[0], "PUT")
+
+    def test_webhook_url_change_updates_same_named_webhook(self):
+        existing = {
+            "id": 8, "name": "TaxiCarga Django Sandbox",
+            "url": "http://old.test/webhooks/chatwoot/", "subscriptions": ["message_created"],
+        }
+        session = Mock()
+        session.request.side_effect = [
+            response(payload={"payload": {"webhooks": [existing]}}),
+            response(payload={"payload": {"webhook": {**existing, "url": "https://new.test/webhooks/chatwoot/"}}}),
+        ]
+        client = ChatwootClient(config=config(), session=session)
+
+        _webhook, created, updated = client.ensure_webhook(
+            name=existing["name"], url="https://new.test/webhooks/chatwoot/", subscriptions=["message_created"]
+        )
+
+        self.assertFalse(created)
+        self.assertTrue(updated)
+        self.assertEqual(session.request.call_args_list[1].args[0], "PUT")
+
+    def test_empty_success_response_is_accepted_for_delete(self):
+        session = Mock()
+        empty = response()
+        empty.content = b""
+        session.request.return_value = empty
+
+        result = ChatwootClient(config=config(), session=session).delete_webhook(8)
+
+        self.assertEqual(result, {})
+        self.assertEqual(session.request.call_args.args[0], "DELETE")
+
 
 class ChatwootSandboxTests(SimpleTestCase):
     def test_configured_inbox_is_reused_without_list_or_create(self):
@@ -219,3 +294,41 @@ class ChatwootCommandTests(SimpleTestCase):
 
         with self.assertRaises(CommandError):
             call_command("chatwoot_check", stdout=StringIO(), stderr=StringIO())
+
+    @patch("apps.integrations.management.commands.chatwoot_setup_webhook.ChatwootClient")
+    def test_webhook_setup_writes_secret_without_printing_it(self, client_class):
+        client_class.return_value.ensure_webhook.return_value = (
+            {"id": 8, "secret": "generated-webhook-secret"}, True, False
+        )
+        output = StringIO()
+        with TemporaryDirectory() as directory:
+            env_file = Path(directory) / ".env"
+            env_file.write_text("CHATWOOT_WEBHOOK_ENABLED=false\n", encoding="utf-8")
+            call_command(
+                "chatwoot_setup_webhook",
+                "https://django.test/webhooks/chatwoot/",
+                env_file=str(env_file),
+                stdout=output,
+            )
+            content = env_file.read_text(encoding="utf-8")
+
+        self.assertIn("CHATWOOT_WEBHOOK_ENABLED=true", content)
+        self.assertIn("CHATWOOT_WEBHOOK_SECRET=generated-webhook-secret", content)
+        self.assertIn("ALLOWED_HOSTS=django.test", content)
+        self.assertNotIn("generated-webhook-secret", output.getvalue())
+
+    @patch("apps.integrations.management.commands.chatwoot_setup_webhook.ChatwootClient")
+    def test_reused_webhook_without_returned_secret_preserves_local_secret(self, client_class):
+        client_class.return_value.ensure_webhook.return_value = ({"id": 8, "secret": ""}, False, False)
+        with TemporaryDirectory() as directory:
+            env_file = Path(directory) / ".env"
+            env_file.write_text("CHATWOOT_WEBHOOK_SECRET=existing-local-secret\n", encoding="utf-8")
+            call_command(
+                "chatwoot_setup_webhook",
+                "https://django.test/webhooks/chatwoot/",
+                env_file=str(env_file),
+                stdout=StringIO(),
+            )
+            content = env_file.read_text(encoding="utf-8")
+
+        self.assertIn("CHATWOOT_WEBHOOK_SECRET=existing-local-secret", content)

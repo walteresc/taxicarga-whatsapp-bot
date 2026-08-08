@@ -101,6 +101,8 @@ class ChatwootClient:
             raise ChatwootRateLimitError("Chatwoot rate limit reached.", **context)
         if response.status_code >= 400:
             raise ChatwootAPIError("Chatwoot API returned an error.", **context)
+        if response.status_code == 204 or not response.content:
+            return {}
         try:
             payload = response.json()
         except ValueError as exc:
@@ -208,3 +210,55 @@ class ChatwootClient:
                 },
             },
         )
+
+    def list_webhooks(self):
+        payload = self._request("GET", f"/api/v1/accounts/{self.config.account_id}/webhooks")
+        if not isinstance(payload, dict):
+            return payload
+        items = payload.get("payload", payload)
+        if isinstance(items, dict):
+            return items.get("webhooks", [])
+        return items
+
+    def create_webhook(self, *, name, url, subscriptions):
+        payload = self._request(
+            "POST",
+            f"/api/v1/accounts/{self.config.account_id}/webhooks",
+            json={"name": name, "url": url, "subscriptions": subscriptions},
+        )
+        return self._webhook_payload(payload)
+
+    def update_webhook(self, webhook_id, *, name, url, subscriptions):
+        payload = self._request(
+            "PUT",
+            f"/api/v1/accounts/{self.config.account_id}/webhooks/{webhook_id}",
+            json={"name": name, "url": url, "subscriptions": subscriptions},
+        )
+        return self._webhook_payload(payload)
+
+    def delete_webhook(self, webhook_id):
+        return self._request(
+            "DELETE", f"/api/v1/accounts/{self.config.account_id}/webhooks/{webhook_id}"
+        )
+
+    @staticmethod
+    def _webhook_payload(payload):
+        item = payload.get("payload", payload) if isinstance(payload, dict) else payload
+        if isinstance(item, dict):
+            return item.get("webhook", item)
+        return item
+
+    def ensure_webhook(self, *, name, url, subscriptions):
+        matches = [
+            webhook for webhook in self.list_webhooks()
+            if webhook.get("name") == name
+        ]
+        if matches:
+            webhook = matches[0]
+            if webhook.get("url") != url or sorted(webhook.get("subscriptions") or []) != sorted(subscriptions):
+                webhook = self.update_webhook(
+                    webhook["id"], name=name, url=url, subscriptions=subscriptions
+                )
+                return webhook, False, True
+            return webhook, False, False
+        return self.create_webhook(name=name, url=url, subscriptions=subscriptions), True, False
