@@ -112,6 +112,14 @@ META_OUTBOX_ENABLED = env_bool("META_OUTBOX_ENABLED", default=False)
 BOT_GENERATION_LEASE_ENABLED = env_bool("BOT_GENERATION_LEASE_ENABLED", default=False)
 CHATWOOT_RETURN_TO_BOT_ENABLED = env_bool("CHATWOOT_RETURN_TO_BOT_ENABLED", default=False)
 
+CHATWOOT_ENABLED = env_bool("CHATWOOT_ENABLED", default=False)
+CHATWOOT_BASE_URL = config("CHATWOOT_BASE_URL", default="").rstrip("/")
+CHATWOOT_API_ACCESS_TOKEN = config("CHATWOOT_API_ACCESS_TOKEN", default="")
+CHATWOOT_ACCOUNT_ID = config("CHATWOOT_ACCOUNT_ID", default="")
+CHATWOOT_INBOX_ID = config("CHATWOOT_INBOX_ID", default="")
+CHATWOOT_CONNECT_TIMEOUT = float(config("CHATWOOT_CONNECT_TIMEOUT", default="3"))
+CHATWOOT_READ_TIMEOUT = float(config("CHATWOOT_READ_TIMEOUT", default="10"))
+
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
