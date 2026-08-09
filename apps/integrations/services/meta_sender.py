@@ -150,6 +150,10 @@ def process_meta_outbox_event(event_id, *, sender=send_whatsapp_message, worker_
                     "estado": "enviado",
                 },
             )
+            commercial = event.event_type == "send_commercial_quote"
+        if commercial:
+            from apps.cotizador.delivery import mark_commercial_outbox_sent
+            mark_commercial_outbox_sent(event_id, external_id)
         return MetaSendResult(str(event_id), OutboxStatus.SENT, True, external_id)
 
     status_code = result.get("status_code") if isinstance(result, dict) else None
@@ -165,4 +169,11 @@ def process_meta_outbox_event(event_id, *, sender=send_whatsapp_message, worker_
         event.error_code = "ambiguous_meta_result" if status_code is None else f"http_{status_code}"
         event.error_summary = reason[:255]
         event.save()
+        commercial = event.event_type == "send_commercial_quote"
+        error_code = event.error_code
+        error_summary = event.error_summary
+        retrying = event.status == OutboxStatus.RETRY
+    if commercial:
+        from apps.cotizador.delivery import mark_commercial_outbox_failed
+        mark_commercial_outbox_failed(event_id, error_code, error_summary, retrying)
     return MetaSendResult(str(event_id), event.status, False, reason=event.error_code)

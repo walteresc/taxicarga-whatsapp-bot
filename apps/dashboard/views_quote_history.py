@@ -87,9 +87,11 @@ def whatsapp_cotizacion_accion(request, quote_id):
             revision = quote.revisiones.order_by("-numero").first()
             if not revision:
                 raise ValidationError("La cotización no tiene revisión.")
-            envio = enviar_revision_whatsapp(revision.id)
+            envio = enviar_revision_whatsapp(revision.id, actor=request.user)
             if envio.estado == "enviado":
                 messages.success(request, "Cotización enviada por WhatsApp.")
+            elif envio.estado == "pendiente":
+                messages.success(request, "Cotización encolada para envío por WhatsApp.")
             else:
                 messages.error(request, "Envío falló; reintento programado.")
         else:

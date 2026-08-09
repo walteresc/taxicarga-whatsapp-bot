@@ -153,6 +153,7 @@ class CotizacionComercial(models.Model):
     ORIGENES = [("bot", "Bot"), ("asesor", "Asesor")]
 
     codigo = models.CharField(max_length=30, unique=True)
+    moneda = models.CharField(max_length=3, default="PEN")
     lead = models.ForeignKey(
         Lead,
         on_delete=models.PROTECT,
@@ -190,6 +191,13 @@ class CotizacionComercial(models.Model):
             models.Index(fields=["estado", "-creada_en"]),
             models.Index(fields=["channel", "-creada_en"]),
         ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["solicitud"],
+                condition=models.Q(estado="borrador", solicitud__isnull=False),
+                name="cotizador_borrador_unico_solicitud",
+            ),
+        ]
 
     def __str__(self):
         return self.codigo
@@ -201,6 +209,14 @@ class RevisionCotizacion(models.Model):
         on_delete=models.CASCADE,
         related_name="revisiones",
     )
+    cotizacion_tecnica = models.ForeignKey(
+        Cotizacion,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="revisiones_comerciales",
+    )
+    source_key = models.CharField(max_length=255, blank=True)
     numero = models.PositiveSmallIntegerField()
     creada_por = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -234,6 +250,11 @@ class RevisionCotizacion(models.Model):
                 condition=models.Q(precio_final__gt=0),
                 name="cotizador_revision_precio_positivo",
             ),
+            models.UniqueConstraint(
+                fields=["source_key"],
+                condition=~models.Q(source_key=""),
+                name="cotizador_revision_source_key_unica",
+            ),
         ]
 
     def __str__(self):
@@ -258,6 +279,13 @@ class EnvioCotizacion(models.Model):
         RevisionCotizacion,
         on_delete=models.PROTECT,
         related_name="envios",
+    )
+    outbox_event = models.OneToOneField(
+        "integrations.IntegrationOutboxEvent",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="envio_cotizacion",
     )
     channel = models.ForeignKey(
         "whatsapp.WhatsAppChannel",

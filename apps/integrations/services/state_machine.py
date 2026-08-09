@@ -48,7 +48,35 @@ def take_conversation(conversation_id, *, actor, idempotency_key, expected_versi
         control.control_version += 1
         control.last_correlation_id = correlation_id or uuid.uuid4()
         control.save()
+        conversation = control.conversation
+        conversation.estado_atencion = ConversacionWhatsApp.ATENCION_ASESOR
+        conversation.bot_pausado = True
+        conversation.responsable = actor
+        conversation.instruccion_retorno_bot = ""
+        conversation.ultima_actividad = timezone.now()
+        conversation.save(update_fields=[
+            "estado_atencion", "bot_pausado", "responsable",
+            "instruccion_retorno_bot", "ultima_actividad", "actualizada_en",
+        ])
+        if conversation.lead_id:
+            lead = conversation.lead.__class__.objects.select_for_update().get(pk=conversation.lead_id)
+            lead.atencion_humana = True
+            lead.bot_pausado = True
+            lead.vendedor_asignado = actor
+            lead.save(update_fields=["atencion_humana", "bot_pausado", "vendedor_asignado"])
         _cancel_active_generations(control.conversation_id, "advisor_take")
+        IntegrationOutboxEvent.objects.filter(
+            conversation_id=conversation_id,
+            destination=Provider.META_WHATSAPP,
+            status__in=[OutboxStatus.PENDING, OutboxStatus.RETRY],
+            logical_message__author_type="bot",
+        ).update(
+            status=OutboxStatus.CANCELLED,
+            error_code="human_takeover",
+            error_summary="Suppressed by advisor takeover.",
+            locked_at=None,
+            locked_by="",
+        )
         audit = _audit(control, before, version_before, "take", actor, "advisor_take", idempotency_key)
         _project_transition(control, audit)
         return control, audit, True

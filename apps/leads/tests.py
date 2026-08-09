@@ -81,9 +81,7 @@ class LeadApiTests(TestCase):
         self.assertEqual(lead.estado, Lead.CERRADO)
         self.assertIsNotNone(lead.fecha_cierre)
 
-    @patch("apps.leads.views.send_whatsapp_message")
-    def test_registrar_cotizacion_actualiza_precio_y_envia_mensaje(self, send_mock):
-        send_mock.return_value = {"sent": False, "reason": "test"}
+    def test_registrar_cotizacion_delega_y_encola_sin_envio_directo(self):
         user = get_user_model().objects.create_user(username="vendedor3", password="pass123")
         self.client.force_login(user)
         cliente = Cliente.objects.create(nombre="Nora Paz", telefono="51910002000")
@@ -102,11 +100,13 @@ class LeadApiTests(TestCase):
 
         lead.refresh_from_db()
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(str(lead.precio_cotizado), "510.00")
-        self.assertEqual(lead.estado, Lead.COTIZADO)
+        self.assertIsNone(lead.precio_cotizado)
+        self.assertEqual(lead.estado, Lead.ASIGNADO)
         self.assertTrue(lead.atencion_humana)
-        self.assertTrue(Conversacion.objects.filter(cliente=cliente, mensaje_salida__contains="510").exists())
-        send_mock.assert_called_once_with(cliente.telefono, "La cotizacion queda en S/ 510.")
+        self.assertTrue(lead.cotizaciones_comerciales.filter(revisiones__precio_final="510.00").exists())
+        self.assertTrue(lead.cotizaciones_comerciales.filter(
+            revisiones__envios__outbox_event__event_type="send_commercial_quote"
+        ).exists())
 
 
 class LeadAdminTests(TestCase):

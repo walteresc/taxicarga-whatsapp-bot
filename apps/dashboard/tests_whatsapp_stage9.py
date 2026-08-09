@@ -3,14 +3,16 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from apps.clientes.models import Cliente
 from apps.cotizador.delivery import enviar_revision_whatsapp
 from apps.cotizador.models import CotizacionComercial, EnvioCotizacion, RevisionCotizacion
 from apps.leads.models import Lead
-from apps.whatsapp.models import WhatsAppChannel
+from apps.whatsapp.models import ConversacionWhatsApp, WhatsAppChannel
+from apps.integrations.models import ConversationControl, IntegrationOutboxEvent
+from apps.integrations.services.meta_sender import process_meta_outbox_event
 from apps.whatsapp.utils import extract_event
 
 
@@ -23,6 +25,10 @@ class WhatsAppRealDeliveryTests(TestCase):
         cls.channel = WhatsAppChannel.objects.create(nombre="Stage 9", phone_number_id="phone-stage9")
         cls.customer = Cliente.objects.create(nombre="Cliente Stage 9", telefono="51955550009")
         cls.lead = Lead.objects.create(cliente=cls.customer, whatsapp_channel=cls.channel)
+        cls.conversation = ConversacionWhatsApp.objects.create(
+            cliente=cls.customer, lead=cls.lead, channel=cls.channel,
+        )
+        ConversationControl.objects.get_or_create(conversation=cls.conversation)
 
     def setUp(self):
         self.quote = CotizacionComercial.objects.create(
@@ -34,23 +40,30 @@ class WhatsAppRealDeliveryTests(TestCase):
             precio_final=500, mensaje_whatsapp="Cotización lista: S/ 500",
         )
 
-    @patch("apps.cotizador.delivery.send_whatsapp_message")
-    def test_send_persists_meta_id_and_closes_draft(self, send):
-        send.return_value = {"messages": [{"id": "wamid.stage9.sent"}]}
-        envio = enviar_revision_whatsapp(self.revision.id)
+    @override_settings(META_OUTBOX_ENABLED=True, CHATWOOT_AGENT_TO_WHATSAPP_ENABLED=True, CHATWOOT_STAGE7_TEST_CHANNEL_ID="1")
+    def test_send_persists_meta_id_and_closes_draft(self):
+        send = self._sender({"messages": [{"id": "wamid.stage9.sent"}]})
+        envio = enviar_revision_whatsapp(self.revision.id, actor=self.user)
+        result = process_meta_outbox_event(envio.outbox_event_id, sender=send)
+        envio.refresh_from_db()
         self.assertEqual(envio.estado, "enviado")
         self.assertEqual(envio.meta_message_id, "wamid.stage9.sent")
         self.quote.refresh_from_db()
         self.assertEqual(self.quote.estado, "enviada")
-        send.assert_called_once_with(self.customer.telefono, self.revision.mensaje_whatsapp, channel=self.channel)
+        self.assertTrue(result.sent)
+        self.assertEqual(send.call_count, 1)
 
-    @patch("apps.cotizador.delivery.send_whatsapp_message")
-    def test_failure_is_persistent_and_schedules_retry(self, send):
-        send.return_value = {"sent": False, "reason": "request_error", "error_code": 131000}
-        envio = enviar_revision_whatsapp(self.revision.id)
+    @override_settings(META_OUTBOX_ENABLED=True, CHATWOOT_AGENT_TO_WHATSAPP_ENABLED=True, CHATWOOT_STAGE7_TEST_CHANNEL_ID="1")
+    def test_failure_is_persistent_and_schedules_retry(self):
+        send = self._sender({"sent": False, "reason": "request_error", "status_code": 503})
+        envio = enviar_revision_whatsapp(self.revision.id, actor=self.user)
+        process_meta_outbox_event(envio.outbox_event_id, sender=send)
+        envio.refresh_from_db()
         self.assertEqual(envio.estado, "error")
-        self.assertEqual(envio.error_codigo, "131000")
+        self.assertEqual(envio.error_codigo, "http_503")
         self.assertIsNotNone(envio.proximo_reintento)
+        self.quote.refresh_from_db()
+        self.assertEqual(self.quote.estado, "borrador")
 
     def test_meta_delivery_and_read_statuses_update_attempt(self):
         envio = EnvioCotizacion.objects.create(
@@ -72,16 +85,19 @@ class WhatsAppRealDeliveryTests(TestCase):
         self.quote.refresh_from_db()
         self.assertEqual(self.quote.estado, "entregada")
 
-    @patch("apps.cotizador.delivery.send_whatsapp_message")
-    def test_detail_send_action_uses_real_delivery_flow(self, send):
-        send.return_value = {"messages": [{"id": "wamid.stage9.ui"}]}
+    def test_detail_send_action_uses_outbox_without_http(self):
         self.client.force_login(self.user)
         response = self.client.post(
             reverse("dashboard-whatsapp-cotizacion-accion", args=[self.quote.id]),
             {"action": "send", "next": "detail"},
         )
         self.assertRedirects(response, reverse("dashboard-whatsapp-cotizacion-detalle", args=[self.quote.id]))
-        self.assertTrue(self.revision.envios.filter(meta_message_id="wamid.stage9.ui").exists())
+        self.assertTrue(self.revision.envios.filter(outbox_event__event_type="send_commercial_quote").exists())
+
+    @staticmethod
+    def _sender(result):
+        from unittest.mock import Mock
+        return Mock(return_value=result)
 
     def test_extracts_document_and_location_payloads(self):
         def payload(message):

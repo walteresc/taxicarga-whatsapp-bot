@@ -99,3 +99,19 @@
 - Replay del return y del inbound: cero transiciones, generaciones, outboxes o envíos adicionales. Proyección Chatwoot regresó como `django_projection` ignorada.
 - Sin migraciones nuevas. ETAPA 9 no iniciada.
 - Estado seguro final requerido: return-to-bot, takeover, agent-to-WhatsApp, live sync, Meta outbox y sync general apagados; Chatwoot y webhook habilitados.
+
+## ETAPA 9 — COMPLETADA
+
+- Estado comercial canónico preservado en `ConversacionWhatsApp.estado_cotizacion`.
+- Modelos comerciales existentes reutilizados; no se creó otro sistema de cotizaciones.
+- Cotización automática y humana producen evidencia estructurada y un outbox Meta idempotente por revisión.
+- Envío humano garantiza takeover; envío bot conserva barreras de ownership/version de ETAPAS 7/8.
+- Éxito Meta sincroniza revisión, cotización, solicitud, conversación y Lead compatible; fallo no marca `precio_enviado`.
+- Labels `por-cotizar` y `cotizado` se proyectan Django → Chatwoot preservando labels ajenas; cambios manuales no son authoritative.
+- Migración `cotizador.0010_stage9_commercial_flow` validada reversible en PostgreSQL 16.14 aislado.
+- Smoke sandbox real completado con Cliente TEST 90, canal 7 y conversación 47.
+- Caso humano: revisiones preservadas; takeover único; cotización recibida físicamente; replay sin duplicados.
+- Caso automático: pricing existente, estructura comercial y BOT outbox; cotización recibida físicamente; replay sin duplicados.
+- Reconciliación Chatwoot corregida para reprocesar proyecciones previamente enviadas y restaurar drift de labels.
+- Migración `0010` aplicada solo en SQLite local dev; backup temporal fuera del repositorio.
+- Flags peligrosos apagados al cierre. ETAPA 10 no iniciada.

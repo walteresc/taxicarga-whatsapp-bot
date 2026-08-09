@@ -115,11 +115,13 @@ def devolver_al_bot(conversacion_id, actor, instruccion):
 
 def enviar_a_cotizar(conversacion_id, actor, motivo="", datos_faltantes=None):
     from apps.cotizador.models import SolicitudCotizacion
+    from apps.integrations.services.commercial_labels import queue_commercial_label_projection
 
     with transaction.atomic():
         conversacion = _bloquear_conversacion(conversacion_id)
         if not conversacion.lead_id:
             raise TransicionConversacionInvalida("La conversacion no tiene lead asociado.")
+        lead = Lead.objects.select_for_update().get(pk=conversacion.lead_id)
         solicitud = (
             SolicitudCotizacion.objects.select_for_update()
             .filter(
@@ -134,13 +136,27 @@ def enviar_a_cotizar(conversacion_id, actor, motivo="", datos_faltantes=None):
                 conversacion=conversacion,
                 motivo=motivo,
                 datos_faltantes=datos_faltantes or [],
-                prioridad=conversacion.lead.prioridad,
+                prioridad=lead.prioridad,
                 creada_por=actor,
             )
+        else:
+            changed = []
+            if motivo and solicitud.motivo != motivo:
+                solicitud.motivo = motivo
+                changed.append("motivo")
+            if datos_faltantes is not None and solicitud.datos_faltantes != datos_faltantes:
+                solicitud.datos_faltantes = datos_faltantes
+                changed.append("datos_faltantes")
+            if not solicitud.conversacion_id:
+                solicitud.conversacion = conversacion
+                changed.append("conversacion")
+            if changed:
+                solicitud.save(update_fields=changed + ["actualizada_en"])
         conversacion.estado_cotizacion = ConversacionWhatsApp.COTIZACION_PENDIENTE
         conversacion.motivo_derivacion = motivo
         conversacion.save(update_fields=["estado_cotizacion", "motivo_derivacion", "actualizada_en"])
         _auditar(conversacion, actor, "enviada_a_cotizar", {"solicitud_id": solicitud.id, "motivo": motivo})
+        transaction.on_commit(lambda: queue_commercial_label_projection(conversacion.id))
         return solicitud
 
 

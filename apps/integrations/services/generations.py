@@ -63,6 +63,11 @@ def finalize_generation(generation_id, *, result_text):
             generation.cancel_reason = "stale_control_or_newer_generation"
             generation.save(update_fields=["status", "cancelled_at", "cancel_reason"])
             return generation, None, False
+        from apps.cotizador.models import EnvioCotizacion, RevisionCotizacion
+        revision = RevisionCotizacion.objects.filter(
+            source_key=f"bot-generation:{generation.id}"
+        ).first()
+        metadata = {"quote_revision_id": revision.id} if revision else {}
         message = IntegrationMessage.objects.create(
             conversation_id=generation.conversation_id,
             provider=Provider.INTERNAL,
@@ -72,20 +77,32 @@ def finalize_generation(generation_id, *, result_text):
             visibility=Visibility.PUBLIC,
             content_type="text",
             text=result_text,
+            metadata=metadata,
             idempotency_key=f"bot-generation:{generation.id}",
             correlation_id=generation.correlation_id,
         )
+        outbox_key = f"quote-revision:{revision.id}:whatsapp" if revision else f"meta-message:{message.id}"
         outbox, _ = IntegrationOutboxEvent.objects.get_or_create(
             destination=Provider.META_WHATSAPP,
             destination_scope=str(generation.conversation.channel_id),
-            idempotency_key=f"meta-message:{message.id}",
+            idempotency_key=outbox_key,
             defaults={
-                "event_type": "send_public_message", "logical_message": message,
+                "event_type": "send_commercial_quote" if revision else "send_public_message",
+                "logical_message": message,
                 "conversation_id": generation.conversation_id,
-                "safe_payload": {"logical_message_id": str(message.id)},
+                "safe_payload": {
+                    "logical_message_id": str(message.id),
+                    **({"quote_revision_id": revision.id} if revision else {}),
+                },
                 "status": OutboxStatus.PENDING, "correlation_id": generation.correlation_id,
             },
         )
+        if revision:
+            EnvioCotizacion.objects.get_or_create(
+                revision=revision,
+                outbox_event=outbox,
+                defaults={"channel": generation.conversation.channel, "estado": "pendiente"},
+            )
         generation.status = GenerationStatus.PUBLISHED
         generation.result_text = result_text
         generation.completed_at = timezone.now()

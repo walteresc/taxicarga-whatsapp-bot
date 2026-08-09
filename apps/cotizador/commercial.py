@@ -79,15 +79,53 @@ def crear_revision(cotizacion, actor, precio_final, **datos):
 def guardar_borrador(solicitud, actor, precio_final, **datos):
     with transaction.atomic():
         solicitud = SolicitudCotizacion.objects.select_for_update().get(pk=solicitud.pk)
+        source_key = datos.get("source_key", "")
+        if source_key:
+            existing_revision = RevisionCotizacion.objects.select_related("cotizacion").filter(
+                source_key=source_key
+            ).first()
+            if existing_revision:
+                return existing_revision.cotizacion, existing_revision
         cotizacion = solicitud.cotizaciones.filter(estado="borrador").order_by("-creada_en").first()
         if cotizacion:
             return cotizacion, crear_revision(cotizacion, actor, precio_final, **datos)
         return crear_borrador(solicitud, actor, precio_final, **datos)
 
 
+def crear_cotizacion_automatica(conversacion, cotizacion_tecnica, mensaje, *, source_key):
+    """Persist bot pricing once; publication remains owned by the bot outbox."""
+    with transaction.atomic():
+        from apps.whatsapp.models import ConversacionWhatsApp
+        conversation = ConversacionWhatsApp.objects.select_for_update(of=("self",)).get(pk=conversacion.pk)
+        revision = RevisionCotizacion.objects.select_related("cotizacion").filter(source_key=source_key).first()
+        if revision:
+            return revision.cotizacion, revision, False
+        commercial = CotizacionComercial.objects.create(
+            codigo=_nuevo_codigo(),
+            lead=conversation.lead,
+            channel=conversation.channel,
+            origen="bot",
+            moneda="PEN",
+        )
+        revision = _crear_revision(
+            commercial,
+            None,
+            cotizacion_tecnica.precio_max,
+            1,
+            cotizacion_tecnica=cotizacion_tecnica,
+            source_key=source_key,
+            precio_sugerido_min=cotizacion_tecnica.precio_min,
+            precio_sugerido_max=cotizacion_tecnica.precio_max,
+            mensaje_whatsapp=mensaje,
+        )
+        return commercial, revision, True
+
+
 def marcar_revision_enviada(revision):
     with transaction.atomic():
-        revision = RevisionCotizacion.objects.select_for_update().select_related("cotizacion__solicitud").get(pk=revision.pk)
+        revision = RevisionCotizacion.objects.select_for_update().select_related(
+            "cotizacion__solicitud__conversacion", "cotizacion__lead"
+        ).get(pk=revision.pk)
         if revision.enviada:
             return revision
         revision.enviada = True
@@ -101,6 +139,24 @@ def marcar_revision_enviada(revision):
             solicitud.estado = SolicitudCotizacion.TERMINADA
             solicitud.resuelta_en = timezone.now()
             solicitud.save(update_fields=["estado", "resuelta_en", "actualizada_en"])
+            conversacion = solicitud.conversacion
+        else:
+            from apps.whatsapp.models import ConversacionWhatsApp
+            conversacion = ConversacionWhatsApp.objects.filter(lead=cotizacion.lead).exclude(
+                estado_atencion=ConversacionWhatsApp.ATENCION_CERRADA
+            ).order_by("-ultima_actividad").first()
+        if conversacion:
+            from apps.whatsapp.models import ConversacionWhatsApp
+            conversacion.estado_cotizacion = ConversacionWhatsApp.COTIZACION_PRECIO_ENVIADO
+            conversacion.save(update_fields=["estado_cotizacion", "actualizada_en"])
+        lead = cotizacion.lead
+        lead.precio_cotizado = revision.precio_final
+        lead.precio_recomendado = revision.precio_final
+        lead.estado = lead.COTIZADO
+        lead.save(update_fields=["precio_cotizado", "precio_recomendado", "estado"])
+        if conversacion:
+            from apps.integrations.services.commercial_labels import queue_commercial_label_projection
+            transaction.on_commit(lambda: queue_commercial_label_projection(conversacion.id))
         return revision
 
 
@@ -115,6 +171,8 @@ def _crear_revision(cotizacion, actor, precio_final, numero, **datos):
             raise ValidationError("El precio final no cumple el margen minimo.")
     return RevisionCotizacion.objects.create(
         cotizacion=cotizacion,
+        cotizacion_tecnica=datos.get("cotizacion_tecnica"),
+        source_key=datos.get("source_key", ""),
         numero=numero,
         creada_por=actor,
         snapshot_servicio=datos.get("snapshot_servicio", {}),

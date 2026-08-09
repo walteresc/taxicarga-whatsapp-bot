@@ -170,7 +170,7 @@ PAYMENT_INFORMATION = (
 )
 
 
-def handle_incoming_message(cliente, message, canonical_context=None):
+def handle_incoming_message(cliente, message, canonical_context=None, generation_id=None):
     lead = _get_active_lead(cliente)
     account_holder_reply = _account_holder_information(message)
     if account_holder_reply:
@@ -354,6 +354,7 @@ def handle_incoming_message(cliente, message, canonical_context=None):
         lead.estado = Lead.DATOS_INCOMPLETOS
         lead.atencion_humana = True
         lead.save(update_fields=["estado", "atencion_humana"])
+        _mark_for_manual_quote(lead, "Ruta fuera de Lima o Callao")
         return (
             "Como la ruta incluye una ciudad fuera de Lima o Callao, necesito "
             "revisar kilometraje, peajes y tiempo de viaje antes de darte un precio. "
@@ -364,6 +365,7 @@ def handle_incoming_message(cliente, message, canonical_context=None):
         lead.estado = Lead.DATOS_INCOMPLETOS
         lead.atencion_humana = True
         lead.save(update_fields=["estado", "atencion_humana"])
+        _mark_for_manual_quote(lead, "Embalaje full requiere revisión humana")
         return (
             "Para cotizar embalaje full necesitamos fotos de todo lo que deseas "
             "embalar. Un asesor revisara el volumen y te indicara el monto."
@@ -384,7 +386,31 @@ def handle_incoming_message(cliente, message, canonical_context=None):
             "estado",
         ]
     )
-    return _price_offer_message(lead)
+    response = _price_offer_message(lead)
+    if canonical_context is not None and generation_id is not None:
+        from apps.cotizador.commercial import crear_cotizacion_automatica
+        from apps.whatsapp.models import ConversacionWhatsApp
+        conversation = ConversacionWhatsApp.objects.filter(lead=lead).exclude(
+            estado_atencion=ConversacionWhatsApp.ATENCION_CERRADA
+        ).order_by("-ultima_actividad").first()
+        if conversation:
+            crear_cotizacion_automatica(
+                conversation,
+                cotizacion,
+                response,
+                source_key=f"bot-generation:{generation_id}",
+            )
+    return response
+
+
+def _mark_for_manual_quote(lead, reason):
+    from apps.whatsapp.domain import enviar_a_cotizar
+    from apps.whatsapp.models import ConversacionWhatsApp
+    conversation = ConversacionWhatsApp.objects.filter(lead=lead).exclude(
+        estado_atencion=ConversacionWhatsApp.ATENCION_CERRADA
+    ).order_by("-ultima_actividad").first()
+    if conversation:
+        enviar_a_cotizar(conversation.id, None, reason, conversation.datos_faltantes)
 
 
 def handle_image_inventory(cliente, analysis):

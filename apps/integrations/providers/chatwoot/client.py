@@ -252,6 +252,31 @@ class ChatwootClient:
             json={"custom_attributes": attributes},
         )
 
+    def list_labels(self):
+        payload = self._request("GET", f"/api/v1/accounts/{self.config.account_id}/labels")
+        return payload.get("payload", payload) if isinstance(payload, dict) else payload
+
+    def create_label(self, title, *, color="#1f93ff", description=""):
+        return self._request(
+            "POST", f"/api/v1/accounts/{self.config.account_id}/labels",
+            json={"title": title, "color": color, "description": description},
+        )
+
+    def ensure_label(self, title):
+        matches = [item for item in self.list_labels() if item.get("title") == title]
+        if len(matches) > 1:
+            raise ChatwootAPIError("Duplicate Chatwoot labels found.")
+        if matches:
+            return matches[0], False
+        return self.create_label(title, description="Proyección comercial TaxiCarga"), True
+
+    def set_conversation_labels(self, conversation_id, labels):
+        return self._request(
+            "POST",
+            f"/api/v1/accounts/{self.config.account_id}/conversations/{conversation_id}/labels",
+            json={"labels": sorted(set(labels))},
+        )
+
     def list_webhooks(self):
         payload = self._request("GET", f"/api/v1/accounts/{self.config.account_id}/webhooks")
         if not isinstance(payload, dict):

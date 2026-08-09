@@ -168,7 +168,10 @@ def _receive_message(request):
             context = build_bot_context(
                 canonical_conversation.id, trigger_message_id=canonical_message.id
             )
-            reply = handle_incoming_message(cliente, message, canonical_context=context)
+            reply = handle_incoming_message(
+                cliente, message, canonical_context=context,
+                generation_id=authorization.generation.id,
+            )
             _generation, outbox, published = finalize_generation(
                 authorization.generation.id, result_text=reply
             )

@@ -1,3 +1,5 @@
+import hashlib
+
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticatedOrReadOnly
@@ -6,8 +8,10 @@ from rest_framework import status
 from django.utils import timezone
 from decimal import Decimal, InvalidOperation
 
-from apps.clientes.models import Conversacion
-from apps.whatsapp.services import send_whatsapp_message
+from apps.cotizador.commercial import guardar_borrador
+from apps.cotizador.delivery import queue_revision_whatsapp
+from apps.cotizador.services import cotizar_lead
+from apps.whatsapp.domain import enviar_a_cotizar, obtener_o_crear_conversacion
 from .models import Lead
 from .serializers import LeadResumenSerializer, LeadSerializer
 
@@ -81,25 +85,24 @@ class LeadViewSet(viewsets.ModelViewSet):
             return Response({"detail": "Precio cotizado invalido."}, status=status.HTTP_400_BAD_REQUEST)
 
         message = str(request.data.get("mensaje", "")).strip() or _default_quote_message(lead, quoted_price)
-        send_whatsapp_message(lead.cliente.telefono, message)
-        Conversacion.objects.create(
-            cliente=lead.cliente,
-            mensaje_entrada="",
-            mensaje_salida=message,
-            canal=Conversacion.CANAL_WHATSAPP,
+        conversation = obtener_o_crear_conversacion(lead)
+        solicitud = enviar_a_cotizar(
+            conversation.id, request.user, "Cotización registrada mediante API legacy", []
         )
-        lead.precio_cotizado = quoted_price
-        lead.estado = Lead.COTIZADO
-        lead.atencion_humana = True
-        lead.fecha_ultimo_seguimiento = timezone.now()
-        lead.save(
-            update_fields=[
-                "precio_cotizado",
-                "estado",
-                "atencion_humana",
-                "fecha_ultimo_seguimiento",
-            ]
+        technical = lead.cotizaciones.order_by("-fecha_creacion").first() or cotizar_lead(lead)
+        supplied_key = str(request.data.get("idempotency_key") or request.META.get("HTTP_IDEMPOTENCY_KEY") or "")
+        fingerprint = supplied_key or hashlib.sha256(
+            f"{lead.id}|{quoted_price}|{message}".encode()
+        ).hexdigest()
+        _quote, revision = guardar_borrador(
+            solicitud, request.user, quoted_price,
+            cotizacion_tecnica=technical,
+            source_key=f"legacy-register-quote:{fingerprint}",
+            precio_sugerido_min=technical.precio_min,
+            precio_sugerido_max=technical.precio_max,
+            mensaje_whatsapp=message,
         )
+        queue_revision_whatsapp(revision.id, actor=request.user)
         return Response(LeadSerializer(lead).data)
 
 
