@@ -1,0 +1,186 @@
+name: taxicarga-production
+
+x-taxicarga-env: &taxicarga-env
+  DJANGO_SETTINGS_MODULE: config.settings_production
+  DJANGO_SECRET_KEY_FILE: /run/secrets/django_secret_key
+  DATABASE_URL: postgresql://taxicarga_app:{DATABASE_PASSWORD}@taxicarga_db:5432/taxicarga_prod
+  DATABASE_PASSWORD_FILE: /run/secrets/taxicarga_db_password
+  ALLOWED_HOSTS: ${BOT_HOSTNAME},127.0.0.1,localhost,taxicarga_web
+  CSRF_TRUSTED_ORIGINS: https://${BOT_HOSTNAME}
+  WHATSAPP_API_VERSION: ${WHATSAPP_API_VERSION}
+  WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN:-}
+  META_VERIFY_TOKEN: ${META_VERIFY_TOKEN:-}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  CHATWOOT_API_ACCESS_TOKEN: ${CHATWOOT_API_ACCESS_TOKEN:-}
+  CHATWOOT_WEBHOOK_SECRET: ${CHATWOOT_WEBHOOK_SECRET:-}
+  SECURE_SSL_REDIRECT: ${SECURE_SSL_REDIRECT:-true}
+  SECURE_HSTS_SECONDS: ${SECURE_HSTS_SECONDS:-0}
+  CHATWOOT_INTEGRATION_ENABLED: "false"
+  CHATWOOT_SHADOW_SYNC_ENABLED: "false"
+  CHATWOOT_AGENT_OUTBOUND_ENABLED: "false"
+  META_OUTBOX_ENABLED: "false"
+  CHATWOOT_RETURN_TO_BOT_ENABLED: "false"
+  CHATWOOT_HUMAN_TAKEOVER_ENABLED: "false"
+  CHATWOOT_AGENT_TO_WHATSAPP_ENABLED: "false"
+  CHATWOOT_LIVE_SYNC_ENABLED: "false"
+  CHATWOOT_COMMERCIAL_LABELS_ENABLED: "false"
+
+x-logging: &service-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  caddy:
+    image: caddy:2.10.0
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      BOT_HOSTNAME: ${BOT_HOSTNAME}
+      CHATWOOT_HOSTNAME: ${CHATWOOT_HOSTNAME}
+      ACME_EMAIL: ${ACME_EMAIL}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [proxy_frontend]
+    logging: *service-logging
+
+  taxicarga_web:
+    build: {context: ../.., dockerfile: Dockerfile}
+    restart: unless-stopped
+    environment: *taxicarga-env
+    command: ["gunicorn", "config.wsgi:application", "--bind=0.0.0.0:8000", "--workers=3", "--timeout=60", "--graceful-timeout=30", "--access-logfile=-", "--error-logfile=-"]
+    secrets: [django_secret_key, taxicarga_db_password]
+    volumes:
+      - django_static:/app/staticfiles
+      - django_media:/app/datos_privados/media
+    depends_on:
+      taxicarga_db: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks: [proxy_frontend, taxicarga_backend]
+    logging: *service-logging
+
+  taxicarga_worker:
+    build: {context: ../.., dockerfile: Dockerfile}
+    restart: unless-stopped
+    environment: *taxicarga-env
+    command: ["python", "manage.py", "run_integration_worker", "--interval=2", "--batch-size=20"]
+    secrets: [django_secret_key, taxicarga_db_password]
+    depends_on:
+      taxicarga_db: {condition: service_healthy}
+    networks: [taxicarga_backend, proxy_frontend]
+    logging: *service-logging
+
+  taxicarga_db:
+    image: postgres:16.9-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: taxicarga_prod
+      POSTGRES_USER: taxicarga_app
+      POSTGRES_PASSWORD_FILE: /run/secrets/taxicarga_db_password
+    secrets: [taxicarga_db_password]
+    volumes: [taxicarga_db_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U taxicarga_app -d taxicarga_prod"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [taxicarga_backend]
+    logging: *service-logging
+
+  chatwoot_rails:
+    image: chatwoot/chatwoot:v4.16.2
+    restart: unless-stopped
+    command: ["bundle", "exec", "rails", "s", "-p", "3000", "-b", "0.0.0.0"]
+    environment: &chatwoot-env
+      RAILS_ENV: production
+      NODE_ENV: production
+      INSTALLATION_ENV: docker
+      FRONTEND_URL: https://${CHATWOOT_HOSTNAME}
+      POSTGRES_HOST: chatwoot_db
+      POSTGRES_DATABASE: chatwoot_prod
+      POSTGRES_USERNAME: chatwoot_app
+      POSTGRES_PASSWORD: ${CHATWOOT_DATABASE_PASSWORD}
+      REDIS_URL: redis://chatwoot_redis:6379
+      SECRET_KEY_BASE: ${CHATWOOT_SECRET_KEY_BASE}
+    volumes: [chatwoot_storage:/app/storage]
+    depends_on:
+      chatwoot_db: {condition: service_healthy}
+      chatwoot_redis: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:3000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    networks: [proxy_frontend, chatwoot_backend]
+    logging: *service-logging
+
+  chatwoot_sidekiq:
+    image: chatwoot/chatwoot:v4.16.2
+    restart: unless-stopped
+    command: ["bundle", "exec", "sidekiq", "-C", "config/sidekiq.yml"]
+    environment: *chatwoot-env
+    volumes: [chatwoot_storage:/app/storage]
+    depends_on:
+      chatwoot_db: {condition: service_healthy}
+      chatwoot_redis: {condition: service_healthy}
+    networks: [chatwoot_backend]
+    logging: *service-logging
+
+  chatwoot_db:
+    image: pgvector/pgvector:pg16-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: chatwoot_prod
+      POSTGRES_USER: chatwoot_app
+      POSTGRES_PASSWORD: ${CHATWOOT_DATABASE_PASSWORD}
+    volumes: [chatwoot_db_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chatwoot_app -d chatwoot_prod"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [chatwoot_backend]
+    logging: *service-logging
+
+  chatwoot_redis:
+    image: redis:7.4.5-bookworm
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: [chatwoot_redis_data:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [chatwoot_backend]
+    logging: *service-logging
+
+networks:
+  proxy_frontend:
+  taxicarga_backend: {internal: true}
+  chatwoot_backend: {internal: true}
+
+volumes:
+  caddy_data:
+  caddy_config:
+  django_static:
+  django_media:
+  taxicarga_db_data:
+  chatwoot_storage:
+  chatwoot_db_data:
+  chatwoot_redis_data:
+
+secrets:
+  django_secret_key:
+    file: "${DJANGO_SECRET_KEY_FILE}"
+  taxicarga_db_password:
+    file: "${DATABASE_PASSWORD_FILE}"

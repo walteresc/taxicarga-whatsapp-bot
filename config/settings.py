@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import dj_database_url
@@ -11,8 +12,17 @@ def env_bool(name, default=False):
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
-SECRET_KEY = config("SECRET_KEY", default="django-insecure-dev-only-change-me")
+def env_value(name, default="", required=False):
+    file_name = os.environ.get(f"{name}_FILE", "").strip()
+    value = Path(file_name).read_text(encoding="utf-8").strip() if file_name else config(name, default=default)
+    if required and not str(value).strip():
+        raise RuntimeError(f"{name} or {name}_FILE is required.")
+    return value
+
+
+SECRET_KEY = env_value("DJANGO_SECRET_KEY", default=config("SECRET_KEY", default="django-insecure-dev-only-change-me"))
 DEBUG = env_bool("DJANGO_DEBUG", default=True)
+STRICT_ADMIN_OPERATIONS = env_bool("STRICT_ADMIN_OPERATIONS", default=False)
 ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="localhost,127.0.0.1,testserver").split(",")
 
 INSTALLED_APPS = [
@@ -41,6 +51,7 @@ LOGOUT_REDIRECT_URL = "/dashboard/login/"
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -89,6 +100,7 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = "static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_ROOT = BASE_DIR / "datos_privados" / "media"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
@@ -98,10 +110,10 @@ REST_FRAMEWORK = {
     ],
 }
 
-OPENAI_API_KEY = config("OPENAI_API_KEY", default="")
+OPENAI_API_KEY = env_value("OPENAI_API_KEY")
 OPENAI_MODEL = config("OPENAI_MODEL", default="gpt-4.1-mini")
-WHATSAPP_VERIFY_TOKEN = config("WHATSAPP_VERIFY_TOKEN", default="")
-WHATSAPP_ACCESS_TOKEN = config("WHATSAPP_ACCESS_TOKEN", default="")
+WHATSAPP_VERIFY_TOKEN = env_value("META_VERIFY_TOKEN", default=config("WHATSAPP_VERIFY_TOKEN", default=""))
+WHATSAPP_ACCESS_TOKEN = env_value("WHATSAPP_ACCESS_TOKEN")
 WHATSAPP_PHONE_NUMBER_ID = config("WHATSAPP_PHONE_NUMBER_ID", default="")
 WHATSAPP_API_VERSION = config("WHATSAPP_API_VERSION", default="v20.0")
 
@@ -115,13 +127,13 @@ CHATWOOT_RETURN_TO_BOT_ENABLED = env_bool("CHATWOOT_RETURN_TO_BOT_ENABLED", defa
 CHATWOOT_ENABLED = env_bool("CHATWOOT_ENABLED", default=False)
 CHATWOOT_SYNC_ENABLED = env_bool("CHATWOOT_SYNC_ENABLED", default=False)
 CHATWOOT_BASE_URL = config("CHATWOOT_BASE_URL", default="").rstrip("/")
-CHATWOOT_API_ACCESS_TOKEN = config("CHATWOOT_API_ACCESS_TOKEN", default="")
+CHATWOOT_API_ACCESS_TOKEN = env_value("CHATWOOT_API_ACCESS_TOKEN")
 CHATWOOT_ACCOUNT_ID = config("CHATWOOT_ACCOUNT_ID", default="")
 CHATWOOT_INBOX_ID = config("CHATWOOT_INBOX_ID", default="")
 CHATWOOT_CONNECT_TIMEOUT = float(config("CHATWOOT_CONNECT_TIMEOUT", default="3"))
 CHATWOOT_READ_TIMEOUT = float(config("CHATWOOT_READ_TIMEOUT", default="10"))
 CHATWOOT_WEBHOOK_ENABLED = env_bool("CHATWOOT_WEBHOOK_ENABLED", default=False)
-CHATWOOT_WEBHOOK_SECRET = config("CHATWOOT_WEBHOOK_SECRET", default="")
+CHATWOOT_WEBHOOK_SECRET = env_value("CHATWOOT_WEBHOOK_SECRET")
 CHATWOOT_WEBHOOK_MAX_AGE_SECONDS = int(config("CHATWOOT_WEBHOOK_MAX_AGE_SECONDS", default="300"))
 CHATWOOT_HUMAN_TAKEOVER_ENABLED = env_bool("CHATWOOT_HUMAN_TAKEOVER_ENABLED", default=False)
 CHATWOOT_AGENT_TO_WHATSAPP_ENABLED = env_bool("CHATWOOT_AGENT_TO_WHATSAPP_ENABLED", default=False)
@@ -129,6 +141,8 @@ CHATWOOT_LIVE_SYNC_ENABLED = env_bool("CHATWOOT_LIVE_SYNC_ENABLED", default=Fals
 CHATWOOT_COMMERCIAL_LABELS_ENABLED = env_bool("CHATWOOT_COMMERCIAL_LABELS_ENABLED", default=False)
 BOT_CONTEXT_MAX_MESSAGES = int(config("BOT_CONTEXT_MAX_MESSAGES", default="40"))
 BOT_CONTEXT_MAX_CHARACTERS = int(config("BOT_CONTEXT_MAX_CHARACTERS", default="12000"))
+
+DJANGO_LOG_LEVEL = config("DJANGO_LOG_LEVEL", default="DEBUG")
 
 LOGGING = {
     "version": 1,
@@ -153,12 +167,12 @@ LOGGING = {
     "loggers": {
         "django": {
             "handlers": ["console", "file"],
-            "level": "DEBUG",
+            "level": DJANGO_LOG_LEVEL,
             "propagate": True,
         },
         "apps.whatsapp": {
             "handlers": ["console", "file"],
-            "level": "DEBUG",
+            "level": DJANGO_LOG_LEVEL,
             "propagate": True,
         },
     },

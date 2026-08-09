@@ -125,3 +125,24 @@
 - SQLite: 555/555 OK, 33 omitidas PostgreSQL-only. PostgreSQL 16.14 aislado: 31/31 focales OK, deadlocks 0 y contaminación cruzada 0.
 - Migración `integrations.0004_channelintegrationpolicy` validada apply/rollback/reapply; no crea políticas habilitadas.
 - Ningún canal real activado; cero llamadas reales Meta/Chatwoot. ETAPA 10B no iniciada.
+
+## ETAPA 10B — COMPLETADA
+
+- Infraestructura productiva reproducible bajo `infra/production`: Caddy 2.10.0, Django/Gunicorn, worker Django, PostgreSQL TaxiCarga 16.9, Chatwoot 4.16.2, PostgreSQL Chatwoot 16 y Redis 7.4.5.
+- Solo Caddy publica 80/443; bases, Redis, Django y Chatwoot permanecen privados en redes separadas.
+- `config.settings_production` exige `DEBUG=False`, clave, PostgreSQL, hosts, orígenes CSRF y versión Meta; soporta secretos `VAR`/`VAR_FILE` y conserva flags/policies OFF.
+- Worker permanente con batch/intervalo configurables, señales SIGTERM/SIGINT, recuperación de locks, aislamiento por evento y heartbeat PostgreSQL (`integrations.0005_workerheartbeat`).
+- Health `/health/live` y `/health/ready`; 404 real; static con WhiteNoise/collectstatic y media persistente.
+- Operaciones seguras: status, listado filtrado de outbox, requeue individual por UUID y reconciliación existente por conversación/canal.
+- Logging productivo solo stdout/stderr, rotación Docker y filtro de teléfono/tokens.
+- Backups para ambas bases, media y Chatwoot storage con timestamp/checksum; restore exige destino explícito y bloquea nombres productivos.
+- Restore PostgreSQL TaxiCarga probado en DB descartable: checksum válido y 69/69 migraciones restauradas.
+- RPO objetivo 15 min y RTO objetivo 4 h documentados; snapshots no demuestran todavía objetivos. WAL/PITR y simulacro VPS quedan pendientes.
+- Permisos P0 productivos endurecidos con `STRICT_ADMIN_OPERATIONS=True`; desarrollo legacy conserva compatibilidad.
+- Migración heartbeat validada en PostgreSQL 16.9: apply/rollback/reapply OK.
+- `check --deploy`: solo warning HSTS esperado; `SECURE_HSTS_SECONDS=0` deliberado antes de HTTPS real.
+- `docker compose config` OK; única publicación 80/443. Dry-run aislado OK: build, Gunicorn, PostgreSQL, migrate, collectstatic, worker, health y Caddy.
+- Chatwoot productivo validado por Compose; no levantado para proteger sandbox existente.
+- Suite focal 10B 6/6 OK; regresiones 7/8/9/10A 42/42 OK; suite completa 561/561 OK, 33 PostgreSQL-only omitidas.
+- Acciones externas: Meta sends=0, Chatwoot productivo calls=0, DNS/VPS=0. Canales/policies habilitados=0.
+- Checkpoint Git 10B preparado sin push. ETAPA 10C no iniciada.

@@ -21,6 +21,9 @@ datos_privados/
 .env
 .env.local
 .env.production
+infra/production/.env*
+infra/production/secrets/
+infra/production/backups/
 
 # IDE
 .vscode/

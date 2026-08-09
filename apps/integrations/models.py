@@ -433,3 +433,11 @@ class ContextCheckpoint(models.Model):
 
     class Meta:
         indexes = [models.Index(fields=["conversation", "status", "created_at"], name="int_checkpoint_conv_idx")]
+
+
+class WorkerHeartbeat(models.Model):
+    name = models.CharField(max_length=80, unique=True)
+    worker_id = models.CharField(max_length=120)
+    started_at = models.DateTimeField(default=timezone.now)
+    last_seen_at = models.DateTimeField(default=timezone.now, db_index=True)
+    metadata = models.JSONField(default=dict, blank=True)

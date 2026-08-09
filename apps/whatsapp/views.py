@@ -497,6 +497,8 @@ def _receive_image(cliente, active_lead, event):
 def bot_settings(request):
     if not request.user.is_authenticated:
         return JsonResponse({"error": "authentication_required"}, status=403)
+    if settings.STRICT_ADMIN_OPERATIONS and request.method != "GET" and not (request.user.is_superuser or request.user.groups.filter(name="Administrador").exists()):
+        return JsonResponse({"error": "permission_denied"}, status=403)
     channel_id = request.GET.get("channel")
     channel = None
     if channel_id:
@@ -620,6 +622,8 @@ def _schedule_overlaps(channel, day_of_week, modo, start_time, end_time, exclude
 def bot_schedules(request):
     if not request.user.is_authenticated:
         return JsonResponse({"error": "authentication_required"}, status=403)
+    if settings.STRICT_ADMIN_OPERATIONS and request.method != "GET" and not (request.user.is_superuser or request.user.groups.filter(name="Administrador").exists()):
+        return JsonResponse({"error": "permission_denied"}, status=403)
     channel_id = request.GET.get("channel")
     channel = None
     if channel_id:
@@ -672,6 +676,8 @@ def bot_schedules(request):
 def whatsapp_channels(request):
     if not request.user.is_authenticated:
         return JsonResponse({"error": "authentication_required"}, status=403)
+    if settings.STRICT_ADMIN_OPERATIONS and request.method != "GET" and not (request.user.is_superuser or request.user.groups.filter(name="Administrador").exists()):
+        return JsonResponse({"error": "permission_denied"}, status=403)
     if request.method == "GET":
         qs = WhatsAppChannel.objects.all().order_by("nombre")
         filtro = request.GET.get("filter", "all")
@@ -720,6 +726,8 @@ def whatsapp_channels(request):
 def whatsapp_channel_detail(request, channel_id):
     if not request.user.is_authenticated:
         return JsonResponse({"error": "authentication_required"}, status=403)
+    if settings.STRICT_ADMIN_OPERATIONS and not (request.user.is_superuser or request.user.groups.filter(name="Administrador").exists()):
+        return JsonResponse({"error": "permission_denied"}, status=403)
     try:
         channel = WhatsAppChannel.objects.get(id=channel_id)
     except WhatsAppChannel.DoesNotExist:
@@ -803,6 +811,8 @@ def whatsapp_channel_detail(request, channel_id):
 def whatsapp_channel_asesores(request):
     if not request.user.is_authenticated:
         return JsonResponse({"error": "authentication_required"}, status=403)
+    if settings.STRICT_ADMIN_OPERATIONS and not (request.user.is_superuser or request.user.groups.filter(name="Administrador").exists()):
+        return JsonResponse({"error": "permission_denied"}, status=403)
     from django.contrib.auth import get_user_model
     User = get_user_model()
     users = User.objects.all().order_by("username")
@@ -816,6 +826,8 @@ def whatsapp_channel_asesores(request):
 def bot_schedule_detail(request, schedule_id):
     if not request.user.is_authenticated:
         return JsonResponse({"error": "authentication_required"}, status=403)
+    if settings.STRICT_ADMIN_OPERATIONS and not (request.user.is_superuser or request.user.groups.filter(name="Administrador").exists()):
+        return JsonResponse({"error": "permission_denied"}, status=403)
     try:
         schedule = BotSchedule.objects.get(id=schedule_id)
     except BotSchedule.DoesNotExist:

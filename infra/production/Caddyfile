@@ -1,0 +1,13 @@
+{
+    email {$ACME_EMAIL}
+}
+
+{$BOT_HOSTNAME} {
+    encode zstd gzip
+    reverse_proxy taxicarga_web:8000
+}
+
+{$CHATWOOT_HOSTNAME} {
+    encode zstd gzip
+    reverse_proxy chatwoot_rails:3000
+}

@@ -1,0 +1,10 @@
+.git
+.env*
+.venv
+__pycache__
+*.pyc
+*.log
+db.sqlite3
+datos_privados
+staticfiles
+infra/production/backups
