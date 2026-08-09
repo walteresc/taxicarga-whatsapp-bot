@@ -18,11 +18,16 @@ from apps.integrations.enums import (
 )
 from apps.integrations.errors import IdempotencyConflict
 from apps.integrations.models import (
+    ChannelInboxMapping,
     ConversationMapping,
     ExternalMessageMapping,
     IntegrationMessage,
 )
 from apps.integrations.services.inbox_outbox import register_inbox_event
+from apps.integrations.services.human_takeover import (
+    apply_chatwoot_human_takeover,
+    channel_is_stage7_scoped,
+)
 
 
 class InvalidWebhookSignature(ValueError):
@@ -114,7 +119,13 @@ def _is_human_agent(payload):
 def _classify(payload, account_id, inbox_id, message_id, mapping):
     if account_id != str(settings.CHATWOOT_ACCOUNT_ID):
         return "wrong_account"
-    if inbox_id != str(settings.CHATWOOT_INBOX_ID):
+    known_inbox = ChannelInboxMapping.objects.filter(
+        active=True,
+        account__active=True,
+        account__account_id=account_id,
+        inbox_id=inbox_id,
+    ).exists()
+    if not known_inbox:
         return "wrong_inbox"
     if payload.get("private") is True:
         return "private_note"
@@ -185,7 +196,7 @@ def process_webhook(payload, delivery_id):
         raise InvalidWebhookPayload("message_created requires a message id.")
 
     mapping = None
-    if account_id == str(settings.CHATWOOT_ACCOUNT_ID) and inbox_id == str(settings.CHATWOOT_INBOX_ID):
+    if account_id == str(settings.CHATWOOT_ACCOUNT_ID):
         mapping = ConversationMapping.objects.select_related("conversation__channel").filter(
             active=True,
             external_conversation_id=conversation_id,
@@ -221,7 +232,20 @@ def process_webhook(payload, delivery_id):
 
     action = "ignored"
     if classification == "human_agent":
-        _message, message_created = _create_human_message(mapping, payload, account_id, message_id)
+        if (
+            settings.CHATWOOT_HUMAN_TAKEOVER_ENABLED
+            and channel_is_stage7_scoped(mapping.conversation.channel_id)
+        ):
+            takeover = apply_chatwoot_human_takeover(
+                mapping_id=mapping.id,
+                payload=payload,
+                account_id=account_id,
+                inbox_id=inbox_id,
+                message_id=message_id,
+            )
+            message_created = takeover.message_created
+        else:
+            _message, message_created = _create_human_message(mapping, payload, account_id, message_id)
         action = "normalized" if message_created else "ignored"
     inbox_event.status = InboxStatus.PROCESSED if action == "normalized" else InboxStatus.IGNORED
     inbox_event.processed_at = timezone.now()

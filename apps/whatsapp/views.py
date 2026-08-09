@@ -17,6 +17,11 @@ from apps.ia.conversation_engine import (
 )
 from apps.ia.image_analyzer import analyze_moving_image
 from apps.leads.models import Lead
+from apps.integrations.enums import AuthorType, OwnerState
+from apps.integrations.models import ConversationControl
+from apps.integrations.services.live_sync import canonical_incoming_message, project_new_incoming
+from apps.whatsapp.domain import obtener_o_crear_conversacion
+from apps.whatsapp.identity import resolve_whatsapp_identity
 
 from . import models as whatsapp_models
 from .models import BotSchedule, ConfiguracionBot, MensajeWhatsappProcesado, WhatsAppChannel
@@ -67,9 +72,6 @@ def _receive_message(request):
         return JsonResponse({"ok": True, "duplicate": True})
 
     phone = event["phone"]
-    cliente, _ = Cliente.objects.get_or_create(telefono=phone)
-    cliente.ultima_interaccion = timezone.now()
-    cliente.save(update_fields=["ultima_interaccion"])
 
     channel = None
     phone_number_id = event.get("phone_number_id", "")
@@ -80,12 +82,20 @@ def _receive_message(request):
             _complete_message(processed)
             return JsonResponse({"ok": True, "ignored": True, "reason": "inactive_channel"})
 
+    if channel:
+        cliente, resolved_lead, resolved_conversation = resolve_whatsapp_identity(phone, channel)
+    else:
+        cliente, _ = Cliente.objects.get_or_create(telefono=phone)
+        resolved_lead = resolved_conversation = None
+    cliente.ultima_interaccion = timezone.now()
+    cliente.save(update_fields=["ultima_interaccion"])
+
     try:
-        active_lead = _active_lead(cliente)
+        active_lead = resolved_lead or _active_lead(cliente)
         if channel and active_lead and not active_lead.whatsapp_channel_id:
             active_lead.whatsapp_channel = channel
             active_lead.save(update_fields=["whatsapp_channel"])
-        if not active_lead and channel:
+        if not active_lead and channel and not resolved_conversation:
             active_lead = Lead.objects.create(cliente=cliente, estado=Lead.NUEVO, whatsapp_channel=channel)
         if event["type"] == "image":
             active_lead = _lead_for_image(cliente, active_lead)
@@ -132,13 +142,30 @@ def _receive_message(request):
             return JsonResponse({"ok": True, "ignored": True})
 
         message = event["text"]
-        if active_lead and active_lead.atencion_humana:
+        canonical_message, canonical_created, canonical_conversation = canonical_incoming_message(
+            lead=active_lead, channel=channel, event=event, conversation=resolved_conversation
+        )
+        control = (
+            ConversationControl.objects.filter(conversation=canonical_conversation).first()
+            if canonical_conversation else None
+        )
+        human_owned = bool(
+            (active_lead and active_lead.atencion_humana)
+            or (canonical_conversation and (
+                canonical_conversation.estado_atencion == canonical_conversation.ATENCION_ASESOR
+                or canonical_conversation.bot_pausado
+            ))
+            or (control and control.owner_state == OwnerState.AGENT_ACTIVE)
+        )
+        if human_owned:
             Conversacion.objects.create(
                 cliente=cliente,
                 mensaje_entrada=message,
                 mensaje_salida="",
                 canal=Conversacion.CANAL_WHATSAPP,
             )
+            if canonical_created:
+                project_new_incoming(canonical_message)
             _complete_message(processed)
             return JsonResponse({"ok": True, "human_takeover": True, "sent": None})
 
@@ -159,7 +186,7 @@ def _receive_message(request):
                 ).exists()
                 if not v2_msg_sent:
                     try:
-                        send_whatsapp_message(phone, MENSAJE_V2)
+                        _send_bot_message(phone, MENSAJE_V2, channel, canonical_conversation)
                         Conversacion.objects.create(
                             cliente=cliente,
                             mensaje_entrada="",
@@ -182,7 +209,7 @@ def _receive_message(request):
                 canal=Conversacion.CANAL_WHATSAPP,
             )
             if fue_derivado:
-                _send_handoff_message(phone, active_lead)
+                _send_handoff_message(phone, active_lead, channel, canonical_conversation)
             _complete_message(processed)
             return JsonResponse({"ok": True, "human_takeover": True, "sent": None})
 
@@ -202,7 +229,7 @@ def _receive_message(request):
                 active_lead.save(update_fields=save_fields)
             if guard.get("message_to_client") and active_lead and not getattr(active_lead, '_guard_msg_sent', False):
                 try:
-                    send_whatsapp_message(phone, guard["message_to_client"])
+                    _send_bot_message(phone, guard["message_to_client"], channel, canonical_conversation)
                     active_lead._guard_msg_sent = True
                 except Exception:
                     logger.warning("No se pudo enviar mensaje de guard para lead %d", active_lead.id)
@@ -232,11 +259,11 @@ def _receive_message(request):
                 logger.warning("Error en re-evaluación mixto inteligente", exc_info=True)
 
         if active_lead and active_lead.requiere_asesor:
-            _send_handoff_message(phone, active_lead)
+            _send_handoff_message(phone, active_lead, channel, canonical_conversation)
             _complete_message(processed)
             return JsonResponse({"ok": True, "human_takeover": True, "sent": None})
 
-        send_result = send_whatsapp_message(phone, reply)
+        send_result = _send_bot_message(phone, reply, channel, canonical_conversation)
         if not _message_was_sent(send_result):
             raise WhatsappSendError("Meta no acepto la respuesta saliente.")
         Conversacion.objects.create(
@@ -263,11 +290,21 @@ MENSAJE_DERIVACION = (
 )
 
 
-def _send_handoff_message(phone, lead):
+def _send_bot_message(phone, body, channel, conversation):
+    return send_whatsapp_message(
+        phone,
+        body,
+        channel=channel,
+        author_type=AuthorType.BOT if conversation else None,
+        conversation_id=conversation.id if conversation else None,
+    )
+
+
+def _send_handoff_message(phone, lead, channel=None, conversation=None):
     if getattr(lead, '_handoff_sent', False):
         return
     try:
-        send_whatsapp_message(phone, MENSAJE_DERIVACION)
+        _send_bot_message(phone, MENSAJE_DERIVACION, channel, conversation)
         lead._handoff_sent = True
         logger.info(
             "Mensaje de derivación enviado a %s para lead %d", phone, lead.id,
@@ -344,13 +381,20 @@ class WhatsappSendError(Exception):
 
 def _receive_image(cliente, active_lead, event):
     lead = active_lead or Lead.objects.create(cliente=cliente, estado=Lead.NUEVO)
+    canonical_conversation = obtener_o_crear_conversacion(lead)
+    control, _ = ConversationControl.objects.get_or_create(conversation=canonical_conversation)
     download_result = download_whatsapp_image(cliente, lead, event)
     caption = event.get("caption", "").strip()
     incoming_label = "[Foto recibida]"
     if caption:
         incoming_label += f" {caption}"
 
-    if lead.atencion_humana:
+    if (
+        lead.atencion_humana
+        or canonical_conversation.estado_atencion == canonical_conversation.ATENCION_ASESOR
+        or canonical_conversation.bot_pausado
+        or control.owner_state == OwnerState.AGENT_ACTIVE
+    ):
         Conversacion.objects.create(
             cliente=cliente,
             mensaje_entrada=incoming_label,
@@ -385,7 +429,9 @@ def _receive_image(cliente, active_lead, event):
             if next_question and "cosas" not in next_question.lower():
                 reply = f"{reply} {next_question}"
 
-    send_result = send_whatsapp_message(cliente.telefono, reply)
+    send_result = _send_bot_message(
+        cliente.telefono, reply, canonical_conversation.channel, canonical_conversation
+    )
     if not _message_was_sent(send_result):
         raise WhatsappSendError("Meta no acepto la respuesta a la imagen.")
     Conversacion.objects.create(

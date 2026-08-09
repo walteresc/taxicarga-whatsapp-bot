@@ -1,24 +1,33 @@
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 from unittest import skipUnless
+from unittest.mock import Mock, patch
+import json
 
 from django.db import IntegrityError, close_old_connections, connection, connections
-from django.test import TransactionTestCase, override_settings
+from django.test import Client, TransactionTestCase, override_settings
 
 from apps.clientes.models import Cliente
-from apps.integrations.enums import Provider, SyncStatus
+from apps.integrations.enums import AuthorType, OutboxStatus, OwnerState, Provider, SyncStatus
 from apps.integrations.models import (
+    BotGeneration,
     ChannelInboxMapping,
     ChatwootAccountMapping,
     ChatwootContactMapping,
     ContactInboxMapping,
     ConversationMapping,
+    ConversationControl,
     ExternalMessageMapping,
     IntegrationInboxEvent,
     IntegrationMessage,
+    IntegrationOutboxEvent,
 )
 from apps.integrations.providers.chatwoot.webhook import process_webhook
+from apps.integrations.services.generations import finalize_generation, start_generation
+from apps.integrations.services.human_takeover import apply_chatwoot_human_takeover
+from apps.integrations.services.meta_sender import process_meta_outbox_event
 from apps.whatsapp.models import ConversacionWhatsApp, MensajeWhatsApp, WhatsAppChannel
+from apps.whatsapp.identity import resolve_whatsapp_identity
 
 
 @skipUnless(connection.vendor == "postgresql", "PostgreSQL-only Chatwoot race test.")
@@ -63,6 +72,88 @@ class ChatwootMappingPostgreSQLTests(TransactionTestCase):
 
         self.assertCountEqual(results, ["created", "duplicate"])
         self.assertEqual(ExternalMessageMapping.objects.count(), 1)
+
+
+@skipUnless(connection.vendor == "postgresql", "PostgreSQL-only WhatsApp identity race test.")
+class WhatsAppIdentityPostgreSQLTests(TransactionTestCase):
+    def setUp(self):
+        self.channel = WhatsAppChannel.objects.create(
+            nombre="PG identity", phone_number_id="pg-identity", activo=True
+        )
+
+    def test_format_variants_create_one_logical_identity_and_conversation(self):
+        barrier = Barrier(2, timeout=10)
+
+        def resolve(phone):
+            close_old_connections()
+            try:
+                barrier.wait()
+                client, _, conversation = resolve_whatsapp_identity(phone, self.channel)
+                return client.id, conversation.id
+            finally:
+                connections.close_all()
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            results = [future.result(timeout=20) for future in (
+                executor.submit(resolve, "+51999999999"),
+                executor.submit(resolve, "51999999999"),
+            )]
+
+        self.assertEqual(results[0], results[1])
+        self.assertEqual(Cliente.objects.count(), 1)
+        self.assertEqual(ConversacionWhatsApp.objects.count(), 1)
+
+    def test_concurrent_format_variants_keep_human_mode_and_never_call_bot(self):
+        cliente = Cliente.objects.create(telefono="+51999999999")
+        conversation = ConversacionWhatsApp.objects.create(
+            cliente=cliente, channel=self.channel, estado_atencion="asesor", bot_pausado=True
+        )
+        ConversationControl.objects.create(
+            conversation=conversation, owner_state=OwnerState.AGENT_ACTIVE, control_version=1
+        )
+        barrier = Barrier(2, timeout=10)
+
+        def receive(index, phone):
+            close_old_connections()
+            payload = {
+                "object": "whatsapp_business_account",
+                "entry": [{"changes": [{"value": {
+                    "metadata": {"phone_number_id": self.channel.phone_number_id},
+                    "messages": [{
+                        "id": f"wamid.pg-human-{index}", "from": phone,
+                        "timestamp": "1786233150", "type": "text", "text": {"body": "Ok"},
+                    }],
+                }}]}],
+            }
+            try:
+                barrier.wait()
+                response = Client().post(
+                    "/webhook/whatsapp/", data=json.dumps(payload), content_type="application/json"
+                )
+                return response.status_code, response.json().get("human_takeover")
+            finally:
+                connections.close_all()
+
+        with override_settings(
+            CHATWOOT_STAGE7_TEST_CHANNEL_ID=str(self.channel.id), CHATWOOT_LIVE_SYNC_ENABLED=False
+        ), patch("apps.whatsapp.views.handle_incoming_message") as ia, patch(
+            "apps.whatsapp.views.send_whatsapp_message"
+        ) as sender, ThreadPoolExecutor(max_workers=2) as executor:
+            results = [future.result(timeout=20) for future in (
+                executor.submit(receive, 1, "+51999999999"),
+                executor.submit(receive, 2, "51999999999"),
+            )]
+
+        conversation.refresh_from_db()
+        self.assertEqual(results, [(200, True), (200, True)])
+        self.assertEqual(Cliente.objects.count(), 1)
+        self.assertEqual(ConversacionWhatsApp.objects.count(), 1)
+        self.assertEqual(conversation.estado_atencion, "asesor")
+        self.assertTrue(conversation.bot_pausado)
+        ia.assert_not_called()
+        sender.assert_not_called()
+        self.assertEqual(BotGeneration.objects.count(), 0)
+        self.assertEqual(IntegrationOutboxEvent.objects.count(), 0)
 
 
 @skipUnless(connection.vendor == "postgresql", "PostgreSQL-only Chatwoot webhook race test.")
@@ -117,3 +208,112 @@ class ChatwootWebhookPostgreSQLTests(TransactionTestCase):
         self.assertEqual(sum(not result.duplicate for result in results), 1)
         self.assertEqual(IntegrationInboxEvent.objects.count(), 1)
         self.assertEqual(IntegrationMessage.objects.count(), 1)
+
+
+@skipUnless(connection.vendor == "postgresql", "PostgreSQL-only Stage 7 race tests.")
+@override_settings(
+    CHATWOOT_HUMAN_TAKEOVER_ENABLED=True,
+    CHATWOOT_AGENT_TO_WHATSAPP_ENABLED=True,
+    META_OUTBOX_ENABLED=True,
+)
+class Stage7PostgreSQLRaceTests(TransactionTestCase):
+    def setUp(self):
+        cliente = Cliente.objects.create(telefono="pg-stage7-test")
+        self.channel = WhatsAppChannel.objects.create(
+            nombre="PG Stage 7", phone_number_id="pg-stage7-no-meta", activo=False
+        )
+        self.conversation = ConversacionWhatsApp.objects.create(cliente=cliente, channel=self.channel)
+        self.control = ConversationControl.objects.create(conversation=self.conversation)
+        account = ChatwootAccountMapping.objects.create(
+            environment="test", account_id="7", active=True, sync_status=SyncStatus.SYNCED
+        )
+        inbox = ChannelInboxMapping.objects.create(
+            channel=self.channel, account=account, inbox_id="9", inbox_identifier="pg-stage7",
+            active=True, sync_status=SyncStatus.SYNCED,
+        )
+        contact = ChatwootContactMapping.objects.create(
+            cliente=cliente, account=account, contact_id="11", active=True,
+            sync_status=SyncStatus.SYNCED,
+        )
+        contact_inbox = ContactInboxMapping.objects.create(
+            contact=contact, inbox=inbox, source_id="pg-stage7-source",
+            sync_status=SyncStatus.SYNCED,
+        )
+        self.mapping = ConversationMapping.objects.create(
+            conversation=self.conversation, contact_inbox=contact_inbox,
+            external_conversation_id="13", active=True, sync_status=SyncStatus.SYNCED,
+        )
+        self.scope = override_settings(CHATWOOT_STAGE7_TEST_CHANNEL_ID=str(self.channel.id))
+        self.scope.enable()
+
+    def tearDown(self):
+        self.scope.disable()
+        super().tearDown()
+
+    def _race(self, operation):
+        barrier = Barrier(2, timeout=10)
+        def run(index):
+            close_old_connections()
+            try:
+                barrier.wait()
+                return operation(index)
+            finally:
+                connections.close_all()
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [executor.submit(run, index) for index in range(2)]
+            return [future.result(timeout=30) for future in futures]
+
+    def _takeover(self, message_id):
+        return apply_chatwoot_human_takeover(
+            mapping_id=self.mapping.id,
+            payload={"content": f"human {message_id}", "sender": {"id": 3}},
+            account_id="7", inbox_id="9", message_id=str(message_id),
+        )
+
+    def test_two_human_messages_transition_once_and_create_two_outputs(self):
+        self._race(lambda index: self._takeover(70 + index).transitioned)
+        self.control.refresh_from_db()
+        self.assertEqual(self.control.owner_state, OwnerState.AGENT_ACTIVE)
+        self.assertEqual(self.control.control_version, 1)
+        self.assertEqual(IntegrationMessage.objects.count(), 2)
+        self.assertEqual(IntegrationOutboxEvent.objects.count(), 2)
+
+    def test_generation_finalize_racing_takeover_has_no_bot_output_after_takeover(self):
+        generation = start_generation(self.conversation.id, request_key="stage7-race")
+        results = self._race(lambda index: (
+            self._takeover("80").transitioned if index == 0
+            else finalize_generation(generation.id, result_text="late bot")[2]
+        ))
+        self.control.refresh_from_db()
+        self.assertEqual(self.control.owner_state, OwnerState.AGENT_ACTIVE)
+        self.assertLessEqual(sum(bool(value) for value in results), 2)
+        self.assertEqual(IntegrationOutboxEvent.objects.filter(
+            logical_message__author_type=AuthorType.BOT,
+            status__in=[OutboxStatus.PENDING, OutboxStatus.RETRY],
+        ).count(), 0)
+
+    def test_pending_bot_outbox_racing_sender_is_suppressed_by_takeover(self):
+        message = IntegrationMessage.objects.create(
+            conversation=self.conversation, provider=Provider.INTERNAL, external_scope="test",
+            direction="outbound", author_type=AuthorType.BOT, visibility="public",
+            text="pending", idempotency_key="pending-bot",
+        )
+        event = IntegrationOutboxEvent.objects.create(
+            destination=Provider.META_WHATSAPP, destination_scope=str(self.channel.id),
+            event_type="send", logical_message=message, idempotency_key="pending-bot",
+            conversation=self.conversation,
+        )
+        sender = Mock(return_value={"messages": [{"id": "must-not-send-after-takeover"}]})
+        self._takeover("81")
+        result = process_meta_outbox_event(event.id, sender=sender)
+        self.assertFalse(result.sent)
+        sender.assert_not_called()
+
+    def test_two_workers_send_same_human_outbox_once(self):
+        event = self._takeover("82").outbox
+        sender = Mock(return_value={"messages": [{"id": "wamid.stage7.pg"}]})
+        results = self._race(
+            lambda index: process_meta_outbox_event(event.id, sender=sender, worker_id=f"w{index}").sent
+        )
+        self.assertCountEqual(results, [True, False])
+        self.assertEqual(sender.call_count, 1)

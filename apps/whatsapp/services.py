@@ -27,10 +27,24 @@ MAX_IMAGE_BYTES = 10 * 1024 * 1024
 MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
 
 
-def send_whatsapp_message(to, body, channel=None):
+def send_whatsapp_message(
+    to, body, channel=None, *, author_type=None, conversation_id=None
+):
     """Envía un mensaje simple o de plantilla por WhatsApp."""
     import json
     import requests
+
+    if author_type and conversation_id and not _ownership_allows_send(
+        author_type=author_type,
+        conversation_id=conversation_id,
+        channel=channel,
+    ):
+        logger.warning(
+            "WhatsApp send blocked by ownership gate (conversation=%s, author=%s).",
+            conversation_id,
+            author_type,
+        )
+        return {"sent": False, "reason": "ownership_gate"}
 
     is_template = isinstance(body, dict) and body.get("type") == "template"
 
@@ -84,6 +98,36 @@ def send_whatsapp_message(to, body, channel=None):
             "error_code": error_code,
             "error_subcode": error_subcode,
         }
+
+
+def _ownership_allows_send(*, author_type, conversation_id, channel):
+    """Stage 7 central physical-send gate; only the explicit TEST channel is scoped."""
+    from apps.integrations.enums import AuthorType, OwnerState
+    from apps.integrations.models import ConversationControl
+    from apps.whatsapp.models import ConversacionWhatsApp
+
+    scoped_channel = str(getattr(settings, "CHATWOOT_STAGE7_TEST_CHANNEL_ID", "") or "")
+    channel_id = str(getattr(channel, "id", "") or "")
+    if not scoped_channel or channel_id != scoped_channel:
+        return True
+    try:
+        conversation = ConversacionWhatsApp.objects.get(pk=conversation_id)
+        control = ConversationControl.objects.get(conversation_id=conversation_id)
+    except (ConversacionWhatsApp.DoesNotExist, ConversationControl.DoesNotExist):
+        return False
+    if author_type == AuthorType.BOT:
+        return (
+            control.owner_state == OwnerState.BOT_ACTIVE
+            and conversation.estado_atencion == ConversacionWhatsApp.ATENCION_BOT
+            and not conversation.bot_pausado
+        )
+    if author_type == AuthorType.AGENT:
+        return (
+            control.owner_state == OwnerState.AGENT_ACTIVE
+            and conversation.estado_atencion == ConversacionWhatsApp.ATENCION_ASESOR
+            and conversation.bot_pausado
+        )
+    return True
 
 
 def send_whatsapp_template_message(to):

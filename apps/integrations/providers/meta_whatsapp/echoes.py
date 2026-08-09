@@ -6,6 +6,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.clientes.models import Cliente
+from apps.whatsapp.identity import resolve_whatsapp_identity
 from apps.whatsapp.models import ConversacionWhatsApp, WhatsAppChannel
 
 from ...enums import AuthorType, Direction, GenerationStatus, OutboxStatus, OwnerState, Provider, Visibility
@@ -165,7 +166,7 @@ def process_smb_message_echo(echo):
 
 
 def _resolve_conversation(channel, customer_phone):
-    cliente = Cliente.objects.filter(telefono=customer_phone).first()
+    cliente, _, _ = resolve_whatsapp_identity(customer_phone, channel, create=False)
     if not cliente:
         raise UnknownChannel("Echo customer does not have a known conversation.")
     conversation = ConversacionWhatsApp.objects.filter(

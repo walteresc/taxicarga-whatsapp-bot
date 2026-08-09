@@ -5,6 +5,8 @@ from django.utils import timezone
 
 from ..enums import AuthorType, Direction, GenerationStatus, OutboxStatus, OwnerState, Provider, Visibility
 from ..errors import InvalidTransition, PrivateMessageBlocked
+from apps.whatsapp.models import ConversacionWhatsApp
+
 from ..models import BotGeneration, ConversationControl, IntegrationMessage, IntegrationOutboxEvent
 
 
@@ -29,8 +31,14 @@ def start_generation(conversation_id, *, request_key, input_message=None, correl
 
 def finalize_generation(generation_id, *, result_text):
     with transaction.atomic():
+        generation_ref = BotGeneration.objects.only("conversation_id").get(pk=generation_id)
+        ConversacionWhatsApp.objects.select_for_update(of=("self",)).get(
+            pk=generation_ref.conversation_id
+        )
+        control = ConversationControl.objects.select_for_update().get(
+            conversation_id=generation_ref.conversation_id
+        )
         generation = BotGeneration.objects.select_for_update().select_related("conversation").get(pk=generation_id)
-        control = ConversationControl.objects.select_for_update().get(conversation_id=generation.conversation_id)
         if generation.status in {GenerationStatus.PUBLISHED, GenerationStatus.CANCELLED, GenerationStatus.FAILED}:
             return generation, None, False
         newer_exists = BotGeneration.objects.filter(

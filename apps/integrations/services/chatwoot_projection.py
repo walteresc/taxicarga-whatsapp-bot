@@ -76,18 +76,23 @@ def _source_for(contact, inbox_id):
     return ""
 
 
-def _visible_messages(conversation):
+def _visible_messages(conversation, message_ids=None):
+    queryset = conversation.mensajes.filter(tipo="texto")
+    if message_ids is not None:
+        queryset = queryset.filter(id__in=message_ids)
     return list(
-        conversation.mensajes.filter(tipo="texto")
+        queryset
         .exclude(origen=MensajeWhatsApp.ORIGEN_SISTEMA)
         .exclude(contenido="")
         .order_by("fecha_mensaje", "id")
     )
 
 
-def sync_chatwoot_conversation(conversation_id, *, dry_run=False, client=None):
+def sync_chatwoot_conversation(
+    conversation_id, *, dry_run=False, client=None, message_ids=None, live=False
+):
     conversation = ConversacionWhatsApp.objects.select_related("cliente", "channel").get(pk=conversation_id)
-    messages = _visible_messages(conversation)
+    messages = _visible_messages(conversation, message_ids)
     incoming = sum(item.direccion == MensajeWhatsApp.ENTRANTE for item in messages)
     outgoing = len(messages) - incoming
     if dry_run:
@@ -95,7 +100,9 @@ def sync_chatwoot_conversation(conversation_id, *, dry_run=False, client=None):
             conversation.cliente_id, "", "", False, conversation.id, "", False,
             len(messages), incoming, outgoing, 0, 0, 0, dry_run=True,
         )
-    if not settings.CHATWOOT_SYNC_ENABLED:
+    if not settings.CHATWOOT_SYNC_ENABLED and not (
+        live and settings.CHATWOOT_LIVE_SYNC_ENABLED
+    ):
         raise ChatwootConfigurationError("Chatwoot conversation sync is disabled.")
     if not conversation.channel_id:
         raise ChatwootConfigurationError("Conversation has no channel for Chatwoot inbox mapping.")
@@ -109,9 +116,23 @@ def sync_chatwoot_conversation(conversation_id, *, dry_run=False, client=None):
             .get(pk=conversation_id)
         )
         Cliente.objects.select_for_update().get(pk=conversation.cliente_id)
+        existing_conversation_map = (
+            ConversationMapping.objects.select_related(
+                "contact_inbox__inbox__account"
+            )
+            .filter(conversation=conversation, active=True)
+            .first()
+        )
+        if live and existing_conversation_map:
+            mapped_inbox = existing_conversation_map.contact_inbox.inbox
+            target_account_id = str(mapped_inbox.account.account_id)
+            target_inbox_id = str(mapped_inbox.inbox_id)
+        else:
+            target_account_id = str(settings.CHATWOOT_ACCOUNT_ID)
+            target_inbox_id = str(settings.CHATWOOT_INBOX_ID)
         account, _ = ChatwootAccountMapping.objects.get_or_create(
             environment="chatwoot-sandbox",
-            account_id=str(settings.CHATWOOT_ACCOUNT_ID),
+            account_id=target_account_id,
             defaults={"active": True, "sync_status": SyncStatus.SYNCED, "last_synced_at": now},
         )
         if not account.active:
@@ -119,13 +140,13 @@ def sync_chatwoot_conversation(conversation_id, *, dry_run=False, client=None):
             account.sync_status = SyncStatus.SYNCED
             account.last_synced_at = now
             account.save(update_fields=["active", "sync_status", "last_synced_at"])
-        inbox_payload = api.get_inbox(settings.CHATWOOT_INBOX_ID)
+        inbox_payload = api.get_inbox(target_inbox_id)
         inbox_identifier = str(inbox_payload.get("channel_id") or inbox_payload.get("id"))
         inbox, _ = ChannelInboxMapping.objects.update_or_create(
             channel=conversation.channel,
             defaults={
                 "account": account,
-                "inbox_id": str(settings.CHATWOOT_INBOX_ID),
+                "inbox_id": target_inbox_id,
                 "inbox_identifier": inbox_identifier,
                 "active": True,
                 "sync_status": SyncStatus.SYNCED,
@@ -152,7 +173,7 @@ def sync_chatwoot_conversation(conversation_id, *, dry_run=False, client=None):
                 contact = matches[0]
             else:
                 contact = _contact_payload(api.create_contact(
-                    inbox_id=settings.CHATWOOT_INBOX_ID,
+                    inbox_id=target_inbox_id,
                     identifier=identifier,
                     name=conversation.cliente.nombre or f"TEST TaxiCarga {conversation.cliente_id}",
                     email=conversation.cliente.correo,
@@ -167,15 +188,15 @@ def sync_chatwoot_conversation(conversation_id, *, dry_run=False, client=None):
                 last_synced_at=now,
             )
 
-        source_id = _source_for(contact, settings.CHATWOOT_INBOX_ID)
+        source_id = _source_for(contact, target_inbox_id)
         contact_inbox = ContactInboxMapping.objects.filter(contact=contact_map, inbox=inbox).first()
         if contact_inbox and contact_inbox.source_id:
             source_id = str(contact_inbox.source_id)
         if not source_id:
-            source_id = f"taxicarga-source:{conversation.cliente_id}:{settings.CHATWOOT_INBOX_ID}"
+            source_id = f"taxicarga-source:{conversation.cliente_id}:{target_inbox_id}"
             api.create_contact_inbox(
                 contact_id=contact_map.contact_id,
-                inbox_id=settings.CHATWOOT_INBOX_ID,
+                inbox_id=target_inbox_id,
                 source_id=source_id,
             )
         contact_inbox, _ = ContactInboxMapping.objects.update_or_create(
@@ -185,7 +206,7 @@ def sync_chatwoot_conversation(conversation_id, *, dry_run=False, client=None):
         )
 
         conv_key = conversation_identifier(conversation.id)
-        conversation_map = ConversationMapping.objects.filter(conversation=conversation, active=True).first()
+        conversation_map = existing_conversation_map
         conversation_created = False
         if conversation_map:
             try:
@@ -198,13 +219,13 @@ def sync_chatwoot_conversation(conversation_id, *, dry_run=False, client=None):
             remote_conversation_id = str(conversation_map.external_conversation_id)
         else:
             remote = next((
-                item for item in api.list_conversations(inbox_id=settings.CHATWOOT_INBOX_ID)
+                item for item in api.list_conversations(inbox_id=target_inbox_id)
                 if item.get("additional_attributes", {}).get("taxicarga_conversation_id") == conv_key
             ), None)
             if remote is None:
                 remote = api.create_conversation(
                     source_id=source_id,
-                    inbox_id=settings.CHATWOOT_INBOX_ID,
+                    inbox_id=target_inbox_id,
                     contact_id=contact_map.contact_id,
                     canonical_id=conv_key,
                 )
@@ -230,7 +251,7 @@ def sync_chatwoot_conversation(conversation_id, *, dry_run=False, client=None):
         for message in messages:
             mapping = ExternalMessageMapping.objects.filter(
                 provider=Provider.CHATWOOT,
-                account_scope=str(settings.CHATWOOT_ACCOUNT_ID),
+                account_scope=target_account_id,
                 whatsapp_message=message,
             ).first()
             if mapping and mapping.external_id:
@@ -249,7 +270,7 @@ def sync_chatwoot_conversation(conversation_id, *, dry_run=False, client=None):
                     )
                 ExternalMessageMapping.objects.update_or_create(
                     provider=Provider.CHATWOOT,
-                    account_scope=str(settings.CHATWOOT_ACCOUNT_ID),
+                    account_scope=target_account_id,
                     whatsapp_message=message,
                     defaults={
                         "external_id": str(remote_message["id"]),

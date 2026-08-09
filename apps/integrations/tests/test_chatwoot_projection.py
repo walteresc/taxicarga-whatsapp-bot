@@ -31,8 +31,10 @@ class FakeChatwootClient:
         self.message_attempts = 0
         self.missing_contact = False
         self.missing_conversation = False
+        self.requested_inboxes = []
 
     def get_inbox(self, inbox_id):
+        self.requested_inboxes.append(str(inbox_id))
         return {"id": int(inbox_id), "channel_id": "sandbox-channel-identifier"}
 
     def search_contacts(self, query):
@@ -117,6 +119,42 @@ class ChatwootProjectionTests(TestCase):
             contenido="same text", estado="enviado", fecha_mensaje=self.first.fecha_mensaje,
         )
         self.client = FakeChatwootClient()
+
+    @override_settings(CHATWOOT_SYNC_ENABLED=False, CHATWOOT_LIVE_SYNC_ENABLED=True)
+    def test_live_projection_projects_only_explicit_new_message(self):
+        result = sync_chatwoot_conversation(
+            self.conversation.id,
+            client=self.client,
+            message_ids=[self.second.id],
+            live=True,
+        )
+        self.assertEqual(result.total, 1)
+        self.assertEqual(result.messages_created, 1)
+        self.assertEqual(len(self.client.messages), 1)
+        self.assertEqual(self.client.messages[0]["content"], self.second.contenido)
+
+    @override_settings(CHATWOOT_SYNC_ENABLED=False, CHATWOOT_LIVE_SYNC_ENABLED=True)
+    def test_live_projection_reuses_mapped_inbox_instead_of_global_inbox(self):
+        with override_settings(CHATWOOT_SYNC_ENABLED=True, CHATWOOT_INBOX_ID="2"):
+            sync_chatwoot_conversation(self.conversation.id, client=self.client)
+        new_message = MensajeWhatsApp.objects.create(
+            conversacion=self.conversation,
+            direccion="entrante",
+            origen="cliente",
+            tipo="texto",
+            contenido="live mapped inbox",
+            estado="recibido",
+        )
+
+        result = sync_chatwoot_conversation(
+            self.conversation.id,
+            client=self.client,
+            message_ids=[new_message.id],
+            live=True,
+        )
+
+        self.assertEqual(result.messages_created, 1)
+        self.assertEqual(self.client.requested_inboxes[-1], "2")
 
     def test_contact_identifier_is_stable_and_not_name_or_phone(self):
         self.assertEqual(contact_identifier(self.cliente.id), f"taxicarga-contact:{self.cliente.id}")
