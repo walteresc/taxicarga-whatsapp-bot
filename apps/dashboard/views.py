@@ -485,6 +485,7 @@ def create_lead(request):
 
 
 def _lead_payload(lead, channel_id=None):
+    from apps.leads.route import access_summary, route_summary
     completion = _completion_payload(lead)
     detail_url = f"/dashboard/leads/{lead.id}/"
     if channel_id:
@@ -496,7 +497,20 @@ def _lead_payload(lead, channel_id=None):
         "tipoServicio": lead.tipo_servicio or "servicio",
         "distritoOrigen": lead.distrito_origen or "-",
         "distritoDestino": lead.distrito_destino or "-",
-        "ruta": f"{lead.distrito_origen or '-'} -> {lead.distrito_destino or '-'}",
+        "ruta": (route_summary(lead) or "-").replace(" → ", " -> "),
+        "accesosRuta": access_summary(lead) or "-",
+        "ubicaciones": [
+            {
+                "orden": order,
+                "tipo": location.tipo,
+                "distrito": location.distrito,
+                "direccion": location.direccion,
+                "piso": location.piso,
+                "ascensor": _bool_label(location.ascensor),
+                "accesoCamion": _bool_label(location.acceso_camion),
+            }
+            for order, location in enumerate(lead.ubicaciones.order_by("orden", "id"))
+        ],
         "fechaServicio": lead.fecha_servicio.isoformat() if lead.fecha_servicio else "",
         "horarioServicio": lead.horario_servicio or "",
         "estado": lead.estado,
@@ -513,6 +527,12 @@ def _lead_payload(lead, channel_id=None):
         "ascensorDestinoInput": _bool_input_value(lead.ascensor_destino),
         "listaObjetos": lead.lista_objetos or "-",
         "listaObjetosInput": lead.lista_objetos or "",
+        "cantidadOperarios": lead.cantidad_operarios,
+        "incluyePersonal": _bool_label(lead.incluye_personal_carga),
+        "embalaje": lead.modalidad_servicio or "sin embalaje",
+        "requiereDesarmado": _bool_label(lead.requiere_desarmado),
+        "requiereArmado": _bool_label(lead.requiere_armado),
+        "reserva": lead.servicio_generado.codigo if hasattr(lead, "servicio_generado") else "Pendiente",
         "notaInterna": lead.nota_interna or "",
         "precioRecomendado": str(lead.precio_recomendado or ""),
         "precioCotizado": str(lead.precio_cotizado or ""),

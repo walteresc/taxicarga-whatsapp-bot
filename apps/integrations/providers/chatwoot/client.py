@@ -231,6 +231,31 @@ class ChatwootClient:
             },
         )
 
+    def create_conversation_text_attribute(self, *, key, display_name):
+        return self._request(
+            "POST",
+            f"/api/v1/accounts/{self.config.account_id}/custom_attribute_definitions",
+            json={
+                "attribute_display_name": display_name,
+                "attribute_display_type": "text",
+                "attribute_description": "Dato operativo proyectado desde TaxiCarga.",
+                "attribute_key": key,
+                "attribute_model": "conversation_attribute",
+            },
+        )
+
+    def ensure_conversation_text_attribute(self, *, key, display_name):
+        matches = [
+            item for item in self.list_custom_attribute_definitions()
+            if item.get("attribute_key") == key
+            and item.get("attribute_model") == "conversation_attribute"
+        ]
+        if len(matches) > 1:
+            raise ChatwootAPIError("Duplicate Chatwoot custom attribute definitions found.")
+        if matches:
+            return matches[0], False
+        return self.create_conversation_text_attribute(key=key, display_name=display_name), True
+
     def ensure_conversation_list_attribute(self, *, key, display_name, values):
         matches = [
             item for item in self.list_custom_attribute_definitions()

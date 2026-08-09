@@ -18,6 +18,9 @@ from apps.integrations.models import (
 )
 from apps.integrations.services.channel_policy import is_feature_enabled
 from apps.integrations.services.commercial_labels import queue_commercial_label_projection
+from apps.integrations.services.conversation_data import (
+    process_conversation_data_event, queue_conversation_data_projection,
+)
 from apps.integrations.services.human_takeover import apply_chatwoot_human_takeover
 from apps.integrations.services.meta_sender import process_meta_outbox_event
 from apps.integrations.services.state_machine import return_to_bot
@@ -105,6 +108,32 @@ class Stage10MultiChannelTests(TestCase):
         self.assertEqual(self.control_b.owner_state, OwnerState.BOT_ACTIVE)
         self.assertFalse(self.conversation_b.bot_pausado)
         self.assertFalse(self.lead_b.bot_pausado)
+
+    def test_structured_projection_is_isolated_by_conversation(self):
+        ChannelIntegrationPolicy.objects.create(
+            channel=self.channel_b, enabled=True, live_sync=True,
+            human_takeover=True, return_to_bot=True, agent_outbound=True,
+            commercial_labels=True, meta_outbox=True,
+        )
+        self.lead_a.distrito_origen = "Surco"
+        self.lead_a.distrito_destino = "Miraflores"
+        self.lead_a.lista_objetos = "cama"
+        self.lead_a.save()
+        self.lead_b.distrito_origen = "Callao"
+        self.lead_b.distrito_destino = "San Isidro"
+        self.lead_b.lista_objetos = "mesa"
+        self.lead_b.save()
+        event_a, _ = queue_conversation_data_projection(self.conversation_a.id)
+        event_b, _ = queue_conversation_data_projection(self.conversation_b.id)
+        client = Mock()
+
+        self.assertEqual(process_conversation_data_event(event_a.id, client=client), "sent")
+        self.assertEqual(process_conversation_data_event(event_b.id, client=client), "sent")
+        calls = client.update_conversation_custom_attributes.call_args_list
+        self.assertEqual(calls[0].args[0], "20")
+        self.assertEqual(calls[0].args[1]["taxicarga_route"], "Surco → Miraflores")
+        self.assertEqual(calls[1].args[0], "21")
+        self.assertEqual(calls[1].args[1]["taxicarga_route"], "Callao → San Isidro")
 
     def test_return_a_does_not_modify_b(self):
         ChannelIntegrationPolicy.objects.create(

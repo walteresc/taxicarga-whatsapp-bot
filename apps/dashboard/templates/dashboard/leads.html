@@ -373,6 +373,26 @@
                   <div class="detail-label">Atenci\u00f3n</div>
                   <div class="detail-value">[[ selectedLead.atencionHumana ? 'Humana' : 'Bot' ]]</div>
                 </v-col>
+                <v-col cols="12">
+                  <div class="detail-label">Accesos por ubicaci\u00f3n</div>
+                  <div class="detail-value">[[ selectedLead.accesosRuta ]]</div>
+                </v-col>
+                <v-col cols="12">
+                  <div class="detail-label">Carga</div>
+                  <div class="detail-value">[[ selectedLead.listaObjetos ]]</div>
+                </v-col>
+                <v-col cols="6">
+                  <div class="detail-label">Operarios</div>
+                  <div class="detail-value">[[ selectedLead.incluyePersonal ]] · [[ selectedLead.cantidadOperarios || 'cantidad por definir' ]]</div>
+                </v-col>
+                <v-col cols="6">
+                  <div class="detail-label">Adicionales</div>
+                  <div class="detail-value">[[ selectedLead.embalaje ]] · desarmado [[ selectedLead.requiereDesarmado ]] · armado [[ selectedLead.requiereArmado ]]</div>
+                </v-col>
+                <v-col cols="6">
+                  <div class="detail-label">Reserva</div>
+                  <div class="detail-value">[[ selectedLead.reserva ]]</div>
+                </v-col>
               </v-row>
             </v-card-text>
             <v-divider></v-divider>
