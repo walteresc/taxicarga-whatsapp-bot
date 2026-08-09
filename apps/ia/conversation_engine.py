@@ -10,9 +10,16 @@ from apps.cotizador.services import cotizar_lead
 from apps.leads.models import Lead
 
 from .data_extractor import extract_lead_data, normalize_district
+from .conversation_policy import (
+    BOOKING,
+    apply_quote_defaults,
+    booking_missing_fields,
+    decide_conversation,
+    quote_missing_fields,
+)
 from .history import conversation_examples_for, format_examples_for_prompt
-from .openai_client import extract_floors_with_ai, extract_lead_with_ai, generate_reply
-from .prompts import POST_RESERVATION_SYSTEM_PROMPT
+from .openai_client import extract_lead_with_ai, generate_reply
+from .prompts import CONVERSATIONAL_RESPONSE_SYSTEM_PROMPT, POST_RESERVATION_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -234,6 +241,13 @@ def handle_incoming_message(cliente, message, canonical_context=None, generation
         )
         recent_history.reverse()
     ai_extracted = extract_lead_with_ai(message, lead, recent_history)
+    preview_extracted = extract_lead_data(message)
+    preview_extracted.update(_extract_route_correction(message))
+    route_with_stops = _route_with_stops(message)
+    has_explicit_pricing_update = route_with_stops or any(
+        field in PRICING_FIELDS and value not in (None, "")
+        for field, value in preview_extracted.items()
+    )
 
     if lead.estado == Lead.COTIZADO:
         closure_reply = _handle_conversation_closure(lead, message)
@@ -270,7 +284,7 @@ def handle_incoming_message(cliente, message, canonical_context=None, generation
         # Safety guard: if nothing matched in COTIZADO, return current price
         # instead of falling through to cotizar_lead which would restore max price.
         # Exclude RESERVA stage — those leads still need normal data processing.
-        if lead.etapa_conversacion != Lead.ETAPA_RESERVA:
+        if lead.etapa_conversacion != Lead.ETAPA_RESERVA and not has_explicit_pricing_update:
             price = lead.precio_cotizado or lead.precio_estimado_max
             if price is not None:
                 return (
@@ -280,17 +294,28 @@ def handle_incoming_message(cliente, message, canonical_context=None, generation
                 )
 
     expected_field = _next_missing_field(lead)
-    extracted = extract_lead_data(message)
+    extracted = preview_extracted
+
+    correction = _extract_route_correction(message)
+    if correction:
+        extracted.update(correction)
 
     if ai_extracted and ai_extracted["campos_detectados"]:
         for field, value in ai_extracted["campos_detectados"].items():
             if value not in ("", None) and not extracted.get(field):
                 extracted[field] = value
+    if route_with_stops:
+        extracted.pop("distrito_origen", None)
+        extracted.pop("distrito_destino", None)
 
-    if expected_field == "fecha_servicio" and not extracted.get("fecha_servicio"):
-        lead.fecha_por_confirmar = True
-        lead.save(update_fields=["fecha_por_confirmar"])
     _apply_contextual_answer(extracted, expected_field, message, lead)
+    normalized_message = _canonical_place(message)
+    if any(term in normalized_message for term in ("piso", "ascensor", "escalera", "puerta a calle")):
+        _extract_contextual_levels(extracted, message, lead)
+    if "camion" in normalized_message and any(
+        term in normalized_message for term in ("puerta", "acerc", "metros", "llega", "entra")
+    ):
+        _extract_contextual_truck_access(extracted, message, lead)
     validation_reply = _validate_reservation_input(lead, extracted, expected_field)
     if validation_reply:
         return validation_reply
@@ -314,10 +339,32 @@ def handle_incoming_message(cliente, message, canonical_context=None, generation
                 pricing_changed = True
             setattr(lead, field, value)
 
+    defaulted_fields = apply_quote_defaults(lead)
+    if defaulted_fields:
+        pricing_changed = True
+    if lead.etapa_conversacion == Lead.ETAPA_COTIZACION and not lead.fecha_servicio:
+        lead.fecha_por_confirmar = True
+
     if pricing_changed:
         _clear_quote(lead)
-    lead.estado = Lead.EN_CONVERSACION
+    if lead.etapa_conversacion != Lead.ETAPA_RESERVA:
+        lead.estado = Lead.EN_CONVERSACION
     lead.save()
+    question_answer = _answer_customer_question(lead, message)
+
+    if route_with_stops:
+        route_note = f"Ruta con paradas pendiente de modelado: {message.strip()}"
+        if route_note not in lead.observaciones:
+            lead.observaciones = "\n".join(filter(None, [lead.observaciones, route_note]))
+        lead.estado = Lead.DATOS_INCOMPLETOS
+        lead.atencion_humana = True
+        lead.save(update_fields=["observaciones", "estado", "atencion_humana"])
+        _mark_for_manual_quote(lead, "Ruta con una o más paradas intermedias")
+        _log_decision(lead, "human_quote", extracted, False, True, ai_extracted is not None)
+        return (
+            "Veo que la ruta incluye una parada intermedia. Para no calcularla "
+            "como un traslado directo, un asesor revisará la ruta completa y continuará la cotización."
+        )
 
     if not any(
         extracted.get(k) not in (None, "")
@@ -327,7 +374,7 @@ def handle_incoming_message(cliente, message, canonical_context=None, generation
             expected_field, extracted, message, lead
         )
     if rephrase_now:
-        return rephrase_now
+        return f"{question_answer} {rephrase_now}" if question_answer else rephrase_now
 
     if lead.etapa_conversacion == Lead.ETAPA_RESERVA:
         if (
@@ -344,10 +391,13 @@ def handle_incoming_message(cliente, message, canonical_context=None, generation
             return missing_question
         return _complete_reservation(lead)
 
-    missing_question = _next_missing_question(lead)
+    missing_question = _next_missing_question(lead, message=message)
     if missing_question:
         lead.estado = Lead.DATOS_INCOMPLETOS
         lead.save(update_fields=["estado"])
+        _log_decision(lead, "collect_quote", extracted, False, False, ai_extracted is not None)
+        if question_answer:
+            return f"{question_answer} {missing_question}"
         return missing_question
 
     if _route_requires_manual_review(lead):
@@ -386,6 +436,7 @@ def handle_incoming_message(cliente, message, canonical_context=None, generation
             "estado",
         ]
     )
+    _log_decision(lead, "quote_ready", extracted, True, False, ai_extracted is not None)
     response = _price_offer_message(lead)
     if canonical_context is not None and generation_id is not None:
         from apps.cotizador.commercial import crear_cotizacion_automatica
@@ -449,18 +500,100 @@ def _get_active_lead(cliente):
     return Lead.objects.create(cliente=cliente, estado=Lead.NUEVO)
 
 
-def _next_missing_question(lead):
-    for field, question in _questions_for(lead):
-        if not _field_complete(lead, field):
-            return _question_for_missing_parts(lead, field, question)
-    return None
+def _next_missing_question(lead, message=""):
+    decision = decide_conversation(
+        lead,
+        requires_truck_access=bool(lead.lista_objetos and _requires_truck_access(lead)),
+    )
+    if not decision.missing_relevant_data:
+        return None
+    fallback = _grouped_question(decision)
+    return _generate_decision_reply(lead, message, decision, fallback) or fallback
 
 
 def _next_missing_field(lead):
-    for field, _question in _questions_for(lead):
-        if not _field_complete(lead, field):
-            return field
+    decision = decide_conversation(
+        lead,
+        requires_truck_access=bool(lead.lista_objetos and _requires_truck_access(lead)),
+    )
+    return {
+        "collect_service": "tipo_servicio",
+        "collect_route": "datos_ruta",
+        "collect_load": "lista_objetos" if "lista_objetos" in decision.missing_relevant_data else "dimension_carga",
+        "collect_access": (
+            "acceso_camion"
+            if set(decision.missing_relevant_data) <= {"camion_llega_origen", "camion_llega_destino"}
+            else "datos_niveles"
+        ),
+        "collect_booking": _booking_expected_field(decision.missing_relevant_data),
+    }.get(decision.goal)
+
+
+def _booking_expected_field(missing):
+    fields = set(missing)
+    if "cliente_nombre" in fields:
+        return "datos_cliente"
+    if fields & {"direccion_origen", "direccion_destino"}:
+        return "datos_direcciones"
+    if fields & {"fecha_servicio", "horario_servicio"}:
+        return "fecha_hora"
     return None
+
+
+def _grouped_question(decision):
+    missing = set(decision.missing_relevant_data)
+    if decision.phase == BOOKING:
+        if "cliente_nombre" in missing:
+            return "¿A nombre de quién coordinamos el servicio?"
+        if {"direccion_origen", "direccion_destino"} <= missing:
+            return "¿Cuáles son las direcciones exactas de recojo y entrega?"
+        if "direccion_origen" in missing:
+            return "¿Cuál es la dirección exacta de recojo?"
+        if "direccion_destino" in missing:
+            return "¿Cuál es la dirección exacta de entrega?"
+        if {"fecha_servicio", "horario_servicio"} <= missing:
+            return "¿Qué fecha y hora prefieres para el traslado?"
+        if "fecha_servicio" in missing:
+            return "¿Qué fecha prefieres para el traslado?"
+        return "¿A qué hora prefieres el traslado?"
+    if decision.goal == "collect_service":
+        return "Hola, que deseas trasladar?"
+    if decision.goal == "collect_route":
+        if {"distrito_origen", "distrito_destino"} <= missing:
+            return "Cual es el distrito de partida y llegada?"
+        if "distrito_origen" in missing:
+            return "¿De qué distrito sale?"
+        return "¿A qué distrito llega?"
+    if decision.goal == "collect_load":
+        if "lista_objetos" in missing:
+            return "Cuéntame brevemente qué cosas vas a trasladar, sobre todo los muebles o artefactos grandes."
+        return "¿Tienes un peso aproximado o las medidas de la carga?"
+    if decision.goal == "collect_access":
+        floors = missing & {"piso_origen", "piso_destino"}
+        elevators = missing & {"ascensor_origen", "ascensor_destino"}
+        truck = missing & {"camion_llega_origen", "camion_llega_destino"}
+        if floors or elevators:
+            return "En que piso esta el origen y a que piso llega en destino? Tienen ascensor?"
+        if truck:
+            return "En origen y destino, el camion puede acercarse a la puerta?"
+    return "¿Me das un poco más de detalle del servicio?"
+
+
+def _generate_decision_reply(lead, message, decision, fallback):
+    if not message:
+        return None
+    context = (
+        f"Mensaje actual: {message}\n"
+        f"Fase: {decision.phase}\nObjetivo: {decision.goal}\n"
+        f"Hechos confirmados: {decision.known_data}\n"
+        f"Datos relevantes faltantes: {list(decision.missing_relevant_data)}\n"
+        f"Respuesta fallback autorizada: {fallback}\n"
+        "Responde brevemente. Mantén exactamente el objetivo autorizado."
+    )
+    return generate_reply(
+        [{"role": "user", "content": context}],
+        system_prompt=CONVERSATIONAL_RESPONSE_SYSTEM_PROMPT,
+    )
 
 
 REPHRASED_QUESTIONS = {
@@ -492,27 +625,15 @@ REPHRASED_QUESTIONS = {
 
 
 def _questions_for(lead):
-    if lead.etapa_conversacion == Lead.ETAPA_RESERVA:
-        return RESERVATION_QUESTIONS
-    service = (lead.tipo_servicio or "").lower()
-    specific = CARGO_QUESTIONS if service == "carga" else MOVING_QUESTIONS
-    questions = [*BASE_QUESTIONS, *specific]
-    if lead.lista_objetos and _requires_truck_access(lead):
-        levels_index = next(
-            (
-                index + 1
-                for index, (field, _question) in enumerate(questions)
-                if field == "datos_niveles"
-            ),
-            len(questions),
-        )
-        questions.insert(levels_index, TRUCK_ACCESS_QUESTION)
-    return [*questions, *FINAL_QUOTE_QUESTIONS]
+    field = _next_missing_field(lead)
+    if not field:
+        return []
+    return [(field, _next_missing_question(lead))]
 
 
 def _field_complete(lead, field):
     if field == "datos_cliente":
-        return bool(lead.cliente.nombre and lead.dni_reserva)
+        return bool(lead.cliente.nombre)
     if field == "cliente_nombre":
         return bool(lead.cliente.nombre)
     if field == "datos_ruta":
@@ -606,6 +727,8 @@ def _apply_contextual_answer(extracted, expected_field, message, lead):
 
     if expected_field == "lista_objetos" and not extracted.get("lista_objetos"):
         if _refers_only_to_photo(answer):
+            return
+        if any(term in _canonical_place(answer) for term in ("piso", "ascensor", "escalera", "camion", "puerta")):
             return
         extracted["lista_objetos"] = answer
         return
@@ -887,15 +1010,6 @@ def _extract_contextual_levels(extracted, answer, lead):
                 extracted["piso_origen"] = floor
             elif lead.piso_destino is None:
                 extracted["piso_destino"] = floor
-
-    if "piso_origen" not in extracted or "piso_destino" not in extracted:
-        ai_floors = extract_floors_with_ai(answer)
-        if ai_floors:
-            if "piso_origen" in ai_floors and "piso_origen" not in extracted and lead.piso_origen is None:
-                extracted["piso_origen"] = ai_floors["piso_origen"]
-            if "piso_destino" in ai_floors and "piso_destino" not in extracted and lead.piso_destino is None:
-                extracted["piso_destino"] = ai_floors["piso_destino"]
-
 
 def _extract_contextual_truck_access(extracted, answer, lead):
     lowered = answer.lower()
@@ -1376,21 +1490,19 @@ def _complete_reservation(lead):
     missing_question = _next_missing_question(lead)
     if missing_question:
         return missing_question
-    lead.etapa_conversacion = Lead.ETAPA_RESERVADO
-    lead.estado = Lead.ASIGNADO
-    lead.precio_final = lead.precio_cotizado or lead.precio_estimado_max
+    lead.atencion_humana = True
+    lead.requiere_asesor = True
+    lead.motivo_derivacion = "Datos de reserva completos; falta crear Servicio operacional"
     lead.save(
         update_fields=[
-            "etapa_conversacion",
-            "estado",
-            "precio_final",
+            "atencion_humana",
+            "requiere_asesor",
+            "motivo_derivacion",
         ]
     )
     return (
-        f"Listo, queda registrado para el {lead.fecha_servicio} a las "
-        f"{lead.horario_servicio}. Nuestro conductor se comunicara contigo "
-        "cuando este llegando a la direccion. "
-        f"{PAYMENT_INFORMATION} Estamos en contacto."
+        "Ya tenemos los datos necesarios para coordinar el servicio. "
+        "Un asesor confirmará la disponibilidad y completará el registro."
     )
 
 
@@ -1918,6 +2030,62 @@ def _route_requires_manual_review(lead):
             )
             return True
     return False
+
+
+def _route_with_stops(message):
+    normalized = _canonical_place(message)
+    explicit_stop = any(
+        marker in normalized
+        for marker in (
+            "paso por", "pasamos por", "parada en", "una parada", "recoger tambien",
+            "recogemos tambien", "luego vamos a", "despues vamos a",
+        )
+    )
+    mentioned = {
+        area for area in LOCAL_LIMA_CALLAO_AREAS
+        if re.search(rf"\b{re.escape(area)}\b", normalized)
+    }
+    return explicit_stop or len(mentioned) >= 3
+
+
+def _extract_route_correction(message):
+    normalized = _canonical_place(message)
+    destination = re.search(
+        r"(?:no era|no es)\s+.+?[,;]\s*(?:es|seria)\s+([a-z ]+)$",
+        normalized,
+    )
+    if not destination:
+        return {}
+    district = normalize_district(destination.group(1))
+    if _canonical_place(district) not in LOCAL_LIMA_CALLAO_AREAS:
+        return {}
+    return {"distrito_destino": district}
+
+
+def _answer_customer_question(lead, message):
+    normalized = _canonical_place(message)
+    if "?" not in message and not normalized.startswith(("incluye", "el precio incluye", "vienen")):
+        return None
+    if any(term in normalized for term in ("ayudante", "operario", "personal")):
+        if lead.incluye_personal_carga is True:
+            return "Sí, estamos considerando personal para carga y descarga."
+        if lead.incluye_personal_carga is False:
+            return "No, estamos considerando solo el transporte porque ustedes realizarán la carga."
+        return "Aún no está definido si el servicio llevará personal de carga."
+    return None
+
+
+def _log_decision(lead, decision_type, extracted, quote_ready, handoff, ai_success):
+    logger.info(
+        "conversation_decision conversation_lead=%s phase=%s fields_updated=%s "
+        "quote_ready=%s handoff=%s ai=%s",
+        lead.id,
+        decision_type,
+        sorted(extracted.keys()),
+        quote_ready,
+        handoff,
+        "success" if ai_success else "fallback",
+    )
 
 
 def _canonical_place(value):

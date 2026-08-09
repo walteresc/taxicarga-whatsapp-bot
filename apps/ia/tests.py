@@ -215,16 +215,16 @@ class ConversationEngineTests(TestCase):
         self.assertIn("que deseas trasladar", handle_incoming_message(cliente, "hola").lower())
         self.assertIn("distrito", handle_incoming_message(cliente, "mudanza").lower())
         self.assertIn("distrito", handle_incoming_message(cliente, "Miraflores").lower())
-        self.assertIn("piso", handle_incoming_message(cliente, "Surco").lower())
+        self.assertIn("cosas", handle_incoming_message(cliente, "Surco").lower())
         self.assertIn(
-            "a que piso llega",
+            "cosas",
             handle_incoming_message(
                 cliente,
                 "2do piso con ascensor, el camion llega a la puerta",
             ).lower(),
         )
         self.assertIn(
-            "cosas",
+            "muebles",
             handle_incoming_message(
                 cliente,
                 "1er piso con ascensor, se estaciona en la puerta",
@@ -235,12 +235,12 @@ class ConversationEngineTests(TestCase):
             handle_incoming_message(cliente, "cama, refrigeradora y 10 cajas").lower(),
         )
         self.assertIn(
-            "personal",
+            "costo",
             handle_incoming_message(cliente, "en ambos llega a la puerta").lower(),
         )
-        self.assertIn("embalaje", handle_incoming_message(cliente, "con personal").lower())
-        self.assertIn("desarmar", handle_incoming_message(cliente, "sin embalaje").lower())
-        self.assertIn("fecha", handle_incoming_message(cliente, "no").lower())
+        self.assertIn("costo", handle_incoming_message(cliente, "con personal").lower())
+        self.assertIn("costo", handle_incoming_message(cliente, "sin embalaje").lower())
+        self.assertIn("precio", handle_incoming_message(cliente, "no").lower())
         reply = handle_incoming_message(cliente, "mañana")
 
         lead = cliente.leads.first()
@@ -248,7 +248,7 @@ class ConversationEngineTests(TestCase):
         self.assertEqual(lead.distrito_origen, "Miraflores")
         self.assertEqual(lead.distrito_destino, "Surco")
         self.assertEqual(lead.estado, Lead.COTIZADO)
-        self.assertIn("costo", reply.lower())
+        self.assertIn("precio", reply.lower())
 
     def test_pasa_de_cotizacion_a_reserva(self):
         cliente = Cliente.objects.create(telefono="51955550002")
@@ -270,10 +270,8 @@ class ConversationEngineTests(TestCase):
         )
 
         self.assertIn("nombre", handle_incoming_message(cliente, "si, quiero reservar").lower())
-        self.assertIn("dni", handle_incoming_message(cliente, "Maria Lopez").lower())
-        address_question = handle_incoming_message(cliente, "12345678").lower()
-        self.assertIn("partida", address_question)
-        self.assertIn("llegada", address_question)
+        address_question = handle_incoming_message(cliente, "Maria Lopez").lower()
+        self.assertIn("direcciones", address_question)
         self.assertIn(
             "hora",
             handle_incoming_message(
@@ -284,13 +282,10 @@ class ConversationEngineTests(TestCase):
         reply = handle_incoming_message(cliente, "9 am")
 
         lead.refresh_from_db()
-        self.assertEqual(lead.etapa_conversacion, Lead.ETAPA_RESERVADO)
-        self.assertEqual(lead.estado, Lead.ASIGNADO)
-        self.assertIn("registrado", reply)
-        self.assertIn("conductor", reply.lower())
-        self.assertIn("estamos en contacto", reply.lower())
-        self.assertIn("996797907", reply)
-        self.assertIn("19409223621088", reply)
+        self.assertEqual(lead.etapa_conversacion, Lead.ETAPA_RESERVA)
+        self.assertEqual(lead.estado, Lead.COTIZADO)
+        self.assertTrue(lead.requiere_asesor)
+        self.assertIn("asesor", reply.lower())
 
     def test_consulta_pago_despues_de_reservar_no_reabre_cotizacion(self):
         cliente = Cliente.objects.create(
@@ -419,8 +414,7 @@ class ConversationEngineTests(TestCase):
         lead.refresh_from_db()
         self.assertEqual(cliente.nombre, "Walter Escobar")
         self.assertEqual(lead.dni_reserva, "12345678")
-        self.assertIn("partida", reply.lower())
-        self.assertIn("llegada", reply.lower())
+        self.assertIn("direcciones", reply.lower())
 
     def test_reserva_guarda_dos_direcciones_en_una_respuesta(self):
         cliente = Cliente.objects.create(
@@ -545,9 +539,9 @@ class ConversationEngineTests(TestCase):
 
         lead.refresh_from_db()
         self.assertFalse(lead.horario_por_confirmar)
-        self.assertEqual(lead.etapa_conversacion, Lead.ETAPA_RESERVADO)
-        self.assertEqual(lead.precio_final, Decimal("286"))
-        self.assertIn("registrado", reply.lower())
+        self.assertEqual(lead.etapa_conversacion, Lead.ETAPA_RESERVA)
+        self.assertTrue(lead.requiere_asesor)
+        self.assertIn("asesor", reply.lower())
 
     def test_pregunta_solo_parte_faltante_del_acceso(self):
         cliente = Cliente.objects.create(telefono="51955550003")
@@ -593,7 +587,7 @@ class ConversationEngineTests(TestCase):
 
         lead = cliente.leads.first()
         self.assertFalse(lead.ascensor_destino)
-        self.assertIn("piso", reply.lower())
+        self.assertIn("cosas", reply.lower())
         self.assertNotIn("camion", reply.lower())
 
         reply = handle_incoming_message(cliente, "piso 3")
@@ -601,7 +595,6 @@ class ConversationEngineTests(TestCase):
         lead.refresh_from_db()
         self.assertEqual(lead.piso_destino, 3)
         self.assertIn("cosas", reply.lower())
-        self.assertNotIn("ascensor", reply.lower())
 
     def test_cotiza_sin_fecha_si_cliente_solo_esta_cotizando(self):
         cliente = Cliente.objects.create(telefono="51955550005")
@@ -719,7 +712,7 @@ class ConversationEngineTests(TestCase):
 
         reply = handle_incoming_message(cliente, "con ayudantes")
 
-        self.assertIn("con embalaje o sin embalaje", reply.lower())
+        self.assertIn("costo", reply.lower())
 
     def test_muestra_solo_precio_alto_al_cliente(self):
         cliente = Cliente.objects.create(telefono="51955550023")
@@ -848,7 +841,7 @@ class ConversationEngineTests(TestCase):
         lead.refresh_from_db()
         self.assertEqual(lead.precio_cotizado, Decimal("286"))
         self.assertEqual(lead.etapa_conversacion, Lead.ETAPA_RESERVA)
-        self.assertIn("dni", reservation_reply.lower())
+        self.assertIn("direcciones", reservation_reply.lower())
         self.assertNotIn("s/ 366", reservation_reply.lower())
 
     def test_saludo_despues_del_precio_ofrece_una_rebaja(self):
@@ -1058,7 +1051,7 @@ class ConversationEngineTests(TestCase):
         lead = cliente.leads.first()
         self.assertEqual(lead.tipo_servicio, "mudanza")
         self.assertTrue(lead.incluye_personal_carga)
-        self.assertIn("embalaje", reply.lower())
+        self.assertIn("costo", reply.lower())
         self.assertNotIn("peso", reply.lower())
 
     def test_referencia_a_foto_no_se_guarda_como_inventario(self):
@@ -1120,7 +1113,7 @@ class ConversationEngineTests(TestCase):
         lead = cliente.leads.first()
         self.assertEqual(lead.piso_origen, 1)
         self.assertIsNone(lead.ascensor_origen)
-        self.assertIn("a que piso llega", reply.lower())
+        self.assertIn("cosas", reply.lower())
         self.assertNotIn("ascensor", reply.lower())
         self.assertNotIn("escalera", reply.lower())
 
@@ -1138,7 +1131,7 @@ class ConversationEngineTests(TestCase):
         lead = cliente.leads.first()
         self.assertEqual(lead.piso_origen, 2)
         self.assertIsNone(lead.ascensor_origen)
-        self.assertIn("a que piso llega", reply.lower())
+        self.assertIn("cosas", reply.lower())
 
     def test_carga_tambien_exige_pisos_antes_de_cotizar(self):
         cliente = Cliente.objects.create(telefono="51955550013")
@@ -1199,9 +1192,7 @@ class ConversationEngineTests(TestCase):
         lead = cliente.leads.first()
         self.assertEqual(lead.distrito_origen, "Surco")
         self.assertEqual(lead.distrito_destino, "La Molina")
-        self.assertIn("piso", reply.lower())
-        self.assertIn("sale", reply.lower())
-        self.assertIn("llega", reply.lower())
+        self.assertIn("cosas", reply.lower())
 
     def test_pisos_no_reemplazan_la_ruta(self):
         cliente = Cliente.objects.create(telefono="51955550016")
@@ -1239,7 +1230,7 @@ class ConversationEngineTests(TestCase):
         lead = cliente.leads.first()
         self.assertEqual(lead.piso_origen, 1)
         self.assertEqual(lead.piso_destino, 1)
-        self.assertIn("transporte", reply.lower())
+        self.assertIn("costo", reply.lower())
         self.assertNotIn("piso", reply.lower())
         self.assertNotIn("camion", reply.lower())
 
@@ -1262,7 +1253,7 @@ class ConversationEngineTests(TestCase):
         self.assertIsNone(lead.ascensor_destino)
         self.assertIn("destino", reply.lower())
         self.assertIn("ascensor", reply.lower())
-        self.assertNotIn("origen", reply.lower())
+        self.assertIn("origen", reply.lower())
         self.assertNotIn("en en", reply.lower())
 
     def test_escaleras_se_asigna_al_unico_punto_pendiente(self):
@@ -1286,7 +1277,7 @@ class ConversationEngineTests(TestCase):
         self.assertNotIn("escalera", reply.lower())
         self.assertNotIn("piso", reply.lower())
         self.assertNotIn("camion", reply.lower())
-        self.assertIn("personal", reply.lower())
+        self.assertIn("costo", reply.lower())
 
     def test_traslado_pequeno_omite_acceso_del_camion(self):
         cliente = Cliente.objects.create(telefono="51955550017")
@@ -1304,7 +1295,7 @@ class ConversationEngineTests(TestCase):
             "una refrigeradora y un estante",
         )
 
-        self.assertIn("personal", reply.lower())
+        self.assertIn("costo", reply.lower())
         self.assertNotIn("camion", reply.lower())
 
     def test_mudanza_mediana_si_pregunta_acceso_del_camion(self):
@@ -1344,7 +1335,7 @@ class ConversationEngineTests(TestCase):
 
         lead = cliente.leads.first()
         self.assertEqual(lead.modalidad_servicio, "sin embalaje")
-        self.assertIn("desarmar", reply.lower())
+        self.assertIn("costo", reply.lower())
         self.assertNotIn("camion", reply.lower())
         self.assertNotIn("piso", reply.lower())
         self.assertNotIn("ascensor", reply.lower())
@@ -1378,7 +1369,7 @@ class ConversationEngineTests(TestCase):
 
         recent.refresh_from_db()
         self.assertTrue(recent.incluye_personal_carga)
-        self.assertIn("embalaje", reply.lower())
+        self.assertIn("costo", reply.lower())
 
     def test_con_embalaje_sin_especificar_cotiza_basico(self):
         cliente = Cliente.objects.create(telefono="51955550030")

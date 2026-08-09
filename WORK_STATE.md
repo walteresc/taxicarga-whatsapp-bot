@@ -146,3 +146,20 @@
 - Suite focal 10B 6/6 OK; regresiones 7/8/9/10A 42/42 OK; suite completa 561/561 OK, 33 PostgreSQL-only omitidas.
 - Acciones externas: Meta sends=0, Chatwoot productivo calls=0, DNS/VPS=0. Canales/policies habilitados=0.
 - Checkpoint Git 10B preparado sin push. ETAPA 10C no iniciada.
+
+## PLAN FUNCIONAL LOCAL — FASE 0 COMPLETADA
+
+- Bot conversacional separado en extractor, estado Django, policy determinística,
+  pricing y generador de respuesta.
+- `quote_missing_fields` y `booking_missing_fields` son contratos canónicos.
+- Mudanza aplica defaults efectivos: operarios sí, embalaje no, desarmado no y
+  armado no conceptual; afirmaciones explícitas prevalecen.
+- Preguntas agrupadas por objetivo semántico; fecha, nombre, DNI, hora y
+  direcciones exactas no bloquean cotización.
+- Correcciones de ruta simple y rutas con paradas detectadas; multiparada se
+  deriva de forma segura mientras no exista modelo canónico.
+- Reserva no afirma creación operacional inexistente.
+- Telemetría sanitizada sin prompts, teléfonos completos ni chain-of-thought.
+- SQLite: IA 89/89 OK; suite completa 573/573 OK, 33 PostgreSQL-only omitidas.
+- Sin migraciones. Acciones externas 0. ETAPA 10C no iniciada.
+- Siguiente fase: modelo canónico de ubicaciones y snapshots operacionales.

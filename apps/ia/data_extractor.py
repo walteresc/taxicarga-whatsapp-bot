@@ -115,6 +115,15 @@ def extract_lead_data(message):
     if elevator_destination is not None:
         data["ascensor_destino"] = elevator_destination
 
+    if (
+        ("ambos" in lowered or "los dos" in lowered)
+        and "camion" in lowered
+        and any(term in lowered for term in ("puerta", "puede acercarse", "llega"))
+    ):
+        reaches = not any(term in lowered for term in ("no llega", "no entra", "lejos"))
+        data["camion_llega_origen"] = reaches
+        data["camion_llega_destino"] = reaches
+
     service_date = _extract_date(lowered)
     if service_date:
         data["fecha_servicio"] = service_date
@@ -240,6 +249,10 @@ def _extract_floors(text):
 
 
 def _extract_labeled_floor(text, labels):
+    floor_words = {
+        "primer": 1, "primero": 1, "segundo": 2, "tercer": 3, "tercero": 3,
+        "cuarto": 4, "quinto": 5, "sexto": 6,
+    }
     for label in labels:
         patterns = [
             rf"{label}\D{{0,20}}(\d+)\s*(?:er|to|do|ro)?\s*piso",
@@ -251,10 +264,23 @@ def _extract_labeled_floor(text, labels):
             match = re.search(pattern, text)
             if match:
                 return int(match.group(1))
+        word_match = re.search(
+            rf"{label}.{{0,20}}\b({'|'.join(floor_words)})\s+piso",
+            text,
+        )
+        if word_match:
+            return floor_words[word_match.group(1)]
     return None
 
 
 def _extract_elevators(text):
+    paired = re.search(
+        r"(?:origen|sale|surco).{0,45}?(con|sin) ascensor"
+        r".{0,60}?(?:destino|llega|miraflores|san isidro).{0,45}?(con|sin) ascensor",
+        text,
+    )
+    if paired:
+        return paired.group(1) == "con", paired.group(2) == "con"
     origin = _extract_labeled_elevator(text, ["origen", "recojo", "recogida", "salida"])
     destination = _extract_labeled_elevator(text, ["destino", "llegada", "entrega"])
     if "sin ascensor" in text:
@@ -393,6 +419,8 @@ def _extract_service_modality(text):
         ]
     ):
         return "sin embalaje"
+    if "con embalaje" in lowered or "necesito embalaje" in lowered:
+        return "embalaje basico"
     return None
 
 
