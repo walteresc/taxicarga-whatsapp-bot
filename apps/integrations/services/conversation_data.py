@@ -30,6 +30,8 @@ ATTRIBUTE_DEFINITIONS = {
 
 def conversation_snapshot(conversation):
     lead = conversation.lead
+    if lead is None:
+        return {}
     packing = lead.modalidad_servicio or "sin embalaje"
     extras = [packing]
     if lead.requiere_desarmado:
@@ -71,6 +73,8 @@ def queue_conversation_data_projection(conversation_id):
     if not mapping:
         return None, False
     snapshot = conversation_snapshot(conversation)
+    if not snapshot:
+        return None, False
     evidence = hashlib.sha256(
         json.dumps(snapshot, sort_keys=True, ensure_ascii=True).encode()
     ).hexdigest()[:16]

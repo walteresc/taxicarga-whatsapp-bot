@@ -11,6 +11,7 @@ from django.utils import timezone
 from apps.integrations.enums import OutboxStatus, Provider
 from apps.integrations.models import IntegrationOutboxEvent, WorkerHeartbeat
 from apps.integrations.services.commercial_labels import process_commercial_label_event
+from apps.integrations.services.conversation_data import process_conversation_data_event
 from apps.integrations.services.inbox_outbox import recover_inbox_locks, recover_outbox_locks
 from apps.integrations.services.meta_sender import process_meta_outbox_event
 
@@ -57,6 +58,8 @@ class Command(BaseCommand):
                     process_meta_outbox_event(event.id, worker_id=worker_id)
                 elif event.destination == Provider.CHATWOOT and event.event_type == "sync_commercial_labels":
                     process_commercial_label_event(event.id)
+                elif event.destination == Provider.CHATWOOT and event.event_type == "sync_conversation_data":
+                    process_conversation_data_event(event.id)
             except Exception:
                 logger.exception("event_processing_failed event_id=%s", event.id)
         close_old_connections()

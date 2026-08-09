@@ -269,6 +269,8 @@ def sync_chatwoot_conversation(
                 failure = str(exc)
                 break
 
+    from .conversation_data import queue_conversation_data_projection
+    queue_conversation_data_projection(conversation.id)
     return ProjectionResult(
         conversation.cliente_id, str(contact_map.contact_id), source_id, contact_created,
         conversation.id, remote_conversation_id, conversation_created,
