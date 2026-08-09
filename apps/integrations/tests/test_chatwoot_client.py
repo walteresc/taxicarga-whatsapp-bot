@@ -77,6 +77,33 @@ class ChatwootConfigurationTests(SimpleTestCase):
 
 
 class ChatwootHTTPTests(SimpleTestCase):
+    def test_attention_attribute_is_created_then_reused_idempotently(self):
+        session = Mock()
+        session.request.side_effect = [
+            response(payload={"payload": []}),
+            response(payload={"id": 21, "attribute_key": "taxicarga_attention_control"}),
+            response(payload={"payload": [{
+                "id": 21,
+                "attribute_key": "taxicarga_attention_control",
+                "attribute_model": "conversation_attribute",
+            }]}),
+        ]
+        client = ChatwootClient(config=config(), session=session)
+
+        created, was_created = client.ensure_conversation_list_attribute(
+            key="taxicarga_attention_control", display_name="Control de atención",
+            values=["Asesor", "Bot"],
+        )
+        reused, was_created_again = client.ensure_conversation_list_attribute(
+            key="taxicarga_attention_control", display_name="Control de atención",
+            values=["Asesor", "Bot"],
+        )
+
+        self.assertTrue(was_created)
+        self.assertFalse(was_created_again)
+        self.assertEqual(created["id"], reused["id"])
+        self.assertEqual(sum(call.args[0] == "POST" for call in session.request.call_args_list), 1)
+
     def test_get_account_uses_expected_path_header_and_timeouts(self):
         session = Mock()
         session.request.return_value = response(payload={"id": 7})
@@ -300,6 +327,7 @@ class ChatwootCommandTests(SimpleTestCase):
         client_class.return_value.ensure_webhook.return_value = (
             {"id": 8, "secret": "generated-webhook-secret"}, True, False
         )
+        client_class.return_value.ensure_conversation_list_attribute.return_value = ({"id": 9}, True)
         output = StringIO()
         with TemporaryDirectory() as directory:
             env_file = Path(directory) / ".env"
@@ -320,6 +348,7 @@ class ChatwootCommandTests(SimpleTestCase):
     @patch("apps.integrations.management.commands.chatwoot_setup_webhook.ChatwootClient")
     def test_reused_webhook_without_returned_secret_preserves_local_secret(self, client_class):
         client_class.return_value.ensure_webhook.return_value = ({"id": 8, "secret": ""}, False, False)
+        client_class.return_value.ensure_conversation_list_attribute.return_value = ({"id": 9}, False)
         with TemporaryDirectory() as directory:
             env_file = Path(directory) / ".env"
             env_file.write_text("CHATWOOT_WEBHOOK_SECRET=existing-local-secret\n", encoding="utf-8")

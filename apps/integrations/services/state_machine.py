@@ -4,7 +4,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from ..enums import GenerationStatus, OutboxStatus, OwnerState, Provider, ResumeMode
-from ..errors import ConversationOwned, InvalidTransition, VersionConflict
+from ..errors import ConversationOwned, InvalidTransition, PendingHumanOutbox, VersionConflict
 from ..models import (
     BotGeneration,
     ContextCheckpoint,
@@ -12,6 +12,7 @@ from ..models import (
     ConversationTransitionAudit,
     IntegrationOutboxEvent,
 )
+from apps.whatsapp.models import ConversacionWhatsApp
 
 
 def request_agent(conversation_id, *, actor=None, reason, idempotency_key, expected_version=None, correlation_id=None):
@@ -53,8 +54,13 @@ def take_conversation(conversation_id, *, actor, idempotency_key, expected_versi
         return control, audit, True
 
 
-def return_to_bot(conversation_id, *, actor, idempotency_key, expected_version=None, instruction="", resume_mode=ResumeMode.WAIT_FOR_CUSTOMER, correlation_id=None):
-    _validate_actor(actor)
+def return_to_bot(
+    conversation_id, *, actor=None, idempotency_key, expected_version=None,
+    instruction="", resume_mode=ResumeMode.WAIT_FOR_CUSTOMER, correlation_id=None,
+    actor_type="user", external_actor_ref="", source="django",
+):
+    if actor_type == "user":
+        _validate_actor(actor)
     if resume_mode not in ResumeMode.values:
         raise InvalidTransition("Invalid resume mode.")
     with transaction.atomic():
@@ -63,25 +69,56 @@ def return_to_bot(conversation_id, *, actor, idempotency_key, expected_version=N
         if repeated:
             return control, repeated, False
         _check_version(control, expected_version)
-        if control.owner_state != OwnerState.AGENT_ACTIVE or control.active_advisor_id != actor.id:
+        if control.owner_state == OwnerState.BOT_ACTIVE:
+            return control, None, False
+        if control.owner_state != OwnerState.AGENT_ACTIVE:
+            raise InvalidTransition("Conversation is not owned by an advisor.", current_version=control.control_version)
+        if actor_type == "user" and control.active_advisor_id != actor.id:
             raise InvalidTransition("Only active advisor can return conversation.", current_version=control.control_version)
+        if IntegrationOutboxEvent.objects.filter(
+            conversation_id=conversation_id,
+            destination=Provider.META_WHATSAPP,
+            logical_message__author_type="agent",
+            status__in=[OutboxStatus.PENDING, OutboxStatus.RETRY, OutboxStatus.SENDING],
+        ).exists():
+            raise PendingHumanOutbox(
+                "A human message is still pending delivery.",
+                current_version=control.control_version,
+            )
         before = control.owner_state
         version_before = control.control_version
-        control.owner_state = OwnerState.RETURNING_TO_BOT
+        now = timezone.now()
+        control.owner_state = OwnerState.BOT_ACTIVE
+        control.active_advisor = None
+        control.returned_at = now
         control.last_actor = actor
-        control.last_actor_type = "user"
+        control.last_actor_type = actor_type
         control.last_reason = "return_to_bot"
         control.control_version += 1
         control.last_correlation_id = correlation_id or uuid.uuid4()
         control.save()
-        checkpoint = ContextCheckpoint.objects.create(
-            conversation_id=conversation_id, control_version=control.control_version,
-            advisor_instruction=instruction, resume_mode=resume_mode,
-            collected_data={}, missing_data=[], correlation_id=control.last_correlation_id,
+        conversation = control.conversation
+        conversation.estado_atencion = ConversacionWhatsApp.ATENCION_BOT
+        conversation.bot_pausado = False
+        conversation.responsable = None
+        conversation.instruccion_retorno_bot = instruction
+        conversation.ultima_actividad = now
+        conversation.save(update_fields=[
+            "estado_atencion", "bot_pausado", "responsable",
+            "instruccion_retorno_bot", "ultima_actividad", "actualizada_en",
+        ])
+        if conversation.lead_id:
+            lead = conversation.lead.__class__.objects.select_for_update().get(pk=conversation.lead_id)
+            lead.atencion_humana = False
+            lead.bot_pausado = False
+            lead.save(update_fields=["atencion_humana", "bot_pausado"])
+        audit = _audit(
+            control, before, version_before, "return_to_bot", actor, "return_to_bot", idempotency_key,
+            actor_type=actor_type, source=source, external_actor_ref=external_actor_ref,
+            metadata={"resume_mode": resume_mode, "instruction_present": bool(instruction)},
         )
-        audit = _audit(control, before, version_before, "return_to_bot", actor, "return_to_bot", idempotency_key)
         _project_transition(control, audit)
-        return control, checkpoint, True
+        return control, audit, True
 
 
 def complete_return(checkpoint_id, *, idempotency_key):
@@ -163,7 +200,17 @@ def _transition(conversation_id, *, action, allowed, target, actor, reason, idem
 
 
 def _locked_control(conversation_id):
-    return ConversationControl.objects.select_for_update().select_related("conversation").get(conversation_id=conversation_id)
+    conversation = (
+        ConversacionWhatsApp.objects.select_for_update(of=("self",))
+        .select_related("lead")
+        .get(pk=conversation_id)
+    )
+    control, _ = ConversationControl.objects.get_or_create(conversation=conversation)
+    return (
+        ConversationControl.objects.select_for_update(of=("self",))
+        .select_related("conversation__lead")
+        .get(pk=control.pk)
+    )
 
 
 def _check_version(control, expected_version):

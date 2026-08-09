@@ -20,6 +20,11 @@ from apps.leads.models import Lead
 from apps.integrations.enums import AuthorType, OwnerState
 from apps.integrations.models import ConversationControl
 from apps.integrations.services.live_sync import canonical_incoming_message, project_new_incoming
+from apps.integrations.services.bot_context import build_bot_context
+from apps.integrations.services.bot_runtime import authorize_inbound_trigger
+from apps.integrations.services.generations import finalize_generation
+from apps.integrations.services.human_takeover import channel_is_stage7_scoped
+from apps.integrations.services.meta_sender import process_meta_outbox_event
 from apps.whatsapp.domain import obtener_o_crear_conversacion
 from apps.whatsapp.identity import resolve_whatsapp_identity
 
@@ -145,6 +150,43 @@ def _receive_message(request):
         canonical_message, canonical_created, canonical_conversation = canonical_incoming_message(
             lead=active_lead, channel=channel, event=event, conversation=resolved_conversation
         )
+        if (
+            settings.CHATWOOT_RETURN_TO_BOT_ENABLED
+            and canonical_message
+            and channel_is_stage7_scoped(canonical_conversation.channel_id)
+        ):
+            authorization = authorize_inbound_trigger(canonical_message.id)
+            if canonical_created:
+                project_new_incoming(canonical_message)
+            if not authorization.authorized:
+                Conversacion.objects.create(
+                    cliente=cliente, mensaje_entrada=message, mensaje_salida="",
+                    canal=Conversacion.CANAL_WHATSAPP,
+                )
+                _complete_message(processed)
+                return JsonResponse({"ok": True, "human_takeover": True, "sent": None})
+            context = build_bot_context(
+                canonical_conversation.id, trigger_message_id=canonical_message.id
+            )
+            reply = handle_incoming_message(cliente, message, canonical_context=context)
+            _generation, outbox, published = finalize_generation(
+                authorization.generation.id, result_text=reply
+            )
+            send_result = None
+            if published and outbox:
+                send_result = process_meta_outbox_event(outbox.id)
+            if published:
+                Conversacion.objects.create(
+                    cliente=cliente, mensaje_entrada=message, mensaje_salida=reply,
+                    canal=Conversacion.CANAL_WHATSAPP,
+                )
+            _complete_message(processed)
+            return JsonResponse({
+                "ok": True,
+                "stage8": True,
+                "published": published,
+                "sent": bool(send_result and send_result.sent),
+            })
         control = (
             ConversationControl.objects.filter(conversation=canonical_conversation).first()
             if canonical_conversation else None

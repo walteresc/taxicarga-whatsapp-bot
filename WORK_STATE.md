@@ -81,3 +81,21 @@
 - PostgreSQL 16.14 aislado: suite focal 8/8 OK, carreras Stage 7 4/4 OK, identidad concurrente 2/2 OK y deadlocks finales 0.
 - Sin migraciones nuevas. Sin commit ni push. ETAPA 8 no iniciada.
 - Estado seguro final: takeover, agent-to-WhatsApp, live sync, Meta outbox y sync general apagados; Chatwoot y webhook permanecen habilitados.
+
+## ETAPA 8 — COMPLETADA
+
+- Implementada devolución explícita `ASESOR_ACTIVO → BOT_ACTIVO` mediante custom attribute de conversación `taxicarga_attention_control` (`Asesor` / `Bot`).
+- Transición atómica directa: `control_version` incrementa una vez, `returned_at` se actualiza y estado operativo/Lead legacy vuelven a bot.
+- Return bloqueado ante outbox humano `pending`, `retry` o `sending`; UI vuelve a reflejar `Asesor`. Estados terminales no bloquean.
+- Contexto canónico usa `MensajeWhatsApp`, conserva autores cliente/bot/asesor, excluye sistema/private notes y separa historial de trigger nuevo.
+- Ruta sandbox bot usa `IntegrationMessage → BotGeneration → IntegrationOutboxEvent → meta_sender`; generación IA fuera de locks.
+- Webhook idempotente ampliado a `message_created` y `conversation_updated`; Django permanece source of truth y espejo no produce loop.
+- Chatwoot local 4.16.2: definición custom attribute creada/reutilizada idempotentemente; una definición final y un webhook con ambas subscriptions.
+- SQLite: 215/215 OK, 25 omitidas PostgreSQL-only. PostgreSQL 16 aislado: 24/24 focales OK; carreras Stage 8 5/5 OK.
+- Defecto PostgreSQL hallado y corregido: lock de `ConversationControl` limitado a `self` para no bloquear relación nullable `conversation__lead`.
+- Compatibilidad Chatwoot 4.16.2 validada con payload `conversation_updated` raíz, actor desconocido y cambio explícito `Asesor → Bot`.
+- Smoke real sandbox aprobado: `ASESOR_ACTIVO → BOT_ACTIVO`, versión incrementada una vez, sin respuesta retroactiva ni loop.
+- Inbound post-return fue trigger único; creó una generación y un outbox BOT. Respuesta Meta recibida físicamente en el WhatsApp TEST.
+- Replay del return y del inbound: cero transiciones, generaciones, outboxes o envíos adicionales. Proyección Chatwoot regresó como `django_projection` ignorada.
+- Sin migraciones nuevas. ETAPA 9 no iniciada.
+- Estado seguro final requerido: return-to-bot, takeover, agent-to-WhatsApp, live sync, Meta outbox y sync general apagados; Chatwoot y webhook habilitados.

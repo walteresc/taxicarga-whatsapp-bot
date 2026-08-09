@@ -236,6 +236,9 @@ class ChatwootWebhookTests(IntegrationTestCase):
         self.assertEqual(set(safe), {
             "event", "message_id", "conversation_id", "account_id", "inbox_id",
             "private", "sender_id", "sender_type", "classification",
+            "attention_control", "performer_id", "performer_type",
+            "actor_source", "actor_identity",
+            "attention_control_before", "attention_control_after",
         })
         rendered = json.dumps(safe)
         self.assertNotIn("test-webhook-secret", rendered)

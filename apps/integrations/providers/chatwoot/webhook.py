@@ -28,6 +28,15 @@ from apps.integrations.services.human_takeover import (
     apply_chatwoot_human_takeover,
     channel_is_stage7_scoped,
 )
+from apps.integrations.errors import InvalidTransition, PendingHumanOutbox
+from apps.integrations.services.attention_control import (
+    ATTRIBUTE_AGENT,
+    ATTRIBUTE_BOT,
+    ATTRIBUTE_KEY,
+    apply_chatwoot_return_request,
+    reflect_attention_control,
+)
+from apps.integrations.providers.chatwoot.exceptions import ChatwootError
 
 
 class InvalidWebhookSignature(ValueError):
@@ -87,8 +96,18 @@ def _object_id(value):
     return "" if value is None else str(value)
 
 
+def _conversation_updated_payload(payload):
+    """Resolve Chatwoot 4.16 conversation_updated data without guessing an actor."""
+    if str(payload.get("event") or "") != "conversation_updated":
+        return {}
+    conversation = payload.get("conversation")
+    return conversation if isinstance(conversation, dict) else payload
+
+
 def _event_refs(payload):
     conversation = payload.get("conversation") if isinstance(payload.get("conversation"), dict) else {}
+    if not conversation:
+        conversation = _conversation_updated_payload(payload)
     account_id = _object_id(payload.get("account") or payload.get("account_id"))
     conversation_id = _object_id(conversation.get("id") or payload.get("conversation_id"))
     inbox_id = _object_id(
@@ -96,6 +115,24 @@ def _event_refs(payload):
     )
     message_id = _object_id(payload.get("id"))
     return account_id, inbox_id, conversation_id, message_id
+
+
+def _attention_control_change(payload):
+    """Return (before, after) only for an explicit custom-attribute change."""
+    changes = payload.get("changed_attributes")
+    if not isinstance(changes, list):
+        return "", ""
+    for change in changes:
+        if not isinstance(change, dict):
+            continue
+        custom_change = change.get("custom_attributes")
+        if not isinstance(custom_change, dict):
+            continue
+        previous = custom_change.get("previous_value")
+        current = custom_change.get("current_value")
+        if isinstance(previous, dict) and isinstance(current, dict):
+            return str(previous.get(ATTRIBUTE_KEY) or ""), str(current.get(ATTRIBUTE_KEY) or "")
+    return "", ""
 
 
 def _is_projection(payload, account_id, message_id):
@@ -141,6 +178,12 @@ def _classify(payload, account_id, inbox_id, message_id, mapping):
 def _safe_payload(payload, refs, classification):
     account_id, inbox_id, conversation_id, message_id = refs
     sender = payload.get("sender")
+    conversation = payload.get("conversation") if isinstance(payload.get("conversation"), dict) else {}
+    custom_attributes = conversation.get("custom_attributes")
+    if not isinstance(custom_attributes, dict):
+        custom_attributes = payload.get("custom_attributes") if isinstance(payload.get("custom_attributes"), dict) else {}
+    performer = payload.get("performer") if isinstance(payload.get("performer"), dict) else {}
+    attention_before, attention_after = _attention_control_change(payload)
     return {
         "event": str(payload.get("event", "")),
         "message_id": message_id,
@@ -151,6 +194,13 @@ def _safe_payload(payload, refs, classification):
         "sender_id": _object_id(sender.get("id")) if isinstance(sender, dict) else "",
         "sender_type": str(sender.get("type", "")) if isinstance(sender, dict) else "",
         "classification": classification,
+        "attention_control": str(custom_attributes.get(ATTRIBUTE_KEY) or ""),
+        "performer_id": _object_id(performer.get("id")),
+        "performer_type": str(performer.get("type") or ""),
+        "actor_source": "chatwoot",
+        "actor_identity": _object_id(performer.get("id")) or "unknown",
+        "attention_control_before": attention_before,
+        "attention_control_after": attention_after,
     }
 
 
@@ -187,8 +237,7 @@ def _create_human_message(mapping, payload, account_id, message_id):
         raise
 
 
-@transaction.atomic
-def process_webhook(payload, delivery_id):
+def process_webhook(payload, delivery_id, *, chatwoot_client=None):
     refs = _event_refs(payload)
     account_id, inbox_id, conversation_id, message_id = refs
     event_type = str(payload.get("event") or "")
@@ -207,6 +256,16 @@ def process_webhook(payload, delivery_id):
     classification = "unsupported"
     if event_type == "message_created":
         classification = _classify(payload, account_id, inbox_id, message_id, mapping)
+    elif event_type == "conversation_updated":
+        known_inbox = ChannelInboxMapping.objects.filter(
+            active=True, account__active=True, account__account_id=account_id, inbox_id=inbox_id,
+        ).exists()
+        classification = (
+            "wrong_account" if account_id != str(settings.CHATWOOT_ACCOUNT_ID)
+            else "wrong_inbox" if not known_inbox
+            else "unmapped_conversation" if mapping is None
+            else "attention_control"
+        )
     safe = _safe_payload(payload, refs, classification)
     scope = account_id or "unknown"
     fallback = "fallback:" + hashlib.sha256(json.dumps(safe, sort_keys=True).encode()).hexdigest()
@@ -244,10 +303,39 @@ def process_webhook(payload, delivery_id):
                 message_id=message_id,
             )
             message_created = takeover.message_created
+            try:
+                reflect_attention_control(mapping, ATTRIBUTE_AGENT, client=chatwoot_client)
+            except ChatwootError:
+                pass
         else:
             _message, message_created = _create_human_message(mapping, payload, account_id, message_id)
         action = "normalized" if message_created else "ignored"
-    inbox_event.status = InboxStatus.PROCESSED if action == "normalized" else InboxStatus.IGNORED
+    elif classification == "attention_control":
+        conversation_payload = _conversation_updated_payload(payload)
+        custom_attributes = conversation_payload.get("custom_attributes")
+        if not isinstance(custom_attributes, dict):
+            custom_attributes = payload.get("custom_attributes") if isinstance(payload.get("custom_attributes"), dict) else {}
+        previous, requested = _attention_control_change(payload)
+        if previous == ATTRIBUTE_AGENT and requested == ATTRIBUTE_BOT:
+            try:
+                _control, result = apply_chatwoot_return_request(
+                    mapping=mapping, payload=payload, account_id=account_id, inbox_id=inbox_id,
+                    delivery_id=external_event_id, client=chatwoot_client,
+                )
+                action = "returned_to_bot" if result.changed else "ignored"
+            except PendingHumanOutbox:
+                try:
+                    reflect_attention_control(mapping, ATTRIBUTE_AGENT, client=chatwoot_client)
+                except ChatwootError:
+                    pass
+                action = "return_blocked_pending_human_outbox"
+            except InvalidTransition:
+                action = "ignored"
+        else:
+            action = "ignored"
+    inbox_event.status = InboxStatus.PROCESSED if action in {
+        "normalized", "returned_to_bot", "return_blocked_pending_human_outbox"
+    } else InboxStatus.IGNORED
     inbox_event.processed_at = timezone.now()
     inbox_event.save(update_fields=["status", "processed_at"])
     return WebhookResult(classification, action)

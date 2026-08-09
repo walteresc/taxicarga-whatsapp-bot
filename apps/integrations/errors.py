@@ -32,3 +32,7 @@ class UnknownChannel(IntegrationDomainError):
 
 class StaleGeneration(IntegrationDomainError):
     code = "STALE_GENERATION"
+
+
+class PendingHumanOutbox(IntegrationDomainError):
+    code = "PENDING_HUMAN_OUTBOX"

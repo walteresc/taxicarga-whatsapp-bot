@@ -135,9 +135,12 @@ def extract_lead_with_ai(message, lead, recent_history=None):
     if recent_history:
         history_lines = ["CONVERSACION RECIENTE (ultimos mensajes):"]
         for entry in recent_history:
-            history_lines.append(f"  Cliente: {entry[0]}")
-            if entry[1]:
-                history_lines.append(f"  Asesor: {entry[1]}")
+            if isinstance(entry, dict):
+                history_lines.append(f"  {entry['author']}: {entry['text']}")
+            else:
+                history_lines.append(f"  Cliente: {entry[0]}")
+                if entry[1]:
+                    history_lines.append(f"  Asesor: {entry[1]}")
         history_block = "\n".join(history_lines)
 
     user_message = (

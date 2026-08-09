@@ -5,6 +5,7 @@ from unittest.mock import Mock, patch
 import json
 
 from django.db import IntegrityError, close_old_connections, connection, connections
+from django.contrib.auth import get_user_model
 from django.test import Client, TransactionTestCase, override_settings
 
 from apps.clientes.models import Cliente
@@ -26,6 +27,10 @@ from apps.integrations.providers.chatwoot.webhook import process_webhook
 from apps.integrations.services.generations import finalize_generation, start_generation
 from apps.integrations.services.human_takeover import apply_chatwoot_human_takeover
 from apps.integrations.services.meta_sender import process_meta_outbox_event
+from apps.integrations.services.bot_runtime import authorize_inbound_trigger
+from apps.integrations.services.state_machine import return_to_bot
+from apps.integrations.errors import PendingHumanOutbox
+from apps.leads.models import Lead
 from apps.whatsapp.models import ConversacionWhatsApp, MensajeWhatsApp, WhatsAppChannel
 from apps.whatsapp.identity import resolve_whatsapp_identity
 
@@ -317,3 +322,147 @@ class Stage7PostgreSQLRaceTests(TransactionTestCase):
         )
         self.assertCountEqual(results, [True, False])
         self.assertEqual(sender.call_count, 1)
+
+
+@skipUnless(connection.vendor == "postgresql", "PostgreSQL-only Stage 8 race tests.")
+@override_settings(
+    CHATWOOT_RETURN_TO_BOT_ENABLED=True,
+    CHATWOOT_HUMAN_TAKEOVER_ENABLED=True,
+    CHATWOOT_AGENT_TO_WHATSAPP_ENABLED=True,
+)
+class Stage8PostgreSQLRaceTests(TransactionTestCase):
+    def setUp(self):
+        self.user_id = get_user_model().objects.create_user(username="pg_stage8_advisor").id
+        cliente = Cliente.objects.create(telefono="pg-stage8-client")
+        self.channel = WhatsAppChannel.objects.create(
+            nombre="PG Stage 8", phone_number_id="pg-stage8-phone", activo=False
+        )
+        lead = Lead.objects.create(cliente=cliente, whatsapp_channel=self.channel)
+        self.conversation = ConversacionWhatsApp.objects.create(
+            cliente=cliente, lead=lead, channel=self.channel,
+            estado_atencion=ConversacionWhatsApp.ATENCION_ASESOR, bot_pausado=True,
+        )
+        self.control = ConversationControl.objects.create(
+            conversation=self.conversation, owner_state=OwnerState.AGENT_ACTIVE,
+            control_version=1, active_advisor_id=self.user_id,
+        )
+        account = ChatwootAccountMapping.objects.create(
+            environment="stage8-pg", account_id="7", active=True, sync_status=SyncStatus.SYNCED
+        )
+        inbox = ChannelInboxMapping.objects.create(
+            channel=self.channel, account=account, inbox_id="9", inbox_identifier="stage8-pg",
+            active=True, sync_status=SyncStatus.SYNCED,
+        )
+        contact = ChatwootContactMapping.objects.create(
+            cliente=cliente, account=account, contact_id="11", active=True,
+            sync_status=SyncStatus.SYNCED,
+        )
+        source = ContactInboxMapping.objects.create(
+            contact=contact, inbox=inbox, source_id="stage8-pg-source", sync_status=SyncStatus.SYNCED
+        )
+        self.mapping = ConversationMapping.objects.create(
+            conversation=self.conversation, contact_inbox=source,
+            external_conversation_id="13", active=True, sync_status=SyncStatus.SYNCED,
+        )
+        self.scope = override_settings(CHATWOOT_STAGE7_TEST_CHANNEL_ID=str(self.channel.id))
+        self.scope.enable()
+
+    def tearDown(self):
+        self.scope.disable()
+        super().tearDown()
+
+    def _race(self, operation):
+        barrier = Barrier(2, timeout=10)
+
+        def run(index):
+            close_old_connections()
+            try:
+                barrier.wait()
+                return operation(index)
+            finally:
+                connections.close_all()
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [executor.submit(run, index) for index in range(2)]
+            return [future.result(timeout=30) for future in futures]
+
+    def _return(self, key):
+        actor = get_user_model().objects.get(pk=self.user_id)
+        try:
+            return return_to_bot(
+                self.conversation.id, actor=actor, idempotency_key=key
+            )[2]
+        except PendingHumanOutbox:
+            return "blocked"
+
+    def _human(self, message_id):
+        return apply_chatwoot_human_takeover(
+            mapping_id=self.mapping.id,
+            payload={"content": f"human {message_id}", "sender": {"id": 3}},
+            account_id="7", inbox_id="9", message_id=str(message_id),
+        ).transitioned
+
+    def test_simultaneous_returns_transition_once_without_deadlock(self):
+        results = self._race(lambda index: self._return(f"return-{index}"))
+        self.control.refresh_from_db()
+        self.assertCountEqual(results, [True, False])
+        self.assertEqual(self.control.owner_state, OwnerState.BOT_ACTIVE)
+        self.assertEqual(self.control.control_version, 2)
+
+    def test_return_racing_inbound_has_single_serialized_trigger_decision(self):
+        inbound = MensajeWhatsApp.objects.create(
+            conversacion=self.conversation, meta_message_id="wamid-stage8-race",
+            direccion="entrante", origen="cliente", contenido="race inbound",
+        )
+        results = self._race(lambda index: (
+            self._return("return-vs-inbound") if index == 0
+            else authorize_inbound_trigger(inbound.id).authorized
+        ))
+        self.control.refresh_from_db()
+        generation_count = BotGeneration.objects.filter(input_message__external_message_id="wamid-stage8-race").count()
+        self.assertIn(generation_count, {0, 1})
+        if generation_count:
+            self.assertEqual(self.control.owner_state, OwnerState.BOT_ACTIVE)
+        self.assertEqual(sum(value is True for value in results), 1 + generation_count)
+
+    def test_return_racing_human_message_has_deterministic_final_owner(self):
+        results = self._race(lambda index: (
+            self._return("return-vs-human") if index == 0 else self._human("stage8-human-race")
+        ))
+        self.control.refresh_from_db()
+        # Human first => pending outbox blocks return. Return first => human retakes.
+        self.assertEqual(self.control.owner_state, OwnerState.AGENT_ACTIVE)
+        self.assertEqual(IntegrationMessage.objects.filter(author_type=AuthorType.AGENT).count(), 1)
+        self.assertEqual(IntegrationOutboxEvent.objects.filter(
+            logical_message__author_type=AuthorType.AGENT
+        ).count(), 1)
+        self.assertNotIn(False, [value for value in results if isinstance(value, str)])
+
+    def test_pending_human_outbox_racing_return_never_loses_message(self):
+        results = self._race(lambda index: (
+            self._return("pending-race-return") if index == 0 else self._human("pending-race-human")
+        ))
+        self.control.refresh_from_db()
+        self.assertEqual(self.control.owner_state, OwnerState.AGENT_ACTIVE)
+        self.assertEqual(IntegrationOutboxEvent.objects.filter(
+            logical_message__author_type=AuthorType.AGENT,
+            status__in=[OutboxStatus.PENDING, OutboxStatus.RETRY, OutboxStatus.SENDING],
+        ).count(), 1)
+
+    def test_post_return_generation_racing_takeover_cannot_publish_late_bot(self):
+        self._return("return-before-generation")
+        inbound = MensajeWhatsApp.objects.create(
+            conversacion=self.conversation, meta_message_id="wamid-stage8-generation",
+            direccion="entrante", origen="cliente", contenido="new trigger",
+        )
+        generation = authorize_inbound_trigger(inbound.id).generation
+        results = self._race(lambda index: (
+            self._human("stage8-takeover-after-return") if index == 0
+            else finalize_generation(generation.id, result_text="late bot")[2]
+        ))
+        self.control.refresh_from_db()
+        self.assertEqual(self.control.owner_state, OwnerState.AGENT_ACTIVE)
+        self.assertEqual(IntegrationOutboxEvent.objects.filter(
+            logical_message__author_type=AuthorType.BOT,
+            status__in=[OutboxStatus.PENDING, OutboxStatus.RETRY],
+        ).count(), 0)

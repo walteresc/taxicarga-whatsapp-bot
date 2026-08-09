@@ -211,6 +211,47 @@ class ChatwootClient:
             },
         )
 
+    def list_custom_attribute_definitions(self):
+        payload = self._request(
+            "GET", f"/api/v1/accounts/{self.config.account_id}/custom_attribute_definitions"
+        )
+        return payload.get("payload", payload) if isinstance(payload, dict) else payload
+
+    def create_conversation_list_attribute(self, *, key, display_name, values):
+        return self._request(
+            "POST",
+            f"/api/v1/accounts/{self.config.account_id}/custom_attribute_definitions",
+            json={
+                "attribute_display_name": display_name,
+                "attribute_display_type": "list",
+                "attribute_description": "Estado de control proyectado desde TaxiCarga.",
+                "attribute_key": key,
+                "attribute_model": "conversation_attribute",
+                "attribute_values": values,
+            },
+        )
+
+    def ensure_conversation_list_attribute(self, *, key, display_name, values):
+        matches = [
+            item for item in self.list_custom_attribute_definitions()
+            if item.get("attribute_key") == key
+            and item.get("attribute_model") == "conversation_attribute"
+        ]
+        if len(matches) > 1:
+            raise ChatwootAPIError("Duplicate Chatwoot custom attribute definitions found.")
+        if matches:
+            return matches[0], False
+        return self.create_conversation_list_attribute(
+            key=key, display_name=display_name, values=values
+        ), True
+
+    def update_conversation_custom_attributes(self, conversation_id, attributes):
+        return self._request(
+            "POST",
+            f"/api/v1/accounts/{self.config.account_id}/conversations/{conversation_id}/custom_attributes",
+            json={"custom_attributes": attributes},
+        )
+
     def list_webhooks(self):
         payload = self._request("GET", f"/api/v1/accounts/{self.config.account_id}/webhooks")
         if not isinstance(payload, dict):

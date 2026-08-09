@@ -170,7 +170,7 @@ PAYMENT_INFORMATION = (
 )
 
 
-def handle_incoming_message(cliente, message):
+def handle_incoming_message(cliente, message, canonical_context=None):
     lead = _get_active_lead(cliente)
     account_holder_reply = _account_holder_information(message)
     if account_holder_reply:
@@ -220,13 +220,19 @@ def handle_incoming_message(cliente, message):
         return availability_reply
 
     # Run AI extraction early so it's available for both COTIZADO and normal flows.
-    recent_history = list(
-        lead.cliente.conversaciones.order_by("-fecha").values_list(
-            "mensaje_entrada",
-            "mensaje_salida",
-        )[:4]
-    )
-    recent_history.reverse()
+    if canonical_context is not None:
+        recent_history = [
+            {"author": entry.author, "text": entry.text}
+            for entry in canonical_context.entries
+        ]
+    else:
+        recent_history = list(
+            lead.cliente.conversaciones.order_by("-fecha").values_list(
+                "mensaje_entrada",
+                "mensaje_salida",
+            )[:4]
+        )
+        recent_history.reverse()
     ai_extracted = extract_lead_with_ai(message, lead, recent_history)
 
     if lead.estado == Lead.COTIZADO:

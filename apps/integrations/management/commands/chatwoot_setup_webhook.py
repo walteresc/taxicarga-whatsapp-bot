@@ -10,7 +10,8 @@ from apps.integrations.providers.chatwoot.exceptions import ChatwootError
 
 
 WEBHOOK_NAME = "TaxiCarga Django Sandbox"
-SUBSCRIPTIONS = ["message_created"]
+SUBSCRIPTIONS = ["message_created", "conversation_updated"]
+ATTENTION_ATTRIBUTE_KEY = "taxicarga_attention_control"
 
 
 def _replace_env_values(path, values):
@@ -80,6 +81,11 @@ class Command(BaseCommand):
                 url=url,
                 subscriptions=SUBSCRIPTIONS,
             )
+            _attribute, attribute_created = client.ensure_conversation_list_attribute(
+                key=ATTENTION_ATTRIBUTE_KEY,
+                display_name="Control de atención",
+                values=["Asesor", "Bot"],
+            )
         except ChatwootError as exc:
             raise CommandError(str(exc)) from exc
         secret = str(webhook.get("secret") or "")
@@ -95,5 +101,6 @@ class Command(BaseCommand):
         action = "created" if created else "updated" if updated else "reused"
         self.stdout.write(self.style.SUCCESS(
             f"CHATWOOT WEBHOOK OK action={action} id={webhook.get('id')} "
-            f"name={WEBHOOK_NAME} subscriptions=message_created secret=CONFIGURED"
+            f"name={WEBHOOK_NAME} subscriptions=message_created,conversation_updated "
+            f"attribute={'created' if attribute_created else 'reused'} secret=CONFIGURED"
         ))

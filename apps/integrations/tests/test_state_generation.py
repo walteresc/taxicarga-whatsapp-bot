@@ -28,13 +28,13 @@ class StateMachineTests(IntegrationTestCase):
         control, _, _ = take_conversation(
             self.conversation.id, actor=self.user, idempotency_key="take-1", expected_version=1
         )
-        control, checkpoint, _ = return_to_bot(
+        control, audit, changed = return_to_bot(
             self.conversation.id, actor=self.user, idempotency_key="return-1", expected_version=2
         )
-        self.assertEqual(checkpoint.resume_mode, ResumeMode.WAIT_FOR_CUSTOMER)
-        control, _, _ = complete_return(checkpoint.id, idempotency_key="complete-1")
+        self.assertTrue(changed)
+        self.assertEqual(audit.action, "return_to_bot")
         self.assertEqual(control.owner_state, OwnerState.BOT_ACTIVE)
-        self.assertEqual(control.control_version, 4)
+        self.assertEqual(control.control_version, 3)
 
     def test_idempotent_action_does_not_increment_version(self):
         first, audit, changed = request_agent(
@@ -57,9 +57,13 @@ class StateMachineTests(IntegrationTestCase):
         with self.assertRaises(VersionConflict):
             request_agent(self.conversation.id, reason="special", idempotency_key="request", expected_version=99)
 
-    def test_invalid_return_is_rejected(self):
-        with self.assertRaises(InvalidTransition):
-            return_to_bot(self.conversation.id, actor=self.user, idempotency_key="return")
+    def test_return_when_bot_is_idempotent_noop(self):
+        control, audit, changed = return_to_bot(
+            self.conversation.id, actor=self.user, idempotency_key="return"
+        )
+        self.assertFalse(changed)
+        self.assertIsNone(audit)
+        self.assertEqual(control.control_version, 0)
 
     def test_inactive_actor_cannot_take_conversation(self):
         self.user.is_active = False
