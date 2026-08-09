@@ -1,5 +1,29 @@
 # Estado de trabajo
 
+## PLAN FUNCIONAL LOCAL - FASES 1-16 COMPLETADAS
+
+- Ruta canonica `LeadUbicacion`: origen, 0..N paradas y destino; orden y extremos
+  unicos. Campos legacy permanecen como espejo de compatibilidad controlado.
+- Migracion `leads.0013` incluye backfill sin inventar valores. PostgreSQL 16.9:
+  apply, rollback y reapply OK.
+- Accesos persisten por ubicacion. Extractor soporta rutas 2..N, datos agrupados y
+  eliminacion inequivoca de parada.
+- Carga tiene API canonica compatible. Operarios conservan booleano y cantidad.
+  Embalaje, desarmado y armado son independientes; defaults mudanza aplicados.
+- Multiparada permanece `por_cotizar`/asesor: no existe regla comercial autorizada.
+  `_distance_cost()` sigue cero: no hay tarifa historica inferible sin inventar.
+- Aceptacion se liga idempotentemente a ultima revision realmente enviada.
+- Reserva bot exige revision enviada/aceptada y booking completo; crea `Servicio`
+  transaccional e idempotente. `ServicioUbicacion` conserva snapshot operativo.
+- `ProgramacionServicio` no se crea: requiere asignacion operativa humana existente.
+- Dashboard muestra ruta, accesos, carga, operarios, adicionales y reserva.
+- Chatwoot recibe proyeccion por outbox y `ConversationMapping`; Django manda.
+- Migracion `servicios.0005`: PostgreSQL apply, rollback y reapply OK.
+- PostgreSQL focal: 3/3 OK. Focal dominio/dashboard/IA: 245/245 OK.
+- Suite completa: 580/580 OK; 33 omitidas PostgreSQL-only.
+- Quality gate completo OK.
+- Externas: Meta=0, OpenAI tests=0, VPS/DNS/deploy/push=0. ETAPA 10C no iniciada.
+
 ## ETAPAS 1–3
 
 - Implementadas, auditadas y aprobadas por el usuario.
