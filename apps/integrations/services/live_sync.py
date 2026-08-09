@@ -6,12 +6,12 @@ from apps.whatsapp.models import MensajeWhatsApp
 
 from ..models import ConversationControl
 from .chatwoot_projection import sync_chatwoot_conversation
-from .human_takeover import channel_is_stage7_scoped
+from .channel_policy import integration_enabled, is_feature_enabled
 
 
 def canonical_incoming_message(*, lead, channel, event, conversation=None):
     """Persist one canonical TEST inbound by Meta provider id."""
-    if not channel or not channel_is_stage7_scoped(channel.id):
+    if not channel or not integration_enabled(channel):
         return None, False, None
     conversation = conversation or obtener_o_crear_conversacion(lead)
     ConversationControl.objects.get_or_create(conversation=conversation)
@@ -37,9 +37,9 @@ def canonical_incoming_message(*, lead, channel, event, conversation=None):
 
 
 def project_new_incoming(message, *, client=None):
-    if not message or not settings.CHATWOOT_LIVE_SYNC_ENABLED:
+    if not message:
         return None
-    if not channel_is_stage7_scoped(message.conversacion.channel_id):
+    if not is_feature_enabled(message.conversacion.channel, "live_sync"):
         return None
     return sync_chatwoot_conversation(
         message.conversacion_id,

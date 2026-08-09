@@ -11,12 +11,15 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--conversation-id", type=int)
+        parser.add_argument("--channel-id", type=int)
         parser.add_argument("--process", action="store_true")
 
     def handle(self, *args, **options):
         queryset = ConversacionWhatsApp.objects.all()
         if options["conversation_id"]:
             queryset = queryset.filter(pk=options["conversation_id"])
+        if options["channel_id"]:
+            queryset = queryset.filter(channel_id=options["channel_id"])
         queued = processed = 0
         for conversation_id in queryset.values_list("id", flat=True).iterator():
             event, created = queue_commercial_label_projection(conversation_id)

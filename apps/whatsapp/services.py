@@ -48,9 +48,12 @@ def send_whatsapp_message(
 
     is_template = isinstance(body, dict) and body.get("type") == "template"
 
-    phone_number_id = getattr(channel, "phone_number_id", "") or settings.WHATSAPP_PHONE_NUMBER_ID
-    if not settings.WHATSAPP_ACCESS_TOKEN or not phone_number_id:
-        logger.info("WhatsApp no configurado. Mensaje omitido para %s: %s", to, body)
+    phone_number_id = getattr(channel, "phone_number_id", "")
+    if not channel or not channel.activo or not settings.WHATSAPP_ACCESS_TOKEN or not phone_number_id:
+        logger.info(
+            "WhatsApp send omitted (channel_id=%s, recipient=%s).",
+            getattr(channel, "id", None), _masked_phone(to),
+        )
         return {"sent": False, "reason": "missing_credentials"}
 
     url = f"https://graph.facebook.com/{settings.WHATSAPP_API_VERSION}/{phone_number_id}/messages"
@@ -86,7 +89,7 @@ def send_whatsapp_message(
                 pass
         logger.exception(
             "Error enviando mensaje de WhatsApp a %s (HTTP %s, codigo %s, subcodigo %s)",
-            to,
+            _masked_phone(to),
             status_code,
             error_code,
             error_subcode,
@@ -101,14 +104,13 @@ def send_whatsapp_message(
 
 
 def _ownership_allows_send(*, author_type, conversation_id, channel):
-    """Stage 7 central physical-send gate; only the explicit TEST channel is scoped."""
+    """Apply canonical ownership to channels enrolled in integration."""
+    from apps.integrations.services.channel_policy import integration_enabled
     from apps.integrations.enums import AuthorType, OwnerState
     from apps.integrations.models import ConversationControl
     from apps.whatsapp.models import ConversacionWhatsApp
 
-    scoped_channel = str(getattr(settings, "CHATWOOT_STAGE7_TEST_CHANNEL_ID", "") or "")
-    channel_id = str(getattr(channel, "id", "") or "")
-    if not scoped_channel or channel_id != scoped_channel:
+    if not integration_enabled(channel):
         return True
     try:
         conversation = ConversacionWhatsApp.objects.get(pk=conversation_id)
@@ -130,9 +132,15 @@ def _ownership_allows_send(*, author_type, conversation_id, channel):
     return True
 
 
-def send_whatsapp_template_message(to):
+def send_whatsapp_template_message(to, *, channel):
     """Envía un mensaje de plantilla 'hello_world' al número dado."""
-    url = f"https://graph.facebook.com/{settings.WHATSAPP_API_VERSION}/{settings.WHATSAPP_PHONE_NUMBER_ID}/messages"
+    if not channel or not channel.activo or not channel.phone_number_id or not settings.WHATSAPP_ACCESS_TOKEN:
+        logger.info(
+            "WhatsApp template omitted (channel_id=%s, recipient=%s).",
+            getattr(channel, "id", None), _masked_phone(to),
+        )
+        return {"sent": False, "reason": "missing_credentials"}
+    url = f"https://graph.facebook.com/{settings.WHATSAPP_API_VERSION}/{channel.phone_number_id}/messages"
     headers = {
         "Authorization": f"Bearer {settings.WHATSAPP_ACCESS_TOKEN}",
         "Content-Type": "application/json",
@@ -165,7 +173,7 @@ def send_whatsapp_template_message(to):
                 pass
         logger.exception(
             "Error enviando mensaje de plantilla WhatsApp a %s (HTTP %s, codigo %s, subcodigo %s)",
-            to,
+            _masked_phone(to),
             status_code,
             error_code,
             error_subcode,
@@ -178,50 +186,11 @@ def send_whatsapp_template_message(to):
             "error_subcode": error_subcode,
         }
 
-    if not settings.WHATSAPP_ACCESS_TOKEN or not settings.WHATSAPP_PHONE_NUMBER_ID:
-        logger.info("WhatsApp no configurado. Mensaje omitido para %s: %s", to, body)
-        return {"sent": False, "reason": "missing_credentials"}
 
-    url = f"https://graph.facebook.com/{settings.WHATSAPP_API_VERSION}/{settings.WHATSAPP_PHONE_NUMBER_ID}/messages"
-    headers = {
-        "Authorization": f"Bearer {settings.WHATSAPP_ACCESS_TOKEN}",
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "messaging_product": "whatsapp",
-        "to": to,
-        "type": "text",
-        "text": {"body": body},
-    }
-    try:
-        response = requests.post(url, headers=headers, json=payload, timeout=15)
-        response.raise_for_status()
-        return response.json()
-    except requests.RequestException as exc:
-        status_code = getattr(exc.response, "status_code", None)
-        error_code = None
-        error_subcode = None
-        if exc.response is not None:
-            try:
-                error = exc.response.json().get("error", {})
-                error_code = error.get("code")
-                error_subcode = error.get("error_subcode")
-            except ValueError:
-                pass
-        logger.exception(
-            "Error enviando mensaje de WhatsApp a %s (HTTP %s, codigo %s, subcodigo %s)",
-            to,
-            status_code,
-            error_code,
-            error_subcode,
-        )
-        return {
-            "sent": False,
-            "reason": "request_error",
-            "status_code": status_code,
-            "error_code": error_code,
-            "error_subcode": error_subcode,
-        }
+
+def _masked_phone(value):
+    digits = "".join(char for char in str(value or "") if char.isdigit())
+    return f"***{digits[-3:]}" if digits else "unknown"
 
 
 def download_whatsapp_image(cliente, lead, event):

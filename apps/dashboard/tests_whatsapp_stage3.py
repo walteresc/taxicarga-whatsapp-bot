@@ -93,7 +93,11 @@ class WhatsAppConversationsTests(TestCase):
         self.assertEqual(mensaje.origen, MensajeWhatsApp.ORIGEN_ASESOR)
         self.assertEqual(mensaje.autor, self.asesor)
         self.assertEqual(self.conversacion.responsable, self.asesor)
-        send_mock.assert_called_once_with(self.cliente.telefono, "Le confirmo en unos minutos.")
+        send_mock.assert_called_once_with(
+            self.cliente.telefono,
+            "Le confirmo en unos minutos.",
+            channel=self.conversacion.channel,
+        )
 
     def test_cerrar_pausa_bot_y_oculta_compositor(self):
         action_url = reverse("dashboard-whatsapp-conversacion-accion", args=[self.conversacion.id])

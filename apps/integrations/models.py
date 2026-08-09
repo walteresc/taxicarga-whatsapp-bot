@@ -49,6 +49,22 @@ class ConversationControl(models.Model):
         indexes = [models.Index(fields=["owner_state", "updated_at"], name="int_ctrl_state_idx")]
 
 
+class ChannelIntegrationPolicy(models.Model):
+    channel = models.OneToOneField(
+        "whatsapp.WhatsAppChannel",
+        on_delete=models.CASCADE,
+        related_name="integration_policy",
+    )
+    enabled = models.BooleanField(default=False)
+    live_sync = models.BooleanField(default=False)
+    human_takeover = models.BooleanField(default=False)
+    return_to_bot = models.BooleanField(default=False)
+    agent_outbound = models.BooleanField(default=False)
+    commercial_labels = models.BooleanField(default=False)
+    meta_outbox = models.BooleanField(default=False)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
 class ConversationTransitionAudit(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     conversation = models.ForeignKey(

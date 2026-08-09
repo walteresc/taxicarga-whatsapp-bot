@@ -313,13 +313,13 @@ def should_bot_handle_lead(lead, incoming_message, mode=None):
         logger.info(
             "[Conversation Guard]\n"
             "lead_id=%d\n"
-            "telefono=%s\n"
+            "phone_suffix=%s\n"
             "estado=%s\n"
             "allow_bot=%s\n"
             "pause_bot=%s\n"
             "reason=%s",
             lead.id,
-            lead.cliente.telefono if lead.cliente_id else "?",
+            _phone_suffix(lead.cliente.telefono) if lead.cliente_id else "?",
             lead.estado,
             result["allow_bot"],
             result["pause_bot"],
@@ -349,17 +349,15 @@ def should_bot_handle_lead(lead, incoming_message, mode=None):
                 logger.info(
                     "[Conversation Guard]\n"
                     "lead_id=%d\n"
-                    "telefono=%s\n"
+                    "phone_suffix=%s\n"
                     "estado=%s\n"
-                    "mensaje=%s\n"
                     "pattern=%s\n"
                     "allow_bot=%s\n"
                     "pause_bot=%s\n"
                     "reason=%s",
                     lead.id,
-                    lead.cliente.telefono if lead.cliente_id else "?",
+                    _phone_suffix(lead.cliente.telefono) if lead.cliente_id else "?",
                     lead.estado,
-                    incoming_message[:100],
                     pattern,
                     result["allow_bot"],
                     result["pause_bot"],
@@ -368,6 +366,11 @@ def should_bot_handle_lead(lead, incoming_message, mode=None):
                 return result
 
     return result
+
+
+def _phone_suffix(phone):
+    digits = "".join(character for character in str(phone or "") if character.isdigit())
+    return f"***{digits[-3:]}" if digits else "?"
 
 
 def _marcar_derivacion(lead, motivos):

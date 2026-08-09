@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 
-from django.conf import settings
 from django.db import transaction
 
 from apps.whatsapp.models import ConversacionWhatsApp
@@ -8,6 +7,7 @@ from apps.whatsapp.models import ConversacionWhatsApp
 from ..enums import OutboxStatus, Provider
 from ..models import ConversationMapping, IntegrationOutboxEvent
 from ..providers.chatwoot.client import ChatwootClient
+from .channel_policy import is_feature_enabled
 
 
 COMMERCIAL_LABELS = {"por-cotizar", "cotizado"}
@@ -28,7 +28,9 @@ def desired_commercial_labels(state):
 
 
 def queue_commercial_label_projection(conversation_id):
-    conversation = ConversacionWhatsApp.objects.get(pk=conversation_id)
+    conversation = ConversacionWhatsApp.objects.select_related("channel").get(pk=conversation_id)
+    if not is_feature_enabled(conversation.channel, "commercial_labels"):
+        return None, False
     mapping = ConversationMapping.objects.select_related(
         "contact_inbox__inbox__account"
     ).filter(conversation=conversation, active=True).first()
@@ -51,15 +53,28 @@ def queue_commercial_label_projection(conversation_id):
 
 
 def process_commercial_label_event(event_id, *, client=None, force=False):
-    if not settings.CHATWOOT_COMMERCIAL_LABELS_ENABLED:
-        return LabelProjectionResult("disabled")
     with transaction.atomic():
-        event = IntegrationOutboxEvent.objects.select_for_update().get(pk=event_id)
+        event = IntegrationOutboxEvent.objects.select_for_update().select_related(
+            "conversation__channel"
+        ).get(pk=event_id)
+        if not is_feature_enabled(event.conversation.channel, "commercial_labels"):
+            return LabelProjectionResult("disabled")
         if event.status == OutboxStatus.SENT and not force:
             return LabelProjectionResult("already_sent")
-        mapping = ConversationMapping.objects.select_related("conversation").get(
+        mapping = ConversationMapping.objects.select_related(
+            "conversation__channel", "contact_inbox__inbox__account"
+        ).get(
             pk=event.safe_payload["conversation_mapping_id"], active=True
         )
+        if (
+            mapping.conversation_id != event.conversation_id
+            or mapping.contact_inbox.inbox.channel_id != event.conversation.channel_id
+        ):
+            event.status = OutboxStatus.DEAD_LETTER
+            event.error_code = "channel_scope_mismatch"
+            event.error_summary = "Commercial label mapping channel is invalid."
+            event.save(update_fields=["status", "error_code", "error_summary", "updated_at"])
+            return LabelProjectionResult("dead_letter")
         event.status = OutboxStatus.SENDING
         event.attempts += 1
         event.save(update_fields=["status", "attempts", "updated_at"])

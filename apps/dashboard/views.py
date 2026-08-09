@@ -782,7 +782,9 @@ def _send_manual_reply(lead, reply, user):
         return False
     conversacion_whatsapp = obtener_o_crear_conversacion(lead)
     tomar_conversacion(conversacion_whatsapp.id, user)
-    send_whatsapp_message(lead.cliente.telefono, reply)
+    send_whatsapp_message(
+        lead.cliente.telefono, reply, channel=conversacion_whatsapp.channel,
+    )
     Conversacion.objects.create(
         cliente=lead.cliente,
         mensaje_entrada="",
@@ -806,7 +808,9 @@ def _send_quote(lead, price, custom_message, user):
     conversacion_whatsapp = obtener_o_crear_conversacion(lead)
     tomar_conversacion(conversacion_whatsapp.id, user)
     message = custom_message.strip() or _default_quote_message(lead, quoted_price)
-    send_whatsapp_message(lead.cliente.telefono, message)
+    send_whatsapp_message(
+        lead.cliente.telefono, message, channel=conversacion_whatsapp.channel,
+    )
     Conversacion.objects.create(
         cliente=lead.cliente,
         mensaje_entrada="",

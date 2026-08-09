@@ -7,7 +7,7 @@ from ..errors import InvalidTransition
 from ..models import ConversationMapping
 from ..providers.chatwoot.client import ChatwootClient
 from ..providers.chatwoot.exceptions import ChatwootError
-from .human_takeover import channel_is_stage7_scoped
+from .channel_policy import is_feature_enabled
 from .state_machine import return_to_bot
 
 
@@ -50,7 +50,7 @@ def apply_chatwoot_return_request(*, mapping, payload, account_id, inbox_id, del
         or str(inbox.account.account_id) != str(account_id)
         or str(inbox.inbox_id) != str(inbox_id)
         or inbox.channel_id != mapping.conversation.channel_id
-        or not channel_is_stage7_scoped(mapping.conversation.channel_id)
+        or not is_feature_enabled(mapping.conversation.channel, "return_to_bot")
     ):
         raise InvalidTransition("Chatwoot return is outside the authorized sandbox scope.")
 

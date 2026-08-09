@@ -129,10 +129,15 @@ class BotSettingsAPITests(TestCase):
 
 
 class IntegrationBotConfigWebhookTests(TestCase):
+    def setUp(self):
+        self.channel = WhatsAppChannel.objects.create(
+            nombre="Webhook config test", phone_number_id="webhook-config-test", activo=True,
+        )
+
     @override_settings(OPENAI_API_KEY="")
     @patch("apps.whatsapp.views.send_whatsapp_message")
     def test_bot_apagado_marca_lead_como_humano(self, send_mock):
-        conf = ConfiguracionBot.obtener()
+        conf = ConfiguracionBot.obtener(channel=self.channel)
         conf.bot_activo = False
         conf.save()
         send_mock.return_value = {"messages": [{"id": "wamid.reply"}]}
@@ -142,6 +147,7 @@ class IntegrationBotConfigWebhookTests(TestCase):
                     "changes": [
                         {
                             "value": {
+                                "metadata": {"phone_number_id": self.channel.phone_number_id},
                                 "messages": [
                                     {
                                         "from": "51988888888",
@@ -163,7 +169,7 @@ class IntegrationBotConfigWebhookTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["human_takeover"])
-        lead = Lead.objects.filter(cliente__telefono="51988888888").first()
+        lead = Lead.objects.filter(cliente__telefono="+51988888888").first()
         self.assertIsNotNone(lead)
         self.assertTrue(lead.atencion_humana)
         send_mock.assert_not_called()
@@ -171,7 +177,7 @@ class IntegrationBotConfigWebhookTests(TestCase):
     @override_settings(OPENAI_API_KEY="")
     @patch("apps.whatsapp.views.send_whatsapp_message")
     def test_fuera_horario_marca_lead_como_humano(self, send_mock):
-        conf = ConfiguracionBot.obtener()
+        conf = ConfiguracionBot.obtener(channel=self.channel)
         conf.bot_activo = True
         conf.hora_inicio_bot = "09:00"
         conf.hora_fin_bot = "18:00"
@@ -184,6 +190,7 @@ class IntegrationBotConfigWebhookTests(TestCase):
                     "changes": [
                         {
                             "value": {
+                                "metadata": {"phone_number_id": self.channel.phone_number_id},
                                 "messages": [
                                     {
                                         "from": "51999999999",
@@ -210,9 +217,13 @@ class IntegrationBotConfigWebhookTests(TestCase):
 
 class WhatsappWebhookTests(TestCase):
     def setUp(self):
-        conf = ConfiguracionBot.obtener()
+        self.channel = WhatsAppChannel.objects.create(
+            nombre="Webhook test", phone_number_id="webhook-test", activo=True,
+        )
+        conf = ConfiguracionBot.obtener(channel=self.channel)
         conf.hora_inicio_bot = "00:00"
         conf.hora_fin_bot = "23:59"
+        conf.domingo_activo = True
         conf.save()
 
     @override_settings(WHATSAPP_VERIFY_TOKEN="token-test")
@@ -243,6 +254,7 @@ class WhatsappWebhookTests(TestCase):
                         "changes": [
                             {
                                 "value": {
+                                    "metadata": {"phone_number_id": self.channel.phone_number_id},
                                     "messages": [
                                         {
                                             "from": client_phone,
@@ -275,8 +287,9 @@ class WhatsappWebhookTests(TestCase):
             response = send_message(msg)
             self.assertEqual(response.status_code, 200)
 
-        self.assertTrue(Cliente.objects.filter(telefono=client_phone).exists())
-        self.assertTrue(Conversacion.objects.filter(cliente__telefono=client_phone).exists())
+        canonical_phone = f"+{client_phone}"
+        self.assertTrue(Cliente.objects.filter(telefono=canonical_phone).exists())
+        self.assertTrue(Conversacion.objects.filter(cliente__telefono=canonical_phone).exists())
 
         # Se comprueba que la función de envío fue llamada al menos una vez
         self.assertTrue(send_mock.called)
@@ -291,6 +304,7 @@ class WhatsappWebhookTests(TestCase):
                     "changes": [
                         {
                             "value": {
+                                "metadata": {"phone_number_id": self.channel.phone_number_id},
                                 "messages": [
                                     {
                                         "from": "51955555555",
@@ -309,7 +323,7 @@ class WhatsappWebhookTests(TestCase):
             content_type="application/json",
         )
         self.assertEqual(response.status_code, 200)
-        self.assertTrue(Cliente.objects.filter(telefono="51955555555").exists())
+        self.assertTrue(Cliente.objects.filter(telefono="+51955555555").exists())
         self.assertEqual(Conversacion.objects.count(), 1)
         send_mock.assert_called_once()
 
@@ -329,6 +343,7 @@ class WhatsappWebhookTests(TestCase):
                     "changes": [
                         {
                             "value": {
+                                "metadata": {"phone_number_id": self.channel.phone_number_id},
                                 "messages": [
                                     {
                                         "from": "51955556666",
@@ -362,13 +377,17 @@ class WhatsappWebhookTests(TestCase):
     @patch("apps.whatsapp.views.send_whatsapp_message")
     def test_no_responde_auto_si_lead_esta_en_atencion_humana(self, send_mock):
         cliente = Cliente.objects.create(telefono="51955550000")
-        Lead.objects.create(cliente=cliente, estado=Lead.ASIGNADO, atencion_humana=True)
+        Lead.objects.create(
+            cliente=cliente, estado=Lead.ASIGNADO, atencion_humana=True,
+            whatsapp_channel=self.channel,
+        )
         payload = {
             "entry": [
                 {
                     "changes": [
                         {
                             "value": {
+                                "metadata": {"phone_number_id": self.channel.phone_number_id},
                                 "messages": [
                                     {
                                         "from": "51955550000",
@@ -422,6 +441,7 @@ class WhatsappWebhookTests(TestCase):
                     "changes": [
                         {
                             "value": {
+                                "metadata": {"phone_number_id": self.channel.phone_number_id},
                                 "messages": [
                                     {
                                         "from": "51955551111",
@@ -466,6 +486,7 @@ class WhatsappWebhookTests(TestCase):
                     "changes": [
                         {
                             "value": {
+                                "metadata": {"phone_number_id": self.channel.phone_number_id},
                                 "messages": [
                                     {
                                         "from": "51955553333",
@@ -510,6 +531,7 @@ class WhatsappWebhookTests(TestCase):
                     "changes": [
                         {
                             "value": {
+                                "metadata": {"phone_number_id": self.channel.phone_number_id},
                                 "messages": [
                                     {
                                         "from": "51955554444",
@@ -588,6 +610,7 @@ class WhatsappWebhookTests(TestCase):
                     "changes": [
                         {
                             "value": {
+                                "metadata": {"phone_number_id": self.channel.phone_number_id},
                                 "messages": [
                                     {
                                         "from": cliente.telefono,
@@ -669,7 +692,10 @@ class WhatsappWebhookTests(TestCase):
         post_mock.return_value.raise_for_status.return_value = None
         post_mock.return_value.json.return_value = {"messages": [{"id": "wamid.test"}]}
 
-        result = send_whatsapp_message("51955555555", "Hola")
+        channel = WhatsAppChannel.objects.create(
+            nombre="Sender test", phone_number_id="123456", activo=True,
+        )
+        result = send_whatsapp_message("51955555555", "Hola", channel=channel)
 
         self.assertEqual(result["messages"][0]["id"], "wamid.test")
         self.assertEqual(
@@ -696,7 +722,9 @@ class WhatsappWebhookTests(TestCase):
         content = output.getvalue()
         self.assertIn("WHATSAPP_VERIFY_TOKEN", content)
         self.assertIn("WHATSAPP_ACCESS_TOKEN", content)
+        self.assertIn("ACTIVE_WHATSAPP_CHANNEL", content)
         self.assertIn("https://demo.ngrok-free.app/webhook/whatsapp/", content)
+        self.assertNotIn("verify", content)
 
 
 class AdvancedScheduleTests(TestCase):

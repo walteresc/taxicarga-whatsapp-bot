@@ -27,8 +27,6 @@ from apps.integrations.tests.base import IntegrationTestCase
 class Stage7TakeoverTests(IntegrationTestCase):
     def setUp(self):
         super().setUp()
-        self.scope = override_settings(CHATWOOT_STAGE7_TEST_CHANNEL_ID=str(self.channel.id))
-        self.scope.enable()
         account = ChatwootAccountMapping.objects.create(
             environment="test", account_id="7", active=True, sync_status=SyncStatus.SYNCED
         )
@@ -47,10 +45,6 @@ class Stage7TakeoverTests(IntegrationTestCase):
             conversation=self.conversation, contact_inbox=contact_inbox,
             external_conversation_id="13", active=True, sync_status=SyncStatus.SYNCED,
         )
-
-    def tearDown(self):
-        self.scope.disable()
-        super().tearDown()
 
     def takeover(self, message_id="17", content="TEST TAKEOVER ETAPA 7"):
         return apply_chatwoot_human_takeover(

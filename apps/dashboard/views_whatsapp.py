@@ -201,7 +201,11 @@ def _enviar_respuesta(conversacion, actor, contenido):
     if not contenido:
         raise TransicionConversacionInvalida("Escribe un mensaje.")
     conversacion = tomar_conversacion(conversacion.id, actor)
-    resultado = send_whatsapp_message(conversacion.cliente.telefono, contenido)
+    resultado = send_whatsapp_message(
+        conversacion.cliente.telefono,
+        contenido,
+        channel=conversacion.channel,
+    )
     meta_id = ""
     if isinstance(resultado, dict) and resultado.get("messages"):
         meta_id = resultado["messages"][0].get("id", "")

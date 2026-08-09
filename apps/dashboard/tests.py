@@ -379,7 +379,9 @@ class DashboardTests(TestCase):
                 mensaje_salida="Claro, lo reviso y le confirmo.",
             ).exists()
         )
-        send_mock.assert_called_once_with(self.cliente.telefono, "Claro, lo reviso y le confirmo.")
+        send_mock.assert_called_once_with(
+            self.cliente.telefono, "Claro, lo reviso y le confirmo.", channel=None,
+        )
 
     def test_dashboard_leads_funciona(self):
         self.client.force_login(self.user)
@@ -482,4 +484,6 @@ class DashboardTests(TestCase):
                 mensaje_salida="Le dejamos la mudanza en S/ 480.",
             ).exists()
         )
-        send_mock.assert_called_once_with(self.cliente.telefono, "Le dejamos la mudanza en S/ 480.")
+        send_mock.assert_called_once_with(
+            self.cliente.telefono, "Le dejamos la mudanza en S/ 480.", channel=None,
+        )

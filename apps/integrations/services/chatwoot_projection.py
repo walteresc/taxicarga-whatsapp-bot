@@ -8,7 +8,6 @@ from apps.clientes.models import Cliente
 from apps.integrations.enums import Provider, SyncStatus
 from apps.integrations.models import (
     ChannelInboxMapping,
-    ChatwootAccountMapping,
     ChatwootContactMapping,
     ContactInboxMapping,
     ConversationMapping,
@@ -20,6 +19,7 @@ from apps.integrations.providers.chatwoot.exceptions import (
     ChatwootNotFoundError,
 )
 from apps.whatsapp.models import ConversacionWhatsApp, MensajeWhatsApp
+from apps.integrations.services.channel_policy import integration_enabled, is_feature_enabled
 
 
 @dataclass(frozen=True)
@@ -100,9 +100,9 @@ def sync_chatwoot_conversation(
             conversation.cliente_id, "", "", False, conversation.id, "", False,
             len(messages), incoming, outgoing, 0, 0, 0, dry_run=True,
         )
-    if not settings.CHATWOOT_SYNC_ENABLED and not (
-        live and settings.CHATWOOT_LIVE_SYNC_ENABLED
-    ):
+    if live and not is_feature_enabled(conversation.channel, "live_sync"):
+        raise ChatwootConfigurationError("Chatwoot live sync is disabled for conversation channel.")
+    if not live and (not settings.CHATWOOT_SYNC_ENABLED or not integration_enabled(conversation.channel)):
         raise ChatwootConfigurationError("Chatwoot conversation sync is disabled.")
     if not conversation.channel_id:
         raise ChatwootConfigurationError("Conversation has no channel for Chatwoot inbox mapping.")
@@ -123,36 +123,19 @@ def sync_chatwoot_conversation(
             .filter(conversation=conversation, active=True)
             .first()
         )
-        if live and existing_conversation_map:
-            mapped_inbox = existing_conversation_map.contact_inbox.inbox
-            target_account_id = str(mapped_inbox.account.account_id)
-            target_inbox_id = str(mapped_inbox.inbox_id)
-        else:
-            target_account_id = str(settings.CHATWOOT_ACCOUNT_ID)
-            target_inbox_id = str(settings.CHATWOOT_INBOX_ID)
-        account, _ = ChatwootAccountMapping.objects.get_or_create(
-            environment="chatwoot-sandbox",
-            account_id=target_account_id,
-            defaults={"active": True, "sync_status": SyncStatus.SYNCED, "last_synced_at": now},
+        inbox = (
+            ChannelInboxMapping.objects.select_related("account")
+            .filter(channel=conversation.channel, active=True, account__active=True)
+            .first()
         )
-        if not account.active:
-            account.active = True
-            account.sync_status = SyncStatus.SYNCED
-            account.last_synced_at = now
-            account.save(update_fields=["active", "sync_status", "last_synced_at"])
-        inbox_payload = api.get_inbox(target_inbox_id)
-        inbox_identifier = str(inbox_payload.get("channel_id") or inbox_payload.get("id"))
-        inbox, _ = ChannelInboxMapping.objects.update_or_create(
-            channel=conversation.channel,
-            defaults={
-                "account": account,
-                "inbox_id": target_inbox_id,
-                "inbox_identifier": inbox_identifier,
-                "active": True,
-                "sync_status": SyncStatus.SYNCED,
-                "last_synced_at": now,
-            },
-        )
+        if not inbox or not inbox.inbox_id or not inbox.account.account_id:
+            raise ChatwootConfigurationError(
+                "Conversation channel has no active Chatwoot inbox mapping."
+            )
+        account = inbox.account
+        target_account_id = str(account.account_id)
+        target_inbox_id = str(inbox.inbox_id)
+        api.get_inbox(target_inbox_id)
 
         identifier = contact_identifier(conversation.cliente_id)
         contact_map = ChatwootContactMapping.objects.filter(

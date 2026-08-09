@@ -12,6 +12,7 @@ from apps.clientes.models import Cliente
 from apps.integrations.enums import AuthorType, OutboxStatus, OwnerState, Provider, SyncStatus
 from apps.integrations.models import (
     BotGeneration,
+    ChannelIntegrationPolicy,
     ChannelInboxMapping,
     ChatwootAccountMapping,
     ChatwootContactMapping,
@@ -139,9 +140,9 @@ class WhatsAppIdentityPostgreSQLTests(TransactionTestCase):
             finally:
                 connections.close_all()
 
-        with override_settings(
-            CHATWOOT_STAGE7_TEST_CHANNEL_ID=str(self.channel.id), CHATWOOT_LIVE_SYNC_ENABLED=False
-        ), patch("apps.whatsapp.views.handle_incoming_message") as ia, patch(
+        with override_settings(CHATWOOT_LIVE_SYNC_ENABLED=False), patch(
+            "apps.whatsapp.views.handle_incoming_message"
+        ) as ia, patch(
             "apps.whatsapp.views.send_whatsapp_message"
         ) as sender, ThreadPoolExecutor(max_workers=2) as executor:
             results = [future.result(timeout=20) for future in (
@@ -225,7 +226,12 @@ class Stage7PostgreSQLRaceTests(TransactionTestCase):
     def setUp(self):
         cliente = Cliente.objects.create(telefono="pg-stage7-test")
         self.channel = WhatsAppChannel.objects.create(
-            nombre="PG Stage 7", phone_number_id="pg-stage7-no-meta", activo=False
+            nombre="PG Stage 7", phone_number_id="pg-stage7-no-meta", activo=True
+        )
+        ChannelIntegrationPolicy.objects.create(
+            channel=self.channel, enabled=True, live_sync=True,
+            human_takeover=True, return_to_bot=True, agent_outbound=True,
+            commercial_labels=True, meta_outbox=True,
         )
         self.conversation = ConversacionWhatsApp.objects.create(cliente=cliente, channel=self.channel)
         self.control = ConversationControl.objects.create(conversation=self.conversation)
@@ -248,13 +254,6 @@ class Stage7PostgreSQLRaceTests(TransactionTestCase):
             conversation=self.conversation, contact_inbox=contact_inbox,
             external_conversation_id="13", active=True, sync_status=SyncStatus.SYNCED,
         )
-        self.scope = override_settings(CHATWOOT_STAGE7_TEST_CHANNEL_ID=str(self.channel.id))
-        self.scope.enable()
-
-    def tearDown(self):
-        self.scope.disable()
-        super().tearDown()
-
     def _race(self, operation):
         barrier = Barrier(2, timeout=10)
         def run(index):
@@ -335,7 +334,12 @@ class Stage8PostgreSQLRaceTests(TransactionTestCase):
         self.user_id = get_user_model().objects.create_user(username="pg_stage8_advisor").id
         cliente = Cliente.objects.create(telefono="pg-stage8-client")
         self.channel = WhatsAppChannel.objects.create(
-            nombre="PG Stage 8", phone_number_id="pg-stage8-phone", activo=False
+            nombre="PG Stage 8", phone_number_id="pg-stage8-phone", activo=True
+        )
+        ChannelIntegrationPolicy.objects.create(
+            channel=self.channel, enabled=True, live_sync=True,
+            human_takeover=True, return_to_bot=True, agent_outbound=True,
+            commercial_labels=True, meta_outbox=True,
         )
         lead = Lead.objects.create(cliente=cliente, whatsapp_channel=self.channel)
         self.conversation = ConversacionWhatsApp.objects.create(
@@ -364,13 +368,6 @@ class Stage8PostgreSQLRaceTests(TransactionTestCase):
             conversation=self.conversation, contact_inbox=source,
             external_conversation_id="13", active=True, sync_status=SyncStatus.SYNCED,
         )
-        self.scope = override_settings(CHATWOOT_STAGE7_TEST_CHANNEL_ID=str(self.channel.id))
-        self.scope.enable()
-
-    def tearDown(self):
-        self.scope.disable()
-        super().tearDown()
-
     def _race(self, operation):
         barrier = Barrier(2, timeout=10)
 

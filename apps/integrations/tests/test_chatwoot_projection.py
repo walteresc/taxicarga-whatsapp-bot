@@ -4,8 +4,11 @@ from django.db import IntegrityError, transaction
 from django.test import TestCase, override_settings
 
 from apps.clientes.models import Cliente
-from apps.integrations.enums import Provider
+from apps.integrations.enums import Provider, SyncStatus
 from apps.integrations.models import (
+    ChannelInboxMapping,
+    ChannelIntegrationPolicy,
+    ChatwootAccountMapping,
     ChatwootContactMapping,
     ConversationMapping,
     ExternalMessageMapping,
@@ -109,6 +112,17 @@ class ChatwootProjectionTests(TestCase):
         self.channel = WhatsAppChannel.objects.create(
             nombre="TEST Sandbox", phone_number_id="stage5-no-meta", activo=False
         )
+        ChannelIntegrationPolicy.objects.create(
+            channel=self.channel, enabled=True, live_sync=True,
+        )
+        account = ChatwootAccountMapping.objects.create(
+            environment="test", account_id="1", active=True, sync_status=SyncStatus.SYNCED,
+        )
+        ChannelInboxMapping.objects.create(
+            channel=self.channel, account=account, inbox_id="1",
+            inbox_identifier="sandbox-channel-identifier", active=True,
+            sync_status=SyncStatus.SYNCED,
+        )
         self.conversation = ConversacionWhatsApp.objects.create(cliente=self.cliente, channel=self.channel)
         self.first = MensajeWhatsApp.objects.create(
             conversacion=self.conversation, direccion="entrante", origen="cliente", tipo="texto",
@@ -154,10 +168,20 @@ class ChatwootProjectionTests(TestCase):
         )
 
         self.assertEqual(result.messages_created, 1)
-        self.assertEqual(self.client.requested_inboxes[-1], "2")
+        self.assertEqual(self.client.requested_inboxes[-1], "1")
 
     def test_contact_identifier_is_stable_and_not_name_or_phone(self):
         self.assertEqual(contact_identifier(self.cliente.id), f"taxicarga-contact:{self.cliente.id}")
+
+    def test_missing_channel_mapping_never_falls_back_to_global_inbox(self):
+        ChannelInboxMapping.objects.filter(channel=self.channel).delete()
+        with override_settings(CHATWOOT_INBOX_ID="global-forbidden"):
+            with self.assertRaisesMessage(
+                ChatwootConfigurationError,
+                "Conversation channel has no active Chatwoot inbox mapping.",
+            ):
+                sync_chatwoot_conversation(self.conversation.id, client=self.client)
+        self.assertEqual(self.client.requested_inboxes, [])
 
     def test_first_sync_creates_and_second_reuses_everything(self):
         first = sync_chatwoot_conversation(self.conversation.id, client=self.client)

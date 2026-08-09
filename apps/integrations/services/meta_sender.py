@@ -15,7 +15,7 @@ from ..models import (
     ExternalMessageMapping,
     IntegrationOutboxEvent,
 )
-from .human_takeover import channel_is_stage7_scoped
+from .channel_policy import is_feature_enabled
 
 
 @dataclass(frozen=True)
@@ -46,7 +46,7 @@ def _authorize(event, conversation, control):
         )
         return allowed, "bot_not_owner"
     if message.author_type == AuthorType.AGENT:
-        if not settings.CHATWOOT_AGENT_TO_WHATSAPP_ENABLED:
+        if not is_feature_enabled(conversation.channel, "agent_outbound"):
             return False, "agent_delivery_disabled"
         allowed = (
             control.owner_state == OwnerState.AGENT_ACTIVE
@@ -75,16 +75,38 @@ def _lock_delivery_state(event_id, conversation_id):
 
 
 def process_meta_outbox_event(event_id, *, sender=send_whatsapp_message, worker_id="meta-sender"):
-    if not settings.META_OUTBOX_ENABLED:
+    event_ref = IntegrationOutboxEvent.objects.select_related("conversation__channel").get(pk=event_id)
+    channel = event_ref.conversation.channel
+    if not is_feature_enabled(channel, "meta_outbox"):
         return MetaSendResult(str(event_id), "disabled", False, reason="meta_outbox_disabled")
-    event_ref = IntegrationOutboxEvent.objects.select_related("conversation").get(pk=event_id)
-    if not channel_is_stage7_scoped(event_ref.conversation.channel_id):
-        return MetaSendResult(str(event_id), "blocked", False, reason="outside_stage7_scope")
 
     with transaction.atomic():
         conversation, control, event = _lock_delivery_state(
             event_id, event_ref.conversation_id
         )
+        channel = conversation.channel
+        if (
+            channel is None
+            or not channel.activo
+            or not channel.phone_number_id
+            or event.destination_scope != str(channel.id)
+        ):
+            event.status = OutboxStatus.DEAD_LETTER
+            event.error_code = "channel_scope_mismatch"
+            event.error_summary = "Meta delivery channel scope is invalid."
+            event.locked_at = None
+            event.locked_by = ""
+            event.save(update_fields=[
+                "status", "error_code", "error_summary", "locked_at", "locked_by", "updated_at",
+            ])
+            return MetaSendResult(str(event.id), event.status, False, reason=event.error_code)
+        expected_version = event.safe_payload.get("control_version")
+        if expected_version is not None and int(expected_version) != control.control_version:
+            event.status = OutboxStatus.CANCELLED
+            event.error_code = "stale_control_version"
+            event.error_summary = "Meta delivery suppressed by ownership version gate."
+            event.save(update_fields=["status", "error_code", "error_summary", "updated_at"])
+            return MetaSendResult(str(event.id), event.status, False, reason=event.error_code)
         if event.status == OutboxStatus.SENT:
             return MetaSendResult(str(event.id), event.status, False, event.external_id, "already_sent")
         if event.status not in {OutboxStatus.PENDING, OutboxStatus.RETRY} or event.available_at > timezone.now():
@@ -104,7 +126,6 @@ def process_meta_outbox_event(event_id, *, sender=send_whatsapp_message, worker_
         event.save(update_fields=["status", "attempts", "locked_at", "locked_by", "updated_at"])
         message = event.logical_message
         recipient = phone_for_meta(conversation.cliente.telefono)
-        channel = conversation.channel
 
     try:
         result = sender(

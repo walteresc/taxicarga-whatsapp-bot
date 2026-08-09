@@ -92,6 +92,7 @@ def finalize_generation(generation_id, *, result_text):
                 "conversation_id": generation.conversation_id,
                 "safe_payload": {
                     "logical_message_id": str(message.id),
+                    "control_version": generation.control_version_started,
                     **({"quote_revision_id": revision.id} if revision else {}),
                 },
                 "status": OutboxStatus.PENDING, "correlation_id": generation.correlation_id,
@@ -120,6 +121,10 @@ def create_public_outbox(message):
         defaults={
             "event_type": "send_public_message", "logical_message": message,
             "conversation": message.conversation,
-            "safe_payload": {"logical_message_id": str(message.id)}, "correlation_id": message.correlation_id,
+            "safe_payload": {
+                "logical_message_id": str(message.id),
+                "control_version": message.metadata.get("control_version"),
+            },
+            "correlation_id": message.correlation_id,
         },
     )

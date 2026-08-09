@@ -1,5 +1,6 @@
 import json
 import logging
+import hashlib
 from datetime import datetime, timedelta
 
 from django.conf import settings
@@ -23,7 +24,7 @@ from apps.integrations.services.live_sync import canonical_incoming_message, pro
 from apps.integrations.services.bot_context import build_bot_context
 from apps.integrations.services.bot_runtime import authorize_inbound_trigger
 from apps.integrations.services.generations import finalize_generation
-from apps.integrations.services.human_takeover import channel_is_stage7_scoped
+from apps.integrations.services.channel_policy import is_feature_enabled
 from apps.integrations.services.meta_sender import process_meta_outbox_event
 from apps.whatsapp.domain import obtener_o_crear_conversacion
 from apps.whatsapp.identity import resolve_whatsapp_identity
@@ -78,20 +79,19 @@ def _receive_message(request):
 
     phone = event["phone"]
 
-    channel = None
     phone_number_id = event.get("phone_number_id", "")
-    if phone_number_id:
-        channel = WhatsAppChannel.objects.filter(phone_number_id=phone_number_id).first()
-        if channel is not None and not channel.activo:
-            logger.info("Mensaje ignorado: canal %s inactivo", channel.nombre)
-            _complete_message(processed)
-            return JsonResponse({"ok": True, "ignored": True, "reason": "inactive_channel"})
+    channel = WhatsAppChannel.objects.filter(phone_number_id=phone_number_id).first()
+    if channel is None:
+        scope_hash = hashlib.sha256(str(phone_number_id).encode("utf-8")).hexdigest()[:12]
+        logger.warning("WhatsApp inbound ignored (reason=unknown_channel, scope_hash=%s).", scope_hash)
+        _complete_message(processed)
+        return JsonResponse({"ok": True, "ignored": True, "reason": "unknown_channel"})
+    if not channel.activo:
+        logger.info("WhatsApp inbound ignored (reason=inactive_channel, channel_id=%s).", channel.id)
+        _complete_message(processed)
+        return JsonResponse({"ok": True, "ignored": True, "reason": "inactive_channel"})
 
-    if channel:
-        cliente, resolved_lead, resolved_conversation = resolve_whatsapp_identity(phone, channel)
-    else:
-        cliente, _ = Cliente.objects.get_or_create(telefono=phone)
-        resolved_lead = resolved_conversation = None
+    cliente, resolved_lead, resolved_conversation = resolve_whatsapp_identity(phone, channel)
     cliente.ultima_interaccion = timezone.now()
     cliente.save(update_fields=["ultima_interaccion"])
 
@@ -151,9 +151,8 @@ def _receive_message(request):
             lead=active_lead, channel=channel, event=event, conversation=resolved_conversation
         )
         if (
-            settings.CHATWOOT_RETURN_TO_BOT_ENABLED
-            and canonical_message
-            and channel_is_stage7_scoped(canonical_conversation.channel_id)
+            canonical_message
+            and is_feature_enabled(canonical_conversation.channel, "return_to_bot")
         ):
             authorization = authorize_inbound_trigger(canonical_message.id)
             if canonical_created:
@@ -694,7 +693,7 @@ def whatsapp_channels(request):
             for ch in qs
         ], safe=False)
     data = json.loads(request.body)
-    logger.info("POST whatsapp_channels payload: %s", data)
+    logger.info("WhatsApp channel create requested (actor_id=%s).", request.user.id)
     asesor_id = data.get("asesor_id")
     if asesor_id == "" or asesor_id is None:
         asesor_id = None
@@ -757,7 +756,7 @@ def whatsapp_channel_detail(request, channel_id):
         return JsonResponse({"ok": True, "deleted": True})
 
     data = json.loads(request.body)
-    logger.info("PATCH whatsapp_channel_detail payload: %s", data)
+    logger.info("WhatsApp channel update requested (channel_id=%s, actor_id=%s).", channel_id, request.user.id)
     errors = {}
     if "nombre" in data:
         if not data["nombre"]:

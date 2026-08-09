@@ -84,10 +84,9 @@ class WhatsAppPhoneIdentityTests(TestCase):
                 }],
             }}]}],
         }
-        with override_settings(CHATWOOT_STAGE7_TEST_CHANNEL_ID=str(self.channel.id)):
-            response = self.client.post(
-                "/webhook/whatsapp/", data=json.dumps(payload), content_type="application/json"
-            )
+        response = self.client.post(
+            "/webhook/whatsapp/", data=json.dumps(payload), content_type="application/json"
+        )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["human_takeover"], True)
         self.assertEqual(Cliente.objects.filter(telefono="51999999999").count(), 0)

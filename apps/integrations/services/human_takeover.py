@@ -1,7 +1,6 @@
 import uuid
 from dataclasses import dataclass
 
-from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
@@ -26,6 +25,7 @@ from ..models import (
     IntegrationMessage,
     IntegrationOutboxEvent,
 )
+from .channel_policy import is_feature_enabled
 
 
 @dataclass(frozen=True)
@@ -35,16 +35,6 @@ class HumanTakeoverResult:
     transitioned: bool
     message_created: bool
     outbox_created: bool
-
-
-def _configured_channel_id():
-    value = str(settings.CHATWOOT_STAGE7_TEST_CHANNEL_ID or "").strip()
-    return int(value) if value.isdigit() else None
-
-
-def channel_is_stage7_scoped(channel_id):
-    configured = _configured_channel_id()
-    return configured is not None and channel_id == configured
 
 
 @transaction.atomic
@@ -68,7 +58,7 @@ def apply_chatwoot_human_takeover(*, mapping_id, payload, account_id, inbox_id, 
         or str(inbox.account.account_id) != str(account_id)
         or str(inbox.inbox_id) != str(inbox_id)
         or inbox.channel_id != conversation.channel_id
-        or not channel_is_stage7_scoped(conversation.channel_id)
+        or not is_feature_enabled(conversation.channel, "human_takeover")
     ):
         raise InvalidTransition("Chatwoot takeover is outside the authorized sandbox scope.")
 
@@ -172,7 +162,7 @@ def apply_chatwoot_human_takeover(*, mapping_id, payload, account_id, inbox_id, 
 
     outbox = None
     outbox_created = False
-    if settings.CHATWOOT_AGENT_TO_WHATSAPP_ENABLED:
+    if is_feature_enabled(conversation.channel, "agent_outbound"):
         outbox, outbox_created = IntegrationOutboxEvent.objects.get_or_create(
             destination=Provider.META_WHATSAPP,
             destination_scope=str(conversation.channel_id),
@@ -184,6 +174,7 @@ def apply_chatwoot_human_takeover(*, mapping_id, payload, account_id, inbox_id, 
                 "safe_payload": {
                     "logical_message_id": str(message.id),
                     "chatwoot_message_id": str(message_id),
+                    "control_version": control.control_version,
                 },
                 "status": OutboxStatus.PENDING,
                 "correlation_id": message.correlation_id,

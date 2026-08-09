@@ -24,9 +24,9 @@ from apps.integrations.models import (
     IntegrationMessage,
 )
 from apps.integrations.services.inbox_outbox import register_inbox_event
+from apps.integrations.services.channel_policy import is_feature_enabled
 from apps.integrations.services.human_takeover import (
     apply_chatwoot_human_takeover,
-    channel_is_stage7_scoped,
 )
 from apps.integrations.errors import InvalidTransition, PendingHumanOutbox
 from apps.integrations.services.attention_control import (
@@ -292,8 +292,7 @@ def process_webhook(payload, delivery_id, *, chatwoot_client=None):
     action = "ignored"
     if classification == "human_agent":
         if (
-            settings.CHATWOOT_HUMAN_TAKEOVER_ENABLED
-            and channel_is_stage7_scoped(mapping.conversation.channel_id)
+            is_feature_enabled(mapping.conversation.channel, "human_takeover")
         ):
             takeover = apply_chatwoot_human_takeover(
                 mapping_id=mapping.id,

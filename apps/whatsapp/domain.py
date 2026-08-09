@@ -36,7 +36,7 @@ def obtener_o_crear_conversacion(lead):
             return conversacion
         try:
             with transaction.atomic():
-                return ConversacionWhatsApp.objects.create(
+                conversation = ConversacionWhatsApp.objects.create(
                     cliente=lead.cliente,
                     lead=lead,
                     channel=lead.whatsapp_channel,
@@ -49,8 +49,20 @@ def obtener_o_crear_conversacion(lead):
                     bot_pausado=lead.bot_pausado or lead.atencion_humana,
                     motivo_derivacion=lead.motivo_derivacion or "",
                 )
+                _ensure_integration_control(conversation)
+                return conversation
         except IntegrityError:
-            return ConversacionWhatsApp.objects.get(lead=lead)
+            conversation = ConversacionWhatsApp.objects.get(lead=lead)
+            _ensure_integration_control(conversation)
+            return conversation
+
+
+def _ensure_integration_control(conversation):
+    from apps.integrations.models import ConversationControl
+    from apps.integrations.services.channel_policy import integration_enabled
+
+    if integration_enabled(conversation.channel):
+        ConversationControl.objects.get_or_create(conversation=conversation)
 
 
 def tomar_conversacion(conversacion_id, actor):

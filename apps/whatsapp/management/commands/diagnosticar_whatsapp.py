@@ -1,6 +1,7 @@
 from django.conf import settings
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 
+from apps.whatsapp.models import WhatsAppChannel
 from apps.whatsapp.services import send_whatsapp_message
 
 
@@ -8,6 +9,11 @@ class Command(BaseCommand):
     help = "Revisa la configuracion de WhatsApp Cloud API y puede enviar un mensaje de prueba."
 
     def add_arguments(self, parser):
+        parser.add_argument(
+            "--channel-id",
+            type=int,
+            help="Canal WhatsApp activo usado para cualquier envio de prueba.",
+        )
         parser.add_argument(
             "--send-to",
             default="",
@@ -28,7 +34,7 @@ class Command(BaseCommand):
         checks = [
             ("WHATSAPP_VERIFY_TOKEN", bool(settings.WHATSAPP_VERIFY_TOKEN)),
             ("WHATSAPP_ACCESS_TOKEN", bool(settings.WHATSAPP_ACCESS_TOKEN)),
-            ("WHATSAPP_PHONE_NUMBER_ID", bool(settings.WHATSAPP_PHONE_NUMBER_ID)),
+            ("ACTIVE_WHATSAPP_CHANNEL", WhatsAppChannel.objects.filter(activo=True).exists()),
             ("WHATSAPP_API_VERSION", bool(settings.WHATSAPP_API_VERSION)),
         ]
 
@@ -42,12 +48,20 @@ class Command(BaseCommand):
             self.stdout.write("")
             self.stdout.write("Webhook para Meta:")
             self.stdout.write(f"{public_url}/webhook/whatsapp/")
-            self.stdout.write(f"Verify token: {settings.WHATSAPP_VERIFY_TOKEN}")
 
         if options["send_to"]:
+            if not options["channel_id"]:
+                raise CommandError("--channel-id is required with --send-to.")
+            channel = WhatsAppChannel.objects.filter(
+                pk=options["channel_id"], activo=True
+            ).first()
+            if not channel:
+                raise CommandError("Active WhatsApp channel not found.")
             self.stdout.write("")
-            self.stdout.write(f"Enviando mensaje de prueba a {options['send_to']}...")
-            result = send_whatsapp_message(options["send_to"], options["message"])
+            self.stdout.write(f"Enviando mensaje de prueba por channel_id={channel.id}...")
+            result = send_whatsapp_message(
+                options["send_to"], options["message"], channel=channel,
+            )
             self.stdout.write(str(result))
             if result.get("sent") is False:
                 self.stdout.write(self.style.WARNING("El mensaje no se envio. Revisa credenciales y permisos."))

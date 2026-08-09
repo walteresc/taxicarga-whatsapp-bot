@@ -11,7 +11,7 @@ from apps.cotizador.delivery import enviar_revision_whatsapp
 from apps.cotizador.models import CotizacionComercial, EnvioCotizacion, RevisionCotizacion
 from apps.leads.models import Lead
 from apps.whatsapp.models import ConversacionWhatsApp, WhatsAppChannel
-from apps.integrations.models import ConversationControl, IntegrationOutboxEvent
+from apps.integrations.models import ChannelIntegrationPolicy, ConversationControl, IntegrationOutboxEvent
 from apps.integrations.services.meta_sender import process_meta_outbox_event
 from apps.whatsapp.utils import extract_event
 
@@ -23,6 +23,9 @@ class WhatsAppRealDeliveryTests(TestCase):
         cls.user = get_user_model().objects.create_user("stage9_advisor", password="x")
         cls.user.groups.add(group)
         cls.channel = WhatsAppChannel.objects.create(nombre="Stage 9", phone_number_id="phone-stage9")
+        ChannelIntegrationPolicy.objects.create(
+            channel=cls.channel, enabled=True, agent_outbound=True, meta_outbox=True,
+        )
         cls.customer = Cliente.objects.create(nombre="Cliente Stage 9", telefono="51955550009")
         cls.lead = Lead.objects.create(cliente=cls.customer, whatsapp_channel=cls.channel)
         cls.conversation = ConversacionWhatsApp.objects.create(
@@ -40,7 +43,7 @@ class WhatsAppRealDeliveryTests(TestCase):
             precio_final=500, mensaje_whatsapp="Cotización lista: S/ 500",
         )
 
-    @override_settings(META_OUTBOX_ENABLED=True, CHATWOOT_AGENT_TO_WHATSAPP_ENABLED=True, CHATWOOT_STAGE7_TEST_CHANNEL_ID="1")
+    @override_settings(META_OUTBOX_ENABLED=True, CHATWOOT_AGENT_TO_WHATSAPP_ENABLED=True)
     def test_send_persists_meta_id_and_closes_draft(self):
         send = self._sender({"messages": [{"id": "wamid.stage9.sent"}]})
         envio = enviar_revision_whatsapp(self.revision.id, actor=self.user)
@@ -53,7 +56,7 @@ class WhatsAppRealDeliveryTests(TestCase):
         self.assertTrue(result.sent)
         self.assertEqual(send.call_count, 1)
 
-    @override_settings(META_OUTBOX_ENABLED=True, CHATWOOT_AGENT_TO_WHATSAPP_ENABLED=True, CHATWOOT_STAGE7_TEST_CHANNEL_ID="1")
+    @override_settings(META_OUTBOX_ENABLED=True, CHATWOOT_AGENT_TO_WHATSAPP_ENABLED=True)
     def test_failure_is_persistent_and_schedules_retry(self):
         send = self._sender({"sent": False, "reason": "request_error", "status_code": 503})
         envio = enviar_revision_whatsapp(self.revision.id, actor=self.user)

@@ -115,3 +115,13 @@
 - Reconciliación Chatwoot corregida para reprocesar proyecciones previamente enviadas y restaurar drift de labels.
 - Migración `0010` aplicada solo en SQLite local dev; backup temporal fuera del repositorio.
 - Flags peligrosos apagados al cierre. ETAPA 10 no iniciada.
+
+## ETAPA 10A — COMPLETADA
+
+- Política de integración tipada y fail-closed por `WhatsAppChannel`; flags globales conservados como kill switches.
+- Runtime Chatwoot resuelve account/inbox mediante mapping activo; runtime Meta exige canal activo y su `phone_number_id`, sin fallbacks globales.
+- Inbound desconocido o inactivo se confirma sin procesar, crear identidad o enviar; logs operativos sanitizados.
+- Ownership, outbox, takeover, return-to-bot, labels e identidad validados con aislamiento entre canales A/B.
+- SQLite: 555/555 OK, 33 omitidas PostgreSQL-only. PostgreSQL 16.14 aislado: 31/31 focales OK, deadlocks 0 y contaminación cruzada 0.
+- Migración `integrations.0004_channelintegrationpolicy` validada apply/rollback/reapply; no crea políticas habilitadas.
+- Ningún canal real activado; cero llamadas reales Meta/Chatwoot. ETAPA 10B no iniciada.

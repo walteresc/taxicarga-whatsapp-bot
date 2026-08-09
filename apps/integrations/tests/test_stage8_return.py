@@ -33,9 +33,6 @@ from apps.whatsapp.models import MensajeWhatsApp
 class Stage8ReturnTests(IntegrationTestCase):
     def setUp(self):
         super().setUp()
-        scope = override_settings(CHATWOOT_STAGE7_TEST_CHANNEL_ID=str(self.channel.id))
-        scope.enable()
-        self.addCleanup(scope.disable)
         account = ChatwootAccountMapping.objects.create(
             environment="stage8", account_id="7", active=True, sync_status=SyncStatus.SYNCED
         )
