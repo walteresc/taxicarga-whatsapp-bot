@@ -8,8 +8,9 @@ from django.utils import timezone
 
 from apps.cotizador.services import cotizar_lead
 from apps.leads.models import Lead
+from apps.leads.route import remove_stop, replace_lead_route, sync_legacy_endpoints
 
-from .data_extractor import extract_lead_data, normalize_district
+from .data_extractor import extract_lead_data, extract_route_locations, normalize_district
 from .conversation_policy import (
     BOOKING,
     apply_quote_defaults,
@@ -242,8 +243,9 @@ def handle_incoming_message(cliente, message, canonical_context=None, generation
         recent_history.reverse()
     ai_extracted = extract_lead_with_ai(message, lead, recent_history)
     preview_extracted = extract_lead_data(message)
+    extracted_locations = extract_route_locations(message)
     preview_extracted.update(_extract_route_correction(message))
-    route_with_stops = _route_with_stops(message)
+    route_with_stops = len(extracted_locations) > 2 or _route_with_stops(message)
     has_explicit_pricing_update = route_with_stops or any(
         field in PRICING_FIELDS and value not in (None, "")
         for field, value in preview_extracted.items()
@@ -260,6 +262,8 @@ def handle_incoming_message(cliente, message, canonical_context=None, generation
         if price_reply:
             return price_reply
         if _is_acceptance(message):
+            from apps.cotizador.commercial import aceptar_cotizacion_para_lead
+            aceptar_cotizacion_para_lead(lead)
             lead.etapa_conversacion = Lead.ETAPA_RESERVA
             lead.esperando_motivo_no_reserva = False
             lead.save(
@@ -350,15 +354,20 @@ def handle_incoming_message(cliente, message, canonical_context=None, generation
     if lead.etapa_conversacion != Lead.ETAPA_RESERVA:
         lead.estado = Lead.EN_CONVERSACION
     lead.save()
+    if extracted_locations:
+        _merge_endpoint_fields_into_locations(extracted_locations, extracted)
+        replace_lead_route(lead, extracted_locations)
+    else:
+        sync_legacy_endpoints(lead, extracted.keys())
+    removed_stop = _requested_stop_removal(message)
+    if removed_stop:
+        remove_stop(lead, removed_stop)
     question_answer = _answer_customer_question(lead, message)
 
     if route_with_stops:
-        route_note = f"Ruta con paradas pendiente de modelado: {message.strip()}"
-        if route_note not in lead.observaciones:
-            lead.observaciones = "\n".join(filter(None, [lead.observaciones, route_note]))
         lead.estado = Lead.DATOS_INCOMPLETOS
         lead.atencion_humana = True
-        lead.save(update_fields=["observaciones", "estado", "atencion_humana"])
+        lead.save(update_fields=["estado", "atencion_humana"])
         _mark_for_manual_quote(lead, "Ruta con una o más paradas intermedias")
         _log_decision(lead, "human_quote", extracted, False, True, ai_extracted is not None)
         return (
@@ -366,10 +375,7 @@ def handle_incoming_message(cliente, message, canonical_context=None, generation
             "como un traslado directo, un asesor revisará la ruta completa y continuará la cotización."
         )
 
-    if not any(
-        extracted.get(k) not in (None, "")
-        for k in [expected_field]
-    ):
+    if expected_field and not _field_complete(lead, expected_field):
         rephrase_now = _rephrase_if_unanswered(
             expected_field, extracted, message, lead
         )
@@ -522,7 +528,11 @@ def _next_missing_field(lead):
         "collect_load": "lista_objetos" if "lista_objetos" in decision.missing_relevant_data else "dimension_carga",
         "collect_access": (
             "acceso_camion"
-            if set(decision.missing_relevant_data) <= {"camion_llega_origen", "camion_llega_destino"}
+            if decision.missing_relevant_data and all(
+                field in {"camion_llega_origen", "camion_llega_destino"}
+                or field.endswith("_acceso_camion")
+                for field in decision.missing_relevant_data
+            )
             else "datos_niveles"
         ),
         "collect_booking": _booking_expected_field(decision.missing_relevant_data),
@@ -533,11 +543,32 @@ def _booking_expected_field(missing):
     fields = set(missing)
     if "cliente_nombre" in fields:
         return "datos_cliente"
-    if fields & {"direccion_origen", "direccion_destino"}:
+    if fields & {"direccion_origen", "direccion_destino"} or any(field.endswith("_direccion") for field in fields):
         return "datos_direcciones"
     if fields & {"fecha_servicio", "horario_servicio"}:
         return "fecha_hora"
     return None
+
+
+def _merge_endpoint_fields_into_locations(locations, extracted):
+    """Keep reliable flat extraction when creating the canonical route."""
+    mappings = (
+        (locations[0], "origen"),
+        (locations[-1], "destino"),
+    )
+    field_map = {
+        "direccion": "direccion_{}",
+        "piso": "piso_{}",
+        "ascensor": "ascensor_{}",
+        "acceso_camion": "camion_llega_{}",
+        "distancia_acarreo": "distancia_carga_{}_m",
+        "observaciones_acceso": "acceso_{}",
+    }
+    for location, suffix in mappings:
+        for target, source_template in field_map.items():
+            value = extracted.get(source_template.format(suffix))
+            if value not in (None, ""):
+                location[target] = value
 
 
 def _grouped_question(decision):
@@ -545,6 +576,9 @@ def _grouped_question(decision):
     if decision.phase == BOOKING:
         if "cliente_nombre" in missing:
             return "¿A nombre de quién coordinamos el servicio?"
+        location_addresses = [field for field in missing if field.endswith("_direccion")]
+        if location_addresses:
+            return "¿Cuáles son las direcciones exactas de recojo, paradas y entrega?"
         if {"direccion_origen", "direccion_destino"} <= missing:
             return "¿Cuáles son las direcciones exactas de recojo y entrega?"
         if "direccion_origen" in missing:
@@ -559,6 +593,8 @@ def _grouped_question(decision):
     if decision.goal == "collect_service":
         return "Hola, que deseas trasladar?"
     if decision.goal == "collect_route":
+        if any(field.endswith("_distrito") for field in missing):
+            return "¿En qué distrito queda cada punto de la ruta?"
         if {"distrito_origen", "distrito_destino"} <= missing:
             return "Cual es el distrito de partida y llegada?"
         if "distrito_origen" in missing:
@@ -572,9 +608,13 @@ def _grouped_question(decision):
         floors = missing & {"piso_origen", "piso_destino"}
         elevators = missing & {"ascensor_origen", "ascensor_destino"}
         truck = missing & {"camion_llega_origen", "camion_llega_destino"}
-        if floors or elevators:
+        if len(decision.known_data.get("ubicaciones", [])) > 2 and any(
+            field.endswith(("_piso", "_ascensor")) for field in missing
+        ):
+            return "¿En qué piso está cada punto de la ruta y tienen ascensor?"
+        if floors or elevators or any(field.endswith(("_piso", "_ascensor")) for field in missing):
             return "En que piso esta el origen y a que piso llega en destino? Tienen ascensor?"
-        if truck:
+        if truck or any(field.endswith("_acceso_camion") for field in missing):
             return "En origen y destino, el camion puede acercarse a la puerta?"
     return "¿Me das un poco más de detalle del servicio?"
 
@@ -612,7 +652,7 @@ REPHRASED_QUESTIONS = {
     ],
     "lista_objetos": [
         "Disculpa, no capte bien. Que cosas vas a llevar? Puedes describirmelo por favor.",
-        "Perdon, no entendi. Podrias decirme que objetos o muebles llevaras?",
+        "Perdon, no entendi. Podrias decirme que cosas, objetos o muebles llevaras?",
     ],
     "datos_niveles": [
         "Disculpa, no me quedo claro los pisos. Me podrias repetir de que piso a que piso seria?",
@@ -1490,6 +1530,29 @@ def _complete_reservation(lead):
     missing_question = _next_missing_question(lead)
     if missing_question:
         return missing_question
+    from django.core.exceptions import ValidationError
+    from apps.servicios.services import crear_servicio_desde_lead
+
+    try:
+        servicio, created = crear_servicio_desde_lead(lead, require_accepted_revision=True)
+    except ValidationError:
+        lead.atencion_humana = True
+        lead.requiere_asesor = True
+        lead.motivo_derivacion = "Datos completos sin cotizacion comercial enviada y aceptada"
+        lead.save(update_fields=["atencion_humana", "requiere_asesor", "motivo_derivacion"])
+        return (
+            "Ya tenemos los datos necesarios. Un asesor validara la cotizacion "
+            "aceptada antes de registrar el servicio."
+        )
+    lead.atencion_humana = False
+    lead.requiere_asesor = False
+    lead.motivo_derivacion = ""
+    lead.save(update_fields=["atencion_humana", "requiere_asesor", "motivo_derivacion"])
+    if created:
+        return f"Tu servicio quedo registrado con el codigo {servicio.codigo}."
+    return f"Tu servicio ya estaba registrado con el codigo {servicio.codigo}."
+
+    # Legacy fallback retained temporarily below; unreachable by design.
     lead.atencion_humana = True
     lead.requiere_asesor = True
     lead.motivo_derivacion = "Datos de reserva completos; falta crear Servicio operacional"
@@ -2060,6 +2123,18 @@ def _extract_route_correction(message):
     if _canonical_place(district) not in LOCAL_LIMA_CALLAO_AREAS:
         return {}
     return {"distrito_destino": district}
+
+
+def _requested_stop_removal(message):
+    normalized = _canonical_place(message)
+    match = re.search(
+        r"(?:ya no|no)\s+(?:pasaremos|pasamos|pasar|iremos|vamos)\s+por\s+([a-z ]+)",
+        normalized,
+    )
+    if not match:
+        return ""
+    district = normalize_district(match.group(1))
+    return district if district else ""
 
 
 def _answer_customer_question(lead, message):

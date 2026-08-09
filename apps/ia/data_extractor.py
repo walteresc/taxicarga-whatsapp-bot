@@ -1,4 +1,5 @@
 import re
+import unicodedata
 from datetime import timedelta
 from decimal import Decimal
 
@@ -133,7 +134,7 @@ def extract_lead_data(message):
         data["horario_servicio"] = schedule
 
     if _has_object_list(lowered):
-        data["lista_objetos"] = text
+        data["lista_objetos"] = _extract_load_detail(text) or text
 
     heavy_items = _extract_heavy_items(lowered)
     if heavy_items:
@@ -146,10 +147,21 @@ def extract_lead_data(message):
     personnel = _extract_loading_personnel(lowered)
     if personnel is not None:
         data["incluye_personal_carga"] = personnel
+        if personnel is False:
+            data["cantidad_operarios"] = 0
+
+    operator_count = _extract_operator_count(lowered)
+    if operator_count is not None:
+        data["incluye_personal_carga"] = operator_count > 0
+        data["cantidad_operarios"] = operator_count
 
     disassembly = _extract_disassembly(lowered)
     if disassembly is not None:
         data["requiere_desarmado"] = disassembly
+
+    assembly = _extract_assembly(lowered)
+    if assembly is not None:
+        data["requiere_armado"] = assembly
 
     weight = _extract_decimal_unit(lowered, ("kg", "kilos", "kilogramos"))
     if weight is not None:
@@ -164,6 +176,42 @@ def extract_lead_data(message):
         data["dni_reserva"] = dni.group(1)
 
     return data
+
+
+def extract_route_locations(message):
+    normalized = _canonical_text(message)
+    matches = []
+    candidates = sorted(LIMA_DISTRICTS, key=len, reverse=True)
+    for district in candidates:
+        canonical = _canonical_text(district)
+        for match in re.finditer(rf"\b{re.escape(canonical)}\b", normalized):
+            matches.append((match.start(), match.end(), normalize_district(district)))
+    matches.sort(key=lambda item: item[0])
+    deduplicated = []
+    for match in matches:
+        if any(start <= match[0] < end for start, end, _district in deduplicated):
+            continue
+        deduplicated.append(match)
+    if len(deduplicated) < 2:
+        return []
+
+    locations = []
+    for index, (start, _end, district) in enumerate(deduplicated):
+        segment_end = deduplicated[index + 1][0] if index + 1 < len(deduplicated) else len(normalized)
+        segment = normalized[start:segment_end]
+        floor = _extract_single_floor(segment)
+        elevator = None
+        if "sin ascensor" in segment or "no hay ascensor" in segment or "escalera" in segment:
+            elevator = False
+        elif "con ascensor" in segment or "hay ascensor" in segment or "elevador" in segment:
+            elevator = True
+        locations.append({
+            "tipo": "origen" if index == 0 else ("destino" if index == len(deduplicated) - 1 else "parada"),
+            "distrito": district,
+            "piso": floor,
+            "ascensor": elevator,
+        })
+    return locations
 
 
 def _extract_name(text):
@@ -482,9 +530,73 @@ def _extract_disassembly(text):
         ]
     ):
         return True
-    if any(term in text for term in ["sin desarmado", "no desarmar", "no necesito armado"]):
+    if any(term in text for term in ["sin desarmado", "no desarmar", "no necesito desarmado"]):
         return False
     return None
+
+
+def _extract_assembly(text):
+    if any(term in text for term in ["desarmado y armado", "desarmar y armar", "armado de muebles", "necesito armado", "quiero armado"]):
+        return True
+    if any(term in text for term in ["sin armado", "no armar", "no necesito armado"]):
+        return False
+    return None
+
+
+def _extract_operator_count(text):
+    match = re.search(
+        r"\b(\d+|un|uno|dos|tres|cuatro|cinco|seis)\s+"
+        r"(?:ayudantes?|operarios?|cargadores?|mozos?)\b",
+        text,
+    )
+    if not match:
+        return None
+    numbers = {"un": 1, "uno": 1, "dos": 2, "tres": 3, "cuatro": 4, "cinco": 5, "seis": 6}
+    return numbers.get(match.group(1), int(match.group(1)) if match.group(1).isdigit() else None)
+
+
+def _extract_load_detail(text):
+    patterns = [
+        r"\b(?:llevo|llevar[ée]?|traslado|transporto|son)\s+(.+)",
+        r"\b(?:carga|cosas|objetos)\s*[:=-]\s*(.+)",
+    ]
+    detail = ""
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match:
+            detail = match.group(1)
+            break
+    if not detail:
+        return ""
+    detail = re.split(
+        r"[.;]|\b(?:origen|destino|recojo|sale de|llega a|para el|mañana|manana|a las|nosotros cargamos)\b",
+        detail,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0]
+    return detail.strip(" ,.-")
+
+
+def _extract_single_floor(text):
+    numeric = re.search(r"\b(?:piso\s*)?(\d{1,2})(?:ro|do|to|er|avo)?(?:\s*piso)?\b", text)
+    if numeric:
+        return int(numeric.group(1))
+    words = {
+        "primer": 1, "primero": 1, "segundo": 2, "tercer": 3, "tercero": 3,
+        "cuarto": 4, "quinto": 5, "sexto": 6, "septimo": 7, "octavo": 8,
+        "noveno": 9, "decimo": 10,
+    }
+    for word, number in words.items():
+        if re.search(rf"\b{word}(?:\s+piso)?\b", text):
+            return number
+    if "puerta a calle" in text or "primer nivel" in text:
+        return 1
+    return None
+
+
+def _canonical_text(value):
+    normalized = unicodedata.normalize("NFKD", str(value or "").lower())
+    return "".join(char for char in normalized if not unicodedata.combining(char))
 
 
 def _extract_decimal_unit(text, units):

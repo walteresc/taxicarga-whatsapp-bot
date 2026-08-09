@@ -58,8 +58,10 @@ class Lead(models.Model):
     lista_objetos = models.TextField(blank=True)
     objetos_pesados = models.TextField(blank=True)
     incluye_personal_carga = models.BooleanField(null=True, blank=True)
+    cantidad_operarios = models.PositiveSmallIntegerField(null=True, blank=True)
     modalidad_servicio = models.CharField(max_length=80, blank=True)
     requiere_desarmado = models.BooleanField(null=True, blank=True)
+    requiere_armado = models.BooleanField(null=True, blank=True)
     acceso_origen = models.CharField(max_length=120, blank=True)
     acceso_destino = models.CharField(max_length=120, blank=True)
     camion_llega_origen = models.BooleanField(null=True, blank=True)
@@ -121,4 +123,39 @@ class Lead(models.Model):
         ruta = f"{self.distrito_origen or '?'} -> {self.distrito_destino or '?'}"
         return f"{self.cliente} - {ruta}"
 
-# Create your models here.
+
+class LeadUbicacion(models.Model):
+    ORIGEN = "origen"
+    PARADA = "parada"
+    DESTINO = "destino"
+    TIPOS = [
+        (ORIGEN, "Origen"),
+        (PARADA, "Parada"),
+        (DESTINO, "Destino"),
+    ]
+
+    lead = models.ForeignKey(Lead, on_delete=models.CASCADE, related_name="ubicaciones")
+    orden = models.PositiveSmallIntegerField()
+    tipo = models.CharField(max_length=12, choices=TIPOS)
+    distrito = models.CharField(max_length=120, blank=True)
+    direccion = models.CharField(max_length=255, blank=True)
+    piso = models.PositiveSmallIntegerField(null=True, blank=True)
+    ascensor = models.BooleanField(null=True, blank=True)
+    acceso_camion = models.BooleanField(null=True, blank=True)
+    distancia_acarreo = models.PositiveIntegerField(null=True, blank=True)
+    observaciones_acceso = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["orden", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=["lead", "orden"], name="lead_ubicacion_orden_unico"),
+            models.UniqueConstraint(
+                fields=["lead", "tipo"],
+                condition=models.Q(tipo__in=["origen", "destino"]),
+                name="lead_ubicacion_extremo_unico",
+            ),
+        ]
+        indexes = [models.Index(fields=["lead", "tipo", "orden"])]
+
+    def __str__(self):
+        return f"{self.lead_id}:{self.orden} {self.tipo} {self.distrito}"

@@ -92,7 +92,9 @@ class Servicio(models.Model):
     lista_objetos = models.TextField(blank=True)
     objetos_pesados = models.TextField(blank=True)
     incluye_personal_carga = models.BooleanField(null=True, blank=True)
+    cantidad_operarios = models.PositiveSmallIntegerField(null=True, blank=True)
     requiere_desarmado = models.BooleanField(null=True, blank=True)
+    requiere_armado = models.BooleanField(null=True, blank=True)
     peso_carga_kg = models.DecimalField(
         max_digits=10, decimal_places=2, null=True, blank=True
     )
@@ -226,3 +228,44 @@ class PagoReserva(models.Model):
 
     def __str__(self):
         return f"{self.servicio.codigo} - {self.get_concepto_display()} S/ {self.monto}"
+
+
+class ServicioUbicacion(models.Model):
+    ORIGEN = "origen"
+    PARADA = "parada"
+    DESTINO = "destino"
+    TIPOS = [
+        (ORIGEN, "Origen"),
+        (PARADA, "Parada"),
+        (DESTINO, "Destino"),
+    ]
+
+    servicio = models.ForeignKey(
+        Servicio, on_delete=models.CASCADE, related_name="ubicaciones"
+    )
+    orden = models.PositiveSmallIntegerField()
+    tipo = models.CharField(max_length=12, choices=TIPOS)
+    distrito = models.CharField(max_length=120, blank=True)
+    direccion = models.CharField(max_length=255, blank=True)
+    piso = models.PositiveSmallIntegerField(null=True, blank=True)
+    ascensor = models.BooleanField(null=True, blank=True)
+    acceso_camion = models.BooleanField(null=True, blank=True)
+    distancia_acarreo = models.PositiveIntegerField(null=True, blank=True)
+    observaciones_acceso = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["orden", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["servicio", "orden"], name="servicio_ubicacion_orden_unico"
+            ),
+            models.UniqueConstraint(
+                fields=["servicio", "tipo"],
+                condition=models.Q(tipo__in=["origen", "destino"]),
+                name="servicio_ubicacion_extremo_unico",
+            ),
+        ]
+        indexes = [models.Index(fields=["servicio", "tipo", "orden"])]
+
+    def __str__(self):
+        return f"{self.servicio_id}:{self.orden} {self.tipo} {self.distrito}"

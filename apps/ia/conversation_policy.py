@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field
 from typing import Any
 
+from apps.leads.route import route_for_lead
+
 
 QUOTE = "quote"
 QUOTE_READY = "quote_ready"
@@ -36,8 +38,11 @@ def effective_quote_values(lead):
             if lead.requiere_desarmado is not None
             else (False if service == "mudanza" else None)
         ),
-        # No persistent field yet. Policy default remains explicit here.
-        "requiere_armado": False if service == "mudanza" else None,
+        "requiere_armado": (
+            lead.requiere_armado
+            if lead.requiere_armado is not None
+            else (False if service == "mudanza" else None)
+        ),
     }
 
 
@@ -49,6 +54,7 @@ def apply_quote_defaults(lead):
         "incluye_personal_carga": True,
         "modalidad_servicio": "sin embalaje",
         "requiere_desarmado": False,
+        "requiere_armado": False,
     }
     for field_name, value in defaults.items():
         if getattr(lead, field_name) in (None, ""):
@@ -61,10 +67,18 @@ def quote_missing_fields(lead, requires_truck_access=False):
     missing = []
     if not lead.tipo_servicio:
         missing.append("tipo_servicio")
-    if not lead.distrito_origen:
-        missing.append("distrito_origen")
-    if not lead.distrito_destino:
-        missing.append("distrito_destino")
+    route = route_for_lead(lead, ensure_legacy=False)
+    if not route:
+        missing.extend(["distrito_origen", "distrito_destino"])
+    else:
+        route_types = {location.tipo for location in route}
+        if "origen" not in route_types:
+            missing.append("distrito_origen")
+        if "destino" not in route_types:
+            missing.append("distrito_destino")
+        for order, location in enumerate(route):
+            if not location.distrito:
+                missing.append(f"ubicacion_{getattr(location, 'orden', order)}_distrito")
     if not lead.lista_objetos:
         missing.append("lista_objetos")
 
@@ -72,20 +86,17 @@ def quote_missing_fields(lead, requires_truck_access=False):
     if service == "carga" and lead.peso_carga_kg is None and lead.volumen_carga_m3 is None:
         missing.append("dimension_carga")
 
-    if lead.piso_origen is None:
-        missing.append("piso_origen")
-    elif lead.piso_origen > 1 and lead.ascensor_origen is None:
-        missing.append("ascensor_origen")
-    if lead.piso_destino is None:
-        missing.append("piso_destino")
-    elif lead.piso_destino > 1 and lead.ascensor_destino is None:
-        missing.append("ascensor_destino")
+    for order, location in enumerate(route):
+        location_order = getattr(location, "orden", order)
+        if location.piso is None:
+            missing.append(f"ubicacion_{location_order}_piso")
+        elif location.piso > 1 and location.ascensor is None:
+            missing.append(f"ubicacion_{location_order}_ascensor")
 
     if requires_truck_access:
-        if lead.camion_llega_origen is None:
-            missing.append("camion_llega_origen")
-        if lead.camion_llega_destino is None:
-            missing.append("camion_llega_destino")
+        for order, location in enumerate(route):
+            if location.acceso_camion is None:
+                missing.append(f"ubicacion_{getattr(location, 'orden', order)}_acceso_camion")
     return missing
 
 
@@ -93,10 +104,18 @@ def booking_missing_fields(lead):
     missing = []
     if not lead.cliente.nombre:
         missing.append("cliente_nombre")
-    if not _specific_address(lead.direccion_origen):
-        missing.append("direccion_origen")
-    if not _specific_address(lead.direccion_destino):
-        missing.append("direccion_destino")
+    route = route_for_lead(lead, ensure_legacy=False)
+    if not route:
+        missing.extend(["direccion_origen", "direccion_destino"])
+    else:
+        route_types = {location.tipo for location in route}
+        if "origen" not in route_types:
+            missing.append("direccion_origen")
+        if "destino" not in route_types:
+            missing.append("direccion_destino")
+        for order, location in enumerate(route):
+            if not _specific_address(location.direccion):
+                missing.append(f"ubicacion_{getattr(location, 'orden', order)}_direccion")
     if not lead.fecha_servicio:
         missing.append("fecha_servicio")
     if not lead.horario_servicio:
@@ -137,14 +156,14 @@ def _goal_for(missing):
     fields = set(missing)
     if fields & {"tipo_servicio"}:
         return "collect_service"
-    if fields & {"distrito_origen", "distrito_destino"}:
+    if fields & {"distrito_origen", "distrito_destino"} or any(field.endswith("_distrito") for field in fields):
         return "collect_route"
     if fields & {"lista_objetos", "dimension_carga"}:
         return "collect_load"
     if fields & {
         "piso_origen", "piso_destino", "ascensor_origen", "ascensor_destino",
         "camion_llega_origen", "camion_llega_destino",
-    }:
+    } or any(field.endswith(("_piso", "_ascensor", "_acceso_camion")) for field in fields):
         return "collect_access"
     return "collect_quote"
 
@@ -156,7 +175,20 @@ def _known_snapshot(lead):
         "incluye_personal_carga", "modalidad_servicio", "requiere_desarmado",
         "fecha_servicio", "horario_servicio", "direccion_origen", "direccion_destino",
     )
-    return {name: getattr(lead, name) for name in names if getattr(lead, name) not in (None, "")}
+    snapshot = {name: getattr(lead, name) for name in names if getattr(lead, name) not in (None, "")}
+    snapshot["ubicaciones"] = [
+        {
+            "orden": getattr(location, "orden", order),
+            "tipo": location.tipo,
+            "distrito": location.distrito,
+            "direccion": location.direccion,
+            "piso": location.piso,
+            "ascensor": location.ascensor,
+            "acceso_camion": location.acceso_camion,
+        }
+        for order, location in enumerate(route_for_lead(lead, ensure_legacy=False))
+    ]
+    return snapshot
 
 
 def _specific_address(value):

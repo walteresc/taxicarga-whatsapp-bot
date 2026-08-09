@@ -31,6 +31,33 @@ def cambiar_estado_cotizacion(cotizacion_id, nuevo_estado):
         return cotizacion
 
 
+def aceptar_cotizacion_para_lead(lead):
+    """Accept the latest actually-sent revision; repeated events are harmless."""
+    with transaction.atomic():
+        accepted = (
+            CotizacionComercial.objects.select_for_update()
+            .filter(lead=lead, estado="aceptada", revisiones__enviada=True)
+            .order_by("-actualizada_en")
+            .first()
+        )
+        if accepted:
+            return accepted.revisiones.filter(enviada=True).order_by("-numero").first(), False
+        quote = (
+            CotizacionComercial.objects.select_for_update()
+            .filter(lead=lead, estado__in=["enviada", "entregada", "en_negociacion"])
+            .order_by("-actualizada_en")
+            .first()
+        )
+        if not quote:
+            return None, False
+        revision = quote.revisiones.filter(enviada=True).order_by("-numero").first()
+        if not revision:
+            return None, False
+        quote.estado = "aceptada"
+        quote.save(update_fields=["estado", "actualizada_en"])
+        return revision, True
+
+
 def asignar_solicitud(solicitud_id, actor):
     with transaction.atomic():
         solicitud = SolicitudCotizacion.objects.select_for_update().get(pk=solicitud_id)

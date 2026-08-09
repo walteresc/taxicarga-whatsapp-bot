@@ -176,6 +176,9 @@ class ConversationalPolicyTests(TestCase):
 
         self.assertTrue(lead.atencion_humana)
         self.assertIsNone(lead.precio_cotizado)
-        self.assertIn("parada", lead.observaciones.lower())
+        self.assertEqual(
+            list(lead.ubicaciones.values_list("tipo", "distrito")),
+            [("origen", "Surco"), ("parada", "San Borja"), ("destino", "Miraflores")],
+        )
         self.assertEqual(conversation.estado_cotizacion, ConversacionWhatsApp.COTIZACION_PENDIENTE)
         self.assertIn("asesor", reply.lower())
