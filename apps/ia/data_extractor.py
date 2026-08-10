@@ -178,6 +178,17 @@ def extract_lead_data(message):
     return data
 
 
+def has_explicit_floor_reference(message):
+    text = _canonical_text(message)
+    if re.search(r"\b(?:piso|planta|nivel)\b", text):
+        return True
+    return bool(re.search(
+        r"\b(?:\d{1,2}\s*(?:ero|er|ro|do|to|avo)|primer|primero|segundo|"
+        r"tercer|tercero|cuarto|quinto|sexto|septimo|octavo|noveno|decimo)\b",
+        text,
+    ))
+
+
 def extract_route_locations(message):
     normalized = _canonical_text(message)
     matches = []
@@ -557,7 +568,7 @@ def _extract_operator_count(text):
 
 def _extract_load_detail(text):
     patterns = [
-        r"\b(?:llevo|llevar[ée]?|traslado|transporto|son)\s+(.+)",
+        r"\b(?:tengo|llevo|llevar[ée]?|traslado|transporto|son)\s+(.+)",
         r"\b(?:carga|cosas|objetos)\s*[:=-]\s*(.+)",
     ]
     detail = ""
@@ -578,16 +589,20 @@ def _extract_load_detail(text):
 
 
 def _extract_single_floor(text):
-    numeric = re.search(r"\b(?:piso\s*)?(\d{1,2})(?:ro|do|to|er|avo)?(?:\s*piso)?\b", text)
+    numeric = re.search(
+        r"\b(?:piso|planta|nivel)\s*(\d{1,2})(?:ro|do|to|er|avo)?\b|"
+        r"\b(\d{1,2})(?:ro|do|to|er|avo)?\s*(?:piso|planta|nivel)\b",
+        text,
+    )
     if numeric:
-        return int(numeric.group(1))
+        return int(numeric.group(1) or numeric.group(2))
     words = {
         "primer": 1, "primero": 1, "segundo": 2, "tercer": 3, "tercero": 3,
         "cuarto": 4, "quinto": 5, "sexto": 6, "septimo": 7, "octavo": 8,
         "noveno": 9, "decimo": 10,
     }
     for word, number in words.items():
-        if re.search(rf"\b{word}(?:\s+piso)?\b", text):
+        if re.search(rf"\b{word}\s+(?:piso|planta|nivel)\b", text):
             return number
     if "puerta a calle" in text or "primer nivel" in text:
         return 1

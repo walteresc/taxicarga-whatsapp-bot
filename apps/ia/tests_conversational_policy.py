@@ -49,6 +49,9 @@ class ConversationalPolicyTests(TestCase):
         )
         lead = self.cliente.leads.get()
 
+        self.assertIsNone(lead.piso_origen)
+        self.assertIsNone(lead.piso_destino)
+        self.assertIn("15 cajas", lead.lista_objetos)
         self.assertTrue(lead.incluye_personal_carga)
         self.assertEqual(lead.modalidad_servicio, "sin embalaje")
         self.assertFalse(lead.requiere_desarmado)

@@ -150,8 +150,22 @@ def _receive_message(request):
         canonical_message, _canonical_created, canonical_conversation = canonical_incoming_message(
             lead=active_lead, channel=channel, event=event, conversation=resolved_conversation
         )
+        attention_conversation = canonical_conversation or resolved_conversation
+        control = (
+            ConversationControl.objects.filter(conversation=attention_conversation).first()
+            if attention_conversation else None
+        )
+        human_owned = bool(
+            (active_lead and active_lead.atencion_humana)
+            or (attention_conversation and (
+                attention_conversation.estado_atencion == attention_conversation.ATENCION_ASESOR
+                or attention_conversation.bot_pausado
+            ))
+            or (control and control.owner_state == OwnerState.AGENT_ACTIVE)
+        )
         if (
             canonical_message
+            and not human_owned
             and is_feature_enabled(canonical_conversation.channel, "return_to_bot")
         ):
             authorization = authorize_inbound_trigger(canonical_message.id)
@@ -197,18 +211,6 @@ def _receive_message(request):
                 "published": published,
                 "sent": bool(send_result and send_result.sent),
             })
-        control = (
-            ConversationControl.objects.filter(conversation=canonical_conversation).first()
-            if canonical_conversation else None
-        )
-        human_owned = bool(
-            (active_lead and active_lead.atencion_humana)
-            or (canonical_conversation and (
-                canonical_conversation.estado_atencion == canonical_conversation.ATENCION_ASESOR
-                or canonical_conversation.bot_pausado
-            ))
-            or (control and control.owner_state == OwnerState.AGENT_ACTIVE)
-        )
         if human_owned:
             Conversacion.objects.create(
                 cliente=cliente,

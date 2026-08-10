@@ -181,7 +181,10 @@ class IntegrationBotConfigWebhookTests(TestCase):
         conf.bot_activo = True
         conf.hora_inicio_bot = "09:00"
         conf.hora_fin_bot = "18:00"
-        conf.lunes_activo = True
+        for day in (
+            "lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"
+        ):
+            setattr(conf, f"{day}_activo", False)
         conf.save()
         send_mock.return_value = {"messages": [{"id": "wamid.reply"}]}
         payload = {

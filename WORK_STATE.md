@@ -197,3 +197,19 @@
 - MensajeWhatsApp 15 recuperado en Lead TEST 106. Ruta Surco→Miraflores, carga y ubicaciones persistidas; generación publicada.
 - Meta outbox nuevo queda `pending`, attempts=0. Envíos Meta durante fix: 0. Worker detenido para impedir despacho.
 - Mensaje inbound y contexto proyectados a Chatwoot correctamente.
+
+# Corrección previa a prueba manual (2026-08-10)
+
+- Corregida confusión semántica: cantidades (`15 cajas`, operarios, peso) ya no
+  se aceptan como piso sin evidencia explícita de piso/planta/nivel.
+- Extracción IA de pisos también queda protegida por evidencia textual.
+- Detalle de carga canónico para el caso TEST: `Cama, refrigeradora y aprox. 15 cajas`.
+- Lead 106 reparado: Surco a Miraflores; pisos vacíos; faltan pisos y accesos de
+  ambos extremos. Respuesta BOT preparada, no enviada.
+- Contexto Chatwoot TEST reproyectado y label comercial obsoleto `cotizado` retirado.
+- Conversación Chatwoot existente preservada: la identidad productiva reutiliza la
+  conversación abierta del mismo cliente/canal; no se borró evidencia histórica.
+- Regresión P0 corregida: ownership humano se evalúa antes de return-to-bot.
+- Suite completa: 587/587 OK; 33 omitidas PostgreSQL-only. `check`, migraciones y
+  `git diff --check`: OK.
+- Meta sends durante corrección: 0. Worker Meta detenido. Sin push.

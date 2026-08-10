@@ -106,11 +106,14 @@ class ChatwootWebhookTests(IntegrationTestCase):
         self.assertEqual(message.direction, "outbound")
         self.assertEqual(message.visibility, "public")
         self.assertEqual(message.metadata["external_sender_id"], "3")
-        self.assertEqual(IntegrationOutboxEvent.objects.count(), 0)
+        self.assertEqual(
+            IntegrationOutboxEvent.objects.filter(destination=Provider.META_WHATSAPP).count(),
+            1,
+        )
         self.assertEqual(MensajeWhatsApp.objects.count(), 0)
         self.conversation.refresh_from_db()
-        self.assertFalse(self.conversation.bot_pausado)
-        self.assertEqual(self.conversation.estado_atencion, "bot")
+        self.assertTrue(self.conversation.bot_pausado)
+        self.assertEqual(self.conversation.estado_atencion, "asesor")
 
     def test_same_delivery_and_new_delivery_are_idempotent(self):
         self.assertEqual(self.post(self.payload(), "delivery-a").status_code, 200)

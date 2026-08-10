@@ -3,6 +3,7 @@ import json
 
 from django.db import transaction
 
+from apps.leads.cargo import effective_load_detail
 from apps.leads.route import access_summary, route_summary
 from apps.whatsapp.models import ConversacionWhatsApp
 
@@ -52,7 +53,7 @@ def conversation_snapshot(conversation):
         "taxicarga_price": str(lead.precio_cotizado or ""),
         "taxicarga_service": lead.tipo_servicio or "",
         "taxicarga_route": route_summary(lead),
-        "taxicarga_load": lead.lista_objetos or "",
+        "taxicarga_load": effective_load_detail(lead),
         "taxicarga_access": access_summary(lead),
         "taxicarga_operators": operators,
         "taxicarga_additional": " · ".join(extras),

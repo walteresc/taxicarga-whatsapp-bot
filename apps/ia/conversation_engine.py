@@ -1,7 +1,7 @@
 import logging
 import re
 import unicodedata
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_CEILING
 
 from django.utils import timezone
@@ -10,7 +10,12 @@ from apps.cotizador.services import cotizar_lead
 from apps.leads.models import Lead
 from apps.leads.route import remove_stop, replace_lead_route, sync_legacy_endpoints
 
-from .data_extractor import extract_lead_data, extract_route_locations, normalize_district
+from .data_extractor import (
+    extract_lead_data,
+    extract_route_locations,
+    has_explicit_floor_reference,
+    normalize_district,
+)
 from .conversation_policy import (
     BOOKING,
     apply_quote_defaults,
@@ -306,6 +311,8 @@ def handle_incoming_message(cliente, message, canonical_context=None, generation
 
     if ai_extracted and ai_extracted["campos_detectados"]:
         for field, value in ai_extracted["campos_detectados"].items():
+            if field in {"piso_origen", "piso_destino"} and not has_explicit_floor_reference(message):
+                continue
             if value not in ("", None) and not extracted.get(field):
                 extracted[field] = value
     if route_with_stops:
@@ -320,7 +327,7 @@ def handle_incoming_message(cliente, message, canonical_context=None, generation
         term in normalized_message for term in ("puerta", "acerc", "metros", "llega", "entra")
     ):
         _extract_contextual_truck_access(extracted, message, lead)
-    validation_reply = _validate_reservation_input(lead, extracted, expected_field)
+    validation_reply = _validate_reservation_input(lead, extracted, expected_field, message)
     if validation_reply:
         return validation_reply
     pricing_changed = False
@@ -907,7 +914,7 @@ def _labeled_address(answer, labels):
     return match.group(1).strip() if match else ""
 
 
-def _validate_reservation_input(lead, extracted, expected_field):
+def _validate_reservation_input(lead, extracted, expected_field, answer=""):
     if lead.etapa_conversacion != Lead.ETAPA_RESERVA:
         return None
 
@@ -948,6 +955,9 @@ def _validate_reservation_input(lead, extracted, expected_field):
                 timezone.get_current_timezone(),
             )
             if scheduled <= timezone.now():
+                if _mentions_weekday(answer):
+                    extracted["fecha_servicio"] = candidate_date + timedelta(days=7)
+                    return None
                 extracted.pop("fecha_servicio", None)
                 extracted.pop("horario_servicio", None)
                 lead.fecha_servicio = None

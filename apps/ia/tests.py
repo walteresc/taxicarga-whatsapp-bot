@@ -9,7 +9,7 @@ from django.utils import timezone
 from apps.clientes.models import Cliente
 from apps.cotizador.models import ServicioHistorico
 from apps.ia.conversation_engine import handle_incoming_message
-from apps.ia.data_extractor import extract_lead_data
+from apps.ia.data_extractor import extract_lead_data, extract_route_locations
 from apps.leads.models import Lead
 from apps.ia.models import EjemploConversacion
 from apps.ia.history import conversation_examples_for
@@ -77,6 +77,31 @@ class DataExtractorTests(TestCase):
 
         self.assertEqual(data["piso_origen"], 1)
         self.assertEqual(data["piso_destino"], 1)
+
+    def test_numeros_de_carga_personal_y_peso_no_se_reutilizan_como_pisos(self):
+        cases = [
+            ("Mudanza de Surco a Miraflores. Tengo 15 cajas", "lista_objetos", "15"),
+            ("Mudanza de Surco a Miraflores. Tengo 2 camas y 20 cajas", "lista_objetos", "20"),
+            ("Necesito 2 ayudantes", "cantidad_operarios", 2),
+            ("La carga pesa 800 kg", "peso_carga_kg", Decimal("800")),
+        ]
+        for message, field, expected in cases:
+            with self.subTest(message=message):
+                data = extract_lead_data(message)
+                locations = extract_route_locations(message)
+                self.assertNotIn("piso_origen", data)
+                self.assertNotIn("piso_destino", data)
+                self.assertTrue(all(item["piso"] is None for item in locations))
+                self.assertIn(expected, data[field]) if isinstance(expected, str) else self.assertEqual(data[field], expected)
+
+    def test_cajas_y_piso_explicito_se_extraen_como_entidades_distintas(self):
+        data = extract_lead_data("15 cajas, destino piso 2")
+        self.assertIn("15 cajas", data["lista_objetos"])
+        self.assertEqual(data["piso_destino"], 2)
+
+    def test_piso_quince_con_ascensor_es_nivel(self):
+        data = extract_lead_data("destino piso 15 con ascensor")
+        self.assertEqual(data["piso_destino"], 15)
 
 
 class WhatsappHistoryImportTests(TestCase):
@@ -524,6 +549,12 @@ class ConversationEngineTests(TestCase):
         expected = timezone.localdate() + timedelta(
             days=(0 - timezone.localdate().weekday()) % 7
         )
+        candidate = timezone.make_aware(
+            timezone.datetime.combine(expected, timezone.datetime.strptime("10:00 am", "%I:%M %p").time()),
+            timezone.get_current_timezone(),
+        )
+        if candidate <= timezone.now():
+            expected += timedelta(days=7)
 
         confirmation = handle_incoming_message(cliente, "lunes a las 10 am")
 
