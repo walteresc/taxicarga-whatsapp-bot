@@ -187,3 +187,13 @@
 - SQLite: IA 89/89 OK; suite completa 573/573 OK, 33 PostgreSQL-only omitidas.
 - Sin migraciones. Acciones externas 0. ETAPA 10C no iniciada.
 - Siguiente fase: modelo canónico de ubicaciones y snapshots operacionales.
+# P0 webhook resiliente / Chatwoot asíncrono (2026-08-10)
+
+- Webhook ya no ejecuta HTTP Chatwoot. Inbound canónico crea outbox durable e idempotente.
+- Worker procesa `sync_inbound_message`; HTTP ocurre fuera de transacciones/locks Django.
+- BotGeneration fallida o abandonada puede reclamarse; error guardado solo como clase sanitizada.
+- Tests P0 y regresiones focales: 33 verdes. Suite: 584 descubiertos; 1 fallo histórico sensible a fecha en `test_dia_de_semana_se_confirma_antes_de_reservar`.
+- PostgreSQL TaxiCarga dedicado no disponible; contenedores 5432 pertenecen a Mionca/Chatwoot y quedaron intactos.
+- MensajeWhatsApp 15 recuperado en Lead TEST 106. Ruta Surco→Miraflores, carga y ubicaciones persistidas; generación publicada.
+- Meta outbox nuevo queda `pending`, attempts=0. Envíos Meta durante fix: 0. Worker detenido para impedir despacho.
+- Mensaje inbound y contexto proyectados a Chatwoot correctamente.

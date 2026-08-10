@@ -20,10 +20,10 @@ from apps.ia.image_analyzer import analyze_moving_image
 from apps.leads.models import Lead
 from apps.integrations.enums import AuthorType, OwnerState
 from apps.integrations.models import ConversationControl
-from apps.integrations.services.live_sync import canonical_incoming_message, project_new_incoming
+from apps.integrations.services.live_sync import canonical_incoming_message
 from apps.integrations.services.bot_context import build_bot_context
 from apps.integrations.services.bot_runtime import authorize_inbound_trigger
-from apps.integrations.services.generations import finalize_generation
+from apps.integrations.services.generations import fail_generation, finalize_generation
 from apps.integrations.services.channel_policy import is_feature_enabled
 from apps.integrations.services.meta_sender import process_meta_outbox_event
 from apps.whatsapp.domain import obtener_o_crear_conversacion
@@ -147,7 +147,7 @@ def _receive_message(request):
             return JsonResponse({"ok": True, "ignored": True})
 
         message = event["text"]
-        canonical_message, canonical_created, canonical_conversation = canonical_incoming_message(
+        canonical_message, _canonical_created, canonical_conversation = canonical_incoming_message(
             lead=active_lead, channel=channel, event=event, conversation=resolved_conversation
         )
         if (
@@ -155,25 +155,33 @@ def _receive_message(request):
             and is_feature_enabled(canonical_conversation.channel, "return_to_bot")
         ):
             authorization = authorize_inbound_trigger(canonical_message.id)
-            if canonical_created:
-                project_new_incoming(canonical_message)
             if not authorization.authorized:
                 Conversacion.objects.create(
                     cliente=cliente, mensaje_entrada=message, mensaje_salida="",
                     canal=Conversacion.CANAL_WHATSAPP,
                 )
                 _complete_message(processed)
-                return JsonResponse({"ok": True, "human_takeover": True, "sent": None})
-            context = build_bot_context(
-                canonical_conversation.id, trigger_message_id=canonical_message.id
-            )
-            reply = handle_incoming_message(
-                cliente, message, canonical_context=context,
-                generation_id=authorization.generation.id,
-            )
-            _generation, outbox, published = finalize_generation(
-                authorization.generation.id, result_text=reply
-            )
+                human_takeover = authorization.integration_message is None
+                return JsonResponse({
+                    "ok": True,
+                    "human_takeover": human_takeover,
+                    "duplicate": not human_takeover,
+                    "sent": None,
+                })
+            try:
+                context = build_bot_context(
+                    canonical_conversation.id, trigger_message_id=canonical_message.id
+                )
+                reply = handle_incoming_message(
+                    cliente, message, canonical_context=context,
+                    generation_id=authorization.generation.id,
+                )
+                _generation, outbox, published = finalize_generation(
+                    authorization.generation.id, result_text=reply
+                )
+            except Exception as exc:
+                fail_generation(authorization.generation.id, exc)
+                raise
             send_result = None
             if published and outbox:
                 send_result = process_meta_outbox_event(outbox.id)
@@ -208,8 +216,6 @@ def _receive_message(request):
                 mensaje_salida="",
                 canal=Conversacion.CANAL_WHATSAPP,
             )
-            if canonical_created:
-                project_new_incoming(canonical_message)
             _complete_message(processed)
             return JsonResponse({"ok": True, "human_takeover": True, "sent": None})
 

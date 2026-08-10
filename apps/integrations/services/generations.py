@@ -111,6 +111,21 @@ def finalize_generation(generation_id, *, result_text):
         return generation, outbox, True
 
 
+def fail_generation(generation_id, exc):
+    """Close an interrupted generation without persisting payloads or secrets."""
+    summary = exc.__class__.__name__[:255]
+    with transaction.atomic():
+        generation = BotGeneration.objects.select_for_update().get(pk=generation_id)
+        if generation.status in {
+            GenerationStatus.PENDING, GenerationStatus.GENERATING, GenerationStatus.READY
+        }:
+            generation.status = GenerationStatus.FAILED
+            generation.completed_at = timezone.now()
+            generation.error_summary = summary
+            generation.save(update_fields=["status", "completed_at", "error_summary"])
+        return generation
+
+
 def create_public_outbox(message):
     if message.visibility != Visibility.PUBLIC:
         raise PrivateMessageBlocked("Private message cannot create a Meta outbox event.")

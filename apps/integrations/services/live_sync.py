@@ -4,8 +4,8 @@ from django.db import IntegrityError, transaction
 from apps.whatsapp.domain import obtener_o_crear_conversacion
 from apps.whatsapp.models import MensajeWhatsApp
 
-from ..models import ConversationControl
-from .chatwoot_projection import sync_chatwoot_conversation
+from ..enums import Provider
+from ..models import ConversationControl, IntegrationOutboxEvent
 from .channel_policy import integration_enabled, is_feature_enabled
 
 
@@ -28,6 +28,17 @@ def canonical_incoming_message(*, lead, channel, event, conversation=None):
             message, created = MensajeWhatsApp.objects.get_or_create(
                 meta_message_id=str(event.get("message_id") or ""), defaults=defaults
             )
+            if is_feature_enabled(conversation.channel, "live_sync"):
+                IntegrationOutboxEvent.objects.get_or_create(
+                    destination=Provider.CHATWOOT,
+                    destination_scope=str(conversation.channel_id),
+                    idempotency_key=f"chatwoot-inbound:{message.id}",
+                    defaults={
+                        "event_type": "sync_inbound_message",
+                        "conversation": conversation,
+                        "safe_payload": {"message_ids": [message.id]},
+                    },
+                )
     except IntegrityError:
         message = MensajeWhatsApp.objects.get(
             meta_message_id=str(event.get("message_id") or "")
@@ -37,13 +48,18 @@ def canonical_incoming_message(*, lead, channel, event, conversation=None):
 
 
 def project_new_incoming(message, *, client=None):
+    """Compatibility helper. Queue only; never perform Chatwoot HTTP inline."""
     if not message:
         return None
     if not is_feature_enabled(message.conversacion.channel, "live_sync"):
         return None
-    return sync_chatwoot_conversation(
-        message.conversacion_id,
-        message_ids=[message.id],
-        live=True,
-        client=client,
+    return IntegrationOutboxEvent.objects.get_or_create(
+        destination=Provider.CHATWOOT,
+        destination_scope=str(message.conversacion.channel_id),
+        idempotency_key=f"chatwoot-inbound:{message.id}",
+        defaults={
+            "event_type": "sync_inbound_message",
+            "conversation": message.conversacion,
+            "safe_payload": {"message_ids": [message.id]},
+        },
     )

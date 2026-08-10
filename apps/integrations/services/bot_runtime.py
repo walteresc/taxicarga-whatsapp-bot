@@ -1,7 +1,10 @@
 import uuid
+from datetime import timedelta
 from dataclasses import dataclass
 
 from django.db import IntegrityError, transaction
+from django.conf import settings
+from django.utils import timezone
 
 from apps.whatsapp.models import ConversacionWhatsApp, MensajeWhatsApp
 
@@ -52,7 +55,7 @@ def authorize_inbound_trigger(message_id):
             external_scope=str(conversation.channel.phone_number_id),
             external_message_id=external_id,
         )
-    generation, created = BotGeneration.objects.get_or_create(
+    generation, created = BotGeneration.objects.select_for_update().get_or_create(
         conversation=conversation,
         request_key=f"inbound:{external_id}",
         defaults={
@@ -63,4 +66,30 @@ def authorize_inbound_trigger(message_id):
             "correlation_id": uuid.uuid4(),
         },
     )
-    return InboundAuthorization(created, integration_message, generation)
+    if created:
+        return InboundAuthorization(True, integration_message, generation)
+    reclaim_before = timezone.now() - timedelta(
+        seconds=getattr(settings, "BOT_GENERATION_LEASE_SECONDS", 120)
+    )
+    retryable = generation.status == GenerationStatus.FAILED or (
+        generation.status == GenerationStatus.GENERATING
+        and generation.started_at <= reclaim_before
+    )
+    if retryable:
+        generation.status = GenerationStatus.GENERATING
+        generation.input_message = integration_message
+        generation.control_version_started = control.control_version
+        generation.expected_owner_state = OwnerState.BOT_ACTIVE
+        generation.started_at = timezone.now()
+        generation.completed_at = None
+        generation.cancelled_at = None
+        generation.cancel_reason = ""
+        generation.error_summary = ""
+        generation.correlation_id = uuid.uuid4()
+        generation.save(update_fields=[
+            "status", "input_message", "control_version_started",
+            "expected_owner_state", "started_at", "completed_at",
+            "cancelled_at", "cancel_reason", "error_summary", "correlation_id",
+        ])
+        return InboundAuthorization(True, integration_message, generation)
+    return InboundAuthorization(False, integration_message, generation)

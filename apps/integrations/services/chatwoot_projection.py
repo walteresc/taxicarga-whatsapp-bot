@@ -1,10 +1,9 @@
 from dataclasses import dataclass
+from contextlib import nullcontext
 
 from django.conf import settings
-from django.db import transaction
 from django.utils import timezone
 
-from apps.clientes.models import Cliente
 from apps.integrations.enums import Provider, SyncStatus
 from apps.integrations.models import (
     ChannelInboxMapping,
@@ -109,13 +108,12 @@ def sync_chatwoot_conversation(
     api = client or ChatwootClient()
     now = timezone.now()
 
-    with transaction.atomic():
+    # Remote calls must never hold Django transaction/row locks.
+    with nullcontext():
         conversation = (
-            ConversacionWhatsApp.objects.select_for_update(of=("self",))
-            .select_related("cliente", "channel")
+            ConversacionWhatsApp.objects.select_related("cliente", "channel")
             .get(pk=conversation_id)
         )
-        Cliente.objects.select_for_update().get(pk=conversation.cliente_id)
         existing_conversation_map = (
             ConversationMapping.objects.select_related(
                 "contact_inbox__inbox__account"
