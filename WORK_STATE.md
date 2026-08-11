@@ -409,3 +409,13 @@
 - Smoke real detenido en caso 1/3: HTTP 401 `invalid_api_key`; 1 llamada intentada, 0 schema-valid.
 - Casos 2 y 3 no ejecutados. V3 development run 100 no autorizado hasta corregir auth y repetir smoke.
 - Runtime sigue legacy: `AI_DELTA_EXTRACTION_ENABLED=false`, `AI_DELTA_SHADOW_MODE=true`.
+
+# P0 local environment isolation + V3 smoke (2026-08-11)
+
+- Shell actual: process key presente, `.env` presente, igualdad confirmada; causa stale no reproducida.
+- `run_local.ps1` elimina solo `OPENAI_API_KEY` heredada del proceso local y fija `.venv`.
+- Precedencia de producción, `VAR_FILE` y Docker Compose sin cambios.
+- Stale-parent fake test verde. Auth real por launcher: HTTP 200, `gpt-4.1-mini`.
+- V3 smoke `20260811T205214Z_v3_smoke`: 3/3 schema y artifacts; 5311 tokens.
+- s17 y s54 semánticamente correctos. s47 conserva observaciones, pero evaluator/label legacy
+  exige `origin.truck_access=true`; gate medido queda 2/3. Run 100 todavía NO listo.
