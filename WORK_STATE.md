@@ -302,3 +302,16 @@
   bloqueada por 220 errores preexistentes de registro duplicado `drf_format_suffix`
   entre routers y 1 aserción Chatwoot posterior; 33 omitidas.
 - Migraciones sin drift; `git diff --check` OK. Meta sends: 0. Worker detenido.
+
+## P0 entorno URL/DRF + flags shadow (2026-08-11)
+
+- Bloqueo `drf_format_suffix` no provenía del código ni de `d9f1a1b`: comandos
+  corrieron por error con Python global (Django 6.0.8, DRF 3.14.0, sin WhiteNoise).
+- Entorno correcto `.venv`: Python 3.14.0, Django 6.0.6, DRF 3.17.1 y dependencias
+  de `requirements.txt`. No fue necesario modificar URLConf ni paquetes.
+- `manage.py check`: OK. URL/API 30/30; IA-first 42/42; Chatwoot aislado 1/1;
+  integrations 170/170; suite completa 621/621 OK, 33 PostgreSQL-only omitidos.
+- Fallo Chatwoot previo fue cascada/contaminación del entorno incorrecto.
+- Flags desacoplados: `AI_DELTA_SHADOW_MODE=true` encola auditoría shadow aunque
+  `AI_DELTA_EXTRACTION_ENABLED=false`; delta nunca se aplica a Lead, pricing,
+  ConversationDecision ni respuesta. Meta sends: 0. Worker detenido.

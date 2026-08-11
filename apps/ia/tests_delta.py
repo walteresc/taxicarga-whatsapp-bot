@@ -1,6 +1,6 @@
 import json
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 
 from apps.clientes.models import Cliente
 from apps.leads.models import Lead, LeadUbicacion
@@ -109,6 +109,24 @@ class DeltaArchitectureTests(TestCase):
         self.assertIsNone(snapshot.state["locations"]["origin"]["truck_access"])
         self.assertFalse(snapshot.state["locations"]["destination"]["elevator"])
         self.assertTrue(snapshot_matches(self.lead, snapshot.state_version))
+
+    @override_settings(
+        AI_DELTA_EXTRACTION_ENABLED=False,
+        AI_DELTA_SHADOW_MODE=True,
+    )
+    def test_shadow_mode_is_independent_from_future_operative_flag(self):
+        from .conversation_engine import delta_shadow_enabled
+
+        self.assertTrue(delta_shadow_enabled())
+
+    @override_settings(
+        AI_DELTA_EXTRACTION_ENABLED=True,
+        AI_DELTA_SHADOW_MODE=False,
+    )
+    def test_operative_flag_does_not_force_shadow_mode(self):
+        from .conversation_engine import delta_shadow_enabled
+
+        self.assertFalse(delta_shadow_enabled())
 
     def test_context_has_explicit_last_question_without_customer_duplicate(self):
         snapshot = build_canonical_snapshot(self.lead)

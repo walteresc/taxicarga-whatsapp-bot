@@ -30,6 +30,10 @@ from .prompts import CONVERSATIONAL_RESPONSE_SYSTEM_PROMPT, POST_RESERVATION_SYS
 
 logger = logging.getLogger(__name__)
 
+
+def delta_shadow_enabled():
+    return settings.AI_DELTA_SHADOW_MODE
+
 BASE_QUESTIONS = [
     ("tipo_servicio", "Hola, que deseas trasladar?"),
     (
@@ -250,8 +254,7 @@ def handle_incoming_message(cliente, message, canonical_context=None, generation
     ai_extracted = extract_lead_with_ai(message, lead, recent_history)
     preview_extracted = extract_lead_data(message)
     if (
-        settings.AI_DELTA_EXTRACTION_ENABLED
-        and settings.AI_DELTA_SHADOW_MODE
+        delta_shadow_enabled()
         and canonical_context is not None
     ):
         try:
