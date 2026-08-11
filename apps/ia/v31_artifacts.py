@@ -73,7 +73,9 @@ def run_v31_cases(cases, output_root, *, run_suffix="v31_smoke"):
             ("input_tokens","output_tokens","total_tokens")}
     raw_scores=[x["raw_score"] for x in records]
     accepted_scores=[x["accepted_score"] for x in records]
-    scored_records=[x for x in records if x["case_id"] not in HUMAN_REVIEW_CASES]
+    human_review_ids={case["id"] for case in cases
+                      if case.get("human_review") or case["id"] in HUMAN_REVIEW_CASES}
+    scored_records=[x for x in records if x["case_id"] not in human_review_ids]
     wrong_endpoint,invented_numeric=_critical_counts(records)
     summary={"run_id":run_id,"api_calls":len(records),"schema_valid":len(records),
         "semantic_pass":sum(x["accepted_score"]["correct"] for x in records),
@@ -85,7 +87,7 @@ def run_v31_cases(cases, output_root, *, run_suffix="v31_smoke"):
             "raw":aggregate_canonical([x["raw_score"] for x in scored_records]),
             "accepted":aggregate_canonical([x["accepted_score"] for x in scored_records])},
         "critical_accepted_unsafe":sum(
-            not x["accepted_score"]["semantic_safe"] and x["case_id"] not in HUMAN_REVIEW_CASES
+            not x["accepted_score"]["semantic_safe"] and x["case_id"] not in human_review_ids
             for x in records),
         "wrong_endpoint_critical":wrong_endpoint,
         "invented_numeric":invented_numeric,

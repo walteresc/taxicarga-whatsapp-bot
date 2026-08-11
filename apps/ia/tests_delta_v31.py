@@ -16,6 +16,7 @@ from .delta_validator_v31 import (
     validate_delta_v31,
 )
 from .v31_offline_replay import adapt_v3_delta_to_v31
+from .v31_blind_holdout import v31_blind_holdout_cases
 
 
 class DeltaValidatorV31Tests(SimpleTestCase):
@@ -257,3 +258,9 @@ class DeltaValidatorV31Tests(SimpleTestCase):
         parsed,_=extract_conversation_delta_v31(context,provider_name="openai")
         self.assertIs(fake.generate_structured.call_args.kwargs["schema_model"],ConversationDeltaV31)
         self.assertEqual(parsed.schema_version,"3.1")
+
+    def test_blind_holdout_is_frozen_unique_and_contextual(self):
+        cases=v31_blind_holdout_cases()
+        self.assertEqual(len(cases),100)
+        self.assertGreaterEqual(sum(bool(case["question_targets"]) for case in cases),50)
+        self.assertGreaterEqual(sum(case["human_review"] for case in cases),10)
