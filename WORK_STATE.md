@@ -399,3 +399,13 @@
   de packing. Wrong endpoint aceptado 0; derived/numeric aceptado 0. Caída de recall
   es esperada al no inventar targets históricos. Requiere nuevo run GPT con metadata
   V3 real antes de juzgar recall o activación.
+# FASE 6 - V3 model run preparation (2026-08-11)
+
+- 100 casos anteriores reclasificados como `V3_DEVELOPMENT_SET`.
+- `QuestionTarget` curado desde objetivo original: 45/100 disponible; 55 no aplicable; 0 contextual unavailable.
+- Expected labels no usados para crear targets. `s02` sigue `LABEL_REVIEW_REQUIRED`.
+- Prompt/schema/harness V3 preparados. Packing separado en `packing_required` y `packing_mode`.
+- Fake V3: 15/15. Suites completas verdes antes del smoke.
+- Smoke real detenido en caso 1/3: HTTP 401 `invalid_api_key`; 1 llamada intentada, 0 schema-valid.
+- Casos 2 y 3 no ejecutados. V3 development run 100 no autorizado hasta corregir auth y repetir smoke.
+- Runtime sigue legacy: `AI_DELTA_EXTRACTION_ENABLED=false`, `AI_DELTA_SHADOW_MODE=true`.

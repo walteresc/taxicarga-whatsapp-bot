@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 from .conversation_policy import QuestionTarget
 from .delta_contract_v2 import AmbiguityV2, EvidenceType, empty_delta_v2
+from .delta_contract_v3 import empty_delta_v3
 from .delta_validator_v2 import RejectedChange, validate_delta_v2
 
 
@@ -21,7 +22,8 @@ TARGET_METADATA_UNAVAILABLE = "TARGET_METADATA_UNAVAILABLE"
 FIELD_CLASSES = {
     "service": "identity", "district": "route", "floor": "direct_physical",
     "elevator": "direct_physical", "staff_required": "service_option",
-    "packing": "service_option", "disassembly_required": "service_option",
+    "packing_required": "service_option", "packing_mode": "service_option",
+    "disassembly_required": "service_option",
     "assembly_required": "service_option", "load": "observational",
     "access_observation": "observational", "truck_access": "derived",
     "carry_distance_m": "derived",
@@ -37,7 +39,8 @@ class DeltaValidationV3Result:
 
 
 def _matches_target(targets, field, ref=None):
-    aliases = {"packing": {"packing", "packing_mode"},
+    aliases = {"packing_mode": {"packing", "packing_mode"},
+               "packing_required": {"packing_required"},
                "staff_required": {"staff_required", "staff_quantity"}}
     names = aliases.get(field, {field})
     return any(target.field in names and (
@@ -69,20 +72,26 @@ def validate_delta_v3(delta, snapshot, *, customer_message, question_targets=(),
         for target in question_targets
     )
     normalized = _normalize_contextual(delta, targets)
+    empty_factory = empty_delta_v3 if delta.schema_version == 3 else empty_delta_v2
+    policy_rejected = []
+    service = normalized.changes.lead.service
+    if service and service.evidence_type != EvidenceType.EXPLICIT and not _matches_target(targets, "service"):
+        policy_rejected.append(RejectedChange("service", ATTRIBUTE_CLOSURE))
     v2 = validate_delta_v2(
         normalized, snapshot, customer_message=customer_message,
         last_bot_question="structured-target" if targets else "",
         expected_state_version=expected_state_version,
+        empty_factory=empty_factory,
     )
-    accepted = empty_delta_v2().model_copy(update={"intent": v2.accepted.intent})
+    accepted = empty_factory().model_copy(update={"intent": v2.accepted.intent})
     accepted.ambiguities = list(v2.accepted.ambiguities)
-    rejected = list(v2.rejected)
+    rejected = list(v2.rejected) + policy_rejected
     for field, proposal in v2.accepted.changes.lead:
         if proposal is None:
             continue
         if field == "service" and proposal.evidence_type != EvidenceType.EXPLICIT and not _matches_target(targets, field):
             rejected.append(RejectedChange(field, ATTRIBUTE_CLOSURE)); continue
-        if field == "packing" and any(target.field == "packing_required" for target in targets):
+        if field == "packing_mode" and any(target.field == "packing_required" for target in targets):
             rejected.append(RejectedChange(field, UNSUPPORTED_SPECIFICITY)); continue
         if proposal.evidence_type == EvidenceType.EXPLICIT_CONTEXTUAL and not _matches_target(targets, field):
             rejected.append(RejectedChange(field, CONTEXT_TARGET_MISMATCH)); continue

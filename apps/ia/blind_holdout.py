@@ -16,6 +16,7 @@ def _state():
         "load": None,
         "staff": {"required": None},
         "additional_services": {"packing": None, "disassembly_required": None,
+                                "packing_required": None,
                                 "assembly_required": None},
     }
 

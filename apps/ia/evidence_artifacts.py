@@ -19,6 +19,8 @@ from .management.commands.compare_delta_shadow import _apply_v2, _get, _matches,
 LEAD_PATHS = {
     "service": "service", "load": "load", "staff_required": "staff.required",
     "packing": "additional_services.packing",
+    "packing_required": "additional_services.packing_required",
+    "packing_mode": "additional_services.packing",
     "disassembly_required": "additional_services.disassembly_required",
     "assembly_required": "additional_services.assembly_required",
 }

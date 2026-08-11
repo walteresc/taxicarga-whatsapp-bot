@@ -68,10 +68,10 @@ def _co_located(ref_evidence, value_evidence):
 
 def validate_delta_v2(
     delta, snapshot: CanonicalSnapshot, *, customer_message,
-    last_bot_question="", expected_state_version=None,
+    last_bot_question="", expected_state_version=None, empty_factory=empty_delta_v2,
 ):
     started = time.perf_counter()
-    accepted = empty_delta_v2().model_copy(update={"intent": delta.intent})
+    accepted = empty_factory().model_copy(update={"intent": delta.intent})
     accepted.ambiguities = [
         item for item in delta.ambiguities if _anchored(item.evidence, customer_message)
     ]
@@ -90,6 +90,8 @@ def validate_delta_v2(
         path_map = {
             "service": "service", "load": "load", "staff_required": "staff.required",
             "packing": "additional_services.packing",
+            "packing_required": "additional_services.packing_required",
+            "packing_mode": "additional_services.packing",
             "disassembly_required": "additional_services.disassembly_required",
             "assembly_required": "additional_services.assembly_required",
         }
