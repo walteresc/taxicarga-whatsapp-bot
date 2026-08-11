@@ -1284,7 +1284,7 @@ class ConversationEngineTests(TestCase):
         self.assertIsNone(lead.ascensor_destino)
         self.assertIn("destino", reply.lower())
         self.assertIn("ascensor", reply.lower())
-        self.assertIn("origen", reply.lower())
+        self.assertNotIn("origen", reply.lower())
         self.assertNotIn("en en", reply.lower())
 
     def test_escaleras_se_asigna_al_unico_punto_pendiente(self):

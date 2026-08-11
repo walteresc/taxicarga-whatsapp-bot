@@ -615,12 +615,33 @@ def _grouped_question(decision):
         floors = missing & {"piso_origen", "piso_destino"}
         elevators = missing & {"ascensor_origen", "ascensor_destino"}
         truck = missing & {"camion_llega_origen", "camion_llega_destino"}
+        floor_orders = {
+            int(field.split("_")[1])
+            for field in missing
+            if field.startswith("ubicacion_") and field.endswith("_piso")
+        }
+        elevator_orders = {
+            int(field.split("_")[1])
+            for field in missing
+            if field.startswith("ubicacion_") and field.endswith("_ascensor")
+        }
         if len(decision.known_data.get("ubicaciones", [])) > 2 and any(
             field.endswith(("_piso", "_ascensor")) for field in missing
         ):
             return "¿En qué piso está cada punto de la ruta y tienen ascensor?"
         if floors or elevators or any(field.endswith(("_piso", "_ascensor")) for field in missing):
-            question = "¿En qué pisos están ambos lugares y tienen ascensor?"
+            if floors == {"piso_origen"} or floor_orders == {0}:
+                question = "De que piso sale y hay ascensor en el origen?"
+            elif floors == {"piso_destino"} or floor_orders == {1}:
+                question = "A que piso llega y hay ascensor en el destino?"
+            elif not floors and (elevators == {"ascensor_origen"} or elevator_orders == {0}):
+                question = "En el origen, tienen ascensor?"
+            elif not floors and (elevators == {"ascensor_destino"} or elevator_orders == {1}):
+                question = "En el destino, tienen ascensor?"
+            elif not floors and elevators:
+                question = "En origen y destino, tienen ascensor?"
+            else:
+                question = "¿En qué pisos están ambos lugares y tienen ascensor?"
             if truck or any(field.endswith("_acceso_camion") for field in missing):
                 question += " ¿El camión puede estacionarse cerca para cargar y descargar?"
             return question
