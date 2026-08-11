@@ -17,6 +17,8 @@ AMBIGUOUS_REF = "AMBIGUOUS_REF"
 INVALID_REF = "INVALID_REF"
 DERIVED_VALUE_FORBIDDEN = "DERIVED_VALUE_FORBIDDEN"
 UNSUPPORTED_MEASUREMENT = "UNSUPPORTED_MEASUREMENT"
+UNSUPPORTED_BOOLEAN_EVIDENCE = "UNSUPPORTED_BOOLEAN_EVIDENCE"
+UNSUPPORTED_SERVICE_EVIDENCE = "UNSUPPORTED_SERVICE_EVIDENCE"
 NO_OP = "NO_OP"
 STALE_STATE = "STALE_STATE"
 EVIDENCE_CLAIM_COLLISION = "EVIDENCE_CLAIM_COLLISION"
@@ -70,12 +72,42 @@ def _explicit_ref_marker_is_anchored(ref, evidence):
     words = set(re.findall(r"[^\W\d_]+", normalized, flags=re.UNICODE))
     markers = {
         "origin":{"origen","salida","sale","recojo","recoger","carga","desde",
-                  "primer","primero","primera"},
+                  "primer","primero","primera","aca","aqui"},
         "destination":{"destino","llegada","llega","entrega","descarga","hasta",
-                       "segundo","segunda"},
+                       "segundo","segunda","alla","aya"},
         "both":{"ambos","ambas"},
     }
     return bool(words & markers.get(ref,set()))
+
+
+def _ref_both_conflicts_with_specific_marker(evidence):
+    return (_explicit_ref_marker_is_anchored("origin",evidence)
+            or _explicit_ref_marker_is_anchored("destination",evidence)) and not (
+                _explicit_ref_marker_is_anchored("both",evidence))
+
+
+def _truck_access_evidence_valid(proposal):
+    normalized=unicodedata.normalize("NFKD",proposal.evidence_quote.casefold())
+    normalized="".join(char for char in normalized if not unicodedata.combining(char))
+    words=set(re.findall(r"[^\W\d_]+",normalized,flags=re.UNICODE))
+    negative=bool(words & {"no","nunca","tampoco","imposible"})
+    access=bool(words & {"entra","entrar","ingresa","ingresar","accede","acceso"})
+    contextual=proposal.context_dependency == ContextDependency.QUESTION_TARGET
+    polarity=(proposal.value is False and negative) or (proposal.value is True and not negative)
+    return polarity and (access or contextual)
+
+
+def _service_evidence_valid(proposal):
+    normalized=unicodedata.normalize("NFKD",proposal.evidence_quote.casefold())
+    normalized="".join(char for char in normalized if not unicodedata.combining(char))
+    words=set(re.findall(r"[^\W\d_]+",normalized,flags=re.UNICODE))
+    markers={
+        "mudanza":{"mudanza","mudar","mudo","mudamos"},
+        "oficina":{"oficina","empresa","empresarial"},
+        "traslado pequeno":{"traslado","trasladar","transportar","mover","muevo","movere"},
+        "carga":{"carga","mercaderia","pallet","pallets"},
+    }
+    return bool(words & markers.get(proposal.value,set()))
 
 
 def _state_value(snapshot, path):
@@ -85,12 +117,12 @@ def _state_value(snapshot, path):
     return value
 
 
-def _proposal_reason(proposal, message, targets, field, ref=None):
+def _proposal_reason(proposal, message, targets, field, ref=None, *, check_context=True):
     if proposal.evidence_type == EvidenceType.INFERRED:
         return INFERRED_NOT_ALLOWED
     if not _anchored(proposal.evidence_quote, message):
         return NO_EVIDENCE
-    if (proposal.context_dependency == ContextDependency.QUESTION_TARGET
+    if (check_context and proposal.context_dependency == ContextDependency.QUESTION_TARGET
             and not _target_matches(targets, field, ref)):
         return CONTEXT_TARGET_MISMATCH
     if hasattr(proposal, "value_origin"):
@@ -126,23 +158,14 @@ def validate_delta_v31(delta, snapshot, *, customer_message, question_targets=()
     correction_targets = set()
     for correction in delta.corrections:
         reason = _proposal_reason(correction, customer_message, targets,
-                                  correction.target.split(".")[-1])
+                                  correction.target.split(".")[-1],
+                                  check_context=False)
         if reason:
             rejected.append(RejectedChange(f"corrections.{correction.target}", reason))
         else:
             accepted.corrections.append(correction)
             correction_targets.add(correction.target)
 
-    contextual_quotes = {
-        proposal.evidence_quote for _, proposal in delta.changes.lead
-        if proposal is not None
-        and proposal.context_dependency == ContextDependency.QUESTION_TARGET
-    }
-    for location in delta.changes.locations:
-        contextual_quotes.update(
-            proposal.evidence_quote for _, proposal in location.set
-            if proposal is not None
-            and proposal.context_dependency == ContextDependency.QUESTION_TARGET)
     targeted_claim_quotes = {
         proposal.evidence_quote
         for field, proposal in delta.changes.lead
@@ -153,11 +176,14 @@ def validate_delta_v31(delta, snapshot, *, customer_message, question_targets=()
         if proposal is None:
             continue
         reason = _proposal_reason(proposal, customer_message, targets, field)
-        if (not reason and not _target_matches(targets, field)
-                and proposal.context_dependency == ContextDependency.NONE
-                and proposal.evidence_quote in contextual_quotes):
-            reason = EVIDENCE_CLAIM_COLLISION
-        if (not reason and not _target_matches(targets, field)
+        if not reason and field == "service" and not _service_evidence_valid(proposal):
+            reason = UNSUPPORTED_SERVICE_EVIDENCE
+        collision_prone_neighbor = (
+            field == "load" and any(target.field in {"packing_required","packing_mode"}
+                                    for target in targets)
+            or field == "service" and any(target.field == "staff_required"
+                                           for target in targets))
+        if (not reason and collision_prone_neighbor and not _target_matches(targets, field)
                 and proposal.evidence_quote in targeted_claim_quotes):
             reason = EVIDENCE_CLAIM_COLLISION
         path = lead_paths[field]
@@ -194,6 +220,11 @@ def validate_delta_v31(delta, snapshot, *, customer_message, question_targets=()
                 and any(field != "district" for field in fields)
                 and not target_resolves_ref
                 and not explicit_ref_marker):
+            for field in fields:
+                accepted.ambiguities.append(Ambiguity31(
+                    field=field,value=location.ref_evidence_quote,
+                    possible_refs=sorted(valid_refs),
+                    evidence_quote=location.ref_evidence_quote))
             rejected.append(RejectedChange(
                 f"changes.locations[{index}].ref",UNVERIFIED_EXPLICIT_REF)); continue
         if location.ref_source == RefSource.QUESTION_TARGET and not any(
@@ -211,6 +242,13 @@ def validate_delta_v31(delta, snapshot, *, customer_message, question_targets=()
                     and ref != "both" and _target_matches(targets,field,ref)))
             if field in ambiguous_fields and not ref_is_resolved:
                 reason = AMBIGUOUS_REF
+            if (not reason and ref == "both"
+                    and _ref_both_conflicts_with_specific_marker(
+                        location.ref_evidence_quote)):
+                reason = AMBIGUOUS_REF
+            if (not reason and field == "truck_access"
+                    and not _truck_access_evidence_valid(proposal)):
+                reason = UNSUPPORTED_BOOLEAN_EVIDENCE
             for endpoint in refs:
                 if not reason:
                     reason = _proposal_reason(

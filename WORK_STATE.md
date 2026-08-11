@@ -462,3 +462,22 @@
 - Runtime sigue sin activar: `AI_DELTA_EXTRACTION_ENABLED=false`,
   `AI_DELTA_SHADOW_MODE=true`. Meta sends 0; worker detenido.
 - Candidata congelada antes de crear holdout ciego nuevo. Sin push.
+
+## Holdout ciego V3.1 ronda 1 - FAIL / DEVELOPMENT EVIDENCE
+
+- Dataset congelado antes de API: 100 sintéticos/adversariales nuevos, 50
+  contextuales, 12 HUMAN_REVIEW, SHA-256
+  `523df082a49d41ea1cadbdc6c7c7518ad4e9c0a4813a40ed56fd15bcb72b0849`.
+- Históricos locales realmente disponibles: 7, todos ligados a pruebas previas;
+  insuficientes/no ciegos para cuota de 40. No se reutilizaron como holdout.
+- Run `20260811T234244Z_v31_blind_holdout_100`: schema 100/100; accepted P
+  95.97%, R 77.30%, F1 85.63%, safety 94/100. HOLDOUT FAIL.
+- Desde primera corrida, dataset deja de ser ciego. Solo se usó como development
+  evidence. Causas generales: endpoint específico expandido a both, acceso de
+  camión inferido desde estacionamiento, corrections contextuales rechazadas y
+  service inferido desde lista de objetos.
+- Guards posteriores: endpoint/polaridad/evidencia de service fail-closed;
+  correcciones independientes; rechazo se promueve a ambiguity segura.
+- Development raw más reciente revalidado con candidata actual: P 99.12%, R
+  88.28%, F1 93.39%, safety 99/100; único unsafe pertenece a HUMAN_REVIEW.
+- Se requiere holdout ciego ronda 2 distinto antes de integrar runtime.

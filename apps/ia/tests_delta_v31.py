@@ -13,6 +13,8 @@ from .delta_validator_v31 import (
     AMBIGUOUS_REF, DERIVED_VALUE_FORBIDDEN, EVIDENCE_CLAIM_COLLISION,
     INFERRED_NOT_ALLOWED, NO_EVIDENCE, NO_OP,
     UNVERIFIED_EXPLICIT_REF,
+    UNSUPPORTED_BOOLEAN_EVIDENCE,
+    UNSUPPORTED_SERVICE_EVIDENCE,
     validate_delta_v31,
 )
 from .v31_offline_replay import adapt_v3_delta_to_v31
@@ -73,6 +75,14 @@ class DeltaValidatorV31Tests(SimpleTestCase):
         result=self.validate(self.delta(corrections=[correction]),
             "no era Miraflores, era San Isidro",[QuestionTarget("truck_access","origin")])
         self.assertEqual(result.accepted.corrections[0].new,"San Isidro")
+
+    def test_correction_metadata_does_not_depend_on_question_target(self):
+        correction={"target":"staff.required","old":False,"new":True,
+            "evidence_quote":"Rectifico, sí necesito personal",
+            "evidence_type":"explicit","context_dependency":"question_target"}
+        result=self.validate(self.delta(corrections=[correction]),
+            "Rectifico, sí necesito personal",[QuestionTarget("staff_required")])
+        self.assertEqual(result.accepted.corrections[0].new,True)
 
     def test_inferred_service_from_staff_is_rejected(self):
         delta=self.delta(lead={"staff_required":{"value":True,"evidence_quote":"con personal",
@@ -225,6 +235,33 @@ class DeltaValidatorV31Tests(SimpleTestCase):
         result=self.validate(ConversationDeltaV31.model_validate(payload),
                              "en ambos queda retirado")
         self.assertEqual(result.accepted.changes.locations[0].ref,"both")
+
+    def test_specific_endpoint_cue_cannot_expand_to_both(self):
+        delta=self.delta(locations=[{"ref":"both","ref_evidence_quote":"allá sí",
+            "ref_source":"question_target","set":{"elevator":{"value":True,
+            "evidence_quote":"allá sí","evidence_type":"explicit",
+            "context_dependency":"question_target"}}}])
+        result=self.validate(delta,"allá sí",[QuestionTarget("elevator","both")])
+        self.assertEqual(result.accepted.changes.locations,[])
+        self.assertIn(AMBIGUOUS_REF,[item.reason for item in result.rejected])
+
+    def test_parking_distance_does_not_prove_truck_access(self):
+        delta=self.delta(locations=[{"ref":"destination",
+            "ref_evidence_quote":"en destino","ref_source":"explicit_message",
+            "set":{"truck_access":{"value":True,
+            "evidence_quote":"estaciona a 30 metros","evidence_type":"explicit",
+            "context_dependency":"none"}}}])
+        result=self.validate(delta,"en destino estaciona a 30 metros")
+        self.assertIn(UNSUPPORTED_BOOLEAN_EVIDENCE,
+                      [item.reason for item in result.rejected])
+
+    def test_object_list_does_not_prove_service(self):
+        delta=self.delta(lead={"service":{"value":"traslado pequeno",
+            "evidence_quote":"una cama y una lavadora","evidence_type":"explicit",
+            "context_dependency":"none"}})
+        result=self.validate(delta,"una cama y una lavadora")
+        self.assertIn(UNSUPPORTED_SERVICE_EVIDENCE,
+                      [item.reason for item in result.rejected])
 
     def test_access_missing_fields_generate_truck_targets(self):
         targets=_question_targets(("ubicacion_0_acceso_camion", "ubicacion_1_acceso_camion"))

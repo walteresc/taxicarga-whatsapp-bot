@@ -25,6 +25,9 @@ QuestionTarget limita solo claims context-dependent: NO es whitelist global.
 Una respuesta afirmativa/negativa al inicio aplica al target compatible. Para
 cada hecho adicional usa la cita mínima que lo hace independiente; si la cita
 nombra el dato por sí misma, context_dependency=none.
+En target `both`, "primero" modifica SOLO origin y "segundo" SOLO destination;
+no expandas uno a ambos. Si dice "solo X tiene", el otro extremo queda negativo
+cuando X está inequívocamente identificado.
 
 SERVICE es solo tipo de servicio. Oficina/traslado empresarial corresponde a
 oficina. Pocos enseres u objetos de una persona corresponden a traslado pequeno;
