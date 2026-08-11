@@ -284,3 +284,21 @@
   creados idempotentemente; segundo procesamiento creó cero registros.
 - Contexto Chatwoot proyectado: control Bot, precio vacío, labels vacíos. Token
   Meta y Phone Number ID TEST 7 validados mediante GET. Worker general detenido.
+
+## IA-first Fase 0/1 shadow (2026-08-11)
+
+- Causa del 401 de Message 19: proceso Django antiguo heredó la variable global
+  OpenAI antes de eliminarla; `python-decouple` priorizó process environment sobre
+  `.env`. No existía cliente IA singleton, pero settings quedaban fijos al arranque.
+- Django reiniciado sin variable heredada; credencial tomada de `.env` TaxiCarga.
+  Prueba por el provider real: OpenAI + `gpt-4.1-mini` autenticaron correctamente.
+- Contrato delta Pydantic estricto, snapshot canónico versionado, contexto compacto,
+  referencias de ubicación, validación semántica y auditoría sanitizada agregados.
+- Shadow durable: webhook solo encola evento interno idempotente; worker procesa el
+  evento exacto. Nunca aplica el delta ni altera Lead, pricing o decisiones.
+- Flags: `AI_DELTA_EXTRACTION_ENABLED=false`, `AI_DELTA_SHADOW_MODE=true`. Pipeline
+  operativo permanece legacy; servidor vivo no fue reiniciado con el nuevo código.
+- Focales IA: 40/40 OK, fake provider, cero APIs. Suite completa intentada: 619;
+  bloqueada por 220 errores preexistentes de registro duplicado `drf_format_suffix`
+  entre routers y 1 aserción Chatwoot posterior; 33 omitidas.
+- Migraciones sin drift; `git diff --check` OK. Meta sends: 0. Worker detenido.

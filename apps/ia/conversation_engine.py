@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_CEILING
 
 from django.utils import timezone
+from django.conf import settings
 
 from apps.cotizador.services import cotizar_lead
 from apps.leads.models import Lead
@@ -248,6 +249,26 @@ def handle_incoming_message(cliente, message, canonical_context=None, generation
         recent_history.reverse()
     ai_extracted = extract_lead_with_ai(message, lead, recent_history)
     preview_extracted = extract_lead_data(message)
+    if (
+        settings.AI_DELTA_EXTRACTION_ENABLED
+        and settings.AI_DELTA_SHADOW_MODE
+        and canonical_context is not None
+    ):
+        try:
+            from apps.whatsapp.models import MensajeWhatsApp
+            from .delta_extractor import queue_delta_shadow
+
+            trigger = MensajeWhatsApp.objects.only("conversacion_id").get(
+                pk=canonical_context.trigger_message_id
+            )
+            queue_delta_shadow(
+                trigger_message_id=trigger.id,
+                legacy_extraction=preview_extracted,
+            )
+        except Exception as exc:
+            logger.warning(
+                "AI delta shadow skipped error_type=%s", type(exc).__name__
+            )
     extracted_locations = extract_route_locations(message)
     preview_extracted.update(_extract_route_correction(message))
     route_with_stops = len(extracted_locations) > 2 or _route_with_stops(message)

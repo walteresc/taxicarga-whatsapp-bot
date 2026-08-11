@@ -62,6 +62,29 @@ class AIProvider(ABC):
             output_tokens=getattr(usage, "output_tokens", None),
         )
 
+    def generate_structured(self, messages, *, schema_model):
+        started = perf_counter()
+        response = self._client().responses.parse(
+            model=self.model,
+            input=messages,
+            text_format=schema_model,
+            **self._request_options(),
+        )
+        usage = getattr(response, "usage", None)
+        parsed = getattr(response, "output_parsed", None)
+        return AIResult(
+            text=(
+                parsed.model_dump_json()
+                if hasattr(parsed, "model_dump_json")
+                else (getattr(response, "output_text", "") or "").strip()
+            ),
+            provider=self.name,
+            model=self.model,
+            latency_ms=(perf_counter() - started) * 1000,
+            input_tokens=getattr(usage, "input_tokens", None),
+            output_tokens=getattr(usage, "output_tokens", None),
+        )
+
 
 class OpenAIProvider(AIProvider):
     name = "openai"

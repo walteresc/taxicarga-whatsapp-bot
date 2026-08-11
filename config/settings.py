@@ -114,6 +114,8 @@ OPENAI_MODEL = config("OPENAI_MODEL", default="gpt-4.1-mini")
 AI_PROVIDER = config("AI_PROVIDER", default="openai").strip().lower()
 AI_EXTRACTION_PROVIDER = config("AI_EXTRACTION_PROVIDER", default="").strip().lower() or AI_PROVIDER
 AI_CONVERSATION_PROVIDER = config("AI_CONVERSATION_PROVIDER", default="").strip().lower() or AI_PROVIDER
+AI_DELTA_EXTRACTION_ENABLED = env_bool("AI_DELTA_EXTRACTION_ENABLED", default=False)
+AI_DELTA_SHADOW_MODE = env_bool("AI_DELTA_SHADOW_MODE", default=True)
 OPENAI_EXTRACTION_MODEL = config("OPENAI_EXTRACTION_MODEL", default="").strip() or OPENAI_MODEL
 OPENAI_CONVERSATION_MODEL = config("OPENAI_CONVERSATION_MODEL", default="").strip() or OPENAI_MODEL
 DEEPSEEK_API_KEY = env_value("DEEPSEEK_API_KEY")
