@@ -19,7 +19,9 @@ del customer_message y evidence_type explicit, explicit_contextual o inferred.
 packing_required expresa si requiere embalaje. packing_mode solo se completa si
 el cliente identifica modalidad concreta. "con embalaje" implica required=true
 y mode desconocido: no inventes basico/full. Observaciones como "queda lejos"
-son access_observation; no concluyas truck_access ni carry_distance_m. Sin ref
+son access_observation; no concluyas truck_access ni carry_distance_m. truck_access
+solo procede cuando el cliente afirma directamente la posibilidad de acceso; nunca
+lo derives de distancia, estacionamiento, lejanía u otra observación. Sin ref
 de ubicacion suficiente, usa ambiguities. Target staff no autoriza service;
 target packing no autoriza load sin evidencia independiente de objetos.
 

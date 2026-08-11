@@ -11,12 +11,15 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--case-id", action="append", dest="case_ids")
+        parser.add_argument("--single-case", action="store_true")
         parser.add_argument("--output-root", type=Path, default=Path("reports/ai_eval"))
 
     def handle(self, *args, **options):
         ids = options["case_ids"] or ["s17", "s54", "s47"]
-        if len(ids) != 3 or len(set(ids)) != 3:
-            raise CommandError("Smoke V3 exige exactamente 3 case-id distintos.")
+        expected_count = 1 if options["single_case"] else 3
+        if len(ids) != expected_count or len(set(ids)) != expected_count:
+            raise CommandError(
+                f"Smoke V3 exige exactamente {expected_count} case-id distintos.")
         index = {case["id"]: case for case in v3_development_cases()}
         missing = [case_id for case_id in ids if case_id not in index]
         if missing:
@@ -26,4 +29,4 @@ class Command(BaseCommand):
             raise CommandError("Todos los casos smoke requieren QuestionTarget.")
         run_dir, summary = run_v3_cases(cases, options["output_root"])
         self.stdout.write(self.style.SUCCESS(
-            f"V3_SMOKE={summary['records_written']}/3 RUN={run_dir}"))
+            f"V3_SMOKE={summary['records_written']}/{expected_count} RUN={run_dir}"))

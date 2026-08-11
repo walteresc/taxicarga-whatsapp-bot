@@ -25,7 +25,7 @@ FIELD_CLASSES = {
     "packing_required": "service_option", "packing_mode": "service_option",
     "disassembly_required": "service_option",
     "assembly_required": "service_option", "load": "observational",
-    "access_observation": "observational", "truck_access": "derived",
+    "access_observation": "observational", "truck_access": "direct_fact",
     "carry_distance_m": "derived",
 }
 
@@ -41,7 +41,9 @@ class DeltaValidationV3Result:
 def _matches_target(targets, field, ref=None):
     aliases = {"packing_mode": {"packing", "packing_mode"},
                "packing_required": {"packing_required"},
-               "staff_required": {"staff_required", "staff_quantity"}}
+               "staff_required": {"staff_required", "staff_quantity"},
+               # A truck-access question may receive a safer observation instead.
+               "access_observation": {"access_observation", "truck_access"}}
     names = aliases.get(field, {field})
     return any(target.field in names and (
         target.ref in (None, "both") or ref in (None, target.ref)

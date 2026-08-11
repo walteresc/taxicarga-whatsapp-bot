@@ -126,6 +126,54 @@ class DeltaValidatorV3Tests(SimpleTestCase):
         result = self.validate(delta, "origen 30 metros")
         self.assertIn(DERIVED_FIELD_FORBIDDEN, [item.reason for item in result.rejected])
 
+    def test_explicit_direct_truck_access_is_accepted(self):
+        delta = self.delta(locations=[{"ref":"origin","ref_evidence":"acceso origen",
+            "ref_evidence_type":"explicit","set":{"truck_access":{"value":True,
+            "evidence":"acceso origen","evidence_type":"explicit"}}}])
+        result = self.validate(delta, "acceso origen")
+        self.assertTrue(result.accepted.changes.locations[0].set.truck_access.value)
+
+    def test_contextual_truck_access_target_is_accepted(self):
+        delta = self.delta(locations=[{"ref":"origin","ref_evidence":"sí",
+            "ref_evidence_type":"explicit_contextual","set":{"truck_access":{"value":True,
+            "evidence":"sí","evidence_type":"explicit_contextual"}}}])
+        result = self.validate(delta, "sí", [QuestionTarget("truck_access", "origin")])
+        self.assertTrue(result.accepted.changes.locations[0].set.truck_access.value)
+
+    def test_inferred_truck_access_is_rejected(self):
+        delta = self.delta(locations=[{"ref":"origin","ref_evidence":"queda lejos",
+            "ref_evidence_type":"inferred","set":{"truck_access":{"value":False,
+            "evidence":"queda lejos","evidence_type":"inferred"}}}])
+        result = self.validate(delta, "queda lejos")
+        self.assertFalse(result.accepted.changes.locations)
+        self.assertIn("INFERRED_NOT_ALLOWED", [item.reason for item in result.rejected])
+
+    def test_explicit_endpoint_access_observation_is_accepted_without_boolean(self):
+        delta = self.delta(locations=[{"ref":"destination","ref_evidence":"en destino",
+            "ref_evidence_type":"explicit","set":{"access_observation":{
+            "value":"vehículo queda lejos","evidence":"en destino vehículo queda lejos",
+            "evidence_type":"explicit"}}}])
+        result = self.validate(delta, "en destino vehículo queda lejos")
+        accepted = result.accepted.changes.locations[0].set
+        self.assertEqual(accepted.access_observation.value, "vehículo queda lejos")
+        self.assertIsNone(accepted.truck_access)
+
+    def test_truck_target_allows_boolean_and_asymmetric_observation(self):
+        delta = self.delta(locations=[
+            {"ref":"origin","ref_evidence":"origen sí","ref_evidence_type":"explicit_contextual",
+             "set":{"truck_access":{"value":True,"evidence":"origen sí",
+             "evidence_type":"explicit_contextual"}}},
+            {"ref":"destination","ref_evidence":"destino queda lejos",
+             "ref_evidence_type":"explicit_contextual","set":{"access_observation":{
+             "value":"queda lejos","evidence":"destino queda lejos",
+             "evidence_type":"explicit_contextual"}}},
+        ])
+        result = self.validate(delta, "origen sí, destino queda lejos",
+                               [QuestionTarget("truck_access", "both")])
+        self.assertTrue(result.accepted.changes.locations[0].set.truck_access.value)
+        self.assertEqual(result.accepted.changes.locations[1].set.access_observation.value,
+                         "queda lejos")
+
     @patch("apps.ia.delta_extractor_v3.build_provider")
     def test_fake_provider_receives_target_and_v3_schema(self, build_provider):
         response = self.delta()

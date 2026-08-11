@@ -419,3 +419,14 @@
 - V3 smoke `20260811T205214Z_v3_smoke`: 3/3 schema y artifacts; 5311 tokens.
 - s17 y s54 semánticamente correctos. s47 conserva observaciones, pero evaluator/label legacy
   exige `origin.truck_access=true`; gate medido queda 2/3. Run 100 todavía NO listo.
+
+# FASE 6A - s47 access adjudication (2026-08-11)
+
+- `truck_access` reclasificado como direct fact condicionado por procedencia; inferred sigue rechazado.
+- `carry_distance_m` permanece derived/prohibido. Validator no interpreta español.
+- s47 target corregido desde objetivo original a `truck_access/both`; expected no cambió.
+- Observación asimétrica permitida como respuesta segura a target de acceso, sin fabricar boolean.
+- Contrato fake: 20/20. Suite completa verde antes del único smoke real.
+- Smoke real s47 `20260811T212154Z_v3_smoke`: PASS, TP=2, FP=0, FN=0,
+  schema válido, 1833 tokens, costo estimado USD 0.0009828.
+- READY para autorizar development run 100; todavía no ejecutado.

@@ -7,6 +7,7 @@ from pathlib import Path
 
 from django.conf import settings
 
+from .benchmark_cost import openai_benchmark_cost
 from .delta_context import DeltaContext
 from .delta_extractor_v3 import extract_conversation_delta_v3
 from .delta_snapshot import CanonicalSnapshot
@@ -116,13 +117,15 @@ def run_v3_cases(cases, output_root, *, run_suffix="v3_smoke"):
             records.append(record); raw_scores.append({"score": raw_score})
             accepted_scores.append({"score": accepted_score})
     latencies = [row["latency_ms"] for row in records]
+    tokens = {key: sum(row["usage"][key] for row in records)
+              for key in ("input_tokens", "output_tokens", "total_tokens")}
     summary = {
         "run_id": run_id, "records_written": len(records),
         "api_calls": len(records), "schema_valid": len(records),
         "question_target_included": all(row["input"]["question_targets"] for row in records),
         "raw": aggregate(raw_scores), "accepted": aggregate(accepted_scores),
-        "tokens": {key: sum(row["usage"][key] for row in records)
-                   for key in ("input_tokens", "output_tokens", "total_tokens")},
+        "tokens": tokens,
+        "cost": openai_benchmark_cost(tokens["input_tokens"], tokens["output_tokens"]),
         "latency": {"average_ms": statistics.mean(latencies),
                     "p50_ms": statistics.median(latencies), "max_ms": max(latencies)},
     }

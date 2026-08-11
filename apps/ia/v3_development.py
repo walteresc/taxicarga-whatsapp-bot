@@ -25,7 +25,7 @@ QUESTION_TARGETS_BY_CASE = {
     "s15": [("elevator", "both")], "s16": [("elevator", "origin")],
     "s17": [("elevator", "origin")], "s18": [("access_observation", None)],
     "s21": [("elevator", "both")], "s22": [("elevator", "both")],
-    "s47": [("access_observation", "both")], "s48": [("elevator", "both")],
+    "s47": [("truck_access", "both")], "s48": [("elevator", "both")],
     "s49": [("access_observation", "both")],
     "s50": [("district", "destination")],
     "s54": [("load", None), ("floor", "origin")],
