@@ -8,7 +8,9 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from apps.clientes.models import Cliente, Conversacion
-from apps.leads.models import Lead
+from apps.ia.conversation_policy import quote_missing_fields
+from apps.leads.cargo import effective_load_detail
+from apps.leads.models import Lead, LeadUbicacion
 from apps.whatsapp.services import send_whatsapp_message
 from apps.whatsapp.models import EvidenciaWhatsapp
 from apps.whatsapp.models import MensajeWhatsappProcesado
@@ -329,6 +331,72 @@ class WhatsappWebhookTests(TestCase):
         self.assertTrue(Cliente.objects.filter(telefono="+51955555555").exists())
         self.assertEqual(Conversacion.objects.count(), 1)
         send_mock.assert_called_once()
+
+    @override_settings(OPENAI_API_KEY="")
+    @patch("apps.ia.conversation_engine.extract_lead_with_ai")
+    @patch("apps.whatsapp.views.send_whatsapp_message")
+    def test_pipeline_real_no_convierte_cantidad_de_cajas_en_piso(self, send_mock, ai_mock):
+        send_mock.return_value = {"messages": [{"id": "wamid.reply"}]}
+        ai_mock.return_value = {
+            "campos_detectados": {
+                "tipo_servicio": "mudanza",
+                "distrito_origen": "Surco",
+                "distrito_destino": "Miraflores",
+                "lista_objetos": "una cama, una refrigeradora y unas 15 cajas",
+                "piso_destino": 15,
+            },
+            "faltantes": [],
+            "confianza": "media",
+        }
+        message = (
+            "Hola, quiero una mudanza de Surco a Miraflores.\n"
+            "Tengo una cama, una refrigeradora y unas 15 cajas."
+        )
+        payload = {
+            "entry": [{
+                "changes": [{
+                    "value": {
+                        "metadata": {"phone_number_id": self.channel.phone_number_id},
+                        "messages": [{
+                            "from": "51955551515",
+                            "id": "wamid.regression-15-boxes",
+                            "type": "text",
+                            "text": {"body": message},
+                        }],
+                    }
+                }]
+            }]
+        }
+
+        response = self.client.post(
+            reverse("whatsapp-webhook"),
+            payload,
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        lead = Lead.objects.get(cliente__telefono="+51955551515")
+        self.assertEqual(lead.tipo_servicio, "mudanza")
+        self.assertEqual((lead.distrito_origen, lead.distrito_destino), ("Surco", "Miraflores"))
+        self.assertEqual((lead.piso_origen, lead.piso_destino), (None, None))
+        self.assertEqual(effective_load_detail(lead), "Cama, refrigeradora y aprox. 15 cajas")
+        self.assertTrue(lead.incluye_personal_carga)
+        self.assertEqual(lead.modalidad_servicio, "sin embalaje")
+        self.assertFalse(lead.requiere_desarmado)
+        self.assertFalse(lead.requiere_armado)
+        locations = list(lead.ubicaciones.values_list("tipo", "distrito", "piso"))
+        self.assertEqual(locations, [
+            (LeadUbicacion.ORIGEN, "Surco", None),
+            (LeadUbicacion.DESTINO, "Miraflores", None),
+        ])
+        missing = quote_missing_fields(lead, requires_truck_access=True)
+        self.assertIn("ubicacion_0_piso", missing)
+        self.assertIn("ubicacion_1_piso", missing)
+        reply = Conversacion.objects.latest("id").mensaje_salida.lower()
+        self.assertIn("piso", reply)
+        self.assertIn("ascensor", reply)
+        for forbidden in ("nombre", "fecha", "dni", "dirección exacta", "embalaje", "operarios"):
+            self.assertNotIn(forbidden, reply)
 
     @override_settings(OPENAI_API_KEY="")
     @patch("apps.whatsapp.views.send_whatsapp_message")

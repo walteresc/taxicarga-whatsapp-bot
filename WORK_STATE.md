@@ -244,3 +244,20 @@
 - Recomendación: mantener OpenAI; no híbrido; ampliar/corregir dataset y resolver
   non-thinking DeepSeek antes de otra decisión. Providers operativos no cambiaron.
 - Tests focales harness/providers: 13/13 OK. Worker detenido. Sin WhatsApp ni push.
+
+# Cierre pipeline real `15 cajas` (2026-08-10)
+
+- Causa confirmada: regex de piso aceptaba números desnudos dentro del segmento de
+  destino; `15 cajas` terminó como piso 15. Merge IA también carecía de barrera de
+  evidencia semántica. Fix funcional está en `dc6e65b`.
+- Test E2E nuevo pasa el mensaje físico exacto por webhook y simula además una IA
+  que propone `piso_destino=15`; merge lo rechaza, persiste ruta/carga/defaults y
+  crea `LeadUbicacion` sin pisos.
+- Lead 106 verificado: mudanza Surco→Miraflores, carga limpia, pisos/accesos vacíos,
+  defaults correctos, precio vacío y respuesta preparada natural.
+- Chatwoot conversation TEST 2 verificada por lectura real: atributos correctos,
+  accesos/precio vacíos y labels `[]`; `cotizado` era residuo sandbox ya conciliado,
+  no bug comercial activo. Evidencia histórica conservada.
+- Regresiones focales: 435/435 OK; 33 omitidas. Suite completa: 601/601 OK;
+  33 PostgreSQL-only omitidas.
+- Meta sends: 0. Outbox permanece pending, attempts=0. Worker detenido. Sin push.
