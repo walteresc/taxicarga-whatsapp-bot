@@ -15,6 +15,7 @@ from apps.ia.conversation_engine import (
     handle_image_inventory,
     handle_incoming_message,
     next_missing_question_for,
+    next_question_targets_for,
 )
 from apps.ia.image_analyzer import analyze_moving_image
 from apps.leads.models import Lead
@@ -190,8 +191,13 @@ def _receive_message(request):
                     cliente, message, canonical_context=context,
                     generation_id=authorization.generation.id,
                 )
+                question_targets = []
+                if active_lead:
+                    active_lead.refresh_from_db()
+                    question_targets = next_question_targets_for(active_lead)
                 _generation, outbox, published = finalize_generation(
-                    authorization.generation.id, result_text=reply
+                    authorization.generation.id, result_text=reply,
+                    question_targets=question_targets,
                 )
             except Exception as exc:
                 fail_generation(authorization.generation.id, exc)

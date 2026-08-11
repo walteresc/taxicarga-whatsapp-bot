@@ -381,3 +381,21 @@
   falsos positivos y agregó ese falso negativo.
 - Tokens run completo: 147,152 input + 12,802 output = 159,954. Latencia avg 4.44 s,
   p50 3.11 s, p95 7.20 s, max 35.25 s. Validator V3 no implementado.
+
+## Validator V3 offline + QuestionTarget (2026-08-11)
+
+- `QuestionTarget(field, ref, operation)` nace en `ConversationDecision`, viaja en
+  metadata de generación/mensaje y se persiste en `MensajeWhatsApp.question_targets`;
+  `DeltaContext` lo consume sin parsear la pregunta visible.
+- V3 clasifica fields, cierra respuestas contextuales al target, bloquea derivados,
+  evita modalidad específica ante target `packing_required`, normaliza `inferred` a
+  contextual solo cuando field/ref coinciden y conserva acceso sin endpoint como
+  ambigüedad.
+- Replay offline sobre run `20260811T192932Z_delta_v2_evidence`, cero APIs. Histórico
+  no tenía targets: 0/100 disponibles; 45 casos contextuales afectados. V3 with s02:
+  precision 0.9351, recall 0.6050, F1 0.7347, safety 95/100. Without s02: precision
+  0.9333, recall 0.6034, F1 0.7330, safety 94/99.
+- Unsafe aceptados bajan 10→5: 3 cierres de atributo pendientes y 2 especificidades
+  de packing. Wrong endpoint aceptado 0; derived/numeric aceptado 0. Caída de recall
+  es esperada al no inventar targets históricos. Requiere nuevo run GPT con metadata
+  V3 real antes de juzgar recall o activación.

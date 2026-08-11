@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+import re
 from typing import Any
 
 from apps.leads.route import route_for_lead
@@ -12,6 +13,16 @@ BOOKING = "booking"
 
 
 @dataclass(frozen=True)
+class QuestionTarget:
+    field: str
+    ref: str | None = None
+    operation: str = "set"
+
+    def as_dict(self):
+        return {"field": self.field, "ref": self.ref, "operation": self.operation}
+
+
+@dataclass(frozen=True)
 class ConversationDecision:
     phase: str
     goal: str
@@ -20,6 +31,7 @@ class ConversationDecision:
     pricing_result: Any = None
     must_handoff: bool = False
     response_constraints: tuple[str, ...] = field(default_factory=tuple)
+    question_targets: tuple[QuestionTarget, ...] = field(default_factory=tuple)
 
 
 def effective_quote_values(lead):
@@ -149,7 +161,38 @@ def decide_conversation(lead, requires_truck_access=False, must_handoff=False):
         known_data=known,
         missing_relevant_data=missing,
         response_constraints=("Breve", "No inventar precio", "No pedir datos administrativos"),
+        question_targets=_question_targets(missing),
     )
+
+
+def _question_targets(missing):
+    targets = []
+    direct = {
+        "tipo_servicio": ("service", None), "lista_objetos": ("load", None),
+        "dimension_carga": ("load", None),
+        "distrito_origen": ("district", "origin"),
+        "distrito_destino": ("district", "destination"),
+        "piso_origen": ("floor", "origin"), "piso_destino": ("floor", "destination"),
+        "ascensor_origen": ("elevator", "origin"),
+        "ascensor_destino": ("elevator", "destination"),
+        "camion_llega_origen": ("access_observation", "origin"),
+        "camion_llega_destino": ("access_observation", "destination"),
+    }
+    for name in missing:
+        mapped = direct.get(name)
+        if mapped:
+            targets.append(QuestionTarget(*mapped))
+            continue
+        match = re.match(r"ubicacion_(\d+)_(distrito|piso|ascensor|acceso_camion)$", name)
+        if match:
+            order, field_name = match.groups()
+            field_name = "access_observation" if field_name == "acceso_camion" else field_name
+            targets.append(QuestionTarget(field_name, f"location:{order}"))
+    return tuple(targets)
+
+
+def question_targets_for_decision(decision):
+    return [target.as_dict() for target in decision.question_targets]
 
 
 def _goal_for(missing):

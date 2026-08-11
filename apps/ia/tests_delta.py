@@ -90,6 +90,10 @@ class DeltaArchitectureTests(TestCase):
                 "¿En Surco tienen ascensor? Y lo de estacionarse a una cuadra, "
                 "¿corresponde a Surco, Miraflores o ambos?"
             ),
+            question_targets=[
+                {"field": "elevator", "ref": "origin", "operation": "set"},
+                {"field": "access_observation", "ref": None, "operation": "set"},
+            ],
         )
         self.customer_text = (
             "si, asensor en el origen y enel destino el carro se estaciona un "
@@ -139,6 +143,8 @@ class DeltaArchitectureTests(TestCase):
 
         self.assertEqual(context.last_bot_question, self.bot_message.contenido)
         self.assertEqual(context.payload["customer_message"], self.customer_text)
+        self.assertEqual(context.question_targets, tuple(self.bot_message.question_targets))
+        self.assertEqual(context.payload["last_question_targets"], self.bot_message.question_targets)
         recent_texts = [turn["text"] for turn in context.payload["recent_turns"]]
         self.assertNotIn(self.customer_text, recent_texts)
         self.assertNotIn(self.bot_message.contenido, recent_texts)

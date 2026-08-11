@@ -29,7 +29,7 @@ def start_generation(conversation_id, *, request_key, input_message=None, correl
         return generation
 
 
-def finalize_generation(generation_id, *, result_text):
+def finalize_generation(generation_id, *, result_text, question_targets=None):
     with transaction.atomic():
         generation_ref = BotGeneration.objects.only("conversation_id").get(pk=generation_id)
         ConversacionWhatsApp.objects.select_for_update(of=("self",)).get(
@@ -68,6 +68,8 @@ def finalize_generation(generation_id, *, result_text):
             source_key=f"bot-generation:{generation.id}"
         ).first()
         metadata = {"quote_revision_id": revision.id} if revision else {}
+        if question_targets:
+            metadata["question_targets"] = question_targets
         message = IntegrationMessage.objects.create(
             conversation_id=generation.conversation_id,
             provider=Provider.INTERNAL,

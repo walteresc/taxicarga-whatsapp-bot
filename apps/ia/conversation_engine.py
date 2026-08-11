@@ -527,6 +527,15 @@ def next_missing_question_for(cliente):
     return _next_missing_question(lead)
 
 
+def next_question_targets_for(lead):
+    from .conversation_policy import question_targets_for_decision
+    decision = decide_conversation(
+        lead,
+        requires_truck_access=bool(lead.lista_objetos and _requires_truck_access(lead)),
+    )
+    return question_targets_for_decision(decision) if decision.missing_relevant_data else []
+
+
 def _get_active_lead(cliente):
     lead = (
         cliente.leads.exclude(estado__in=[Lead.CERRADO, Lead.PERDIDO])

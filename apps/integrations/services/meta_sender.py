@@ -168,6 +168,7 @@ def process_meta_outbox_event(event_id, *, sender=send_whatsapp_message, worker_
                         else MensajeWhatsApp.ORIGEN_BOT
                     ),
                     "contenido": message.text,
+                    "question_targets": message.metadata.get("question_targets", []),
                     "estado": "enviado",
                 },
             )

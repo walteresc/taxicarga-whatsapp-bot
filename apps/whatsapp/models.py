@@ -384,6 +384,7 @@ class MensajeWhatsApp(models.Model):
     origen = models.CharField(max_length=10, choices=ORIGENES)
     tipo = models.CharField(max_length=20, choices=TIPOS, default="texto")
     contenido = models.TextField(blank=True)
+    question_targets = models.JSONField(default=list, blank=True)
     evidencia = models.ForeignKey(
         EvidenciaWhatsapp,
         on_delete=models.SET_NULL,

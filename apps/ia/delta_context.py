@@ -11,6 +11,7 @@ class DeltaContext:
     payload: dict
     last_bot_question: str
     recent_turn_count: int
+    question_targets: tuple[dict, ...] = ()
 
 
 def build_delta_context(
@@ -34,6 +35,7 @@ def build_delta_context(
         None,
     )
     last_bot = last_bot_row.contenido if last_bot_row else ""
+    question_targets = tuple(last_bot_row.question_targets or ()) if last_bot_row else ()
     recent = [
         {"author": AUTHOR_LABELS[row.origen], "text": row.contenido}
         for row in reversed(rows)
@@ -46,9 +48,11 @@ def build_delta_context(
             "state_version": snapshot.state_version,
             "state": snapshot.state,
             "last_bot_question": last_bot or None,
+            "last_question_targets": list(question_targets),
             "customer_message": customer_message,
             "recent_turns": recent,
         },
         last_bot_question=last_bot,
         recent_turn_count=len(recent),
+        question_targets=question_targets,
     )
