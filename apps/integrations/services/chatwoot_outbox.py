@@ -6,7 +6,7 @@ from ..models import IntegrationOutboxEvent
 from .chatwoot_projection import sync_chatwoot_conversation
 
 
-def process_chatwoot_inbound_event(event_id, *, client=None):
+def process_chatwoot_message_event(event_id, *, client=None):
     with transaction.atomic():
         event = IntegrationOutboxEvent.objects.select_for_update().get(pk=event_id)
         if event.status == OutboxStatus.SENT:
@@ -36,3 +36,8 @@ def process_chatwoot_inbound_event(event_id, *, client=None):
         error_code="", error_summary="", locked_at=None, locked_by="",
     )
     return "sent"
+
+
+def process_chatwoot_inbound_event(event_id, *, client=None):
+    """Backward-compatible name for existing inbound callers."""
+    return process_chatwoot_message_event(event_id, client=client)

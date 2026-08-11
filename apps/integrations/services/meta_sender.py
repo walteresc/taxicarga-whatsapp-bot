@@ -157,7 +157,7 @@ def process_meta_outbox_event(event_id, *, sender=send_whatsapp_message, worker_
                 external_id=external_id,
                 defaults={"logical_message": message},
             )
-            MensajeWhatsApp.objects.get_or_create(
+            whatsapp_message, _ = MensajeWhatsApp.objects.get_or_create(
                 meta_message_id=external_id,
                 defaults={
                     "conversacion": conversation,
@@ -171,6 +171,8 @@ def process_meta_outbox_event(event_id, *, sender=send_whatsapp_message, worker_
                     "estado": "enviado",
                 },
             )
+            from .live_sync import queue_outgoing_message_projection
+            queue_outgoing_message_projection(whatsapp_message)
             commercial = event.event_type == "send_commercial_quote"
         if commercial:
             from apps.cotizador.delivery import mark_commercial_outbox_sent

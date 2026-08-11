@@ -63,3 +63,21 @@ def project_new_incoming(message, *, client=None):
             "safe_payload": {"message_ids": [message.id]},
         },
     )
+
+
+def queue_outgoing_message_projection(message):
+    """Queue one durable Chatwoot projection after Meta accepts an outgoing message."""
+    if not message or message.direccion != MensajeWhatsApp.SALIENTE:
+        return None, False
+    if not is_feature_enabled(message.conversacion.channel, "live_sync"):
+        return None, False
+    return IntegrationOutboxEvent.objects.get_or_create(
+        destination=Provider.CHATWOOT,
+        destination_scope=str(message.conversacion.channel_id),
+        idempotency_key=f"chatwoot-outbound:{message.id}",
+        defaults={
+            "event_type": "sync_outbound_message",
+            "conversation": message.conversacion,
+            "safe_payload": {"message_ids": [message.id]},
+        },
+    )
