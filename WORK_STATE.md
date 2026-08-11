@@ -365,3 +365,19 @@
   Retry real por request no es observable con instrumentación actual.
 - Focales holdout/V2: 15/15 OK; IA, integrations y suite completa verdes. Meta sends
   0, worker detenido. Requiere restaurar credencial OpenAI antes de repetir Fase 4.
+
+## V2 evidence run para diseño V3 (2026-08-11)
+
+- Harness inmutable JSONL agregado. Run completo:
+  `reports/ai_eval/20260811T192932Z_delta_v2_evidence/` (ignorado por Git, no
+  eliminado). Dataset SHA-256 inicial/final:
+  `95eadd86d6875bdec3e7b3f8d315c363c8c719d8bfdc9a9178504ba39f5c7364`.
+- 100/100 API y schemas válidos. Raw: precision 0.8919, recall 0.8250, F1 0.8571,
+  safety 88/100. V2 accepted: precision 0.9074, recall 0.8167, F1 0.8596,
+  safety 90/100.
+- Evidencia reconstruible: 10 accepted unsafe (7 attribute/field closure, 2
+  contextual specificity, 1 endpoint ambiguity) y 1 false rejection por propuesta
+  contextual correcta etiquetada por modelo como `inferred`. Validator bloqueó 2
+  falsos positivos y agregó ese falso negativo.
+- Tokens run completo: 147,152 input + 12,802 output = 159,954. Latencia avg 4.44 s,
+  p50 3.11 s, p95 7.20 s, max 35.25 s. Validator V3 no implementado.
