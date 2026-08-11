@@ -315,3 +315,20 @@
 - Flags desacoplados: `AI_DELTA_SHADOW_MODE=true` encola auditoría shadow aunque
   `AI_DELTA_EXTRACTION_ENABLED=false`; delta nunca se aplica a Lead, pricing,
   ConversationDecision ni respuesta. Meta sends: 0. Worker detenido.
+
+## Fase 2 comparación shadow (2026-08-11)
+
+- Harness no persistente + dataset anonimizado de 20 casos agregados. Legacy medido
+  con `extract_lead_data` determinístico; autorización OpenAI usada solo para delta.
+- Legacy: 4/20 casos, precision 0.7368, recall 0.4000, F1 0.5185, 16/20 seguros.
+- IA-first: 13/20 casos, precision 0.6875, recall 0.9429, F1 0.7952, 13/20 seguros;
+  20/20 schemas válidos, cero API errors.
+- IA-first ganó comprensión, pero perdió semantic safety: sobreinfirió 15 campos y
+  falló Message 17 al propagar ascensor/acceso/100 m sin evidencia ni ambigüedad.
+- Message 19 real, sin persistir: origin elevator=true, destination elevator=false,
+  observación de estacionamiento lejano en destination; delta repitió estado conocido.
+- Uso dataset: 18,571 input + 2,208 output = 20,779 tokens; latencia media 6.62 s,
+  mediana 3.68 s, p95/máxima 24.06 s. Costo estimado USD 0.0109612 usando tarifas
+  oficiales GPT-4.1 mini; USD 0.54806 por 1,000 extracciones.
+- Recomendación: revisar arquitectura/contrato delta antes de ampliar shadow; no
+  activar operativo. Suite 623/623 OK; 33 omitidas. Meta sends 0. Worker detenido.
