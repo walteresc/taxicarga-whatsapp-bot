@@ -430,3 +430,16 @@
 - Smoke real s47 `20260811T212154Z_v3_smoke`: PASS, TP=2, FP=0, FN=0,
   schema válido, 1833 tokens, costo estimado USD 0.0009828.
 - READY para autorizar development run 100; todavía no ejecutado.
+
+# FASE 6B/6C - V3 development + offline adjudication (2026-08-11)
+
+- Development run `20260811T213255Z_v3_development_100`: 100/100 API y schema OK,
+  174211 tokens, costo estimado USD 0.085414; runtime flags intactos.
+- Original accepted: P 81.05%, R 64.17%, F1 71.63%, safety 82/100.
+- Canonical evaluator offline: packing legacy/V3 normalizado sin mutar labels ni runtime.
+- Canonical raw: P 89.34%, R 83.85%, F1 86.51%, safety 87/100.
+- Canonical accepted: P 90.53%, R 66.15%, F1 76.44%, safety 91/100.
+- Human review: s02, s16, s25, s53. Excluding: accepted P 91.21%, R 66.94%,
+  F1 77.21%, safety 88/96.
+- Rejections adjudicados: 18 correctos, 16 falsos. V3.1 todavía no implementado.
+- FASE 6C nuevas API calls: 0.
