@@ -620,7 +620,10 @@ def _grouped_question(decision):
         ):
             return "¿En qué piso está cada punto de la ruta y tienen ascensor?"
         if floors or elevators or any(field.endswith(("_piso", "_ascensor")) for field in missing):
-            return "En que piso esta el origen y a que piso llega en destino? Tienen ascensor?"
+            question = "¿En qué pisos están ambos lugares y tienen ascensor?"
+            if truck or any(field.endswith("_acceso_camion") for field in missing):
+                question += " ¿El camión puede estacionarse cerca para cargar y descargar?"
+            return question
         if truck or any(field.endswith("_acceso_camion") for field in missing):
             return "En origen y destino, el camion puede acercarse a la puerta?"
     return "¿Me das un poco más de detalle del servicio?"

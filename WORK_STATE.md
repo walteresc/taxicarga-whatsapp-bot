@@ -261,3 +261,11 @@
 - Regresiones focales: 435/435 OK; 33 omitidas. Suite completa: 601/601 OK;
   33 PostgreSQL-only omitidas.
 - Meta sends: 0. Outbox permanece pending, attempts=0. Worker detenido. Sin push.
+
+## Ajuste UX accesos (2026-08-10)
+
+- Fallback `collect_access` pregunta pisos y ascensores de ambos extremos; agrega
+  cercanía del camión solo cuando contrato de faltantes la requiere.
+- Focales afectados: 25/25 OK.
+- Respuesta TEST del mensaje 15 sustituida sobre misma generación/mensaje lógico;
+  outbox único preservado pending, attempts=0. Meta sends=0. Worker detenido.

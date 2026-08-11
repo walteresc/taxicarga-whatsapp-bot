@@ -393,8 +393,11 @@ class WhatsappWebhookTests(TestCase):
         self.assertIn("ubicacion_0_piso", missing)
         self.assertIn("ubicacion_1_piso", missing)
         reply = Conversacion.objects.latest("id").mensaje_salida.lower()
-        self.assertIn("piso", reply)
+        self.assertIn("pisos", reply)
+        self.assertIn("ambos lugares", reply)
         self.assertIn("ascensor", reply)
+        self.assertIn("camión", reply)
+        self.assertIn("cargar y descargar", reply)
         for forbidden in ("nombre", "fecha", "dni", "dirección exacta", "embalaje", "operarios"):
             self.assertNotIn(forbidden, reply)
 
