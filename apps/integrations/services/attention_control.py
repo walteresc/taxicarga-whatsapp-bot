@@ -25,9 +25,12 @@ class AttentionControlResult:
 
 def reflect_attention_control(mapping, value, *, client=None):
     client = client or ChatwootClient()
+    remote = client.get_conversation(mapping.external_conversation_id)
+    attributes = dict(remote.get("custom_attributes") or {}) if isinstance(remote, dict) else {}
+    attributes[ATTRIBUTE_KEY] = value
     client.update_conversation_custom_attributes(
         mapping.external_conversation_id,
-        {ATTRIBUTE_KEY: value},
+        attributes,
     )
 
 

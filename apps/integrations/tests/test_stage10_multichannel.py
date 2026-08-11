@@ -126,14 +126,19 @@ class Stage10MultiChannelTests(TestCase):
         event_a, _ = queue_conversation_data_projection(self.conversation_a.id)
         event_b, _ = queue_conversation_data_projection(self.conversation_b.id)
         client = Mock()
+        client.get_conversation.return_value = {
+            "custom_attributes": {"taxicarga_attention_control": "Bot"}
+        }
 
         self.assertEqual(process_conversation_data_event(event_a.id, client=client), "sent")
         self.assertEqual(process_conversation_data_event(event_b.id, client=client), "sent")
         calls = client.update_conversation_custom_attributes.call_args_list
         self.assertEqual(calls[0].args[0], "20")
         self.assertEqual(calls[0].args[1]["taxicarga_route"], "Surco → Miraflores")
+        self.assertEqual(calls[0].args[1]["taxicarga_attention_control"], "Bot")
         self.assertEqual(calls[1].args[0], "21")
         self.assertEqual(calls[1].args[1]["taxicarga_route"], "Callao → San Isidro")
+        self.assertEqual(calls[1].args[1]["taxicarga_attention_control"], "Bot")
 
     def test_return_a_does_not_modify_b(self):
         ChannelIntegrationPolicy.objects.create(

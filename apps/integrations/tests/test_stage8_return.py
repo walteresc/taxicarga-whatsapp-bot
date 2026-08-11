@@ -17,7 +17,11 @@ from apps.integrations.models import (
 )
 from apps.integrations.providers.chatwoot.exceptions import ChatwootConnectionError
 from apps.integrations.providers.chatwoot.webhook import process_webhook
-from apps.integrations.services.attention_control import apply_chatwoot_return_request
+from apps.integrations.services.attention_control import (
+    ATTRIBUTE_BOT,
+    apply_chatwoot_return_request,
+    reflect_attention_control,
+)
 from apps.integrations.services.bot_context import build_bot_context
 from apps.integrations.services.bot_runtime import authorize_inbound_trigger
 from apps.integrations.services.state_machine import return_to_bot, take_conversation
@@ -75,6 +79,22 @@ class Stage8ReturnTests(IntegrationTestCase):
             }],
             **({"performer": {"id": 3, "type": "user"}} if performer else {}),
         }
+
+    def test_attention_projection_preserves_existing_context(self):
+        client = Mock()
+        client.get_conversation.return_value = {
+            "custom_attributes": {"taxicarga_route": "Surco → Miraflores"}
+        }
+
+        reflect_attention_control(self.mapping, ATTRIBUTE_BOT, client=client)
+
+        client.update_conversation_custom_attributes.assert_called_once_with(
+            "13",
+            {
+                "taxicarga_route": "Surco → Miraflores",
+                "taxicarga_attention_control": "Bot",
+            },
+        )
 
     def test_return_is_direct_single_version_and_has_no_bot_work(self):
         self.control.refresh_from_db()

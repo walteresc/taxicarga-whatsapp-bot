@@ -109,8 +109,11 @@ def process_conversation_data_event(event_id, *, client=None):
         event.save(update_fields=["status", "attempts", "updated_at"])
     api = client or ChatwootClient()
     try:
+        remote = api.get_conversation(mapping.external_conversation_id)
+        attributes = dict(remote.get("custom_attributes") or {}) if isinstance(remote, dict) else {}
+        attributes.update(event.safe_payload["attributes"])
         api.update_conversation_custom_attributes(
-            mapping.external_conversation_id, event.safe_payload["attributes"]
+            mapping.external_conversation_id, attributes
         )
     except Exception as exc:
         IntegrationOutboxEvent.objects.filter(pk=event_id).update(
