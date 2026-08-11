@@ -9,6 +9,7 @@ from django.utils import timezone
 from apps.clientes.models import Cliente
 from apps.cotizador.models import ServicioHistorico
 from apps.ia.conversation_engine import handle_incoming_message
+from apps.ia.conversation_policy import quote_missing_fields
 from apps.ia.data_extractor import extract_lead_data, extract_route_locations
 from apps.leads.models import Lead
 from apps.ia.models import EjemploConversacion
@@ -256,7 +257,7 @@ class ConversationEngineTests(TestCase):
             ).lower(),
         )
         self.assertIn(
-            "camion",
+            "estacionarse",
             handle_incoming_message(cliente, "cama, refrigeradora y 10 cajas").lower(),
         )
         self.assertIn(
@@ -600,7 +601,7 @@ class ConversationEngineTests(TestCase):
 
         lead.refresh_from_db()
         self.assertEqual(lead.piso_destino, 1)
-        self.assertIn("camion", reply.lower())
+        self.assertIn("estacionarse", reply.lower())
 
     def test_pregunta_un_solo_componente_pendiente_por_turno(self):
         cliente = Cliente.objects.create(telefono="51955550004")
@@ -1282,10 +1283,56 @@ class ConversationEngineTests(TestCase):
         self.assertEqual(lead.piso_destino, 3)
         self.assertIsNone(lead.ascensor_origen)
         self.assertIsNone(lead.ascensor_destino)
-        self.assertIn("destino", reply.lower())
+        self.assertIn("san miguel", reply.lower())
         self.assertIn("ascensor", reply.lower())
         self.assertNotIn("origen", reply.lower())
         self.assertNotIn("en en", reply.lower())
+
+    def test_message_17_keeps_endpoint_evidence_local_and_clarifies_truck(self):
+        cliente = Cliente.objects.create(telefono="51955550099")
+        lead = Lead.objects.create(
+            cliente=cliente,
+            tipo_servicio="mudanza",
+            distrito_origen="Surco",
+            distrito_destino="Miraflores",
+            lista_objetos="Cama, refrigeradora y aprox. 15 cajas",
+            incluye_personal_carga=True,
+            modalidad_servicio="sin embalaje",
+            requiere_desarmado=False,
+            requiere_armado=False,
+        )
+        text = (
+            "Surco 3er piso y en Miraflores 2do piso sin ascensor.\n"
+            "El camión se estacioa a una cuadra"
+        )
+
+        reply = handle_incoming_message(cliente, text)
+
+        lead.refresh_from_db()
+        locations = list(lead.ubicaciones.order_by("orden"))
+        self.assertEqual(lead.piso_origen, 3)
+        self.assertIsNone(lead.ascensor_origen)
+        self.assertEqual(lead.piso_destino, 2)
+        self.assertFalse(lead.ascensor_destino)
+        self.assertIsNone(lead.camion_llega_origen)
+        self.assertIsNone(lead.camion_llega_destino)
+        self.assertIsNone(lead.distancia_carga_origen_m)
+        self.assertIsNone(lead.distancia_carga_destino_m)
+        self.assertEqual(locations[0].ascensor, None)
+        self.assertFalse(locations[1].ascensor)
+        self.assertEqual(
+            quote_missing_fields(lead, requires_truck_access=True),
+            [
+                "ubicacion_0_ascensor",
+                "ubicacion_0_acceso_camion",
+                "ubicacion_1_acceso_camion",
+            ],
+        )
+        self.assertIn("surco", reply.lower())
+        self.assertIn("ascensor", reply.lower())
+        self.assertIn("una cuadra", reply.lower())
+        self.assertIn("miraflores", reply.lower())
+        self.assertNotIn("piso", reply.lower())
 
     def test_escaleras_se_asigna_al_unico_punto_pendiente(self):
         cliente = Cliente.objects.create(telefono="51955550042")
@@ -1345,9 +1392,9 @@ class ConversationEngineTests(TestCase):
             "cama, sofa, refrigeradora, lavadora y 12 cajas",
         )
 
-        self.assertIn("camion", reply.lower())
-        self.assertIn("origen", reply.lower())
-        self.assertIn("destino", reply.lower())
+        self.assertIn("estacionarse", reply.lower())
+        self.assertIn("cargar", reply.lower())
+        self.assertIn("descargar", reply.lower())
 
     def test_no_repregunta_pisos_ni_camion_en_traslado_pequeno(self):
         cliente = Cliente.objects.create(telefono="51955550019")

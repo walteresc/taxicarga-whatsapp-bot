@@ -315,6 +315,7 @@ def handle_incoming_message(cliente, message, canonical_context=None, generation
                 continue
             if value not in ("", None) and not extracted.get(field):
                 extracted[field] = value
+    _restrict_elevator_evidence_to_locations(extracted, extracted_locations)
     if route_with_stops:
         extracted.pop("distrito_origen", None)
         extracted.pop("distrito_destino", None)
@@ -520,7 +521,7 @@ def _next_missing_question(lead, message=""):
     )
     if not decision.missing_relevant_data:
         return None
-    fallback = _grouped_question(decision)
+    fallback = _grouped_question(decision, message=message)
     return _generate_decision_reply(lead, message, decision, fallback) or fallback
 
 
@@ -578,7 +579,22 @@ def _merge_endpoint_fields_into_locations(locations, extracted):
                 location[target] = value
 
 
-def _grouped_question(decision):
+def _restrict_elevator_evidence_to_locations(extracted, locations):
+    """Do not spread one endpoint's elevator evidence across a two-point route."""
+    if len(locations) != 2:
+        return
+    elevator_values = [locations[0].get("ascensor"), locations[-1].get("ascensor")]
+    if not any(value is not None for value in elevator_values):
+        return
+    for suffix, value in zip(("origen", "destino"), elevator_values):
+        field = f"ascensor_{suffix}"
+        if value is None:
+            extracted.pop(field, None)
+        else:
+            extracted[field] = value
+
+
+def _grouped_question(decision, message=""):
     missing = set(decision.missing_relevant_data)
     if decision.phase == BOOKING:
         if "cliente_nombre" in missing:
@@ -625,6 +641,9 @@ def _grouped_question(decision):
             for field in missing
             if field.startswith("ubicacion_") and field.endswith("_ascensor")
         }
+        locations = decision.known_data.get("ubicaciones", [])
+        origin_name = locations[0].get("distrito") if locations else "el origen"
+        destination_name = locations[-1].get("distrito") if locations else "el destino"
         if len(decision.known_data.get("ubicaciones", [])) > 2 and any(
             field.endswith(("_piso", "_ascensor")) for field in missing
         ):
@@ -635,19 +654,38 @@ def _grouped_question(decision):
             elif floors == {"piso_destino"} or floor_orders == {1}:
                 question = "A que piso llega y hay ascensor en el destino?"
             elif not floors and (elevators == {"ascensor_origen"} or elevator_orders == {0}):
-                question = "En el origen, tienen ascensor?"
+                question = f"¿En {origin_name} tienen ascensor?"
             elif not floors and (elevators == {"ascensor_destino"} or elevator_orders == {1}):
-                question = "En el destino, tienen ascensor?"
+                question = f"¿En {destination_name} tienen ascensor?"
             elif not floors and elevators:
                 question = "En origen y destino, tienen ascensor?"
             else:
                 question = "¿En qué pisos están ambos lugares y tienen ascensor?"
             if truck or any(field.endswith("_acceso_camion") for field in missing):
-                question += " ¿El camión puede estacionarse cerca para cargar y descargar?"
+                question += " " + _truck_access_question(decision, message)
             return question
         if truck or any(field.endswith("_acceso_camion") for field in missing):
-            return "En origen y destino, el camion puede acercarse a la puerta?"
+            return _truck_access_question(decision, message)
     return "¿Me das un poco más de detalle del servicio?"
+
+
+def _truck_access_question(decision, message):
+    normalized = _canonical_place(message)
+    truck_clause = normalized.split("camion", 1)[1] if "camion" in normalized else ""
+    ambiguous_distance = (
+        any(term in truck_clause for term in ("cuadra", "estacio", "metros"))
+        and not any(term in truck_clause for term in ("origen", "destino", "ambos", "los dos"))
+    )
+    if ambiguous_distance:
+        locations = decision.known_data.get("ubicaciones", [])
+        districts = [item.get("distrito") for item in locations if item.get("distrito")]
+        if len(districts) >= 2:
+            return (
+                f"Y lo de estacionarse a una cuadra, ¿corresponde a "
+                f"{districts[0]}, {districts[-1]} o ambos?"
+            )
+        return "Y lo de estacionarse a una cuadra, ¿a cuál lugar corresponde?"
+    return "¿El camión puede estacionarse cerca para cargar y descargar?"
 
 
 def _generate_decision_reply(lead, message, decision, fallback):

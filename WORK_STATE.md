@@ -269,3 +269,18 @@
 - Focales afectados: 25/25 OK.
 - Respuesta TEST del mensaje 15 sustituida sobre misma generación/mensaje lógico;
   outbox único preservado pending, attempts=0. Meta sends=0. Worker detenido.
+
+## Fix semántico Message 17 (2026-08-11)
+
+- Corregida propagación de evidencia de ascensor entre extremos: una negación
+  asociada al destino ya no completa también el origen.
+- Pregunta de accesos usa distritos conocidos y aclara estacionamiento ambiguo sin
+  volver a pedir pisos ni asumir acceso del camión.
+- Regresión exacta MessageWhatsApp 17 agregada. Suite completa: 604/604 OK; 33
+  omitidas. Cero llamadas externas en tests.
+- Lead 106: Surco piso 3/ascensor desconocido; Miraflores piso 2/sin ascensor.
+  Estacionamiento a una cuadra conservado como observación, ubicación por aclarar.
+- Dead-letter obsoleto conservado sin reencolar. Nueva generación/outbox canónicos
+  creados idempotentemente; segundo procesamiento creó cero registros.
+- Contexto Chatwoot proyectado: control Bot, precio vacío, labels vacíos. Token
+  Meta y Phone Number ID TEST 7 validados mediante GET. Worker general detenido.
