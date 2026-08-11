@@ -350,3 +350,18 @@
   validador avg 0.0842 ms en replay final.
 - Flags siguen `AI_DELTA_EXTRACTION_ENABLED=false` y `AI_DELTA_SHADOW_MODE=true`.
   Meta sends 0. Worker detenido. Recomendación: ampliar shadow; no activar aún.
+
+## Fase 4 holdout ciego: bloqueada por OpenAI 401 (2026-08-11)
+
+- Tooling holdout agregado: 100 casos distintos de Fase 3, 40 mensajes históricos
+  anonimizados y 60 sintéticos; 45 casos multiturno. Expected/forbidden/IDs nunca
+  entran al payload del modelo ni al validador, cubierto por test automático.
+- Primera corrida mantuvo prompt, schema y validator V2 congelados. Los 100 requests
+  holdout y 30 requests de repetición devolvieron `AuthenticationError` HTTP 401.
+  Cero respuestas exitosas, tokens observados o costo estimable; generalización y
+  latencia quedaron no determinables. No se cambió credencial, provider ni modelo.
+- Auditoría cliente: se crea `OpenAI` nuevo por request, por tanto no reutiliza pool
+  entre extracciones; SDK usa `max_retries=2` por defecto y timeout configurado 30 s.
+  Retry real por request no es observable con instrumentación actual.
+- Focales holdout/V2: 15/15 OK; IA, integrations y suite completa verdes. Meta sends
+  0, worker detenido. Requiere restaurar credencial OpenAI antes de repetir Fase 4.
