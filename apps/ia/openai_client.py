@@ -2,32 +2,38 @@ import json
 import logging
 from datetime import date
 
-from django.conf import settings
-from openai import OpenAI
-
 from .prompts import EXTRACTION_SYSTEM_PROMPT, SYSTEM_PROMPT
+from .providers import AIProviderError, build_provider
 
 logger = logging.getLogger(__name__)
 
 
-def generate_reply(messages, system_prompt=None):
-    if not settings.OPENAI_API_KEY:
-        logger.info("OPENAI_API_KEY no configurada; usando respuesta local.")
-        return None
+class ExtractionSchemaError(ValueError):
+    pass
 
+
+def generate_ai_result(messages, system_prompt=None, *, responsibility="conversation", provider_name=None):
     try:
-        client = OpenAI(api_key=settings.OPENAI_API_KEY)
-        response = client.responses.create(
-            model=settings.OPENAI_MODEL,
-            input=[
+        provider = build_provider(responsibility, provider_name=provider_name)
+        return provider.generate(
+            [
                 {"role": "system", "content": system_prompt or SYSTEM_PROMPT},
                 *messages,
-            ],
+            ]
         )
-        return response.output_text
-    except Exception:
-        logger.exception("Error al generar respuesta con OpenAI.")
+    except Exception as exc:
+        log = logger.info if isinstance(exc, AIProviderError) else logger.warning
+        log(
+            "Fallo provider IA; usando fallback local. provider=%s error_type=%s",
+            provider_name or "configured",
+            type(exc).__name__,
+        )
         return None
+
+
+def generate_reply(messages, system_prompt=None):
+    result = generate_ai_result(messages, system_prompt, responsibility="conversation")
+    return result.text if result else None
 
 
 def _parse_ai_json(text):
@@ -122,10 +128,7 @@ def _sanitize_extracted(campos):
     return sanitized
 
 
-def extract_lead_with_ai(message, lead, recent_history=None):
-    if not settings.OPENAI_API_KEY:
-        return None
-
+def extract_lead_with_ai(message, lead, recent_history=None, *, provider_name=None, raise_errors=False):
     lead_state = _build_lead_state(lead)
     lead_block = _enrich_prompt_with_lead_state(lead_state)
 
@@ -154,16 +157,20 @@ def extract_lead_with_ai(message, lead, recent_history=None):
     )
 
     try:
-        client = OpenAI(api_key=settings.OPENAI_API_KEY)
-        response = client.responses.create(
-            model=settings.OPENAI_MODEL,
-            input=[
+        provider = build_provider("extraction", provider_name=provider_name)
+        response = provider.generate(
+            [
                 {"role": "system", "content": EXTRACTION_SYSTEM_PROMPT},
                 {"role": "user", "content": user_message},
-            ],
+            ]
         )
-        text = response.output_text.strip()
-        data = _parse_ai_json(text)
+        text = response.text
+        try:
+            data = _parse_ai_json(text)
+        except (json.JSONDecodeError, TypeError, AttributeError) as exc:
+            raise ExtractionSchemaError("Respuesta de extracción no contiene JSON válido.") from exc
+        if not isinstance(data, dict):
+            raise ExtractionSchemaError("Respuesta de extracción no es un objeto JSON.")
 
         campos = data.get("campos_detectados", {})
         faltantes = data.get("faltantes", [])
@@ -182,9 +189,22 @@ def extract_lead_with_ai(message, lead, recent_history=None):
             "faltantes": valid_faltantes,
             "confianza": confianza if confianza in ("alta", "media", "baja") else "baja",
             "raw": campos,
+            "metrics": {
+                "provider": response.provider,
+                "model": response.model,
+                "latency_ms": response.latency_ms,
+                "input_tokens": response.input_tokens,
+                "output_tokens": response.output_tokens,
+            },
         }
-    except Exception:
-        logger.exception("Error al extraer datos con OpenAI.")
+    except Exception as exc:
+        if raise_errors:
+            raise
+        log = logger.info if isinstance(exc, AIProviderError) else logger.warning
+        log(
+            "Fallo extracción IA; usando extractor local. error_type=%s",
+            type(exc).__name__,
+        )
         return None
 
 

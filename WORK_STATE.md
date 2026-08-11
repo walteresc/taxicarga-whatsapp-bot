@@ -213,3 +213,34 @@
 - Suite completa: 587/587 OK; 33 omitidas PostgreSQL-only. `check`, migraciones y
   `git diff --check`: OK.
 - Meta sends durante corrección: 0. Worker Meta detenido. Sin push.
+
+# Multi-provider IA + harness A/B (2026-08-10)
+
+- Abstracción `AIProvider` implementada para OpenAI y DeepSeek mediante Responses API.
+- OpenAI conserva `gpt-4.1-mini` y comportamiento previo; provider principal,
+  extracción y conversación permanecen en `openai`.
+- DeepSeek preparado con `deepseek-v4-flash`, base oficial y thinking deshabilitado;
+  reasoning no se expone ni persiste.
+- Extracción y conversación pueden seleccionar provider/modelo independientemente.
+- Fallos usan fallback determinístico local; no existe fallback cross-provider.
+- Harness local protegido por `--confirm-real-api`; dataset TEST anonimizado: 20
+  casos de extracción y 8 conversacionales. Costos usan tarifas configurables.
+- Tests provider 13/13 OK. Suite completa 600/600 OK; 33 omitidas.
+- A/B real no ejecutado. Llamadas externas IA: 0. Secretos expuestos: 0. Sin push.
+
+## A/B real ejecutado (2026-08-10)
+
+- Dataset sin cambios: 20 extracción + 8 conversación por proveedor.
+- Corrida válida: OpenAI F1 exacto 0.875; DeepSeek 0.8781. Ambos 0 schema/API errors.
+- OpenAI: latencia media 3297.92 ms, 22,448 tokens, costo estimado USD 0.013466.
+- DeepSeek: latencia media 9523.91 ms, 55,329 tokens, costo estimado USD 0.01230656.
+- DeepSeek devolvió 32,575 output tokens pese a `thinking.type=disabled`; Responses API
+  parece seguir contabilizando reasoning. No apto aún para cambio operativo.
+- Ambos evitaron `15 cajas`, operarios y `800 kg` como pisos; ambos fallaron acceso
+  de camión y multidato ambiguo. OpenAI perdió negación contextual; DeepSeek añadió
+  `refri` como objeto pesado y usó lenguaje de precio sin `pricing_result`.
+- Primera corrida completó APIs pero falló al serializar una fecha; se corrigió
+  `default=str` y se repitió. Costo total incurrido estimado: USD 0.05154512.
+- Recomendación: mantener OpenAI; no híbrido; ampliar/corregir dataset y resolver
+  non-thinking DeepSeek antes de otra decisión. Providers operativos no cambiaron.
+- Tests focales harness/providers: 13/13 OK. Worker detenido. Sin WhatsApp ni push.

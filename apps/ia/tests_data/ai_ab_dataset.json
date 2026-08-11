@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "extraction": [
+    {"id": "informal_route_load", "message": "hola causa quiero mudanza d surco a miraflores llevo cama refri y 15 cajas", "expected": {"tipo_servicio": "mudanza", "distrito_origen": "Surco", "distrito_destino": "Miraflores", "lista_objetos": "cama refri y 15 cajas"}, "forbidden": {"piso_origen": 15, "piso_destino": 15}},
+    {"id": "typos_no_punctuation", "message": "nesesito mudansa de san miguel a pueblo libre son 20 cajas y 2 camas", "expected": {"tipo_servicio": "mudanza", "distrito_origen": "San Miguel", "distrito_destino": "Pueblo Libre"}, "forbidden": {"piso_origen": 20, "piso_destino": 20}},
+    {"id": "explicit_floors", "message": "Origen piso 2 con ascensor y destino piso 5 sin ascensor", "expected": {"piso_origen": 2, "ascensor_origen": true, "piso_destino": 5, "ascensor_destino": false}},
+    {"id": "boxes_not_floor", "message": "Tengo unas 15 cajas", "expected": {"lista_objetos": "unas 15 cajas"}, "forbidden": {"piso_origen": 15, "piso_destino": 15}},
+    {"id": "operators", "message": "Necesito 2 operarios para cargar y descargar", "expected": {"incluye_personal_carga": true}, "forbidden": {"piso_origen": 2, "piso_destino": 2}},
+    {"id": "weight", "message": "es una máquina de 800 kg", "expected": {"peso_carga_kg": 800}, "forbidden": {"piso_origen": 800, "piso_destino": 800}},
+    {"id": "packing_negative", "message": "No quiero embalaje ni desarmado", "expected": {"modalidad_servicio": "sin embalaje", "requiere_desarmado": false}},
+    {"id": "packing_positive", "message": "Quiero embalaje full y que desarmen los muebles", "expected": {"modalidad_servicio": "embalaje full", "requiere_desarmado": true}},
+    {"id": "date_time", "message": "sería para el 20 de agosto a las 9 de la mañana", "expected": {"horario_servicio": "9 de la mañana"}},
+    {"id": "simple_route", "message": "Recojo en Barranco y llevo a Lince", "expected": {"distrito_origen": "Barranco", "distrito_destino": "Lince"}},
+    {"id": "route_with_stop", "message": "Salgo de Surco, paro en San Borja y termino en Miraflores", "expected": {"distrito_origen": "Surco", "distrito_destino": "Miraflores"}},
+    {"id": "contextual_yes", "message": "sí tienen", "lead": {"piso_origen": 3, "piso_destino": 4}, "history": [{"author": "bot", "text": "¿Ambos lugares tienen ascensor?"}], "expected": {"ascensor_origen": true, "ascensor_destino": true}},
+    {"id": "contextual_no", "message": "no ninguno", "history": [{"author": "bot", "text": "¿Hay ascensor en origen y destino?"}], "expected": {"ascensor_origen": false, "ascensor_destino": false}},
+    {"id": "correction_floor", "message": "corrección el origen es piso 4 no piso 2", "lead": {"piso_origen": 2}, "expected": {"piso_origen": 4}},
+    {"id": "correction_route", "message": "me equivoqué no es Surco es Chorrillos", "lead": {"distrito_origen": "Surco", "distrito_destino": "Miraflores"}, "expected": {"distrito_origen": "Chorrillos"}},
+    {"id": "multiple_data", "message": "Mudanza de Ate a La Molina piso 3 sin ascensor llevo sofá mesa y 10 cajas", "expected": {"tipo_servicio": "mudanza", "distrito_origen": "Ate", "distrito_destino": "La Molina", "piso_origen": 3, "ascensor_origen": false}, "forbidden": {"piso_destino": 10}},
+    {"id": "truck_access_negative", "message": "el camión no llega a la puerta en destino queda a 80 metros", "expected": {"camion_llega_destino": false, "distancia_carga_destino_m": 80}},
+    {"id": "street_level", "message": "origen puerta a calle y destino segundo piso con ascensor", "expected": {"piso_origen": 1, "piso_destino": 2, "ascensor_destino": true}},
+    {"id": "only_transport", "message": "solo quiero transporte yo cargo todo", "expected": {"incluye_personal_carga": false}},
+    {"id": "office_move", "message": "traslado de oficina de San Isidro a Jesús María con 12 escritorios", "expected": {"tipo_servicio": "oficina", "distrito_origen": "San Isidro", "distrito_destino": "Jesús María"}, "forbidden": {"piso_origen": 12, "piso_destino": 12}}
+  ],
+  "conversation": [
+    {"id": "group_access", "message": "son segundo y cuarto piso", "objective": "pedir pisos y ascensores de ambos lugares", "required_any": ["ascensor"], "max_sentences": 3},
+    {"id": "do_not_repeat", "message": "ya te dije que es de Surco a Miraflores", "objective": "pedir accesos faltantes sin repetir ruta", "forbidden": ["¿de dónde", "¿a dónde"], "max_sentences": 3},
+    {"id": "brief", "message": "hola quiero cotizar", "objective": "pedir tipo de servicio y ruta", "max_sentences": 3},
+    {"id": "no_price", "message": "cuánto cuesta", "objective": "explicar que faltan datos para cotizar", "forbidden": ["S/", "soles", "cuesta 100", "precio es"], "max_sentences": 3},
+    {"id": "context_answer", "message": "no hay ascensor", "objective": "confirmar y pedir siguiente acceso necesario", "forbidden": ["¿hay ascensor?"], "max_sentences": 3},
+    {"id": "negative_packing", "message": "sin embalaje por favor", "objective": "confirmar sin embalaje y pedir siguiente dato necesario", "max_sentences": 3},
+    {"id": "multi_stop_handoff", "message": "voy de Surco con parada en San Borja y termino en Miraflores", "objective": "indicar revisión por asesor sin dar precio automático", "forbidden": ["S/", "soles", "precio final"], "max_sentences": 3},
+    {"id": "no_booking_claim", "message": "ya quedó entonces", "objective": "no afirmar reserva creada sin confirmación operacional", "forbidden": ["reserva registrada", "reserva confirmada", "quedó reservado"], "max_sentences": 3}
+  ]
+}

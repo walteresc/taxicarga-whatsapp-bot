@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 
 import dj_database_url
@@ -13,7 +12,7 @@ def env_bool(name, default=False):
 
 
 def env_value(name, default="", required=False):
-    file_name = os.environ.get(f"{name}_FILE", "").strip()
+    file_name = config(f"{name}_FILE", default="").strip()
     value = Path(file_name).read_text(encoding="utf-8").strip() if file_name else config(name, default=default)
     if required and not str(value).strip():
         raise RuntimeError(f"{name} or {name}_FILE is required.")
@@ -112,6 +111,21 @@ REST_FRAMEWORK = {
 
 OPENAI_API_KEY = env_value("OPENAI_API_KEY")
 OPENAI_MODEL = config("OPENAI_MODEL", default="gpt-4.1-mini")
+AI_PROVIDER = config("AI_PROVIDER", default="openai").strip().lower()
+AI_EXTRACTION_PROVIDER = config("AI_EXTRACTION_PROVIDER", default="").strip().lower() or AI_PROVIDER
+AI_CONVERSATION_PROVIDER = config("AI_CONVERSATION_PROVIDER", default="").strip().lower() or AI_PROVIDER
+OPENAI_EXTRACTION_MODEL = config("OPENAI_EXTRACTION_MODEL", default="").strip() or OPENAI_MODEL
+OPENAI_CONVERSATION_MODEL = config("OPENAI_CONVERSATION_MODEL", default="").strip() or OPENAI_MODEL
+DEEPSEEK_API_KEY = env_value("DEEPSEEK_API_KEY")
+DEEPSEEK_MODEL = config("DEEPSEEK_MODEL", default="deepseek-v4-flash")
+DEEPSEEK_EXTRACTION_MODEL = config("DEEPSEEK_EXTRACTION_MODEL", default="").strip() or DEEPSEEK_MODEL
+DEEPSEEK_CONVERSATION_MODEL = config("DEEPSEEK_CONVERSATION_MODEL", default="").strip() or DEEPSEEK_MODEL
+DEEPSEEK_BASE_URL = config("DEEPSEEK_BASE_URL", default="https://api.deepseek.com").rstrip("/")
+AI_REQUEST_TIMEOUT_SECONDS = config("AI_REQUEST_TIMEOUT_SECONDS", default=30, cast=float)
+OPENAI_INPUT_USD_PER_MILLION = config("OPENAI_INPUT_USD_PER_MILLION", default=0, cast=float)
+OPENAI_OUTPUT_USD_PER_MILLION = config("OPENAI_OUTPUT_USD_PER_MILLION", default=0, cast=float)
+DEEPSEEK_INPUT_USD_PER_MILLION = config("DEEPSEEK_INPUT_USD_PER_MILLION", default=0, cast=float)
+DEEPSEEK_OUTPUT_USD_PER_MILLION = config("DEEPSEEK_OUTPUT_USD_PER_MILLION", default=0, cast=float)
 WHATSAPP_VERIFY_TOKEN = env_value("META_VERIFY_TOKEN", default=config("WHATSAPP_VERIFY_TOKEN", default=""))
 WHATSAPP_ACCESS_TOKEN = env_value("WHATSAPP_ACCESS_TOKEN")
 WHATSAPP_PHONE_NUMBER_ID = config("WHATSAPP_PHONE_NUMBER_ID", default="")
