@@ -1,0 +1,231 @@
+import re
+import unicodedata
+from dataclasses import dataclass
+
+from .conversation_policy import QuestionTarget
+from .delta_contract_v31 import (
+    Ambiguity31, ContextDependency, EvidenceType, RefSource, ValueOrigin,
+    empty_delta_v31,
+)
+from .delta_validator_v2 import RejectedChange
+
+
+INFERRED_NOT_ALLOWED = "INFERRED_NOT_ALLOWED"
+CONTEXT_TARGET_MISMATCH = "CONTEXT_TARGET_MISMATCH"
+NO_EVIDENCE = "NO_EVIDENCE"
+AMBIGUOUS_REF = "AMBIGUOUS_REF"
+INVALID_REF = "INVALID_REF"
+DERIVED_VALUE_FORBIDDEN = "DERIVED_VALUE_FORBIDDEN"
+UNSUPPORTED_MEASUREMENT = "UNSUPPORTED_MEASUREMENT"
+NO_OP = "NO_OP"
+STALE_STATE = "STALE_STATE"
+EVIDENCE_CLAIM_COLLISION = "EVIDENCE_CLAIM_COLLISION"
+UNVERIFIED_EXPLICIT_REF = "UNVERIFIED_EXPLICIT_REF"
+
+_SPANISH_NUMBERS = {
+    "cero":0,"primer":1,"primero":1,"primera":1,"uno":1,"un":1,
+    "segundo":2,"segunda":2,"dos":2,"tercer":3,"tercero":3,"tercera":3,"tres":3,
+    "cuarto":4,"cuarta":4,"cuatro":4,"quinto":5,"quinta":5,"cinco":5,
+    "sexto":6,"sexta":6,"seis":6,"septimo":7,"septima":7,"siete":7,
+    "octavo":8,"octava":8,"ocho":8,"noveno":9,"novena":9,"nueve":9,
+    "decimo":10,"decima":10,"diez":10,
+    "once":11,"doce":12,"trece":13,"catorce":14,"quince":15,
+    "dieciseis":16,"diecisiete":17,"dieciocho":18,"diecinueve":19,"veinte":20,
+    "baja":0,
+}
+
+
+@dataclass(frozen=True)
+class DeltaValidationV31Result:
+    proposed: object
+    accepted: object
+    rejected: tuple[RejectedChange, ...]
+
+
+def _anchored(evidence, message):
+    return bool(evidence) and evidence in message
+
+
+def _normalized_number_is_anchored(value, evidence):
+    normalized = unicodedata.normalize("NFKD", evidence.casefold())
+    normalized = "".join(char for char in normalized if not unicodedata.combining(char))
+    words = re.findall(r"[^\W\d_]+", normalized, flags=re.UNICODE)
+    return any(_SPANISH_NUMBERS.get(word) == value for word in words)
+
+
+def _target_matches(targets, field, ref=None):
+    compatible = {field}
+    if field == "access_observation":
+        compatible.add("truck_access")
+    if field == "packing_required":
+        compatible.add("packing_mode")
+    return any(target.field in compatible and
+               (target.ref in (None, "both") or ref in (None, target.ref))
+               for target in targets)
+
+
+def _explicit_ref_marker_is_anchored(ref, evidence):
+    normalized = unicodedata.normalize("NFKD", evidence.casefold())
+    normalized = "".join(char for char in normalized if not unicodedata.combining(char))
+    words = set(re.findall(r"[^\W\d_]+", normalized, flags=re.UNICODE))
+    markers = {
+        "origin":{"origen","salida","sale","recojo","recoger","carga","desde",
+                  "primer","primero","primera"},
+        "destination":{"destino","llegada","llega","entrega","descarga","hasta",
+                       "segundo","segunda"},
+        "both":{"ambos","ambas"},
+    }
+    return bool(words & markers.get(ref,set()))
+
+
+def _state_value(snapshot, path):
+    value = snapshot.state
+    for part in path.split("."):
+        value = value.get(part) if isinstance(value, dict) else None
+    return value
+
+
+def _proposal_reason(proposal, message, targets, field, ref=None):
+    if proposal.evidence_type == EvidenceType.INFERRED:
+        return INFERRED_NOT_ALLOWED
+    if not _anchored(proposal.evidence_quote, message):
+        return NO_EVIDENCE
+    if (proposal.context_dependency == ContextDependency.QUESTION_TARGET
+            and not _target_matches(targets, field, ref)):
+        return CONTEXT_TARGET_MISMATCH
+    if hasattr(proposal, "value_origin"):
+        if proposal.value_origin == ValueOrigin.DERIVED:
+            return DERIVED_VALUE_FORBIDDEN
+        directly_anchored = re.search(
+            rf"(?<!\d){proposal.value}(?!\d)", proposal.evidence_quote)
+        normalized_anchored = _normalized_number_is_anchored(
+            proposal.value, proposal.evidence_quote)
+        if not directly_anchored and not normalized_anchored:
+            return UNSUPPORTED_MEASUREMENT
+    return None
+
+
+def validate_delta_v31(delta, snapshot, *, customer_message, question_targets=(),
+                       expected_state_version=None):
+    targets = tuple(target if isinstance(target, QuestionTarget) else QuestionTarget(**target)
+                    for target in question_targets)
+    accepted = empty_delta_v31().model_copy(update={"intent": delta.intent})
+    rejected = []
+    if expected_state_version and expected_state_version != snapshot.state_version:
+        return DeltaValidationV31Result(delta, accepted,
+                                        (RejectedChange("*", STALE_STATE),))
+
+    lead_paths = {
+        "service":"service", "service_date":"service_date", "load":"load",
+        "staff_required":"staff.required",
+        "packing_required":"additional_services.packing_required",
+        "packing_mode":"additional_services.packing",
+        "disassembly_required":"additional_services.disassembly_required",
+        "assembly_required":"additional_services.assembly_required",
+    }
+    correction_targets = set()
+    for correction in delta.corrections:
+        reason = _proposal_reason(correction, customer_message, targets,
+                                  correction.target.split(".")[-1])
+        if reason:
+            rejected.append(RejectedChange(f"corrections.{correction.target}", reason))
+        else:
+            accepted.corrections.append(correction)
+            correction_targets.add(correction.target)
+
+    contextual_quotes = {
+        proposal.evidence_quote for _, proposal in delta.changes.lead
+        if proposal is not None
+        and proposal.context_dependency == ContextDependency.QUESTION_TARGET
+    }
+    for location in delta.changes.locations:
+        contextual_quotes.update(
+            proposal.evidence_quote for _, proposal in location.set
+            if proposal is not None
+            and proposal.context_dependency == ContextDependency.QUESTION_TARGET)
+    targeted_claim_quotes = {
+        proposal.evidence_quote
+        for field, proposal in delta.changes.lead
+        if proposal is not None and _target_matches(targets, field)
+    }
+
+    for field, proposal in delta.changes.lead:
+        if proposal is None:
+            continue
+        reason = _proposal_reason(proposal, customer_message, targets, field)
+        if (not reason and not _target_matches(targets, field)
+                and proposal.context_dependency == ContextDependency.NONE
+                and proposal.evidence_quote in contextual_quotes):
+            reason = EVIDENCE_CLAIM_COLLISION
+        if (not reason and not _target_matches(targets, field)
+                and proposal.evidence_quote in targeted_claim_quotes):
+            reason = EVIDENCE_CLAIM_COLLISION
+        path = lead_paths[field]
+        if not reason and proposal.value == _state_value(snapshot, path) and path not in correction_targets:
+            reason = NO_OP
+        if reason:
+            rejected.append(RejectedChange(path, reason))
+        else:
+            setattr(accepted.changes.lead, field, proposal)
+
+    valid_refs = set(snapshot.state.get("locations", {}))
+    ambiguous_fields = {item.field for item in delta.ambiguities}
+    for index, location in enumerate(delta.changes.locations):
+        ref = location.ref
+        if ref not in valid_refs | {"both"}:
+            rejected.append(RejectedChange(f"changes.locations[{index}].ref", INVALID_REF)); continue
+        refs = ("origin", "destination") if ref == "both" else (ref,)
+        fields = [field for field, proposal in location.set if proposal is not None]
+        explicit_ref_marker = _explicit_ref_marker_is_anchored(
+            ref,location.ref_evidence_quote)
+        if location.ref_source == RefSource.AMBIGUOUS and not explicit_ref_marker:
+            for field in fields or ["location"]:
+                accepted.ambiguities.append(Ambiguity31(
+                    field=field, value=location.ref_evidence_quote,
+                    possible_refs=sorted(valid_refs),
+                    evidence_quote=location.ref_evidence_quote))
+            rejected.append(RejectedChange(f"changes.locations[{index}].ref", AMBIGUOUS_REF)); continue
+        if not _anchored(location.ref_evidence_quote, customer_message):
+            rejected.append(RejectedChange(f"changes.locations[{index}].ref", NO_EVIDENCE)); continue
+        target_resolves_ref = any(
+            _target_matches(targets, field, endpoint)
+            for field in fields for endpoint in refs)
+        if (location.ref_source == RefSource.EXPLICIT_MESSAGE
+                and any(field != "district" for field in fields)
+                and not target_resolves_ref
+                and not explicit_ref_marker):
+            rejected.append(RejectedChange(
+                f"changes.locations[{index}].ref",UNVERIFIED_EXPLICIT_REF)); continue
+        if location.ref_source == RefSource.QUESTION_TARGET and not any(
+                _target_matches(targets, field, endpoint)
+                for field in fields for endpoint in refs):
+            rejected.append(RejectedChange(f"changes.locations[{index}].ref",
+                                           CONTEXT_TARGET_MISMATCH)); continue
+        kept = location.model_copy(deep=True); kept.set = type(location.set)()
+        for field, proposal in location.set:
+            if proposal is None:
+                continue
+            reason = None
+            ref_is_resolved = (explicit_ref_marker
+                or (location.ref_source == RefSource.QUESTION_TARGET
+                    and ref != "both" and _target_matches(targets,field,ref)))
+            if field in ambiguous_fields and not ref_is_resolved:
+                reason = AMBIGUOUS_REF
+            for endpoint in refs:
+                if not reason:
+                    reason = _proposal_reason(
+                        proposal, customer_message, targets, field, endpoint)
+                if reason:
+                    break
+                path = f"locations.{endpoint}.{field}"
+                if proposal.value == _state_value(snapshot, path) and path not in correction_targets:
+                    reason = NO_OP
+                    break
+            if reason:
+                rejected.append(RejectedChange(f"locations.{ref}.{field}", reason))
+            else:
+                setattr(kept.set, field, proposal)
+        if any(value is not None for _, value in kept.set):
+            accepted.changes.locations.append(kept)
+    accepted.ambiguities.extend(delta.ambiguities)
+    return DeltaValidationV31Result(delta, accepted, tuple(rejected))

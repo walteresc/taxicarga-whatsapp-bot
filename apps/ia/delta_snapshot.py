@@ -36,6 +36,7 @@ def build_canonical_snapshot(lead) -> CanonicalSnapshot:
     state = {
         "schema_version": SCHEMA_VERSION,
         "service": lead.tipo_servicio or None,
+        "service_date": lead.fecha_servicio.isoformat() if lead.fecha_servicio else None,
         "locations": locations,
         "load": lead.lista_objetos or None,
         "staff": {"required": defaults["incluye_personal_carga"]},

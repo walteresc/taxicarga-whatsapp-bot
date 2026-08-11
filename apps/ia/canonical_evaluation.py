@@ -6,7 +6,8 @@ from .management.commands.compare_delta_shadow import _matches
 
 
 LEAD_PATHS = {
-    "service": "service", "load": "load", "staff_required": "staff.required",
+    "service": "service", "service_date": "service_date", "load": "load",
+    "staff_required": "staff.required",
     "disassembly_required": "additional_services.disassembly_required",
     "assembly_required": "additional_services.assembly_required",
 }

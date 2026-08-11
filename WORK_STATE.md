@@ -443,3 +443,22 @@
   F1 77.21%, safety 88/96.
 - Rejections adjudicados: 18 correctos, 16 falsos. V3.1 todavía no implementado.
 - FASE 6C nuevas API calls: 0.
+
+# FASE A-D - IA-first V3.1 release candidate (2026-08-11)
+
+- Contrato V3.1 exige `evidence_quote` literal del mensaje actual; separa tipo de
+  evidencia, dependencia contextual, provenance de endpoint y origen de medidas.
+- Snapshot no es evidencia. Delta mínimo, NO_OP y corrections independientes.
+- QuestionTarget prioriza respuesta contextual sin bloquear hechos explícitos extra.
+- Guards fail-closed: evidencia parafraseada, endpoint no verificable, claims
+  ambiguos, medidas derivadas y colisiones contextuales se rechazan.
+- Service/load/staff y packing required/mode permanecen separados. `service_date`
+  soportado sin volver fecha requisito de cotización.
+- Smoke final: 10/10 schema, 9/10 semántica, cero autoridad comercial.
+- Development 100 real final: 100/100 API/schema. Raw P 92.25%, R 91.54%,
+  F1 91.89%. Validator final re-evaluado offline sobre mismos raw: P 98.29%,
+  R 89.15%, F1 93.50%, safety 98/100. Unsafe restantes pertenecen únicamente a
+  HUMAN_REVIEW; wrong endpoint, numeric invention y commercial authority: 0.
+- Runtime sigue sin activar: `AI_DELTA_EXTRACTION_ENABLED=false`,
+  `AI_DELTA_SHADOW_MODE=true`. Meta sends 0; worker detenido.
+- Candidata congelada antes de crear holdout ciego nuevo. Sin push.

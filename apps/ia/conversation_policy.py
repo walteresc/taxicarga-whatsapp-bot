@@ -175,8 +175,8 @@ def _question_targets(missing):
         "piso_origen": ("floor", "origin"), "piso_destino": ("floor", "destination"),
         "ascensor_origen": ("elevator", "origin"),
         "ascensor_destino": ("elevator", "destination"),
-        "camion_llega_origen": ("access_observation", "origin"),
-        "camion_llega_destino": ("access_observation", "destination"),
+        "camion_llega_origen": ("truck_access", "origin"),
+        "camion_llega_destino": ("truck_access", "destination"),
     }
     for name in missing:
         mapped = direct.get(name)
@@ -186,7 +186,7 @@ def _question_targets(missing):
         match = re.match(r"ubicacion_(\d+)_(distrito|piso|ascensor|acceso_camion)$", name)
         if match:
             order, field_name = match.groups()
-            field_name = "access_observation" if field_name == "acceso_camion" else field_name
+            field_name = "truck_access" if field_name == "acceso_camion" else field_name
             targets.append(QuestionTarget(field_name, f"location:{order}"))
     return tuple(targets)
 
