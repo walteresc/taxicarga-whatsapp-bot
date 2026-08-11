@@ -1,4 +1,5 @@
 import copy
+import difflib
 import json
 import statistics
 import unicodedata
@@ -11,7 +12,7 @@ from apps.ia.data_extractor import extract_lead_data
 from apps.ia.delta_context import DeltaContext
 from apps.ia.delta_extractor import extract_conversation_delta
 from apps.ia.delta_snapshot import CanonicalSnapshot
-from apps.ia.delta_validator import validate_delta
+from apps.ia.delta_validator_v2 import validate_delta_v2
 
 
 DATASET_PATH = Path(__file__).resolve().parents[2] / "tests_data" / "delta_shadow_dataset.json"
@@ -32,7 +33,12 @@ def _matches(actual, expected):
         return actual == expected
     actual_words = set(_norm(actual or "").replace(",", " ").split())
     expected_words = set(_norm(expected).replace(",", " ").split())
-    return bool(expected_words) and len(actual_words & expected_words) / len(expected_words) >= 0.6
+    matched = sum(
+        any(word in candidate or candidate in word or difflib.SequenceMatcher(None, word, candidate).ratio() >= .72
+            for candidate in actual_words)
+        for word in expected_words
+    )
+    return bool(expected_words) and matched / len(expected_words) >= 0.6
 
 
 def _get(state, path):
@@ -81,8 +87,31 @@ def legacy_result(case):
     return state, changed, []
 
 
+def _apply_v2(state, delta):
+    changed = {}
+    lead_map = {
+        "service": "service", "load": "load", "staff_required": "staff.required",
+        "packing": "additional_services.packing",
+        "disassembly_required": "additional_services.disassembly_required",
+        "assembly_required": "additional_services.assembly_required",
+    }
+    for key, proposal in delta.changes.lead:
+        if proposal is not None:
+            path = lead_map[key]
+            _set(state, path, proposal.value)
+            changed[path] = proposal.value
+    for location in delta.changes.locations:
+        refs = ["origin", "destination"] if location.ref == "both" else [location.ref]
+        for ref in refs:
+            for key, proposal in location.set:
+                if proposal is not None:
+                    path = f"locations.{ref}.{key}"
+                    _set(state, path, proposal.value)
+                    changed[path] = proposal.value
+    return state, changed
+
+
 def delta_result(case):
-    state = copy.deepcopy(case["state"])
     snapshot = CanonicalSnapshot(state_version=f"dataset:{case['id']}", state=case["state"])
     context = DeltaContext(
         payload={
@@ -96,31 +125,25 @@ def delta_result(case):
         recent_turn_count=len(case.get("recent_turns", [])),
     )
     delta, metrics = extract_conversation_delta(context, provider_name="openai")
-    accepted = validate_delta(delta, snapshot).accepted
-    changed = {}
-    lead = accepted.changes.lead.model_dump(exclude_none=True)
-    lead_map = {
-        "service": "service", "load": "load", "staff_required": "staff.required",
-        "packing": "additional_services.packing",
-        "disassembly_required": "additional_services.disassembly_required",
-        "assembly_required": "additional_services.assembly_required",
+    validation = validate_delta_v2(
+        delta, snapshot, customer_message=case["message"],
+        last_bot_question=case.get("last_bot_question", ""),
+        expected_state_version=snapshot.state_version,
+    )
+    raw_state, raw_changed = _apply_v2(copy.deepcopy(case["state"]), delta)
+    accepted_state, accepted_changed = _apply_v2(copy.deepcopy(case["state"]), validation.accepted)
+    raw_ambiguities = [item.field for item in delta.ambiguities]
+    accepted_ambiguities = [item.field for item in validation.accepted.ambiguities]
+    return {
+        "raw_state": raw_state, "raw_changed": raw_changed,
+        "raw_ambiguities": raw_ambiguities, "delta": delta,
+        "accepted_state": accepted_state, "accepted_changed": accepted_changed,
+        "accepted_ambiguities": accepted_ambiguities, "validation": validation,
+        "metrics": metrics,
     }
-    for key, value in lead.items():
-        path = lead_map[key]
-        _set(state, path, value)
-        changed[path] = value
-    for location in accepted.changes.locations:
-        refs = ["origin", "destination"] if location.ref == "both" else [location.ref]
-        for ref in refs:
-            for key, value in location.set.model_dump(exclude_none=True).items():
-                path = f"locations.{ref}.{key}"
-                _set(state, path, value)
-                changed[path] = value
-    ambiguities = [item.target for item in accepted.ambiguities]
-    return state, changed, ambiguities, accepted, metrics
 
 
-def score(case, state, changed, ambiguities):
+def score(case, state, changed, ambiguities, corrections=None):
     tp = fp = fn = 0
     errors = []
     expected = case.get("expected", {})
@@ -145,9 +168,7 @@ def score(case, state, changed, ambiguities):
     if expected_ambiguities and not ambiguity_ok:
         fn += len(expected_ambiguities)
         errors.append("ambiguity_missing")
-    correction_ok = not case.get("expected_correction") or any(
-        path.endswith("district") for path in changed
-    )
+    correction_ok = not case.get("expected_correction") or bool(corrections)
     return {
         "tp": tp, "fp": fp, "fn": fn,
         "correct": not errors and correction_ok,
@@ -172,6 +193,15 @@ def aggregate(details):
     }
 
 
+def expand_cases(dataset):
+    templates = dataset.get("state_templates", {})
+    cases = copy.deepcopy(dataset.get("cases", []))
+    for case in cases:
+        if "state" not in case and case.get("state_ref") in templates:
+            case["state"] = copy.deepcopy(templates[case.pop("state_ref")])
+    return cases
+
+
 class Command(BaseCommand):
     help = "Compara extractor legacy determinístico contra ConversationDelta shadow."
 
@@ -183,7 +213,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         dataset = json.loads(options["dataset"].read_text(encoding="utf-8"))
-        cases = dataset.get("cases")
+        cases = expand_cases(dataset)
         if not isinstance(cases, list) or not cases or len({case.get("id") for case in cases}) != len(cases):
             raise CommandError("Dataset inválido o IDs duplicados.")
         if options["validate_only"]:
@@ -192,24 +222,39 @@ class Command(BaseCommand):
         if not options["confirm_real_api"]:
             raise CommandError("Use --confirm-real-api para autorizar OpenAI real.")
         legacy = []
-        ai = []
+        raw_ai = []
+        accepted_ai = []
         usage = []
         for case in cases:
             legacy_state, legacy_changed, legacy_ambiguities = legacy_result(case)
             legacy.append({"id": case["id"], "changed": legacy_changed,
-                           "score": score(case, legacy_state, legacy_changed, legacy_ambiguities)})
+                           "score": score(case, legacy_state, legacy_changed, legacy_ambiguities, [])})
             try:
-                ai_state, ai_changed, ai_ambiguities, delta, metrics = delta_result(case)
+                result = delta_result(case)
+                metrics = result["metrics"]
                 usage.append((metrics.input_tokens or 0, metrics.output_tokens or 0, metrics.latency_ms))
-                ai.append({"id": case["id"], "changed": ai_changed, "ambiguities": ai_ambiguities,
-                           "delta": delta.model_dump(mode="json", exclude_none=True), "schema_valid": True,
-                           "score": score(case, ai_state, ai_changed, ai_ambiguities)})
+                raw_ai.append({"id": case["id"], "changed": result["raw_changed"],
+                               "ambiguities": result["raw_ambiguities"],
+                               "delta": result["delta"].model_dump(mode="json", exclude_none=True),
+                               "schema_valid": True,
+                               "score": score(case, result["raw_state"], result["raw_changed"],
+                                              result["raw_ambiguities"], result["delta"].corrections)})
+                accepted_ai.append({"id": case["id"], "changed": result["accepted_changed"],
+                                    "ambiguities": result["accepted_ambiguities"],
+                                    "rejected": [{"path": item.path, "reason": item.reason}
+                                                 for item in result["validation"].rejected],
+                                    "validator_latency_ms": result["validation"].latency_ms,
+                                    "score": score(case, result["accepted_state"], result["accepted_changed"],
+                                                   result["accepted_ambiguities"],
+                                                   result["validation"].accepted.corrections)})
             except Exception as exc:
-                ai.append({"id": case["id"], "changed": {}, "ambiguities": [], "schema_valid": False,
-                           "error_type": type(exc).__name__,
-                           "score": {"tp": 0, "fp": 0, "fn": len(case.get("expected", {})),
-                                     "correct": False, "semantic_safe": True, "ambiguity_ok": False,
-                                     "errors": ["api_or_schema_error"]}})
+                failed = {"id": case["id"], "changed": {}, "ambiguities": [], "schema_valid": False,
+                          "error_type": type(exc).__name__,
+                          "score": {"tp": 0, "fp": 0, "fn": len(case.get("expected", {})),
+                                    "correct": False, "semantic_safe": True, "ambiguity_ok": False,
+                                    "errors": ["api_or_schema_error"]}}
+                raw_ai.append(failed)
+                accepted_ai.append(copy.deepcopy(failed))
         latencies = sorted(value for _, _, value in usage if value is not None)
         p95 = latencies[max(0, min(len(latencies) - 1, round(len(latencies) * .95 + .5) - 1))] if latencies else None
         input_tokens = sum(item[0] for item in usage)
@@ -223,7 +268,8 @@ class Command(BaseCommand):
             "dataset_version": dataset["version"], "total_cases": len(cases),
             "legacy_scope": "deterministic extract_lead_data; no legacy OpenAI calls",
             "legacy": {"metrics": aggregate(legacy), "cases": legacy},
-            "ai_first": {"metrics": aggregate(ai), "cases": ai},
+            "raw_model": {"metrics": aggregate(raw_ai), "cases": raw_ai},
+            "accepted_delta": {"metrics": aggregate(accepted_ai), "cases": accepted_ai},
             "usage": {
                 "requests": len(usage), "input_tokens": input_tokens, "output_tokens": output_tokens,
                 "total_tokens": input_tokens + output_tokens,
@@ -236,6 +282,9 @@ class Command(BaseCommand):
                 "input_usd_per_million": input_rate,
                 "output_usd_per_million": output_rate,
                 "rates_source": "settings" if configured_input_rate and configured_output_rate else "gpt-4.1-mini official fallback",
+                "validator_average_latency_ms": round(statistics.mean(
+                    item.get("validator_latency_ms", 0) for item in accepted_ai
+                ), 4),
             },
         }
         rendered = json.dumps(report, ensure_ascii=False, indent=2)

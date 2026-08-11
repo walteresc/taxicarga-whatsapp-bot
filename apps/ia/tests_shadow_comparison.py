@@ -17,7 +17,7 @@ class DeltaShadowComparisonHarnessTests(SimpleTestCase):
             call_command("compare_delta_shadow", "--validate-only", stdout=output)
 
         provider.assert_not_called()
-        self.assertIn("20 casos", output.getvalue())
+        self.assertIn("40 casos", output.getvalue())
 
     def test_legacy_boxes_are_not_scored_as_floor(self):
         case = {

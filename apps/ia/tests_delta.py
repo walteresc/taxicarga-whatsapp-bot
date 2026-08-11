@@ -165,11 +165,20 @@ class DeltaArchitectureTests(TestCase):
 
     def test_internal_worker_processes_only_queued_shadow_event(self):
         payload = {
-            "schema_version": 1,
+            "schema_version": 2,
             "intent": "provide_information",
             "changes": {
                 "lead": {},
-                "locations": [{"ref": "origin", "set": {"elevator": True}}],
+                "locations": [{
+                    "ref": "origin",
+                    "ref_evidence": "en el origen",
+                    "ref_evidence_type": "explicit",
+                    "set": {"elevator": {
+                        "value": True,
+                        "evidence": "si, asensor en el origen",
+                        "evidence_type": "explicit",
+                    }},
+                }],
             },
             "corrections": [],
             "ambiguities": [],
@@ -191,18 +200,31 @@ class DeltaArchitectureTests(TestCase):
 
     def test_real_sequence_produces_shadow_delta_without_mutating_lead(self):
         payload = {
-            "schema_version": 1,
+            "schema_version": 2,
             "intent": "provide_information",
             "changes": {
                 "lead": {},
                 "locations": [
-                    {"ref": "origin", "set": {"elevator": True}},
+                    {
+                        "ref": "origin",
+                        "ref_evidence": "en el origen",
+                        "ref_evidence_type": "explicit",
+                        "set": {"elevator": {
+                            "value": True,
+                            "evidence": "si, asensor en el origen",
+                            "evidence_type": "explicit",
+                        }},
+                    },
                     {
                         "ref": "destination",
+                        "ref_evidence": "enel destino",
+                        "ref_evidence_type": "explicit",
                         "set": {
-                            "access_observation": (
-                                "El vehículo se estaciona un poco lejos de la entrada"
-                            )
+                            "access_observation": {
+                                "value": "El vehículo se estaciona un poco lejos de la entrada",
+                                "evidence": "enel destino el carro se estaciona un poquitolejos de la entrada de la casa",
+                                "evidence_type": "explicit",
+                            }
                         },
                     },
                 ],
@@ -226,7 +248,7 @@ class DeltaArchitectureTests(TestCase):
         locations = list(self.lead.ubicaciones.order_by("orden"))
         self.assertEqual(audit.status, AIDeltaAudit.STATUS_ACCEPTED)
         self.assertTrue(
-            audit.accepted_delta["changes"]["locations"][0]["set"]["elevator"]
+            audit.accepted_delta["changes"]["locations"][0]["set"]["elevator"]["value"]
         )
         self.assertIsNone(locations[0].ascensor)
         self.assertFalse(locations[1].ascensor)
@@ -234,7 +256,7 @@ class DeltaArchitectureTests(TestCase):
 
     def test_same_message_is_idempotent(self):
         payload = {
-            "schema_version": 1,
+            "schema_version": 2,
             "intent": "provide_information",
             "changes": {"lead": {}, "locations": []},
             "corrections": [],

@@ -11,12 +11,9 @@ from apps.integrations.models import IntegrationOutboxEvent
 from apps.whatsapp.models import MensajeWhatsApp
 
 from .delta_context import build_delta_context
-from .delta_contract import (
-    ConversationDelta,
-    empty_delta,
-)
+from .delta_contract_v2 import ConversationDeltaV2, empty_delta_v2
 from .delta_snapshot import build_canonical_snapshot
-from .delta_validator import validate_delta
+from .delta_validator_v2 import validate_delta_v2
 from .models import AIDeltaAudit
 from .providers import build_provider
 
@@ -27,13 +24,18 @@ DELTA_SHADOW_EVENT = "extract_ai_delta_shadow"
 
 
 DELTA_EXTRACTION_SYSTEM_PROMPT = """
-Comprendes mensajes de clientes de TaxiCarga. Devuelve solo cambios expresados
-en el nuevo mensaje, resueltos contra state y last_bot_question. Tolera errores
-ortograficos, lenguaje coloquial, respuestas breves y varios datos por frase.
-Resuelve origin, destination, both y referencias relativas usando el contexto.
-No reconstruyas el estado completo. Campos ausentes se conservan. null no borra.
-No decidas precios, readiness, reservas, ownership ni estados comerciales.
-Si un dato sigue ambiguo, registralo en ambiguities y no lo inventes.
+Comprendes mensajes libres de clientes de TaxiCarga. Devuelve EXCLUSIVAMENTE
+informacion que el mensaje actual agrega, corrige o aclara. State solo resuelve
+referencias: nunca copies ni repitas datos conocidos. Cada valor y cada ref de
+ubicacion requieren una cita literal breve del customer_message y evidence_type:
+explicit, explicit_contextual o inferred. Contextual usa tambien last_bot_question.
+Marca inferred si el cliente no afirmo directamente la conclusion. No conviertas
+observaciones en conclusiones: "queda lejos" puede ser access_observation, no
+truck_access=false; "una cuadra" no son 100 metros. Django rechazara inferred.
+Si una observacion no identifica ubicacion, no elijas origin/destination/both:
+devuelvela en ambiguities con possible_refs. Usa both solo con evidencia expresa
+de ambos lugares. Tolera typos y lenguaje coloquial. Campos ausentes se conservan.
+No decidas precio, readiness, reservas, ownership ni estados comerciales.
 """.strip()
 
 
@@ -48,10 +50,16 @@ def _sanitize_delta(delta):
     for location in data.get("changes", {}).get("locations", []):
         values = location.get("set", {})
         if "access_observation" in values:
-            values["access_observation"] = _sanitize_text(values["access_observation"])
+            values["access_observation"]["value"] = _sanitize_text(
+                values["access_observation"]["value"]
+            )
+            values["access_observation"]["evidence"] = _sanitize_text(
+                values["access_observation"]["evidence"]
+            )
     lead_values = data.get("changes", {}).get("lead", {})
     if "load" in lead_values:
-        lead_values["load"] = _sanitize_text(lead_values["load"])
+        lead_values["load"]["value"] = _sanitize_text(lead_values["load"]["value"])
+        lead_values["load"]["evidence"] = _sanitize_text(lead_values["load"]["evidence"])
     return data
 
 
@@ -80,9 +88,9 @@ def extract_conversation_delta(context, *, provider_name=None):
                 "content": json.dumps(context.payload, ensure_ascii=False, separators=(",", ":")),
             },
         ],
-        schema_model=ConversationDelta,
+        schema_model=ConversationDeltaV2,
     )
-    return ConversationDelta.model_validate_json(result.text), result
+    return ConversationDeltaV2.model_validate_json(result.text), result
 
 
 def run_delta_shadow(
@@ -101,8 +109,12 @@ def run_delta_shadow(
     )
     try:
         delta, metrics = extract_conversation_delta(context)
-        validation = validate_delta(delta, snapshot)
-        rejected = list(validation.rejected_fields)
+        validation = validate_delta_v2(
+            delta, snapshot, customer_message=customer_message,
+            last_bot_question=context.last_bot_question,
+            expected_state_version=snapshot.state_version,
+        )
+        rejected = [item.path for item in validation.rejected]
         status = AIDeltaAudit.STATUS_REJECTED if rejected else AIDeltaAudit.STATUS_ACCEPTED
         return AIDeltaAudit.objects.create(
             conversation_id=conversation_id,
@@ -116,7 +128,7 @@ def run_delta_shadow(
             accepted_delta=_sanitize_delta(validation.accepted),
             legacy_extraction=_sanitize_legacy_extraction(legacy_extraction),
             rejected_fields=rejected,
-            rejection_reasons=list(validation.rejection_reasons),
+            rejection_reasons=[item.reason for item in validation.rejected],
             latency_ms=metrics.latency_ms,
             input_tokens=metrics.input_tokens,
             output_tokens=metrics.output_tokens,
@@ -127,10 +139,10 @@ def run_delta_shadow(
             conversation_id=conversation_id,
             message_id=trigger_message_id,
             lead=lead,
-            schema_version=1,
+            schema_version=2,
             state_version=snapshot.state_version,
             status=AIDeltaAudit.STATUS_FALLBACK,
-            accepted_delta=_sanitize_delta(empty_delta()),
+            accepted_delta=_sanitize_delta(empty_delta_v2()),
             legacy_extraction=_sanitize_legacy_extraction(legacy_extraction),
             rejection_reasons=["provider_or_schema_failure"],
             fallback_used=True,

@@ -332,3 +332,21 @@
   oficiales GPT-4.1 mini; USD 0.54806 por 1,000 extracciones.
 - Recomendación: revisar arquitectura/contrato delta antes de ampliar shadow; no
   activar operativo. Suite 623/623 OK; 33 omitidas. Meta sends 0. Worker detenido.
+
+## Fase 3 IA-first Delta V2 (2026-08-11)
+
+- Contrato V2 exige valor, evidencia anclada y tipo `explicit`,
+  `explicit_contextual` o `inferred`; validador acepta las dos primeras y rechaza
+  inferencias, referencias ambiguas, normalizaciones no sustentadas y no-ops.
+- Dataset ampliado de 20 a 40 casos. Benchmark real GPT-4.1-mini: raw precision,
+  recall y F1 0.9016; seguridad 37/40. Accepted: precision 1.0000, recall 0.9492,
+  F1 0.9739 y seguridad 40/40. Legacy: F1 0.4651 y seguridad 36/40.
+- Message 15/17/19 pasan. Message 17 conserva estacionamiento como ambigüedad;
+  Message 19 acepta solo ascensor origen y observación acceso destino.
+- Rechazos: `AMBIGUOUS_REF` 7, `NO_OP` 15, `INFERRED_NOT_ALLOWED` 6. Cero valores
+  numéricos inventados y cero propagaciones a endpoint incorrecto tras validador.
+- 40 requests: 59,206 input + 6,974 output = 66,180 tokens; costo estimado USD
+  0.0348408. Provider avg 8.46 s, mediana 4.15 s, p95 24.03 s, máxima 43.35 s;
+  validador avg 0.0842 ms en replay final.
+- Flags siguen `AI_DELTA_EXTRACTION_ENABLED=false` y `AI_DELTA_SHADOW_MODE=true`.
+  Meta sends 0. Worker detenido. Recomendación: ampliar shadow; no activar aún.
