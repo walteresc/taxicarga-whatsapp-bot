@@ -576,23 +576,27 @@
 - IA-first runtime sigue NO integrado/activado por gate obligatorio sin PASS.
   Meta sends 0; worker detenido; no push; producción intacta.
 
-# Request lifecycle + recovery (2026-08-12)
+# Request lifecycle + recovery fixes (2026-08-12)
 
-- Evidencia real preservada: conversación 47, Lead 106; inbound 35 reutilizó
-  snapshot Surco→Miraflores. Inbound incomprensible real fue `is` (39).
-- Causa concurrente: no existía transición explícita de solicitud y OpenAI
-  falló 401 `invalid_api_key`; fallback cambió de target tras delta vacío.
-- `ConversacionWhatsApp.lead` es ahora solicitud activa explícita. Una intención
-  GPT estructurada NEW/CONTINUE/UNCERTAIN cambia a Lead limpio o solicita
-  confirmación. Lead anterior permanece histórico y queda perdido por reemplazo.
-- Auditoría registra request intent, active request before/after y transición.
-  Chatwoot proyecta siempre el Lead actualmente vinculado a la conversación.
-- Continuidad usa `asked_targets + AIDeltaAudit`, no texto: RESOLVED, PARTIAL,
-  AMBIGUOUS o UNRESOLVED. Primer fallo debe aclarar target actual; segundo puede
-  reformular/deferir. Datos espontáneos aceptados se conservan.
-- Regresión IA/integrations/WhatsApp: 515 PASS, 33 skips esperados. Meta sends 0.
-- Bloqueo de prueba manual: credencial OpenAI observada inválida en turnos reales;
-  worker permanece detenido hasta validar una credencial nueva.
+- **Bugs encontrados en prueba manual**:
+  1. Msg 35 "buen dia quiero cotizar una mudanza" heredó Surco→Miraflores de Lead anterior
+  2. Msg 39 "is" incomprensible saltó a truck_access/origin sin aclarar elevator/destination
+
+- **Root causes identificadas**:
+  1. OpenAI 401 `invalid_api_key` en classify_request_intent() → fallback retornaba NO_REQUEST_SIGNAL (continúa silencioso)
+  2. last_question_resolution() retornaba WAITING porque buscaba inbound solo del último bot; no detectaba msg 38 sin resolver
+
+- **Fixes implementados**:
+  - Commit `134498b`: request_lifecycle fallback → UNCERTAIN + pending_request_switch en caso de GPT failure
+  - Commit `9c1f474`: last_question_resolution() ahora busca en prior 3 bots para detectar targets sin resolver
+  - Commit `d165c61`: conversation_engine preparado para contexto en _rephrase_if_unanswered (future use)
+
+- **Tests agregados y verificados**:
+  - test_gpt_failure_on_new_request_message_triggers_uncertain: PASS
+  - test_unintelligible_answer_stays_on_current_context: PASS
+  - test_target_resolved: PASS
+
+- **Pendiente**: validar credencial OpenAI antes de prueba manual. Credential fue observada inválida en turnos reales (401).
 
 # AI-led conversation orchestration (2026-08-12)
 
