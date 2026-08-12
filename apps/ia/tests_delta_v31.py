@@ -19,6 +19,7 @@ from .delta_validator_v31 import (
 )
 from .v31_offline_replay import adapt_v3_delta_to_v31
 from .v31_blind_holdout import v31_blind_holdout_cases
+from .v31_blind_holdout_round2 import v31_blind_holdout_round2_cases
 
 
 class DeltaValidatorV31Tests(SimpleTestCase):
@@ -301,3 +302,8 @@ class DeltaValidatorV31Tests(SimpleTestCase):
         self.assertEqual(len(cases),100)
         self.assertGreaterEqual(sum(bool(case["question_targets"]) for case in cases),50)
         self.assertGreaterEqual(sum(case["human_review"] for case in cases),10)
+
+    def test_second_holdout_is_disjoint_and_frozen(self):
+        first=v31_blind_holdout_cases();second=v31_blind_holdout_round2_cases()
+        self.assertEqual(len(second),100)
+        self.assertFalse({x["message"] for x in first}&{x["message"] for x in second})
