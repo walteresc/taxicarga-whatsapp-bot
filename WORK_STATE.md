@@ -575,3 +575,35 @@
   0.0061024; insuficiente para holdout 10 (~USD 0.126).
 - IA-first runtime sigue NO integrado/activado por gate obligatorio sin PASS.
   Meta sends 0; worker detenido; no push; producción intacta.
+
+# LOCAL RELEASE CANDIDATE V3.1 (2026-08-12)
+
+- Holdout 10 congelado antes de API: 100 casos, 50 contextuales, 14 HUMAN_REVIEW,
+  SHA-256 `0635a3210bedaa72b2ccbed5af4ae3b2340d508220db0a79d73a25c6ddfa93c2`.
+- Run `20260812T021711Z_v31_blind_holdout_round10_100`: schema 100/100;
+  accepted P 100%, R 92.78%, F1 96.26%, safety 100/100. Excluyendo
+  HUMAN_REVIEW: P 100%, R 93.75%, F1 96.77%, safety 86/86. Critical unsafe,
+  wrong endpoint, numeric invention y commercial authority: 0. HOLDOUT PASS.
+- Costo acumulado estimado desde master: USD 2.6203284 / USD 2.80.
+- Runtime V3.1 fuera del webhook mediante internal outbox/worker, validator
+  evidence-bound, lock transaccional del Lead y persistencia idempotente. Legacy
+  permanece disponible.
+- Policy DB por canal: `off|shadow|active`; activación rechaza canales no TEST.
+  Rollback real TEST `active -> off -> active` probado. Canal 7 TEST queda
+  `active`; otros canales activos: 0. Flags globales permanecen
+  `AI_DELTA_EXTRACTION_ENABLED=false`, `AI_DELTA_SHADOW_MODE=true`.
+- Shadow replay read-only: 20/20, critical 0, state writes 0, pricing authority
+  fields 0, Meta sends 0.
+- E2E IA/WhatsApp/Chatwoot/quote/booking/failures: 562 PASS, 33 skips
+  PostgreSQL-only esperados bajo SQLite.
+- PostgreSQL local aislado: 33/33 PASS, incluyendo locks, ownership, outbox,
+  idempotencia, cotización, booking y concurrencia.
+- Suite completa: 712 PASS, 33 skips PostgreSQL-only; esos 33 fueron ejecutados
+  y aprobados separadamente en PostgreSQL. Check, migration check y diff: PASS.
+- Seguridad: datos de pago removidos del código y externalizados; fallback deriva
+  al asesor. `.env` no versionado; scan tracked sin secretos confirmados.
+- Django limpio operativo en 127.0.0.1:8001; Chatwoot local HTTP 200; mapping TEST
+  presente. Integration worker detenido. Meta physical sends desde master: 0.
+- No push, VPS, producción ni ETAPA 10C. Archivos ajenos intactos.
+- LOCAL RELEASE CANDIDATE READY. Pendiente único: aceptación manual de inbound
+  originado por propietario en WhatsApp TEST; no bloquea RC local.
