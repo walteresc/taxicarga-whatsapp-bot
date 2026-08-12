@@ -4,8 +4,8 @@ from dataclasses import dataclass
 
 from .conversation_policy import QuestionTarget
 from .delta_contract_v31 import (
-    Ambiguity31, ContextDependency, Correction31, EvidenceType, RefSource, ValueOrigin,
-    empty_delta_v31,
+    Ambiguity31, ContextDependency, Correction31, EvidenceType, LeadEvidenceSet31,
+    LocationDelta31, LocationEvidenceSet31, RefSource, ValueOrigin, empty_delta_v31,
 )
 from .delta_validator_v2 import RejectedChange
 
@@ -160,6 +160,59 @@ def _state_value(snapshot, path):
     return value
 
 
+def _recover_correction_change(delta, correction, targets):
+    """Materialize an evidence-valid correction as the corresponding delta."""
+    lead_aliases={
+        "service":"service", "service_date":"service_date", "load":"load",
+        "staff.required":"staff_required", "staff_required":"staff_required",
+        "additional_services.packing_required":"packing_required",
+        "packing_required":"packing_required",
+        "additional_services.packing":"packing_mode", "packing_mode":"packing_mode",
+        "additional_services.disassembly_required":"disassembly_required",
+        "disassembly_required":"disassembly_required",
+        "additional_services.assembly_required":"assembly_required",
+        "assembly_required":"assembly_required",
+    }
+    target=correction.target.removeprefix("locations.")
+    if correction.target in lead_aliases:
+        field=lead_aliases[correction.target]
+        if getattr(delta.changes.lead,field) is None:
+            proposal=LeadEvidenceSet31.model_validate({field:{
+                "value":correction.new,"evidence_quote":correction.evidence_quote,
+                "evidence_type":correction.evidence_type,
+                "context_dependency":"none"}})
+            setattr(delta.changes.lead,field,getattr(proposal,field))
+        return
+
+    location_fields=set(LocationEvidenceSet31.model_fields)
+    parts=target.split(".")
+    ref=parts[0] if len(parts)==2 and parts[0] in {"origin","destination","both"} else None
+    field=parts[-1]
+    if field not in location_fields:
+        return
+    if ref is None:
+        explicit=[candidate for candidate in ("origin","destination","both")
+                  if _explicit_ref_marker_is_anchored(candidate,correction.evidence_quote)]
+        target_refs={item.ref for item in targets
+                     if item.field == field and item.ref in {"origin","destination","both"}}
+        refs=explicit or sorted(target_refs)
+        if len(refs)!=1:
+            return
+        ref=refs[0]
+    if any(item.ref == ref and getattr(item.set,field) is not None
+           for item in delta.changes.locations):
+        return
+    ref_source=(RefSource.EXPLICIT_MESSAGE
+                if _explicit_ref_marker_is_anchored(ref,correction.evidence_quote)
+                else RefSource.QUESTION_TARGET)
+    delta.changes.locations.append(LocationDelta31.model_validate({
+        "ref":ref,"ref_evidence_quote":correction.evidence_quote,
+        "ref_source":ref_source,"set":{field:{
+            "value":correction.new,"evidence_quote":correction.evidence_quote,
+            "evidence_type":correction.evidence_type,
+            "context_dependency":"none"}}}))
+
+
 def _proposal_reason(proposal, message, targets, field, ref=None, *, check_context=True):
     if proposal.evidence_type == EvidenceType.INFERRED:
         return INFERRED_NOT_ALLOWED
@@ -186,7 +239,8 @@ def validate_delta_v31(delta, snapshot, *, customer_message, question_targets=()
                        expected_state_version=None):
     targets = tuple(target if isinstance(target, QuestionTarget) else QuestionTarget(**target)
                     for target in question_targets)
-    accepted = empty_delta_v31().model_copy(update={"intent": delta.intent})
+    candidate=delta.model_copy(deep=True)
+    accepted = empty_delta_v31().model_copy(update={"intent": candidate.intent})
     rejected = []
     if expected_state_version and expected_state_version != snapshot.state_version:
         return DeltaValidationV31Result(delta, accepted,
@@ -201,7 +255,7 @@ def validate_delta_v31(delta, snapshot, *, customer_message, question_targets=()
         "assembly_required":"additional_services.assembly_required",
     }
     correction_targets = set()
-    for correction in delta.corrections:
+    for correction in candidate.corrections:
         reason = _proposal_reason(correction, customer_message, targets,
                                   correction.target.split(".")[-1],
                                   check_context=False)
@@ -210,14 +264,15 @@ def validate_delta_v31(delta, snapshot, *, customer_message, question_targets=()
         else:
             accepted.corrections.append(correction)
             correction_targets.add(correction.target)
+            _recover_correction_change(candidate,correction,targets)
 
     targeted_claim_quotes = {
         proposal.evidence_quote
-        for field, proposal in delta.changes.lead
+        for field, proposal in candidate.changes.lead
         if proposal is not None and _target_matches(targets, field)
     }
 
-    for field, proposal in delta.changes.lead:
+    for field, proposal in candidate.changes.lead:
         if proposal is None:
             continue
         reason = _proposal_reason(proposal, customer_message, targets, field)
@@ -251,8 +306,8 @@ def validate_delta_v31(delta, snapshot, *, customer_message, question_targets=()
                 correction_targets.add(path)
 
     valid_refs = set(snapshot.state.get("locations", {}))
-    ambiguous_fields = {item.field for item in delta.ambiguities}
-    for index, location in enumerate(delta.changes.locations):
+    ambiguous_fields = {item.field for item in candidate.ambiguities}
+    for index, location in enumerate(candidate.changes.locations):
         ref = location.ref
         if ref == "ambiguous":
             if _anchored(location.ref_evidence_quote,customer_message):
@@ -314,7 +369,7 @@ def validate_delta_v31(delta, snapshot, *, customer_message, question_targets=()
                 and other.ref_evidence_quote == location.ref_evidence_quote
                 and getattr(other.set,field,None) is not None
                 and getattr(other.set,field).value != proposal.value
-                for other in delta.changes.locations if other is not location)
+                for other in candidate.changes.locations if other is not location)
             if (not reason and ref == "both"
                     and _ref_both_conflicts_with_specific_marker(
                         location.ref_evidence_quote)
@@ -349,7 +404,7 @@ def validate_delta_v31(delta, snapshot, *, customer_message, question_targets=()
                 setattr(kept.set, field, proposal)
         if any(value is not None for _, value in kept.set):
             accepted.changes.locations.append(kept)
-            if delta.intent.value == "correct_information":
+            if candidate.intent.value == "correct_information":
                 for field,proposal in kept.set:
                     if proposal is None:continue
                     for endpoint in refs:
@@ -361,5 +416,5 @@ def validate_delta_v31(delta, snapshot, *, customer_message, question_targets=()
                             evidence_type=proposal.evidence_type,
                             context_dependency=ContextDependency.NONE))
                         correction_targets.add(path)
-    accepted.ambiguities.extend(delta.ambiguities)
+    accepted.ambiguities.extend(candidate.ambiguities)
     return DeltaValidationV31Result(delta, accepted, tuple(rejected))

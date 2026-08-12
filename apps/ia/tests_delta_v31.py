@@ -317,6 +317,27 @@ class DeltaValidatorV31Tests(SimpleTestCase):
         result=self.validate(delta,"solo en el segundo",target)
         self.assertEqual(len(result.accepted.changes.locations),2)
 
+    def test_correction_only_materializes_canonical_location_change(self):
+        delta=self.delta(corrections=[{"target":"origin.elevator","new":True,
+            "evidence_quote":"corrijo: origen sí tiene ascensor",
+            "evidence_type":"explicit","context_dependency":"none"}])
+        result=self.validate(delta,"corrijo: origen sí tiene ascensor")
+        self.assertTrue(result.accepted.changes.locations[0].set.elevator.value)
+
+    def test_bare_correction_uses_explicit_endpoint_but_not_snapshot(self):
+        delta=self.delta(corrections=[{"target":"truck_access","new":False,
+            "evidence_quote":"el camión no entra por el origen",
+            "evidence_type":"explicit","context_dependency":"none"}])
+        result=self.validate(delta,"corrijo: el camión no entra por el origen")
+        self.assertFalse(result.accepted.changes.locations[0].set.truck_access.value)
+
+    def test_bare_correction_without_endpoint_stays_audit_only(self):
+        delta=self.delta(corrections=[{"target":"elevator","new":True,
+            "evidence_quote":"ahora sí tiene","evidence_type":"explicit",
+            "context_dependency":"none"}])
+        result=self.validate(delta,"corrijo: ahora sí tiene")
+        self.assertFalse(result.accepted.changes.locations)
+
     def test_old_contextual_metadata_adapts_without_changing_claim(self):
         old={"schema_version":3,"intent":"provide_information","changes":{"lead":{
             "load":{"value":"20 cajas","evidence":"20 cajas",
