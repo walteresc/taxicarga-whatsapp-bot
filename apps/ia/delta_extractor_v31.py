@@ -72,13 +72,6 @@ corrección sin correction es incompleto.
 
 Nunca decidas pricing, quote/booking readiness, owner, reserva, handoff ni estado
 comercial. Devuelve únicamente estructura V3.1 solicitada.
-
-Antes de responder, verifica cobertura del mensaje completo sin mostrar análisis:
-1) respuesta a cada QuestionTarget; 2) service y load explícitos; 3) staff y
-packing; 4) service_date; 5) cada cláusula de origin/destination/both; 6)
-correcciones y ambigüedades. Prefijos conversacionales, muletillas, cortesía y
-errores ortográficos no son datos y no deben hacerte omitir hechos posteriores.
-Cada hecho confiable del turno debe aparecer una vez; nada fuera del turno.
 """.strip()
 
 
