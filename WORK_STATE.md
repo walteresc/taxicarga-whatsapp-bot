@@ -520,3 +520,20 @@
   USD 0.1512132. El siguiente ciclo obligatorio (smoke + development + nuevo
   holdout) costaría aproximadamente USD 0.26 y superaría el límite.
 - HARD BLOCKER: ampliar presupuesto de evaluación antes de continuar FASE E.
+
+### Auditoría offline posterior al bloqueo
+
+- Holdout 7 no es evidencia válida de generalización: heredó labels de ronda 5
+  después de reescribir superficies semánticas (ej. `veladores`/`mesas de
+  noche`, números en palabras/dígitos). No se declara PASS ni se modifican sus
+  expected post-run.
+- Corrección arquitectónica offline: una `correction` con evidencia válida se
+  materializa como delta atómico solo cuando field/ref se resuelve por path,
+  marcador explícito o QuestionTarget. Ambigüedad sigue fail-closed.
+- Tests V3.1 posteriores: 37/37 PASS. Nuevas llamadas API: 0.
+- Holdout 8 preparado, todavía NO ejecutado ni congelado como examen: 100 casos,
+  50 contextuales, 14 HUMAN_REVIEW, labels/superficie consistentes, disjunto de
+  development y rondas 1-7. Hash provisional:
+  `ebfe95c7a07fe065b170bed33ef3c82c13bd5dde629d95f14aa53ef85b84546b`.
+- Sigue requerido ampliar presupuesto: el ciclo correcto incluye smoke,
+  development y luego congelar/ejecutar holdout 8.
