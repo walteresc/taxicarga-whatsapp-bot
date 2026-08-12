@@ -68,7 +68,9 @@ def resolve_request_lifecycle(*,conversation_id,message,generation_id):
                {"error_type":type(exc).__name__})
         if conversation.pending_request_switch:
             return old,_switch_question(),RequestIntent.UNCERTAIN
-        return old,None,RequestIntent.NO_REQUEST_SIGNAL
+        conversation.pending_request_switch=True
+        conversation.save(update_fields=["pending_request_switch","actualizada_en"])
+        return old,_switch_question(),RequestIntent.UNCERTAIN
     intent=result.intent
     _audit(conversation,old,old,generation_id,"request_intent",
            {"request_intent":intent.value,"confidence":result.confidence})

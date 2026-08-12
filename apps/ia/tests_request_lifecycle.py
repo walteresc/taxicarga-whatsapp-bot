@@ -55,6 +55,18 @@ class RequestLifecycleTests(TestCase):
             message="continuemos",generation_id="g3")
         self.assertEqual(lead.id,self.old.id);self.assertIsNone(reply)
 
+    @patch("apps.ia.request_lifecycle.classify_request_intent")
+    def test_gpt_failure_on_new_request_message_triggers_uncertain(self,classify):
+        """When GPT fails (401, timeout) on ambiguous message, ask user to confirm."""
+        classify.side_effect=Exception("invalid_api_key")
+        lead,reply,intent=resolve_request_lifecycle(conversation_id=self.conversation.id,
+            message="buen dia quiero cotizar una mudanza",generation_id="g4")
+        self.assertEqual(lead.id,self.old.id)
+        self.assertEqual(intent,RequestIntent.UNCERTAIN)
+        self.assertIn("anterior",reply.lower() or "nueva")
+        self.conversation.refresh_from_db()
+        self.assertTrue(self.conversation.pending_request_switch)
+
 
 class ConversationResolutionTests(TestCase):
     def setUp(self):
