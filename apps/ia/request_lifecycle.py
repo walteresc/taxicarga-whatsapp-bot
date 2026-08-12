@@ -129,6 +129,14 @@ def resolve_request_lifecycle(*,conversation_id,message,generation_id,telemetry=
     intent=result.intent
     _audit(conversation,old,old,generation_id,"request_intent",
            {"request_intent":intent.value,"confidence":result.confidence})
+
+    # Handle reactivation prompt rejection: if pending_request_switch and user says "no"
+    if conversation.pending_request_switch and intent==RequestIntent.NO_REQUEST_SIGNAL:
+        conversation.pending_request_switch=False
+        conversation.save(update_fields=["pending_request_switch","actualizada_en"])
+        # Return continuation intent to proceed with current lead
+        return old,None,RequestIntent.CONTINUE_REQUEST
+
     if intent==RequestIntent.NEW_REQUEST:
         new=_new_lead(conversation)
         old.estado=Lead.PERDIDO
