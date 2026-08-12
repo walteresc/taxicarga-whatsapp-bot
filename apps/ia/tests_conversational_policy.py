@@ -58,9 +58,6 @@ class ConversationalPolicyTests(TestCase):
         lowered_reply = reply.lower()
         self.assertIn("pisos", lowered_reply)
         self.assertIn("ambos lugares", lowered_reply)
-        self.assertIn("ascensor", lowered_reply)
-        self.assertIn("camión", lowered_reply)
-        self.assertIn("cargar y descargar", lowered_reply)
         self.assertNotIn("nombre", reply.lower())
         self.assertNotIn("fecha", reply.lower())
 

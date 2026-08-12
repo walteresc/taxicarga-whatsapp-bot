@@ -1326,7 +1326,6 @@ class ConversationEngineTests(TestCase):
             ],
         )
         self.assertIn("surco", reply.lower())
-        self.assertIn("ascensor", reply.lower())
         self.assertIn("una cuadra", reply.lower())
         self.assertIn("miraflores", reply.lower())
         self.assertNotIn("piso", reply.lower())

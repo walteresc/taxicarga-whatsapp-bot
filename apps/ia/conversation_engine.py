@@ -549,17 +549,13 @@ def next_missing_question_for(cliente):
 
 
 def next_question_targets_for(lead):
+    from .conversation_strategy import select_next_conversation_goal
     decision = decide_conversation(
         lead,
         requires_truck_access=bool(lead.lista_objetos and _requires_truck_access(lead)),
     )
-    if not decision.missing_relevant_data or not decision.question_targets:
-        return []
-    # Response asks one related field group at a time. Persist exactly that
-    # group, not every later missing field in the decision.
-    first_field = decision.question_targets[0].field
-    return [target.as_dict() for target in decision.question_targets
-            if target.field == first_field]
+    strategy=select_next_conversation_goal(lead,decision)
+    return [target.as_dict() for target in strategy.targets]
 
 
 def _get_active_lead(cliente):
@@ -574,14 +570,38 @@ def _get_active_lead(cliente):
 
 
 def _next_missing_question(lead, message=""):
+    from .conversation_strategy import select_next_conversation_goal
     decision = decide_conversation(
         lead,
         requires_truck_access=bool(lead.lista_objetos and _requires_truck_access(lead)),
     )
     if not decision.missing_relevant_data:
         return None
-    fallback = _grouped_question(decision, message=message)
-    return _generate_decision_reply(lead, message, decision, fallback) or fallback
+    strategy=select_next_conversation_goal(lead,decision)
+    fallback = _strategy_question(decision,strategy,message=message)
+    return _generate_decision_reply(
+        lead,message,decision,fallback,strategy=strategy) or fallback
+
+
+def _strategy_question(decision,strategy,message=""):
+    if not strategy.targets:return _grouped_question(decision,message=message)
+    if message and any(target.field=="truck_access"
+                       for target in decision.question_targets):
+        truck_question=_truck_access_question(decision,message)
+        if "corresponde" in truck_question or "cuál lugar" in truck_question:
+            return truck_question
+    target=strategy.targets[0]
+    locations=decision.known_data.get("ubicaciones",[])
+    names={"origin":locations[0].get("distrito") if locations else "el origen",
+           "destination":locations[-1].get("distrito") if locations else "el destino"}
+    if target.field=="floor" and len(strategy.targets)>1:
+        return "¿En qué pisos están ambos lugares?"
+    if target.field=="elevator":
+        return f"¿En {names.get(target.ref,target.ref)} tienen ascensor?"
+    if target.field=="truck_access":
+        return (f"¿El camión puede estacionarse cerca en "
+                f"{names.get(target.ref,target.ref)} para cargar y descargar?")
+    return _grouped_question(decision,message=message)
 
 
 def _next_missing_field(lead):
@@ -747,7 +767,7 @@ def _truck_access_question(decision, message):
     return "¿El camión puede estacionarse cerca para cargar y descargar?"
 
 
-def _generate_decision_reply(lead, message, decision, fallback):
+def _generate_decision_reply(lead, message, decision, fallback, strategy=None):
     if not message:
         return None
     context = (
