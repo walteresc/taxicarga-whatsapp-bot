@@ -182,9 +182,8 @@ LOCAL_LIMA_CALLAO_AREAS = {
     "villa maria del triunfo",
 }
 
-PAYMENT_INFORMATION = (
-    "Puedes pagar por Yape al 996797907, a nombre de Walter Escobar, "
-    "o mediante deposito o transferencia a la cuenta BCP 19409223621088."
+PAYMENT_INFORMATION_FALLBACK = (
+    "Un asesor te confirmara de forma segura los medios y datos de pago."
 )
 
 
@@ -202,7 +201,7 @@ def handle_incoming_message(cliente, message, canonical_context=None, generation
     if account_holder_reply:
         return account_holder_reply
     if _asks_about_payment(message):
-        return PAYMENT_INFORMATION
+        return settings.PAYMENT_INFORMATION or PAYMENT_INFORMATION_FALLBACK
 
     if (
         lead.etapa_conversacion == Lead.ETAPA_RESERVA
@@ -2051,7 +2050,10 @@ def _account_holder_information(message):
         ]
     )
     if mentions_account and asks_holder:
-        return "Si, la cuenta BCP tambien esta a nombre de Walter Escobar."
+        return (
+            settings.PAYMENT_ACCOUNT_HOLDER_INFORMATION
+            or "Un asesor te confirmara de forma segura el titular de la cuenta."
+        )
     return None
 
 
@@ -2074,9 +2076,8 @@ def _answer_post_reservation_question(lead, message):
         "datos de cotizacion o reserva. Usa solo los datos proporcionados. Si la "
         "respuesta no se puede saber con certeza, indica que lo confirmaremos con "
         "el equipo; no inventes.\n\n"
-        "Datos verificados del negocio:\n"
-        "- Yape: 996797907, titular Walter Escobar.\n"
-        "- Cuenta BCP: 19409223621088, titular Walter Escobar.\n"
+        f"Informacion de pago verificada: "
+        f"{settings.PAYMENT_INFORMATION or 'consultar con un asesor'}.\n"
         "- El conductor se comunica cuando esta llegando a la direccion.\n\n"
         f"Reserva: fecha={lead.fecha_servicio}, hora={lead.horario_servicio}, "
         f"origen={lead.direccion_origen}, destino={lead.direccion_destino}, "

@@ -341,9 +341,7 @@ class ConversationEngineTests(TestCase):
         lead.refresh_from_db()
         self.assertEqual(lead.etapa_conversacion, Lead.ETAPA_RESERVADO)
         self.assertEqual(lead.estado, Lead.ASIGNADO)
-        self.assertIn("yape", reply.lower())
-        self.assertIn("996797907", reply)
-        self.assertIn("19409223621088", reply)
+        self.assertIn("asesor", reply.lower())
         self.assertNotIn("ascensor", reply.lower())
         self.assertNotIn("escalera", reply.lower())
         self.assertNotIn("piso", reply.lower())
@@ -364,9 +362,8 @@ class ConversationEngineTests(TestCase):
             "la cuenta tambien sale al mismo nombre?",
         )
 
-        self.assertIn("si", reply.lower())
-        self.assertIn("cuenta bcp", reply.lower())
-        self.assertIn("walter escobar", reply.lower())
+        self.assertIn("asesor", reply.lower())
+        self.assertIn("titular", reply.lower())
         ai_mock.assert_not_called()
 
     @patch("apps.ia.conversation_engine.generate_reply")
