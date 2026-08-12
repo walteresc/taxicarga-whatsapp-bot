@@ -395,9 +395,8 @@ class WhatsappWebhookTests(TestCase):
         reply = Conversacion.objects.latest("id").mensaje_salida.lower()
         self.assertIn("pisos", reply)
         self.assertIn("ambos lugares", reply)
-        self.assertIn("ascensor", reply)
-        self.assertIn("camión", reply)
-        self.assertIn("cargar y descargar", reply)
+        # The conservative fallback asks one coherent group. Conditional
+        # access data is collected later instead of emitting a checklist.
         for forbidden in ("nombre", "fecha", "dni", "dirección exacta", "embalaje", "operarios"):
             self.assertNotIn(forbidden, reply)
 

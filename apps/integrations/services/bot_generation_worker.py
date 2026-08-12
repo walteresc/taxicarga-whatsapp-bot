@@ -62,15 +62,30 @@ def process_bot_generation_event(event_id,*,worker_id="integration"):
         event.save(update_fields=["status","attempts","locked_by","locked_at","updated_at"])
     try:
         with _lead_state_guard():
-            lead=_lead_for_generation(message.conversacion.lead_id)
+            from apps.ia.request_lifecycle import resolve_request_lifecycle
+            lead,early_reply,request_intent=resolve_request_lifecycle(
+                conversation_id=message.conversacion_id,message=message.contenido,
+                generation_id=generation.id)
             context=build_bot_context(message.conversacion_id,trigger_message_id=message.id)
-            reply=handle_incoming_message(lead.cliente,message.contenido,
-                                          canonical_context=context,generation_id=generation.id)
+            if early_reply:
+                reply=early_reply
+                targets=[{"field":"request_switch","ref":None,"operation":"set"}]
+                generation.asked_targets=targets
+                generation.conversation_intent="REQUEST_SWITCH_CONFIRMATION"
+                generation.conversation_metadata={"request_intent":request_intent.value,
+                    "active_request_id":lead.id}
+                generation.save(update_fields=["asked_targets","conversation_intent",
+                                               "conversation_metadata"])
+            else:
+                reply=handle_incoming_message(lead.cliente,message.contenido,
+                    canonical_context=context,generation_id=generation.id,lead=lead)
             lead.refresh_from_db()
-            generation.refresh_from_db(fields=["asked_targets"])
-            targets=(generation.asked_targets or next_question_targets_for(lead))
+            generation.refresh_from_db(fields=["asked_targets","conversation_intent"])
+            if not early_reply:
+                targets=(generation.asked_targets or next_question_targets_for(lead))
         _generation,_outbox,published=finalize_generation(
-            generation.id,result_text=reply,question_targets=targets)
+            generation.id,result_text=reply,question_targets=targets,
+            conversation_intent=generation.conversation_intent)
     except Exception as exc:
         fail_generation(generation.id,exc)
         IntegrationOutboxEvent.objects.filter(pk=event_id).update(

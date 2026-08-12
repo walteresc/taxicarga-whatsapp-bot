@@ -13,7 +13,8 @@ from .providers import build_provider
 
 ALLOWED_FIELDS={"service","district","floor","elevator","truck_access","load",
     "staff_required","packing_required","packing_mode","disassembly_required",
-    "assembly_required","service_date","address","schedule","customer_name"}
+    "assembly_required","service_date","address","schedule","customer_name",
+    "request_switch"}
 FORBIDDEN_FIELDS={"price","discount","quote_ready","owner","commercial_status"}
 LOCATION_FIELDS={"district","floor","elevator","truck_access","address"}
 
@@ -27,7 +28,8 @@ class AskedTarget(StrictModel):
 class ConversationResponse(StrictModel):
     reply_text: StrictStr = Field(min_length=1,max_length=1200)
     asked_targets: list[AskedTarget] = Field(default_factory=list,max_length=6)
-    conversation_intent: Literal["ASK","CLARIFY","ANSWER_AND_ASK","INFORM","HANDOFF"]
+    conversation_intent: Literal["ASK","CLARIFY","ANSWER_AND_ASK","INFORM",
+                                 "REQUEST_SWITCH_CONFIRMATION","HANDOFF"]
 
 
 SYSTEM_PROMPT="""
@@ -41,7 +43,8 @@ comercial. Nunca calcules precio. Sé breve. Devuelve solo estructura solicitada
 """.strip()
 
 
-def orchestrate_conversation(*,lead,decision,customer_message,recent_turns,generation_id):
+def orchestrate_conversation(*,lead,decision,customer_message,recent_turns,generation_id,
+                             last_resolution=None):
     requirements=quote_requirements(lead)
     payload={"canonical_state":build_canonical_snapshot(lead).state,
         "phase":decision.phase,"required":requirements.required,
@@ -51,6 +54,9 @@ def orchestrate_conversation(*,lead,decision,customer_message,recent_turns,gener
         "customer_message":customer_message,"recent_turns":recent_turns[-4:],
         "commercial_state":{"pricing_result":decision.pricing_result,
                             "must_handoff":decision.must_handoff},
+        "last_question_targets":list(last_resolution.targets) if last_resolution else [],
+        "last_question_resolution_status":last_resolution.status if last_resolution else "NONE",
+        "unresolved_attempts":last_resolution.unresolved_attempts if last_resolution else 0,
         "unresolved_ambiguities":[],
         "constraints":list(decision.response_constraints)+[
             "Django decides readiness, booking and pricing",
@@ -61,7 +67,11 @@ def orchestrate_conversation(*,lead,decision,customer_message,recent_turns,gener
         schema_model=ConversationResponse)
     response=ConversationResponse.model_validate_json(result.text)
     targets=validate_asked_targets(response.asked_targets,payload["canonical_state"])
-    BotGeneration.objects.filter(pk=generation_id).update(asked_targets=targets)
+    _validate_continuity(response,targets,last_resolution)
+    BotGeneration.objects.filter(pk=generation_id).update(asked_targets=targets,
+        conversation_intent=response.conversation_intent,
+        conversation_metadata={"last_question_resolution":payload["last_question_resolution_status"],
+                               "unresolved_attempts":payload["unresolved_attempts"]})
     return response.reply_text,targets
 
 
@@ -78,3 +88,13 @@ def validate_asked_targets(targets,state):
             raise ValueError("unexpected conversation target ref")
         accepted.append(target.model_dump(mode="json"))
     return accepted
+
+
+def _validate_continuity(response,targets,resolution):
+    if not resolution or resolution.status not in {"UNRESOLVED","AMBIGUOUS","PARTIAL"}:
+        return
+    if resolution.unresolved_attempts>1:return
+    previous={(item.get("field"),item.get("ref")) for item in resolution.targets}
+    current={(item.get("field"),item.get("ref")) for item in targets}
+    if response.conversation_intent!="CLARIFY" or not previous.intersection(current):
+        raise ValueError("first unresolved answer must clarify current context")

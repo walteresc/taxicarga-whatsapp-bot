@@ -152,6 +152,8 @@ class BotGeneration(models.Model):
     request_key = models.CharField(max_length=255)
     result_text = models.TextField(blank=True)
     asked_targets = models.JSONField(default=list, blank=True)
+    conversation_intent = models.CharField(max_length=40, blank=True)
+    conversation_metadata = models.JSONField(default=dict, blank=True)
     started_at = models.DateTimeField(default=timezone.now)
     completed_at = models.DateTimeField(null=True, blank=True)
     cancelled_at = models.DateTimeField(null=True, blank=True)

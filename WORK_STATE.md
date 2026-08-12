@@ -576,6 +576,24 @@
 - IA-first runtime sigue NO integrado/activado por gate obligatorio sin PASS.
   Meta sends 0; worker detenido; no push; producción intacta.
 
+# Request lifecycle + recovery (2026-08-12)
+
+- Evidencia real preservada: conversación 47, Lead 106; inbound 35 reutilizó
+  snapshot Surco→Miraflores. Inbound incomprensible real fue `is` (39).
+- Causa concurrente: no existía transición explícita de solicitud y OpenAI
+  falló 401 `invalid_api_key`; fallback cambió de target tras delta vacío.
+- `ConversacionWhatsApp.lead` es ahora solicitud activa explícita. Una intención
+  GPT estructurada NEW/CONTINUE/UNCERTAIN cambia a Lead limpio o solicita
+  confirmación. Lead anterior permanece histórico y queda perdido por reemplazo.
+- Auditoría registra request intent, active request before/after y transición.
+  Chatwoot proyecta siempre el Lead actualmente vinculado a la conversación.
+- Continuidad usa `asked_targets + AIDeltaAudit`, no texto: RESOLVED, PARTIAL,
+  AMBIGUOUS o UNRESOLVED. Primer fallo debe aclarar target actual; segundo puede
+  reformular/deferir. Datos espontáneos aceptados se conservan.
+- Regresión IA/integrations/WhatsApp: 515 PASS, 33 skips esperados. Meta sends 0.
+- Bloqueo de prueba manual: credencial OpenAI observada inválida en turnos reales;
+  worker permanece detenido hasta validar una credencial nueva.
+
 # AI-led conversation orchestration (2026-08-12)
 
 - Orquestación primaria simplificada: Django persiste/recarga estado, calcula

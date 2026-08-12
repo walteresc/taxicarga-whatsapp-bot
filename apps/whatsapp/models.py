@@ -308,6 +308,7 @@ class ConversacionWhatsApp(models.Model):
         default=COTIZACION_SIN_INICIAR,
     )
     bot_pausado = models.BooleanField(default=False)
+    pending_request_switch = models.BooleanField(default=False)
     instruccion_retorno_bot = models.CharField(max_length=40, blank=True)
     resumen = models.TextField(blank=True)
     datos_faltantes = models.JSONField(default=list, blank=True)

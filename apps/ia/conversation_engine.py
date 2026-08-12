@@ -187,8 +187,8 @@ PAYMENT_INFORMATION_FALLBACK = (
 )
 
 
-def handle_incoming_message(cliente, message, canonical_context=None, generation_id=None):
-    lead = _get_active_lead(cliente)
+def handle_incoming_message(cliente, message, canonical_context=None, generation_id=None,lead=None):
+    lead = lead or _get_active_lead(cliente)
     v31_mode="off"
     trigger_message=None
     if canonical_context is not None:
@@ -583,22 +583,43 @@ def _next_missing_question(lead,message="",canonical_context=None,generation_id=
     )
     if not decision.missing_relevant_data:
         return None
+    resolution=None
     if canonical_context is not None and generation_id is not None:
         try:
             from .conversation_orchestrator import orchestrate_conversation
+            from .conversation_resolution import last_question_resolution
+            from apps.whatsapp.models import ConversacionWhatsApp
             recent=[{"author":entry.author,"text":entry.text}
                     for entry in canonical_context.entries]
+            conversation=ConversacionWhatsApp.objects.get(
+                pk=trigger_conversation_id(canonical_context))
+            resolution=last_question_resolution(conversation)
             reply,_targets=orchestrate_conversation(
                 lead=lead,decision=decision,customer_message=message,
-                recent_turns=recent,generation_id=generation_id)
+                recent_turns=recent,generation_id=generation_id,
+                last_resolution=resolution)
             return reply
         except Exception as exc:
             logger.warning("Conversation orchestrator fallback error_type=%s",
                            type(exc).__name__)
+    if resolution and resolution.status in {"UNRESOLVED","AMBIGUOUS","PARTIAL"} \
+            and resolution.unresolved_attempts<=1:
+        from .conversation_policy import QuestionTarget
+        from .conversation_strategy import ConversationStrategy
+        targets=tuple(QuestionTarget(**item) for item in resolution.targets)
+        if targets:
+            return _strategy_question(decision,ConversationStrategy("clarify",targets,1),
+                                      message=message)
     strategy=select_next_conversation_goal(lead,decision)
     fallback = _strategy_question(decision,strategy,message=message)
     return _generate_decision_reply(
         lead,message,decision,fallback,strategy=strategy) or fallback
+
+
+def trigger_conversation_id(canonical_context):
+    from apps.whatsapp.models import MensajeWhatsApp
+    return MensajeWhatsApp.objects.only("conversacion_id").get(
+        pk=canonical_context.trigger_message_id).conversacion_id
 
 
 def _strategy_question(decision,strategy,message=""):
