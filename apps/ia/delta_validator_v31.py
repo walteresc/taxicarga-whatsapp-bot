@@ -312,6 +312,14 @@ def validate_delta_v31(delta, snapshot, *, customer_message, question_targets=()
 
     valid_refs = set(snapshot.state.get("locations", {}))
     ambiguous_fields = {item.field for item in candidate.ambiguities}
+    district_locations=[item for item in candidate.changes.locations
+                        if item.set.district is not None]
+    explicit_district_pair=(
+        {item.ref for item in district_locations} == {"origin","destination"}
+        and len(district_locations)==2
+        and all(_anchored(item.ref_evidence_quote,customer_message)
+                and item.ref_source == RefSource.EXPLICIT_MESSAGE
+                for item in district_locations))
     for index, location in enumerate(candidate.changes.locations):
         ref = location.ref
         if ref == "ambiguous":
@@ -343,9 +351,9 @@ def validate_delta_v31(delta, snapshot, *, customer_message, question_targets=()
             _target_matches(targets, field, endpoint)
             for field in fields for endpoint in refs)
         if (location.ref_source == RefSource.EXPLICIT_MESSAGE
-                and any(field != "district" for field in fields)
                 and not target_resolves_ref
-                and not explicit_ref_marker):
+                and not explicit_ref_marker
+                and not (fields == ["district"] and explicit_district_pair)):
             for field in fields:
                 accepted.ambiguities.append(Ambiguity31(
                     field=field,value=location.ref_evidence_quote,

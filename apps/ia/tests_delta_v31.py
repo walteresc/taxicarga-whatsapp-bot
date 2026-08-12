@@ -375,6 +375,16 @@ class DeltaValidatorV31Tests(SimpleTestCase):
                              [QuestionTarget("required")])
         self.assertTrue(result.accepted.changes.lead.packing_required.value)
 
+    def test_district_endpoint_requires_matching_provenance(self):
+        delta=self.delta(locations=[{"ref":"origin",
+            "ref_evidence_quote":"llegamos a Pachacámac",
+            "ref_source":"explicit_message","set":{"district":{
+            "value":"Pachacámac","evidence_quote":"Pachacámac",
+            "evidence_type":"explicit","context_dependency":"none"}}}])
+        result=self.validate(delta,"llegamos a Pachacámac")
+        self.assertFalse(result.accepted.changes.locations)
+        self.assertIn(UNVERIFIED_EXPLICIT_REF,[item.reason for item in result.rejected])
+
     def test_old_contextual_metadata_adapts_without_changing_claim(self):
         old={"schema_version":3,"intent":"provide_information","changes":{"lead":{
             "load":{"value":"20 cajas","evidence":"20 cajas",
