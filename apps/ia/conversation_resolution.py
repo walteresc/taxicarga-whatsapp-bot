@@ -18,7 +18,22 @@ def last_question_resolution(conversation):
     if not bot:return LastQuestionResolution("NONE",())
     inbound=MensajeWhatsApp.objects.filter(conversacion=conversation,
         origen=MensajeWhatsApp.ORIGEN_CLIENTE,id__gt=bot.id).order_by("id").first()
-    if not inbound:return LastQuestionResolution("WAITING",tuple(bot.question_targets))
+    if not inbound:
+        prior_bots=MensajeWhatsApp.objects.filter(conversacion=conversation,
+            origen=MensajeWhatsApp.ORIGEN_BOT,id__lt=bot.id).exclude(question_targets=[]).order_by("-id")
+        for prior_bot in prior_bots[:3]:
+            prior_inbound=MensajeWhatsApp.objects.filter(conversacion=conversation,
+                origen=MensajeWhatsApp.ORIGEN_CLIENTE,id__gt=prior_bot.id,id__lt=bot.id).order_by("id").first()
+            if prior_inbound:
+                prior_audit=AIDeltaAudit.objects.filter(message_id=prior_inbound.id).first()
+                if not prior_audit:return LastQuestionResolution("UNRESOLVED",tuple(prior_bot.question_targets),1)
+                prior_delta=prior_audit.accepted_delta or {}
+                prior_resolved=_resolved_keys(prior_delta)
+                prior_expected={_key(item) for item in prior_bot.question_targets}
+                prior_matched=prior_expected & prior_resolved
+                if not(prior_expected and prior_matched==prior_expected):
+                    return LastQuestionResolution("UNRESOLVED",tuple(prior_bot.question_targets),_attempt_count(conversation,prior_bot))
+        return LastQuestionResolution("WAITING",tuple(bot.question_targets))
     audit=AIDeltaAudit.objects.filter(message_id=inbound.id).first()
     if not audit:return LastQuestionResolution("UNRESOLVED",tuple(bot.question_targets),1)
     delta=audit.accepted_delta or {}
