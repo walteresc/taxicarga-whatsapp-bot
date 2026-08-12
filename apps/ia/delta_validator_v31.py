@@ -110,8 +110,8 @@ def _service_evidence_valid(proposal):
         "traslado pequeno":{"traslado","trasladar","transportar","mover","muevo","movere"},
         "carga":{"carga","mercaderia","pallet","pallets"},
     }
-    if proposal.value == "traslado pequeno" and "solo" in words and words & {"llevar","llevo"}:
-        return True
+    if proposal.value == "traslado pequeno":
+        return bool(words & {"pequeno","pequena","chico","chica","solo","pocos","pocas"})
     return bool(words & markers.get(proposal.value,set()))
 
 
@@ -178,7 +178,10 @@ def _recover_correction_change(delta, correction, targets):
     target=correction.target.removeprefix("locations.")
     if correction.target in lead_aliases:
         field=lead_aliases[correction.target]
-        if getattr(delta.changes.lead,field) is None:
+        current=getattr(delta.changes.lead,field)
+        if current is not None:
+            current.context_dependency=ContextDependency.NONE
+        else:
             proposal=LeadEvidenceSet31.model_validate({field:{
                 "value":correction.new,"evidence_quote":correction.evidence_quote,
                 "evidence_type":correction.evidence_type,
@@ -364,7 +367,10 @@ def validate_delta_v31(delta, snapshot, *, customer_message, question_targets=()
             ref_is_resolved = (explicit_ref_marker
                 or (location.ref_source == RefSource.QUESTION_TARGET
                     and ref != "both" and _target_matches(targets,field,ref)))
-            if field in ambiguous_fields and not ref_is_resolved:
+            compatible_ambiguities={field}
+            if field == "access_observation":
+                compatible_ambiguities.add("truck_access")
+            if ambiguous_fields & compatible_ambiguities and not ref_is_resolved:
                 reason = AMBIGUOUS_REF
             has_specific_complement = any(
                 other.ref in valid_refs

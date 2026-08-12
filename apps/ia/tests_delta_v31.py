@@ -345,6 +345,36 @@ class DeltaValidatorV31Tests(SimpleTestCase):
         result=self.validate(delta,"no era ahí")
         self.assertFalse(result.accepted.changes.locations)
 
+    def test_generic_transport_verb_cannot_claim_small_service(self):
+        delta=self.delta(lead={"service":{"value":"traslado pequeno",
+            "evidence_quote":"hay que trasladar un sofá","evidence_type":"explicit",
+            "context_dependency":"none"}})
+        result=self.validate(delta,"hay que trasladar un sofá")
+        self.assertIsNone(result.accepted.changes.lead.service)
+
+    def test_ambiguity_dominates_compatible_access_observation(self):
+        delta=ConversationDeltaV31.model_validate({"intent":"provide_information",
+            "changes":{"locations":[{"ref":"both","ref_evidence_quote":"en uno entra",
+            "ref_source":"question_target","set":{"access_observation":{
+            "value":"en uno entra","evidence_quote":"en uno entra",
+            "evidence_type":"explicit","context_dependency":"question_target"}}}]},
+            "ambiguities":[{"field":"truck_access","value":"true",
+            "possible_refs":["origin","destination"],"evidence_quote":"en uno entra"}]})
+        result=self.validate(delta,"en uno entra",[QuestionTarget("truck_access","both")])
+        self.assertFalse(result.accepted.changes.locations)
+
+    def test_explicit_correction_does_not_depend_on_bad_legacy_target(self):
+        delta=ConversationDeltaV31.model_validate({"intent":"correct_information",
+            "changes":{"lead":{"packing_required":{"value":True,
+            "evidence_quote":"confirmo que quiero embalaje","evidence_type":"explicit",
+            "context_dependency":"question_target"}}},"corrections":[{
+            "target":"packing_required","new":True,
+            "evidence_quote":"confirmo que quiero embalaje","evidence_type":"explicit",
+            "context_dependency":"question_target"}]})
+        result=self.validate(delta,"confirmo que quiero embalaje",
+                             [QuestionTarget("required")])
+        self.assertTrue(result.accepted.changes.lead.packing_required.value)
+
     def test_old_contextual_metadata_adapts_without_changing_claim(self):
         old={"schema_version":3,"intent":"provide_information","changes":{"lead":{
             "load":{"value":"20 cajas","evidence":"20 cajas",
