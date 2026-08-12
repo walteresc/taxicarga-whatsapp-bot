@@ -409,6 +409,9 @@ def handle_incoming_message(cliente, message, canonical_context=None, generation
         replace_lead_route(lead, extracted_locations)
     else:
         sync_legacy_endpoints(lead, extracted.keys())
+    if v31_mode == "active" and trigger_message is not None:
+        from .runtime_v31 import record_runtime_state_after
+        record_runtime_state_after(_audit, lead)
     removed_stop = _requested_stop_removal(message)
     if removed_stop:
         remove_stop(lead, removed_stop)

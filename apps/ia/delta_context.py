@@ -6,6 +6,30 @@ from apps.whatsapp.models import MensajeWhatsApp
 from .delta_snapshot import CanonicalSnapshot
 
 
+_FIELD_ALIASES = {
+    "distrito": "district", "piso": "floor", "ascensor": "elevator",
+    "acceso_camion": "truck_access",
+}
+
+
+def canonical_question_targets(raw_targets, snapshot):
+    """Upgrade persisted pre-V3.1 targets at the context boundary."""
+    refs = list(snapshot.state.get("locations", {}))
+    normalized = []
+    for raw in raw_targets or ():
+        target = dict(raw)
+        target["field"] = _FIELD_ALIASES.get(target.get("field"), target.get("field"))
+        ref = target.get("ref")
+        if isinstance(ref, str) and ref.startswith("location:"):
+            try:
+                ref = refs[int(ref.partition(":")[2])]
+            except (ValueError, IndexError):
+                pass
+        target["ref"] = ref
+        normalized.append(target)
+    return tuple(normalized)
+
+
 @dataclass(frozen=True)
 class DeltaContext:
     payload: dict
@@ -35,7 +59,8 @@ def build_delta_context(
         None,
     )
     last_bot = last_bot_row.contenido if last_bot_row else ""
-    question_targets = tuple(last_bot_row.question_targets or ()) if last_bot_row else ()
+    question_targets = canonical_question_targets(
+        last_bot_row.question_targets if last_bot_row else (), snapshot)
     recent = [
         {"author": AUTHOR_LABELS[row.origen], "text": row.contenido}
         for row in reversed(rows)

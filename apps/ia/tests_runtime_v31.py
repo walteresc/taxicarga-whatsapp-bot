@@ -92,7 +92,10 @@ class RuntimeV31Tests(TestCase):
         MensajeWhatsApp.objects.create(
             conversacion=self.conversation,origen=MensajeWhatsApp.ORIGEN_BOT,
             direccion=MensajeWhatsApp.SALIENTE,tipo="texto",
-            contenido="De que piso sales y a cual llegas?",question_targets=targets)
+            contenido="De que piso sales y a cual llegas?",question_targets=[
+                {"field":"piso","ref":"location:0","operation":"set"},
+                {"field":"piso","ref":"location:1","operation":"set"},
+            ])
         text="es que no te dije los pisos, pero seria de 1er piso a 2do piso"
         inbound=MensajeWhatsApp.objects.create(
             conversacion=self.conversation,origen=MensajeWhatsApp.ORIGEN_CLIENTE,
@@ -120,6 +123,11 @@ class RuntimeV31Tests(TestCase):
         self.assertNotIn("ubicacion_0_piso",quote_missing_fields(self.lead))
         self.assertNotIn("ubicacion_1_piso",quote_missing_fields(self.lead))
         self.assertNotIn("que piso",reply.lower())
+        audit=self.lead.ai_delta_audits.get(message_id=inbound.id)
+        self.assertEqual(audit.question_targets,targets[:2])
+        self.assertEqual(audit.raw_delta["changes"]["locations"][0]["set"]["floor"]["value"],1)
+        self.assertEqual(audit.canonical_state_before["locations"]["origin"]["floor"],None)
+        self.assertEqual(audit.canonical_state_after["locations"]["origin"]["floor"],1)
 
     def test_active_command_rejects_non_test_channel_and_rolls_back(self):
         other=WhatsAppChannel.objects.create(nombre="Canal real",phone_number_id="real-safe")

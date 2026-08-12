@@ -15,6 +15,30 @@ from .models import AIDeltaAudit
 logger=logging.getLogger(__name__)
 
 
+def _safe(value):
+    import re
+    if isinstance(value,dict):return {key:_safe(item) for key,item in value.items()}
+    if isinstance(value,list):return [_safe(item) for item in value]
+    if isinstance(value,str):
+        value=re.sub(r"[\w.+-]+@[\w.-]+","[redacted-email]",value)
+        value=re.sub(r"\b(?:\+?51)?9\d{8}\b","[redacted-phone]",value)
+        value=re.sub(r"\b\d{8}\b","[redacted-document]",value)
+    return value
+
+
+def _audit_state(snapshot):
+    state=snapshot.state
+    return _safe({"schema_version":state.get("schema_version"),
+        "service":state.get("service"),"locations":state.get("locations",{}),
+        "staff":state.get("staff",{}),
+        "additional_services":state.get("additional_services",{})})
+
+
+def record_runtime_state_after(audit,lead):
+    audit.canonical_state_after=_audit_state(build_canonical_snapshot(lead))
+    audit.save(update_fields=["canonical_state_after"])
+
+
 def _legacy_fields(delta):
     result={}
     lead_map={"service":"tipo_servicio","service_date":"fecha_servicio",
@@ -69,6 +93,11 @@ def extract_runtime_v31(*,lead,conversation_id,message_id,customer_message,mode)
                 state_version=snapshot.state_version,mode=mode,
                 status=(AIDeltaAudit.STATUS_REJECTED if validation.rejected
                         else AIDeltaAudit.STATUS_ACCEPTED),accepted_delta=accepted,
+                raw_delta=_safe(delta.model_dump(mode="json",exclude_none=True)),
+                rejected_delta=[{"path":item.path,"reason":item.reason}
+                                for item in validation.rejected],
+                question_targets=_safe(list(context.question_targets)),
+                canonical_state_before=_audit_state(snapshot),
                 rejected_fields=[item.path for item in validation.rejected],
                 rejection_reasons=[item.reason for item in validation.rejected],
                 latency_ms=metrics.latency_ms,input_tokens=metrics.input_tokens,
@@ -80,6 +109,8 @@ def extract_runtime_v31(*,lead,conversation_id,message_id,customer_message,mode)
             conversation_id=conversation_id,message_id=message_id,lead=lead,
             schema_version=31,state_version=snapshot.state_version,mode=mode,
             status=AIDeltaAudit.STATUS_FALLBACK,fallback_used=True,
+            question_targets=_safe(list(context.question_targets)),
+            canonical_state_before=_audit_state(snapshot),
             rejection_reasons=["provider_or_schema_failure"],
             error_type=type(exc).__name__[:100],
             error_code=str(getattr(exc,"code","") or "")[:100],
