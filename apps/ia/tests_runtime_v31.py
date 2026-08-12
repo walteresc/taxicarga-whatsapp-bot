@@ -89,6 +89,7 @@ class RuntimeV31Tests(TestCase):
             {"field":"floor","ref":"origin","operation":"set"},
             {"field":"floor","ref":"destination","operation":"set"},
         ])
+        self.assertEqual(len(targets),2)
         MensajeWhatsApp.objects.create(
             conversacion=self.conversation,origen=MensajeWhatsApp.ORIGEN_BOT,
             direccion=MensajeWhatsApp.SALIENTE,tipo="texto",

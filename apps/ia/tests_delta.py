@@ -150,6 +150,18 @@ class DeltaArchitectureTests(TestCase):
         self.assertNotIn(self.bot_message.contenido, recent_texts)
         self.assertLessEqual(context.recent_turn_count, 4)
 
+    def test_contextual_target_excludes_prior_customer_evidence(self):
+        snapshot = build_canonical_snapshot(self.lead)
+        context = build_delta_context(
+            self.conversation.id,
+            trigger_message_id=self.customer_message.id,
+            customer_message=self.customer_text,
+            snapshot=snapshot,
+        )
+
+        self.assertTrue(context.question_targets)
+        self.assertEqual(context.payload["recent_turns"], [])
+
     def test_queue_is_idempotent_and_does_not_call_provider(self):
         from unittest.mock import patch
 

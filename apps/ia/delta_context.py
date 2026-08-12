@@ -68,6 +68,11 @@ def build_delta_context(
         and row.contenido != customer_message
     ]
     recent = recent[-max_recent_turns:]
+    # A contextual answer is defined by current message + structured targets.
+    # Prior customer wording is deliberately excluded: it is forbidden as
+    # evidence and can cause the model to copy a stale quote verbatim.
+    if question_targets:
+        recent = []
     return DeltaContext(
         payload={
             "state_version": snapshot.state_version,

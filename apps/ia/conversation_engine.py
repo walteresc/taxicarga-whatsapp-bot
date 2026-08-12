@@ -549,12 +549,17 @@ def next_missing_question_for(cliente):
 
 
 def next_question_targets_for(lead):
-    from .conversation_policy import question_targets_for_decision
     decision = decide_conversation(
         lead,
         requires_truck_access=bool(lead.lista_objetos and _requires_truck_access(lead)),
     )
-    return question_targets_for_decision(decision) if decision.missing_relevant_data else []
+    if not decision.missing_relevant_data or not decision.question_targets:
+        return []
+    # Response asks one related field group at a time. Persist exactly that
+    # group, not every later missing field in the decision.
+    first_field = decision.question_targets[0].field
+    return [target.as_dict() for target in decision.question_targets
+            if target.field == first_field]
 
 
 def _get_active_lead(cliente):
