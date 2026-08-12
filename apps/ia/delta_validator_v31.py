@@ -162,6 +162,8 @@ def _state_value(snapshot, path):
 
 def _recover_correction_change(delta, correction, targets):
     """Materialize an evidence-valid correction as the corresponding delta."""
+    if isinstance(correction.new,str) and not correction.new.strip():
+        return
     lead_aliases={
         "service":"service", "service_date":"service_date", "load":"load",
         "staff.required":"staff_required", "staff_required":"staff_required",

@@ -338,6 +338,13 @@ class DeltaValidatorV31Tests(SimpleTestCase):
         result=self.validate(delta,"corrijo: ahora sí tiene")
         self.assertFalse(result.accepted.changes.locations)
 
+    def test_empty_correction_value_fails_closed_without_crash(self):
+        delta=self.delta(corrections=[{"target":"origin.district","new":"",
+            "evidence_quote":"no era ahí","evidence_type":"explicit",
+            "context_dependency":"none"}])
+        result=self.validate(delta,"no era ahí")
+        self.assertFalse(result.accepted.changes.locations)
+
     def test_old_contextual_metadata_adapts_without_changing_claim(self):
         old={"schema_version":3,"intent":"provide_information","changes":{"lead":{
             "load":{"value":"20 cajas","evidence":"20 cajas",
