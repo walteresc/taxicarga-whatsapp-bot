@@ -1,7 +1,9 @@
 import json
 from enum import Enum
+from datetime import timedelta
 
 from django.db import transaction
+from django.utils import timezone
 from pydantic import Field
 
 from apps.integrations.enums import OwnerState
@@ -20,39 +22,92 @@ class RequestIntent(str,Enum):
     NO_REQUEST_SIGNAL="NO_REQUEST_SIGNAL"
 
 
+class RequestLifecycleStatus(str,Enum):
+    ACTIVE="ACTIVE"
+    DORMANT="DORMANT"
+    CLOSED="CLOSED"
+
+
 class RequestIntentResponse(StrictModel):
     intent:RequestIntent
     confidence:float=Field(ge=0,le=1)
     clarification_text:str|None=None
 
 
+# Business rule: Lead is DORMANT if no activity for this duration
+INACTIVITY_THRESHOLD=timedelta(hours=2)
+
+
 SYSTEM_PROMPT="""
-Clasifica únicamente si el mensaje actual continúa la solicitud comercial activa,
-pide inequívocamente otra solicitud, o es ambiguo. No uses mensajes históricos.
-Si existe una solicitud activa incompleta y el cliente solo dice que quiere cotizar
-un servicio sin decir "otra/nueva/distinta" ni confirmar cambio, usa UNCERTAIN.
-NEW_REQUEST requiere intención explícita de una solicitud diferente o confirmación
-de cambio pendiente. Respuestas a la pregunta actual son CONTINUE_REQUEST.
-Saludos, dudas y datos sin señal de cambio son NO_REQUEST_SIGNAL.
-Si usas UNCERTAIN, redacta clarification_text breve y natural para confirmar si
-continúa la solicitud activa o inicia otra. En los demás casos debe ser null.
+Clasifica la intención del cliente respecto a solicitudes de servicio.
+
+Reglas de clasificación:
+
+1. Si lifecycle_status=ACTIVE (solicitud vigente):
+   - Respuesta a pregunta actual → CONTINUE_REQUEST
+   - Nueva solicitud inequívoca ("otra mudanza", "nuevo servicio") → NEW_REQUEST
+   - Mensaje compatible con continuar pero potencialmente ambiguo → UNCERTAIN
+   - Saludo/duda/dato sin señal clara → NO_REQUEST_SIGNAL
+
+2. Si lifecycle_status=DORMANT o CLOSED (solicitud inactiva/cerrada):
+   - Cliente claramente solicita nuevo servicio → NEW_REQUEST
+   - Intento de retomar anterior pero DORMANT → UNCERTAIN (preguntar si quiere reactivar)
+   - Saludo/duda sin solicitud → NO_REQUEST_SIGNAL
+
+3. Si lifecycle_status=null (sin solicitud asociada):
+   - Cualquier solicitud clara de servicio → NEW_REQUEST
+   - Saludo/duda → NO_REQUEST_SIGNAL
+
+Cuando uses UNCERTAIN, redacta clarification_text breve y natural.
+En otros casos clarification_text debe ser null.
+
 Devuelve solo la estructura solicitada.
 """.strip()
 
 
-def classify_request_intent(*,message,active_lead,pending_switch):
-    payload={"current_customer_message":message,"pending_switch":pending_switch,
-             "active_request":{"id":active_lead.id,"state":active_lead.estado,
-                               "phase":active_lead.etapa_conversacion,
-                               "has_collected_data":_has_data(active_lead)}}
+def _determine_lifecycle_status(lead,conversation):
+    """Determine if lead is ACTIVE, DORMANT, or CLOSED."""
+    if lead is None:
+        return RequestLifecycleStatus.ACTIVE,None
+
+    if lead.estado in {Lead.CERRADO,Lead.PERDIDO}:
+        return RequestLifecycleStatus.CLOSED,lead.id
+
+    inactivity_delta=timezone.now()-conversation.ultima_actividad
+    if inactivity_delta > INACTIVITY_THRESHOLD:
+        return RequestLifecycleStatus.DORMANT,lead.id
+
+    return RequestLifecycleStatus.ACTIVE,lead.id
+
+
+def classify_request_intent(*,message,active_lead,conversation,telemetry=None):
+    lifecycle_status,lead_id=_determine_lifecycle_status(active_lead,conversation)
+
+    payload={
+        "current_customer_message":message,
+        "lifecycle_status":lifecycle_status.value,
+        "active_request":None
+    }
+
+    if active_lead is not None:
+        payload["active_request"]={
+            "id":active_lead.id,
+            "state":active_lead.estado,
+            "phase":active_lead.etapa_conversacion,
+            "has_collected_data":_has_data(active_lead),
+            "lifecycle_status":lifecycle_status.value
+        }
+
     result=build_provider("conversation").generate_structured(
         [{"role":"system","content":SYSTEM_PROMPT},
          {"role":"user","content":json.dumps(payload,ensure_ascii=False)}],
-        schema_model=RequestIntentResponse)
+        schema_model=RequestIntentResponse,purpose="classify_request_intent")
+    if telemetry:
+        telemetry.mark_from_ai_result("classify_request_intent",result)
     return RequestIntentResponse.model_validate_json(result.text)
 
 
-def resolve_request_lifecycle(*,conversation_id,message,generation_id):
+def resolve_request_lifecycle(*,conversation_id,message,generation_id,telemetry=None):
     conversation=ConversacionWhatsApp.objects.select_for_update().select_related(
         "lead","cliente","channel").get(pk=conversation_id)
     old=conversation.lead
@@ -62,7 +117,7 @@ def resolve_request_lifecycle(*,conversation_id,message,generation_id):
         return new,None,RequestIntent.NEW_REQUEST
     try:
         result=classify_request_intent(message=message,active_lead=old,
-            pending_switch=conversation.pending_request_switch)
+            conversation=conversation,telemetry=telemetry)
     except Exception as exc:
         _audit(conversation,old,old,generation_id,"request_intent_failure",
                {"error_type":type(exc).__name__})

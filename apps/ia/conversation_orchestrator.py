@@ -44,7 +44,7 @@ comercial. Nunca calcules precio. Sé breve. Devuelve solo estructura solicitada
 
 
 def orchestrate_conversation(*,lead,decision,customer_message,recent_turns,generation_id,
-                             last_resolution=None):
+                             last_resolution=None,telemetry=None):
     requirements=quote_requirements(lead)
     payload={"canonical_state":build_canonical_snapshot(lead).state,
         "phase":decision.phase,"required":requirements.required,
@@ -64,7 +64,9 @@ def orchestrate_conversation(*,lead,decision,customer_message,recent_turns,gener
     result=build_provider("conversation").generate_structured(
         [{"role":"system","content":SYSTEM_PROMPT},
          {"role":"user","content":json.dumps(payload,ensure_ascii=False)}],
-        schema_model=ConversationResponse)
+        schema_model=ConversationResponse,purpose="orchestrate_conversation")
+    if telemetry:
+        telemetry.mark_from_ai_result("orchestrate_conversation",result)
     response=ConversationResponse.model_validate_json(result.text)
     targets=validate_asked_targets(response.asked_targets,payload["canonical_state"])
     _validate_continuity(response,targets,last_resolution)

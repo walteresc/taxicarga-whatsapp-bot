@@ -187,7 +187,7 @@ PAYMENT_INFORMATION_FALLBACK = (
 )
 
 
-def handle_incoming_message(cliente, message, canonical_context=None, generation_id=None,lead=None):
+def handle_incoming_message(cliente, message, canonical_context=None, generation_id=None,lead=None,telemetry=None):
     lead = lead or _get_active_lead(cliente)
     v31_mode="off"
     trigger_message=None
@@ -597,7 +597,7 @@ def _next_missing_question(lead,message="",canonical_context=None,generation_id=
             reply,_targets=orchestrate_conversation(
                 lead=lead,decision=decision,customer_message=message,
                 recent_turns=recent,generation_id=generation_id,
-                last_resolution=resolution)
+                last_resolution=resolution,telemetry=telemetry)
             return reply
         except Exception as exc:
             logger.warning("Conversation orchestrator fallback error_type=%s",

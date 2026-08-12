@@ -61,31 +61,46 @@ def process_bot_generation_event(event_id,*,worker_id="integration"):
         event.locked_by=worker_id;event.locked_at=timezone.now()
         event.save(update_fields=["status","attempts","locked_by","locked_at","updated_at"])
     try:
+        import time
+        from apps.ia.latency_telemetry import GenerationTelemetry
+        from apps.ia.request_lifecycle import resolve_request_lifecycle
+
+        telemetry=GenerationTelemetry(str(generation.id))
+
         with _lead_state_guard():
-            from apps.ia.request_lifecycle import resolve_request_lifecycle
-            lead,early_reply,request_intent=resolve_request_lifecycle(
-                conversation_id=message.conversacion_id,message=message.contenido,
-                generation_id=generation.id)
-            context=build_bot_context(message.conversacion_id,trigger_message_id=message.id)
+            with telemetry.measure("request_lifecycle"):
+                lead,early_reply,request_intent=resolve_request_lifecycle(
+                    conversation_id=message.conversacion_id,message=message.contenido,
+                    generation_id=generation.id,telemetry=telemetry)
+
+            with telemetry.measure("build_bot_context"):
+                context=build_bot_context(message.conversacion_id,trigger_message_id=message.id)
+
             if early_reply:
                 reply=early_reply
                 targets=[{"field":"request_switch","ref":None,"operation":"set"}]
                 generation.asked_targets=targets
                 generation.conversation_intent="REQUEST_SWITCH_CONFIRMATION"
-                generation.conversation_metadata={"request_intent":request_intent.value,
-                    "active_request_id":lead.id}
+                metadata={"request_intent":request_intent.value,"active_request_id":lead.id}
+                metadata.update(telemetry.to_metadata())
+                generation.conversation_metadata=metadata
                 generation.save(update_fields=["asked_targets","conversation_intent",
                                                "conversation_metadata"])
             else:
-                reply=handle_incoming_message(lead.cliente,message.contenido,
-                    canonical_context=context,generation_id=generation.id,lead=lead)
+                with telemetry.measure("handle_incoming_message"):
+                    reply=handle_incoming_message(lead.cliente,message.contenido,
+                        canonical_context=context,generation_id=generation.id,lead=lead,
+                        telemetry=telemetry)
+
             lead.refresh_from_db()
             generation.refresh_from_db(fields=["asked_targets","conversation_intent"])
             if not early_reply:
                 targets=(generation.asked_targets or next_question_targets_for(lead))
-        _generation,_outbox,published=finalize_generation(
-            generation.id,result_text=reply,question_targets=targets,
-            conversation_intent=generation.conversation_intent)
+
+        with telemetry.measure("finalize_generation"):
+            _generation,_outbox,published=finalize_generation(
+                generation.id,result_text=reply,question_targets=targets,
+                conversation_intent=generation.conversation_intent)
     except Exception as exc:
         fail_generation(generation.id,exc)
         IntegrationOutboxEvent.objects.filter(pk=event_id).update(
