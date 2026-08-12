@@ -497,3 +497,26 @@
   98.18%, R 84.38%, F1 90.76%, safety 98/100 y 1 endpoint crítico: gate FAIL.
 - IA-first runtime NO integrado/activado. Flags siguen OFF/shadow. Meta sends 0.
 - Costo acumulado aproximado desde master: USD 1.43; límite autorizado USD 2.00.
+
+## Holdouts V3.1 rondas 4-7 y bloqueo de presupuesto (2026-08-12)
+
+- Rondas 4-6: FAIL; desde su primera corrida son development evidence. Ronda 6
+  accepted P 98.82%, R 83.17%, F1 90.32%, safety 99/100, 1 unsafe crítico.
+- Corrección general posterior: packing-only no puede fijar staff; refs
+  `ambiguous` se conservan como ambiguity; complemento `both` + extremo
+  específico se valida estructuralmente sin interpretar texto libre.
+- Tests V3.1: 34/34. Smoke real `20260812T004425Z_v31_smoke`: schema 10/10,
+  accepted P 100%, R 92.86%, F1 96.30%, safety 10/10, críticos 0.
+- Development real `20260812T004508Z_v31_development_100`; replay offline con
+  validator congelado: P 99.12%, R 88.19%, F1 93.33%, safety 99/100. Gate PASS.
+- Holdout 7 congelado antes de API: 100 casos, 50 contextuales, 14 HUMAN_REVIEW,
+  SHA-256 `473eefe54a1b42b5b3c4c76b03be8af07c0fd73bb333046829bc44fd1d2ac3d3`.
+- Run `20260812T005436Z_v31_blind_holdout_round7_100`: schema 100/100;
+  accepted P 100%, R 85.57%, F1 92.22%, safety 100/100; critical unsafe,
+  wrong endpoint, numeric invention y commercial authority: 0. HOLDOUT FAIL.
+- Ronda 7 deja de ser ciega y queda como development evidence. Runtime IA-first
+  NO integrado ni activado; Meta sends 0; no push.
+- Costo acumulado estimado desde master: USD 1.8487868 / USD 2.00. Restan
+  USD 0.1512132. El siguiente ciclo obligatorio (smoke + development + nuevo
+  holdout) costaría aproximadamente USD 0.26 y superaría el límite.
+- HARD BLOCKER: ampliar presupuesto de evaluación antes de continuar FASE E.
