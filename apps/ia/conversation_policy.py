@@ -34,6 +34,23 @@ class ConversationDecision:
     question_targets: tuple[QuestionTarget, ...] = field(default_factory=tuple)
 
 
+@dataclass(frozen=True)
+class QuoteRequirements:
+    required: tuple[str, ...]
+    conditional: tuple[str, ...]
+    optional: tuple[str, ...]
+    booking_only: tuple[str, ...]
+
+
+def quote_requirements(lead, requires_truck_access=False):
+    """Describe existing business requirements without selecting questions."""
+    required=("tipo_servicio","distritos_ruta","lista_objetos","pisos_ruta")
+    conditional=("dimension_carga:carga","ascensor:piso_mayor_1")
+    if requires_truck_access:conditional+=("acceso_camion:volumen_carga",)
+    return QuoteRequirements(required,conditional,("dni",),
+        ("cliente_nombre","fecha_servicio","horario_servicio","direcciones_exactas"))
+
+
 def effective_quote_values(lead):
     service = (lead.tipo_servicio or "").lower()
     return {

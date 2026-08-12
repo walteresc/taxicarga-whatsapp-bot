@@ -317,7 +317,9 @@ def handle_incoming_message(cliente, message, canonical_context=None, generation
                     "esperando_motivo_no_reserva",
                 ]
             )
-            return _next_missing_question(lead)
+            return _next_missing_question(
+                lead,message=message,canonical_context=canonical_context,
+                generation_id=generation_id)
 
         # If no price/closure/acceptance matched, check AI for new quote intent.
         if _ai_detects_new_quote(ai_extracted):
@@ -445,12 +447,16 @@ def handle_incoming_message(cliente, message, canonical_context=None, generation
             lead.horario_por_confirmar = True
             lead.save(update_fields=["horario_por_confirmar"])
             return f"Confirmamos {_formatted_schedule(lead)}?"
-        missing_question = _next_missing_question(lead)
+        missing_question = _next_missing_question(
+            lead,message=message,canonical_context=canonical_context,
+            generation_id=generation_id)
         if missing_question:
             return missing_question
         return _complete_reservation(lead)
 
-    missing_question = _next_missing_question(lead, message=message)
+    missing_question = _next_missing_question(
+        lead,message=message,canonical_context=canonical_context,
+        generation_id=generation_id)
     if missing_question:
         lead.estado = Lead.DATOS_INCOMPLETOS
         lead.save(update_fields=["estado"])
@@ -569,7 +575,7 @@ def _get_active_lead(cliente):
     return Lead.objects.create(cliente=cliente, estado=Lead.NUEVO)
 
 
-def _next_missing_question(lead, message=""):
+def _next_missing_question(lead,message="",canonical_context=None,generation_id=None):
     from .conversation_strategy import select_next_conversation_goal
     decision = decide_conversation(
         lead,
@@ -577,6 +583,18 @@ def _next_missing_question(lead, message=""):
     )
     if not decision.missing_relevant_data:
         return None
+    if canonical_context is not None and generation_id is not None:
+        try:
+            from .conversation_orchestrator import orchestrate_conversation
+            recent=[{"author":entry.author,"text":entry.text}
+                    for entry in canonical_context.entries]
+            reply,_targets=orchestrate_conversation(
+                lead=lead,decision=decision,customer_message=message,
+                recent_turns=recent,generation_id=generation_id)
+            return reply
+        except Exception as exc:
+            logger.warning("Conversation orchestrator fallback error_type=%s",
+                           type(exc).__name__)
     strategy=select_next_conversation_goal(lead,decision)
     fallback = _strategy_question(decision,strategy,message=message)
     return _generate_decision_reply(

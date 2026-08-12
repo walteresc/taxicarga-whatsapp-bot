@@ -576,6 +576,20 @@
 - IA-first runtime sigue NO integrado/activado por gate obligatorio sin PASS.
   Meta sends 0; worker detenido; no push; producción intacta.
 
+# AI-led conversation orchestration (2026-08-12)
+
+- Orquestación primaria simplificada: Django persiste/recarga estado, calcula
+  requirements/readiness y GPT conversación elige `reply_text + asked_targets`.
+- `QuestionTarget` registra lo realmente preguntado. Targets inválidos o
+  comerciales invalidan la salida y activan fallback conservador.
+- `QuoteRequirements` separa required/conditional/optional/booking-only sin
+  cambiar readiness ni pricing. Pisos siguen required por regla legacy y quedan
+  marcados `BUSINESS_RULE_REVIEW_REQUIRED` para revisión comercial separada.
+- Extracción V3.1, evidencia, validator, atomicidad, outbox, ownership, pricing y
+  booking determinísticos permanecen sin cambios.
+- Regresión IA + integrations: 394 PASS, 31 skipped. Simulación contractual
+  free-form: 10/10 PASS. Meta sends: 0.
+
 # LOCAL RELEASE CANDIDATE V3.1 (2026-08-12)
 
 - Holdout 10 congelado antes de API: 100 casos, 50 contextuales, 14 HUMAN_REVIEW,

@@ -151,6 +151,7 @@ class BotGeneration(models.Model):
     status = models.CharField(max_length=15, choices=GenerationStatus.choices, default=GenerationStatus.PENDING)
     request_key = models.CharField(max_length=255)
     result_text = models.TextField(blank=True)
+    asked_targets = models.JSONField(default=list, blank=True)
     started_at = models.DateTimeField(default=timezone.now)
     completed_at = models.DateTimeField(null=True, blank=True)
     cancelled_at = models.DateTimeField(null=True, blank=True)

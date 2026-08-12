@@ -67,7 +67,8 @@ def process_bot_generation_event(event_id,*,worker_id="integration"):
             reply=handle_incoming_message(lead.cliente,message.contenido,
                                           canonical_context=context,generation_id=generation.id)
             lead.refresh_from_db()
-            targets=next_question_targets_for(lead)
+            generation.refresh_from_db(fields=["asked_targets"])
+            targets=(generation.asked_targets or next_question_targets_for(lead))
         _generation,_outbox,published=finalize_generation(
             generation.id,result_text=reply,question_targets=targets)
     except Exception as exc:
