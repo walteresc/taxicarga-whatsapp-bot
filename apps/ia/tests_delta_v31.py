@@ -15,11 +15,13 @@ from .delta_validator_v31 import (
     UNVERIFIED_EXPLICIT_REF,
     UNSUPPORTED_BOOLEAN_EVIDENCE,
     UNSUPPORTED_SERVICE_EVIDENCE,
+    AMBIGUOUS_BOOLEAN_EVIDENCE,
     validate_delta_v31,
 )
 from .v31_offline_replay import adapt_v3_delta_to_v31
 from .v31_blind_holdout import v31_blind_holdout_cases
 from .v31_blind_holdout_round2 import v31_blind_holdout_round2_cases
+from .v31_blind_holdout_round3 import v31_blind_holdout_round3_cases
 
 
 class DeltaValidatorV31Tests(SimpleTestCase):
@@ -264,6 +266,15 @@ class DeltaValidatorV31Tests(SimpleTestCase):
         self.assertIn(UNSUPPORTED_SERVICE_EVIDENCE,
                       [item.reason for item in result.rejected])
 
+    def test_uncertain_staff_answer_does_not_set_boolean(self):
+        delta=self.delta(lead={"staff_required":{"value":False,
+            "evidence_quote":"tal vez necesite gente, no sé",
+            "evidence_type":"explicit","context_dependency":"question_target"}})
+        result=self.validate(delta,"tal vez necesite gente, no sé",
+                             [QuestionTarget("staff_required")])
+        self.assertIn(AMBIGUOUS_BOOLEAN_EVIDENCE,
+                      [item.reason for item in result.rejected])
+
     def test_access_missing_fields_generate_truck_targets(self):
         targets=_question_targets(("ubicacion_0_acceso_camion", "ubicacion_1_acceso_camion"))
         self.assertEqual([x.field for x in targets],["truck_access","truck_access"])
@@ -307,3 +318,8 @@ class DeltaValidatorV31Tests(SimpleTestCase):
         first=v31_blind_holdout_cases();second=v31_blind_holdout_round2_cases()
         self.assertEqual(len(second),100)
         self.assertFalse({x["message"] for x in first}&{x["message"] for x in second})
+
+    def test_third_holdout_is_disjoint_and_frozen(self):
+        third=v31_blind_holdout_round3_cases()
+        self.assertEqual(len(third),100)
+        self.assertGreaterEqual(sum(x["human_review"] for x in third),12)
