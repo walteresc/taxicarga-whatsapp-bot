@@ -2,6 +2,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.ia.conversation_engine import handle_incoming_message, next_question_targets_for
+from apps.leads.models import Lead
 from apps.whatsapp.models import MensajeWhatsApp
 
 from ..enums import OutboxStatus, Provider
@@ -40,12 +41,14 @@ def process_bot_generation_event(event_id,*,worker_id="integration"):
         event.locked_by=worker_id;event.locked_at=timezone.now()
         event.save(update_fields=["status","attempts","locked_by","locked_at","updated_at"])
     try:
-        context=build_bot_context(message.conversacion_id,trigger_message_id=message.id)
-        reply=handle_incoming_message(message.conversacion.lead.cliente,message.contenido,
-                                      canonical_context=context,generation_id=generation.id)
-        lead=message.conversacion.lead
-        lead.refresh_from_db()
-        targets=next_question_targets_for(lead)
+        with transaction.atomic():
+            lead=Lead.objects.select_for_update().select_related("cliente").get(
+                pk=message.conversacion.lead_id)
+            context=build_bot_context(message.conversacion_id,trigger_message_id=message.id)
+            reply=handle_incoming_message(lead.cliente,message.contenido,
+                                          canonical_context=context,generation_id=generation.id)
+            lead.refresh_from_db()
+            targets=next_question_targets_for(lead)
         _generation,_outbox,published=finalize_generation(
             generation.id,result_text=reply,question_targets=targets)
     except Exception as exc:
