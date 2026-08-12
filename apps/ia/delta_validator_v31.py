@@ -19,6 +19,7 @@ DERIVED_VALUE_FORBIDDEN = "DERIVED_VALUE_FORBIDDEN"
 UNSUPPORTED_MEASUREMENT = "UNSUPPORTED_MEASUREMENT"
 UNSUPPORTED_BOOLEAN_EVIDENCE = "UNSUPPORTED_BOOLEAN_EVIDENCE"
 UNSUPPORTED_SERVICE_EVIDENCE = "UNSUPPORTED_SERVICE_EVIDENCE"
+UNSUPPORTED_STAFF_EVIDENCE = "UNSUPPORTED_STAFF_EVIDENCE"
 AMBIGUOUS_BOOLEAN_EVIDENCE = "AMBIGUOUS_BOOLEAN_EVIDENCE"
 NO_OP = "NO_OP"
 STALE_STATE = "STALE_STATE"
@@ -112,6 +113,17 @@ def _service_evidence_valid(proposal):
     if proposal.value == "traslado pequeno" and "solo" in words and words & {"llevar","llevo"}:
         return True
     return bool(words & markers.get(proposal.value,set()))
+
+
+def _staff_evidence_valid(proposal, targets):
+    """Fail closed when a packing-only statement is mislabeled as staff."""
+    normalized=unicodedata.normalize("NFKD",proposal.evidence_quote.casefold())
+    normalized="".join(char for char in normalized if not unicodedata.combining(char))
+    words=set(re.findall(r"[^\W\d_]+",normalized,flags=re.UNICODE))
+    packing=bool(words & {"embalaje","embalar","empacar","empaque"})
+    staff=bool(words & {"personal","operario","operarios","ayudante","ayudantes"})
+    contextual=_target_matches(targets,"staff_required")
+    return not packing or staff or contextual
 
 
 def _boolean_evidence_is_uncertain(proposal):
@@ -211,6 +223,8 @@ def validate_delta_v31(delta, snapshot, *, customer_message, question_targets=()
         reason = _proposal_reason(proposal, customer_message, targets, field)
         if not reason and field == "service" and not _service_evidence_valid(proposal):
             reason = UNSUPPORTED_SERVICE_EVIDENCE
+        if not reason and field == "staff_required" and not _staff_evidence_valid(proposal,targets):
+            reason = UNSUPPORTED_STAFF_EVIDENCE
         collision_prone_neighbor = (
             field == "load" and any(target.field in {"packing_required","packing_mode"}
                                     for target in targets)
@@ -240,6 +254,16 @@ def validate_delta_v31(delta, snapshot, *, customer_message, question_targets=()
     ambiguous_fields = {item.field for item in delta.ambiguities}
     for index, location in enumerate(delta.changes.locations):
         ref = location.ref
+        if ref == "ambiguous":
+            if _anchored(location.ref_evidence_quote,customer_message):
+                for field,proposal in location.set:
+                    if proposal is not None:
+                        accepted.ambiguities.append(Ambiguity31(
+                            field=field,value=str(proposal.value).lower(),
+                            possible_refs=sorted(valid_refs),
+                            evidence_quote=proposal.evidence_quote))
+            rejected.append(RejectedChange(f"changes.locations[{index}].ref",AMBIGUOUS_REF))
+            continue
         if ref not in valid_refs | {"both"}:
             rejected.append(RejectedChange(f"changes.locations[{index}].ref", INVALID_REF)); continue
         refs = ("origin", "destination") if ref == "both" else (ref,)
@@ -285,12 +309,22 @@ def validate_delta_v31(delta, snapshot, *, customer_message, question_targets=()
                     and ref != "both" and _target_matches(targets,field,ref)))
             if field in ambiguous_fields and not ref_is_resolved:
                 reason = AMBIGUOUS_REF
+            has_specific_complement = any(
+                other.ref in valid_refs
+                and other.ref_evidence_quote == location.ref_evidence_quote
+                and getattr(other.set,field,None) is not None
+                and getattr(other.set,field).value != proposal.value
+                for other in delta.changes.locations if other is not location)
             if (not reason and ref == "both"
                     and _ref_both_conflicts_with_specific_marker(
-                        location.ref_evidence_quote)):
+                        location.ref_evidence_quote)
+                    and not (location.ref_source == RefSource.QUESTION_TARGET
+                             and _target_matches(targets,field,"both")
+                             and has_specific_complement)):
                 reason = AMBIGUOUS_REF
             if (not reason and field == "truck_access"
-                    and not _truck_access_evidence_valid(proposal)):
+                    and not _truck_access_evidence_valid(proposal)
+                    and not (ref == "both" and has_specific_complement)):
                 reason = UNSUPPORTED_BOOLEAN_EVIDENCE
             for endpoint in refs:
                 if not reason:

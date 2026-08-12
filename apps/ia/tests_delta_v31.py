@@ -15,6 +15,7 @@ from .delta_validator_v31 import (
     UNVERIFIED_EXPLICIT_REF,
     UNSUPPORTED_BOOLEAN_EVIDENCE,
     UNSUPPORTED_SERVICE_EVIDENCE,
+    UNSUPPORTED_STAFF_EVIDENCE,
     AMBIGUOUS_BOOLEAN_EVIDENCE,
     validate_delta_v31,
 )
@@ -285,6 +286,36 @@ class DeltaValidatorV31Tests(SimpleTestCase):
                  "delta_extractor_v31.py","delta_validator_v31.py"]
         self.assertTrue(all("canonical_evaluation" not in (root/name).read_text(encoding="utf-8")
                             for name in runtime))
+
+    def test_packing_only_evidence_cannot_set_staff(self):
+        delta=self.delta(lead={"staff_required":{"value":True,
+            "evidence_quote":"sí quiero embalaje","evidence_type":"explicit",
+            "context_dependency":"none"}})
+        result=self.validate(delta,"Finalmente sí quiero embalaje")
+        self.assertIsNone(result.accepted.changes.lead.staff_required)
+        self.assertIn(UNSUPPORTED_STAFF_EVIDENCE,
+                      [item.reason for item in result.rejected])
+
+    def test_literal_ambiguous_ref_becomes_ambiguity(self):
+        delta=self.delta(locations=[{"ref":"ambiguous",
+            "ref_evidence_quote":"a dos cuadras","ref_source":"explicit_message",
+            "set":{"access_observation":{"value":"a dos cuadras",
+                "evidence_quote":"a dos cuadras","evidence_type":"explicit",
+                "context_dependency":"none"}}}])
+        result=self.validate(delta,"el carro para a dos cuadras")
+        self.assertEqual(result.accepted.ambiguities[0].field,"access_observation")
+
+    def test_both_complement_can_be_overridden_by_specific_endpoint(self):
+        proposal=lambda value:{"value":value,"evidence_quote":"solo en el segundo",
+            "evidence_type":"explicit","context_dependency":"question_target"}
+        delta=self.delta(locations=[
+            {"ref":"both","ref_evidence_quote":"solo en el segundo",
+             "ref_source":"question_target","set":{"truck_access":proposal(False)}},
+            {"ref":"destination","ref_evidence_quote":"solo en el segundo",
+             "ref_source":"question_target","set":{"truck_access":proposal(True)}}])
+        target=[QuestionTarget("truck_access","both")]
+        result=self.validate(delta,"solo en el segundo",target)
+        self.assertEqual(len(result.accepted.changes.locations),2)
 
     def test_old_contextual_metadata_adapts_without_changing_claim(self):
         old={"schema_version":3,"intent":"provide_information","changes":{"lead":{

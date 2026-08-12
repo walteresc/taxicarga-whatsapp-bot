@@ -70,6 +70,12 @@ correction con target canónico, old/new y cita literal, además del proposed ch
 que fija nuevo valor. Corrections explícitas no dependen del target. Intent de
 corrección sin correction es incompleto.
 
+Ante una corrección, no basta intent=correct_information: devuelve también
+correction y el proposed change. Palabras como cambio, mejor, finalmente,
+corrección, rectifico, era/no era indican revisión del estado previo. Si una
+respuesta carece de endpoint resoluble, conserva la ambigüedad explícita aunque
+el valor parezca claro. No descartes una respuesta solo por ser breve.
+
 Nunca decidas pricing, quote/booking readiness, owner, reserva, handoff ni estado
 comercial. Devuelve únicamente estructura V3.1 solicitada.
 """.strip()
