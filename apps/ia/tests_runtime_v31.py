@@ -10,7 +10,7 @@ from apps.integrations.services.bot_generation_worker import (
     BOT_GENERATION_EVENT,queue_bot_generation,
 )
 from apps.integrations.services.channel_policy import ai_v31_mode
-from apps.leads.models import Lead
+from apps.leads.models import Lead,LeadUbicacion
 from apps.whatsapp.models import ConversacionWhatsApp,MensajeWhatsApp,WhatsAppChannel
 
 from .delta_contract_v31 import ConversationDeltaV31
@@ -70,6 +70,56 @@ class RuntimeV31Tests(TestCase):
         self.assertEqual(first.pk,second.pk)
         self.assertEqual(first.event_type,BOT_GENERATION_EVENT)
         self.assertEqual(IntegrationOutboxEvent.objects.filter(event_type=BOT_GENERATION_EVENT).count(),1)
+
+    @patch("apps.ia.runtime_v31.extract_conversation_delta_v31")
+    def test_ordered_floor_answer_persists_both_endpoints(self,extract):
+        from apps.integrations.services.bot_context import build_bot_context
+        from .conversation_engine import handle_incoming_message,next_question_targets_for
+        from .conversation_policy import quote_missing_fields
+
+        self.lead.tipo_servicio="mudanza"
+        self.lead.lista_objetos="cama, refrigeradora y 15 cajas"
+        self.lead.save()
+        LeadUbicacion.objects.create(
+            lead=self.lead,orden=0,tipo="origen",distrito="Surco")
+        LeadUbicacion.objects.create(
+            lead=self.lead,orden=1,tipo="destino",distrito="Miraflores")
+        targets=next_question_targets_for(self.lead)
+        self.assertEqual(targets[:2],[
+            {"field":"floor","ref":"origin","operation":"set"},
+            {"field":"floor","ref":"destination","operation":"set"},
+        ])
+        MensajeWhatsApp.objects.create(
+            conversacion=self.conversation,origen=MensajeWhatsApp.ORIGEN_BOT,
+            direccion=MensajeWhatsApp.SALIENTE,tipo="texto",
+            contenido="De que piso sales y a cual llegas?",question_targets=targets)
+        text="es que no te dije los pisos, pero seria de 1er piso a 2do piso"
+        inbound=MensajeWhatsApp.objects.create(
+            conversacion=self.conversation,origen=MensajeWhatsApp.ORIGEN_CLIENTE,
+            direccion=MensajeWhatsApp.ENTRANTE,tipo="texto",contenido=text)
+        delta=ConversationDeltaV31.model_validate({"intent":"provide_information",
+            "changes":{"locations":[
+                {"ref":"origin","ref_evidence_quote":"de 1er piso a 2do piso",
+                 "ref_source":"question_target","set":{"floor":{"value":1,
+                 "value_origin":"normalized_unit","evidence_quote":"1er piso",
+                 "evidence_type":"explicit","context_dependency":"question_target"}}},
+                {"ref":"destination","ref_evidence_quote":"de 1er piso a 2do piso",
+                 "ref_source":"question_target","set":{"floor":{"value":2,
+                 "value_origin":"normalized_unit","evidence_quote":"2do piso",
+                 "evidence_type":"explicit","context_dependency":"question_target"}}}]}})
+        extract.return_value=(delta,AIResult("{}","openai","gpt-4.1-mini",1,2,3))
+
+        reply=handle_incoming_message(
+            self.client_record,text,
+            canonical_context=build_bot_context(
+                self.conversation.id,trigger_message_id=inbound.id))
+
+        locations=list(LeadUbicacion.objects.filter(lead=self.lead).order_by("orden"))
+        self.assertEqual([location.piso for location in locations],[1,2])
+        self.lead.refresh_from_db()
+        self.assertNotIn("ubicacion_0_piso",quote_missing_fields(self.lead))
+        self.assertNotIn("ubicacion_1_piso",quote_missing_fields(self.lead))
+        self.assertNotIn("que piso",reply.lower())
 
     def test_active_command_rejects_non_test_channel_and_rolls_back(self):
         other=WhatsAppChannel.objects.create(nombre="Canal real",phone_number_id="real-safe")

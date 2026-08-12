@@ -62,6 +62,31 @@ class DeltaValidatorV31Tests(SimpleTestCase):
         self.assertEqual(result.accepted.changes.lead.load.value, "20 cajas")
         self.assertTrue(result.accepted.changes.locations[0].set.elevator.value)
 
+    def test_ordered_multi_target_floor_answers_are_accepted(self):
+        cases=(
+            ("del primero al segundo","primero","segundo","normalized_unit"),
+            ("1 a 2","1","2","direct"),
+            ("salgo del piso 1 y llego al 2","piso 1","al 2","direct"),
+            ("origen primero, destino segundo","primero","segundo","normalized_unit"),
+        )
+        targets=[QuestionTarget("floor","origin"),QuestionTarget("floor","destination")]
+        for message,origin_quote,destination_quote,value_origin in cases:
+            with self.subTest(message=message):
+                locations=[]
+                for ref,value,quote in (("origin",1,origin_quote),
+                                        ("destination",2,destination_quote)):
+                    locations.append({
+                        "ref":ref,"ref_evidence_quote":message,
+                        "ref_source":"question_target","set":{"floor":{
+                            "value":value,"value_origin":value_origin,
+                            "evidence_quote":quote,"evidence_type":"explicit",
+                            "context_dependency":"question_target"}}})
+                result=self.validate(self.delta(locations=locations),message,targets)
+                self.assertFalse(result.rejected)
+                self.assertEqual(
+                    [item.set.floor.value for item in result.accepted.changes.locations],
+                    [1,2])
+
     def test_independent_districts_survive_unrelated_target(self):
         locations=[]
         for ref,name in (("origin","Surco"),("destination","Miraflores")):

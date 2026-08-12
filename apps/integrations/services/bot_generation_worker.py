@@ -1,4 +1,6 @@
-from django.db import transaction
+from contextlib import nullcontext
+
+from django.db import connection, transaction
 from django.utils import timezone
 
 from apps.ia.conversation_engine import handle_incoming_message, next_question_targets_for
@@ -12,6 +14,24 @@ from .generations import fail_generation, finalize_generation
 
 
 BOT_GENERATION_EVENT="process_bot_generation"
+
+
+def _lead_state_guard():
+    """Serialize a turn in PostgreSQL without holding a SQLite read lock.
+
+    The turn includes a provider call.  A long SQLite transaction cannot be
+    upgraded to a writer after another connection (for example Chatwoot)
+    commits, and fails with ``database is locked``.  Production PostgreSQL
+    keeps the row-level serialization guarantee.
+    """
+    return transaction.atomic() if connection.vendor == "postgresql" else nullcontext()
+
+
+def _lead_for_generation(lead_id):
+    queryset = Lead.objects.select_related("cliente")
+    if connection.vendor == "postgresql":
+        queryset = queryset.select_for_update()
+    return queryset.get(pk=lead_id)
 
 
 def queue_bot_generation(*,message_id,generation_id):
@@ -41,9 +61,8 @@ def process_bot_generation_event(event_id,*,worker_id="integration"):
         event.locked_by=worker_id;event.locked_at=timezone.now()
         event.save(update_fields=["status","attempts","locked_by","locked_at","updated_at"])
     try:
-        with transaction.atomic():
-            lead=Lead.objects.select_for_update().select_related("cliente").get(
-                pk=message.conversacion.lead_id)
+        with _lead_state_guard():
+            lead=_lead_for_generation(message.conversacion.lead_id)
             context=build_bot_context(message.conversacion_id,trigger_message_id=message.id)
             reply=handle_incoming_message(lead.cliente,message.contenido,
                                           canonical_context=context,generation_id=generation.id)

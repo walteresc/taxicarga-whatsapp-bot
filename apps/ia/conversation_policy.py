@@ -161,11 +161,19 @@ def decide_conversation(lead, requires_truck_access=False, must_handoff=False):
         known_data=known,
         missing_relevant_data=missing,
         response_constraints=("Breve", "No inventar precio", "No pedir datos administrativos"),
-        question_targets=_question_targets(missing),
+        question_targets=_question_targets(missing, lead=lead),
     )
 
 
-def _question_targets(missing):
+def _question_targets(missing, *, lead=None):
+    route_refs = {}
+    if lead is not None:
+        for index, location in enumerate(route_for_lead(lead, ensure_legacy=False)):
+            order = str(getattr(location, "orden", index))
+            route_refs[order] = {
+                "origen": "origin",
+                "destino": "destination",
+            }.get(location.tipo, f"order:{order}")
     targets = []
     direct = {
         "tipo_servicio": ("service", None), "lista_objetos": ("load", None),
@@ -186,8 +194,14 @@ def _question_targets(missing):
         match = re.match(r"ubicacion_(\d+)_(distrito|piso|ascensor|acceso_camion)$", name)
         if match:
             order, field_name = match.groups()
-            field_name = "truck_access" if field_name == "acceso_camion" else field_name
-            targets.append(QuestionTarget(field_name, f"location:{order}"))
+            field_name = {
+                "distrito": "district",
+                "piso": "floor",
+                "ascensor": "elevator",
+                "acceso_camion": "truck_access",
+            }[field_name]
+            targets.append(QuestionTarget(
+                field_name, route_refs.get(order, f"location:{order}")))
     return tuple(targets)
 
 
