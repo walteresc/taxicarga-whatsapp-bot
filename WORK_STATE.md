@@ -481,3 +481,19 @@
 - Development raw más reciente revalidado con candidata actual: P 99.12%, R
   88.28%, F1 93.39%, safety 99/100; único unsafe pertenece a HUMAN_REVIEW.
 - Se requiere holdout ciego ronda 2 distinto antes de integrar runtime.
+
+## Holdouts V3.1 rondas 2/3 - FAIL (2026-08-12)
+
+- Ronda 2: 100 casos disjuntos exactos, hash
+  `fe71ab017d3cfffb4d719e0db60c95806c0bb3d74c8c250b7fb021a7318aba4d`.
+  Accepted original P 98.68%, R 81.87%, F1 89.49%, safety 98/100; FAIL.
+- Ronda 3: 100 casos disjuntos exactos, hash
+  `8e5d729bd1d1c26147a0bdb4ef250941509af8ac7cd7b0e2266ba40fe8a461d8`.
+  Accepted P 99.33%, R 81.32%, F1 89.43%, safety 99/100; FAIL.
+- Ambos datasets dejan de ser ciegos y quedan solo como development evidence.
+- Guards nuevos reducen endpoint/numeric invention; problema dominante es recall
+  variable del modelo con respuestas contextuales y mensajes multi-field.
+- Checklist general logró smoke 9/10, pero development real posterior quedó P
+  98.18%, R 84.38%, F1 90.76%, safety 98/100 y 1 endpoint crítico: gate FAIL.
+- IA-first runtime NO integrado/activado. Flags siguen OFF/shadow. Meta sends 0.
+- Costo acumulado aproximado desde master: USD 1.43; límite autorizado USD 2.00.
