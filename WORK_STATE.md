@@ -537,3 +537,41 @@
   `ebfe95c7a07fe065b170bed33ef3c82c13bd5dde629d95f14aa53ef85b84546b`.
 - Sigue requerido ampliar presupuesto: el ciclo correcto incluye smoke,
   development y luego congelar/ejecutar holdout 8.
+
+## Presupuesto USD 2.50 - holdouts 8/9 (2026-08-12)
+
+- Usuario amplió presupuesto acumulado a USD 2.50. Holdout 7 formalmente
+  `INVALIDATED_FOR_LABEL_INCONSISTENCY`; artifacts conservados.
+- Smoke `20260812T012253Z_v31_smoke`: 9/10, safety 10/10, críticos 0.
+- Dos development runs parciales terminaron en caso 90 por corrección vacía;
+  artifacts de 89 casos conservados. Causa corregida fail-closed y testada.
+- Development completo `20260812T013759Z_v31_development_100`: accepted P
+  99.15%, R 91.34%, F1 95.08%, safety 99/100; críticos 0. PASS.
+- Holdout 8 SHA-256
+  `ebfe95c7a07fe065b170bed33ef3c82c13bd5dde629d95f14aa53ef85b84546b`,
+  run `20260812T014422Z_v31_blind_holdout_round8_100`: P 95.83%, R 94.85%,
+  F1 95.34%, safety 97/100, 2 critical unsafe. FAIL; consumido.
+- Clasificación holdout 8: MODEL_ERROR (service inferido desde verbo genérico),
+  HUMAN_REVIEW (endpoint ambiguo), TARGET_METADATA_ERROR (`required` legacy),
+  EVALUATOR/LABEL_ERROR (equivalencias de carga) y omisiones del modelo.
+- Guards generales: traslado pequeño exige marcador de alcance; ambiguity domina
+  observación compatible; correction explícita no depende de target legacy.
+- Holdout 9 SHA-256
+  `116c5ce39f35e11358b05a99caac76b9120f1e67e8b6c197cb1c7438fd522f4f`,
+  run `20260812T015355Z_v31_blind_holdout_round9_100`: P 97.85%, R 93.81%,
+  F1 95.79%, safety 98/100, 2 critical/wrong-endpoint. No PASS.
+- Holdout 9 contiene además label inconsistente en h39_055: mensaje declara
+  destino=false pero expected heredado lo omite. No se corrigió post-run ni se
+  reutiliza como examen. El error real restante (distrito con ref incorrecta)
+  se cerró exigiendo provenance también para distrito; pares de ruta explícitos
+  origin/destination siguen permitidos estructuralmente.
+- Tests V3.1: 42/42 PASS. Development replay post-fix: P 99.12%, R 88.98%,
+  F1 93.78%, safety 99/100. Smoke final
+  `20260812T020244Z_v31_smoke`: 10/10, P/R/F1 100%, safety 10/10, críticos 0.
+- Holdout 10 candidato preparado, NO ejecutado: 100 casos, 50 contextuales,
+  14 HUMAN_REVIEW, hash provisional
+  `0635a3210bedaa72b2ccbed5af4ae3b2340d508220db0a79d73a25c6ddfa93c2`.
+- Costo acumulado exacto estimado: USD 2.4938976 / USD 2.50. Restante USD
+  0.0061024; insuficiente para holdout 10 (~USD 0.126).
+- IA-first runtime sigue NO integrado/activado por gate obligatorio sin PASS.
+  Meta sends 0; worker detenido; no push; producción intacta.
