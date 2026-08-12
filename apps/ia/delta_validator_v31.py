@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from .conversation_policy import QuestionTarget
 from .delta_contract_v31 import (
-    Ambiguity31, ContextDependency, EvidenceType, RefSource, ValueOrigin,
+    Ambiguity31, ContextDependency, Correction31, EvidenceType, RefSource, ValueOrigin,
     empty_delta_v31,
 )
 from .delta_validator_v2 import RejectedChange
@@ -122,7 +122,23 @@ def _boolean_evidence_is_uncertain(proposal):
     normalized="".join(char for char in normalized if not unicodedata.combining(char))
     words=set(re.findall(r"[^\W\d_]+",normalized,flags=re.UNICODE))
     return bool(words & {"quizas","quiza","talvez","duda","dudando"}) or (
-        "tal" in words and "vez" in words) or ("no" in words and "se" in words)
+        "tal" in words and "vez" in words) or ("no" in words and "se" in words) or (
+        "no" in words and "decido" in words)
+
+
+def _normalized_service_date(value,evidence):
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}",value):
+        return value
+    normalized=unicodedata.normalize("NFKD",evidence.casefold())
+    normalized="".join(char for char in normalized if not unicodedata.combining(char))
+    words=set(re.findall(r"[^\W\d_]+",normalized,flags=re.UNICODE))
+    weekdays={"lunes":"monday","martes":"tuesday","miercoles":"wednesday",
+              "jueves":"thursday","viernes":"friday","sabado":"saturday",
+              "domingo":"sunday"}
+    for spanish,english in weekdays.items():
+        if spanish in words:return f"relative:{english}"
+    if "manana" in words:return "relative:tomorrow"
+    return value
 
 
 def _state_value(snapshot, path):
@@ -209,7 +225,16 @@ def validate_delta_v31(delta, snapshot, *, customer_message, question_targets=()
         if reason:
             rejected.append(RejectedChange(path, reason))
         else:
-            setattr(accepted.changes.lead, field, proposal)
+            kept=proposal.model_copy(deep=True)
+            if field == "service_date":
+                kept.value=_normalized_service_date(kept.value,kept.evidence_quote)
+            setattr(accepted.changes.lead, field, kept)
+            if delta.intent.value == "correct_information" and path not in correction_targets:
+                accepted.corrections.append(Correction31(
+                    target=path,old=_state_value(snapshot,path),new=kept.value,
+                    evidence_quote=kept.evidence_quote,evidence_type=kept.evidence_type,
+                    context_dependency=ContextDependency.NONE))
+                correction_targets.add(path)
 
     valid_refs = set(snapshot.state.get("locations", {}))
     ambiguous_fields = {item.field for item in delta.ambiguities}
@@ -290,5 +315,17 @@ def validate_delta_v31(delta, snapshot, *, customer_message, question_targets=()
                 setattr(kept.set, field, proposal)
         if any(value is not None for _, value in kept.set):
             accepted.changes.locations.append(kept)
+            if delta.intent.value == "correct_information":
+                for field,proposal in kept.set:
+                    if proposal is None:continue
+                    for endpoint in refs:
+                        path=f"locations.{endpoint}.{field}"
+                        if path in correction_targets:continue
+                        accepted.corrections.append(Correction31(
+                            target=path,old=_state_value(snapshot,path),new=proposal.value,
+                            evidence_quote=proposal.evidence_quote,
+                            evidence_type=proposal.evidence_type,
+                            context_dependency=ContextDependency.NONE))
+                        correction_targets.add(path)
     accepted.ambiguities.extend(delta.ambiguities)
     return DeltaValidationV31Result(delta, accepted, tuple(rejected))

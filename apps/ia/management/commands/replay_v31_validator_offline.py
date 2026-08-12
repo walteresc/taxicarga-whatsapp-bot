@@ -12,6 +12,9 @@ from apps.ia.v31_offline_replay import adapt_v3_delta_to_v31
 from apps.ia.v3_development import v3_development_cases
 from apps.ia.v31_blind_holdout import v31_blind_holdout_cases
 from apps.ia.v31_blind_holdout_round2 import v31_blind_holdout_round2_cases
+from apps.ia.v31_blind_holdout_round3 import v31_blind_holdout_round3_cases
+from apps.ia.v31_blind_holdout_round4 import v31_blind_holdout_round4_cases
+from apps.ia.v31_blind_holdout_round5 import v31_blind_holdout_round5_cases
 
 
 class Command(BaseCommand):
@@ -26,6 +29,9 @@ class Command(BaseCommand):
         prefix=records[0]["case_id"].split("_",1)[0] if records else ""
         source_cases=(v31_blind_holdout_cases() if prefix == "h31" else
                       v31_blind_holdout_round2_cases() if prefix == "h32" else
+                      v31_blind_holdout_round3_cases() if prefix == "h33" else
+                      v31_blind_holdout_round4_cases() if prefix == "h34" else
+                      v31_blind_holdout_round5_cases() if prefix == "h35" else
                       v3_development_cases())
         cases={case["id"]:case for case in source_cases}
         rows=[]
