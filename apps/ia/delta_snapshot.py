@@ -32,6 +32,11 @@ def build_canonical_snapshot(lead) -> CanonicalSnapshot:
             "carry_distance_m": location.distancia_acarreo,
             "access_observation": location.observaciones_acceso or None,
         }
+    empty_location={"district":None,"floor":None,"elevator":None,
+                    "truck_access":None,"carry_distance_m":None,
+                    "access_observation":None}
+    locations.setdefault("origin",dict(empty_location))
+    locations.setdefault("destination",dict(empty_location))
     defaults = effective_quote_values(lead)
     state = {
         "schema_version": SCHEMA_VERSION,
@@ -42,6 +47,10 @@ def build_canonical_snapshot(lead) -> CanonicalSnapshot:
         "staff": {"required": defaults["incluye_personal_carga"]},
         "additional_services": {
             "packing": defaults["modalidad_servicio"] or None,
+            "packing_required": (
+                None if not defaults["modalidad_servicio"]
+                else defaults["modalidad_servicio"] != "sin embalaje"
+            ),
             "disassembly_required": defaults["requiere_desarmado"],
             "assembly_required": defaults["requiere_armado"],
         },

@@ -38,3 +38,10 @@ def is_feature_enabled(channel, feature):
 def integration_enabled(channel):
     policy = integration_policy(channel)
     return bool(policy and policy.enabled)
+
+
+def ai_v31_mode(channel):
+    policy=integration_policy(channel)
+    if not policy or not policy.enabled:
+        return ChannelIntegrationPolicy.AI_OFF
+    return policy.ai_v31_mode

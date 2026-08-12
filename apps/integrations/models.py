@@ -50,6 +50,10 @@ class ConversationControl(models.Model):
 
 
 class ChannelIntegrationPolicy(models.Model):
+    AI_OFF = "off"
+    AI_SHADOW = "shadow"
+    AI_ACTIVE = "active"
+    AI_RUNTIME_CHOICES = ((AI_OFF,"Off"),(AI_SHADOW,"Shadow"),(AI_ACTIVE,"Active"))
     channel = models.OneToOneField(
         "whatsapp.WhatsAppChannel",
         on_delete=models.CASCADE,
@@ -62,6 +66,7 @@ class ChannelIntegrationPolicy(models.Model):
     agent_outbound = models.BooleanField(default=False)
     commercial_labels = models.BooleanField(default=False)
     meta_outbox = models.BooleanField(default=False)
+    ai_v31_mode = models.CharField(max_length=12,choices=AI_RUNTIME_CHOICES,default=AI_OFF)
     updated_at = models.DateTimeField(auto_now=True)
 
 

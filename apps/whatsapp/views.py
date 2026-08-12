@@ -25,7 +25,8 @@ from apps.integrations.services.live_sync import canonical_incoming_message
 from apps.integrations.services.bot_context import build_bot_context
 from apps.integrations.services.bot_runtime import authorize_inbound_trigger
 from apps.integrations.services.generations import fail_generation, finalize_generation
-from apps.integrations.services.channel_policy import is_feature_enabled
+from apps.integrations.services.channel_policy import ai_v31_mode, is_feature_enabled
+from apps.integrations.services.bot_generation_worker import queue_bot_generation
 from apps.integrations.services.meta_sender import process_meta_outbox_event
 from apps.whatsapp.domain import obtener_o_crear_conversacion
 from apps.whatsapp.identity import resolve_whatsapp_identity
@@ -167,7 +168,10 @@ def _receive_message(request):
         if (
             canonical_message
             and not human_owned
-            and is_feature_enabled(canonical_conversation.channel, "return_to_bot")
+            and (
+                is_feature_enabled(canonical_conversation.channel, "return_to_bot")
+                or ai_v31_mode(canonical_conversation.channel) == "active"
+            )
         ):
             authorization = authorize_inbound_trigger(canonical_message.id)
             if not authorization.authorized:
@@ -184,6 +188,16 @@ def _receive_message(request):
                     "sent": None,
                 })
             try:
+                if ai_v31_mode(canonical_conversation.channel) == "active":
+                    queue_bot_generation(
+                        message_id=canonical_message.id,
+                        generation_id=authorization.generation.id,
+                    )
+                    _complete_message(processed)
+                    return JsonResponse({
+                        "ok":True,"stage8":True,"queued":True,
+                        "published":False,"sent":False,
+                    })
                 context = build_bot_context(
                     canonical_conversation.id, trigger_message_id=canonical_message.id
                 )

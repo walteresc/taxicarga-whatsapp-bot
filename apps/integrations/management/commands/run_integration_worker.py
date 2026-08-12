@@ -16,6 +16,9 @@ from apps.integrations.services.chatwoot_outbox import process_chatwoot_message_
 from apps.integrations.services.inbox_outbox import recover_inbox_locks, recover_outbox_locks
 from apps.integrations.services.meta_sender import process_meta_outbox_event
 from apps.ia.delta_extractor import DELTA_SHADOW_EVENT, process_delta_shadow_event
+from apps.integrations.services.bot_generation_worker import (
+    BOT_GENERATION_EVENT,process_bot_generation_event,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +71,8 @@ class Command(BaseCommand):
                     process_chatwoot_message_event(event.id)
                 elif event.destination == Provider.INTERNAL and event.event_type == DELTA_SHADOW_EVENT:
                     process_delta_shadow_event(event.id, worker_id=worker_id)
+                elif event.destination == Provider.INTERNAL and event.event_type == BOT_GENERATION_EVENT:
+                    process_bot_generation_event(event.id,worker_id=worker_id)
             except Exception:
                 logger.exception("event_processing_failed event_id=%s", event.id)
         close_old_connections()

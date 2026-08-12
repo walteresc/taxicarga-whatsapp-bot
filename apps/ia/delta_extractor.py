@@ -202,13 +202,22 @@ def process_delta_shadow_event(event_id, *, worker_id="integration"):
         event.locked_at = timezone.now()
         event.save(update_fields=["status", "attempts", "locked_by", "locked_at", "updated_at"])
     try:
-        run_delta_shadow(
-            lead=message.conversacion.lead,
-            conversation_id=message.conversacion_id,
-            trigger_message_id=message.id,
-            customer_message=message.contenido,
-            legacy_extraction=event.safe_payload.get("legacy_extraction"),
-        )
+        from apps.integrations.services.channel_policy import ai_v31_mode
+        mode=ai_v31_mode(message.conversacion.channel)
+        if mode == "shadow":
+            from .runtime_v31 import extract_runtime_v31
+            extract_runtime_v31(
+                lead=message.conversacion.lead,
+                conversation_id=message.conversacion_id,message_id=message.id,
+                customer_message=message.contenido,mode="shadow")
+        else:
+            run_delta_shadow(
+                lead=message.conversacion.lead,
+                conversation_id=message.conversacion_id,
+                trigger_message_id=message.id,
+                customer_message=message.contenido,
+                legacy_extraction=event.safe_payload.get("legacy_extraction"),
+            )
     except Exception as exc:
         IntegrationOutboxEvent.objects.filter(pk=event_id).update(
             status=OutboxStatus.RETRY,

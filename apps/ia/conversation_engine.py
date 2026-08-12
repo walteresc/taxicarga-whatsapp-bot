@@ -190,6 +190,14 @@ PAYMENT_INFORMATION = (
 
 def handle_incoming_message(cliente, message, canonical_context=None, generation_id=None):
     lead = _get_active_lead(cliente)
+    v31_mode="off"
+    trigger_message=None
+    if canonical_context is not None:
+        from apps.integrations.services.channel_policy import ai_v31_mode
+        from apps.whatsapp.models import MensajeWhatsApp
+        trigger_message=MensajeWhatsApp.objects.select_related("conversacion__channel").get(
+            pk=canonical_context.trigger_message_id)
+        v31_mode=ai_v31_mode(trigger_message.conversacion.channel)
     account_holder_reply = _account_holder_information(message)
     if account_holder_reply:
         return account_holder_reply
@@ -251,11 +259,20 @@ def handle_incoming_message(cliente, message, canonical_context=None, generation
             )[:4]
         )
         recent_history.reverse()
-    ai_extracted = extract_lead_with_ai(message, lead, recent_history)
     preview_extracted = extract_lead_data(message)
+    v31_extracted={}
+    if v31_mode == "active" and trigger_message is not None:
+        from .runtime_v31 import extract_runtime_v31
+        v31_extracted,_audit=extract_runtime_v31(
+            lead=lead,conversation_id=trigger_message.conversacion_id,
+            message_id=trigger_message.id,customer_message=message,mode="active")
+        ai_extracted=None
+    else:
+        ai_extracted = extract_lead_with_ai(message, lead, recent_history)
     if (
         delta_shadow_enabled()
         and canonical_context is not None
+        and v31_mode != "active"
     ):
         try:
             from apps.whatsapp.models import MensajeWhatsApp
@@ -327,11 +344,12 @@ def handle_incoming_message(cliente, message, canonical_context=None, generation
                 )
 
     expected_field = _next_missing_field(lead)
-    extracted = preview_extracted
+    extracted = dict(v31_extracted if v31_mode == "active" else preview_extracted)
 
-    correction = _extract_route_correction(message)
-    if correction:
-        extracted.update(correction)
+    if v31_mode != "active":
+        correction = _extract_route_correction(message)
+        if correction:
+            extracted.update(correction)
 
     if ai_extracted and ai_extracted["campos_detectados"]:
         for field, value in ai_extracted["campos_detectados"].items():
@@ -344,11 +362,12 @@ def handle_incoming_message(cliente, message, canonical_context=None, generation
         extracted.pop("distrito_origen", None)
         extracted.pop("distrito_destino", None)
 
-    _apply_contextual_answer(extracted, expected_field, message, lead)
+    if v31_mode != "active":
+        _apply_contextual_answer(extracted, expected_field, message, lead)
     normalized_message = _canonical_place(message)
-    if any(term in normalized_message for term in ("piso", "ascensor", "escalera", "puerta a calle")):
+    if v31_mode != "active" and any(term in normalized_message for term in ("piso", "ascensor", "escalera", "puerta a calle")):
         _extract_contextual_levels(extracted, message, lead)
-    if "camion" in normalized_message and any(
+    if v31_mode != "active" and "camion" in normalized_message and any(
         term in normalized_message for term in ("puerta", "acerc", "metros", "llega", "entra")
     ):
         _extract_contextual_truck_access(extracted, message, lead)
