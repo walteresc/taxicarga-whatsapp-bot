@@ -15,6 +15,9 @@ from apps.ia.v31_blind_holdout_round2 import v31_blind_holdout_round2_cases
 from apps.ia.v31_blind_holdout_round3 import v31_blind_holdout_round3_cases
 from apps.ia.v31_blind_holdout_round4 import v31_blind_holdout_round4_cases
 from apps.ia.v31_blind_holdout_round5 import v31_blind_holdout_round5_cases
+from apps.ia.v31_blind_holdout_round6 import v31_blind_holdout_round6_cases
+from apps.ia.v31_blind_holdout_round7 import v31_blind_holdout_round7_cases
+from apps.ia.v31_blind_holdout_round8 import v31_blind_holdout_round8_cases
 
 
 class Command(BaseCommand):
@@ -32,6 +35,9 @@ class Command(BaseCommand):
                       v31_blind_holdout_round3_cases() if prefix == "h33" else
                       v31_blind_holdout_round4_cases() if prefix == "h34" else
                       v31_blind_holdout_round5_cases() if prefix == "h35" else
+                      v31_blind_holdout_round6_cases() if prefix == "h36" else
+                      v31_blind_holdout_round7_cases() if prefix == "h37" else
+                      v31_blind_holdout_round8_cases() if prefix == "h38" else
                       v3_development_cases())
         cases={case["id"]:case for case in source_cases}
         rows=[]
