@@ -101,6 +101,11 @@ def process_bot_generation_event(event_id,*,worker_id="integration"):
             _generation,_outbox,published=finalize_generation(
                 generation.id,result_text=reply,question_targets=targets,
                 conversation_intent=generation.conversation_intent)
+
+        # Persist telemetry to BotGeneration.conversation_metadata
+        if not early_reply:
+            BotGeneration.objects.filter(pk=generation.id).update(
+                conversation_metadata=telemetry.to_metadata())
     except Exception as exc:
         fail_generation(generation.id,exc)
         IntegrationOutboxEvent.objects.filter(pk=event_id).update(

@@ -264,7 +264,6 @@ def _extract_route(text):
     patterns = [
         r"\b(?:de|desde|origen)\s+(.+?)\s+(?:a|hacia|hasta|destino)\s+(.+)",
         r"\b(?:se\s+)?(?:recoge|recogen|sale)\s+de\s+(.+?)\s+(?:y\s+)?(?:va|llega)\s+a\s+(.+)",
-        r"\bsale\s+(.+?)\s+y\s+va\s+a\s+(.+)",  # "sale surco y va a miraflores"
     ]
     match = None
     for pattern in patterns:

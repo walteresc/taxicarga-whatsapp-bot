@@ -432,7 +432,7 @@ def handle_incoming_message(cliente, message, canonical_context=None, generation
 
     if expected_field and not _field_complete(lead, expected_field):
         rephrase_now = _rephrase_if_unanswered(
-            expected_field, extracted, message, lead, canonical_context, generation_id
+            expected_field, extracted, message, lead
         )
     if rephrase_now:
         return f"{question_answer} {rephrase_now}" if question_answer else rephrase_now
