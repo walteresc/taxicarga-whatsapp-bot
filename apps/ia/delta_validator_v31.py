@@ -19,6 +19,7 @@ DERIVED_VALUE_FORBIDDEN = "DERIVED_VALUE_FORBIDDEN"
 UNSUPPORTED_MEASUREMENT = "UNSUPPORTED_MEASUREMENT"
 UNSUPPORTED_BOOLEAN_EVIDENCE = "UNSUPPORTED_BOOLEAN_EVIDENCE"
 UNSUPPORTED_SERVICE_EVIDENCE = "UNSUPPORTED_SERVICE_EVIDENCE"
+AMBIGUOUS_BOOLEAN_EVIDENCE = "AMBIGUOUS_BOOLEAN_EVIDENCE"
 NO_OP = "NO_OP"
 STALE_STATE = "STALE_STATE"
 EVIDENCE_CLAIM_COLLISION = "EVIDENCE_CLAIM_COLLISION"
@@ -72,9 +73,10 @@ def _explicit_ref_marker_is_anchored(ref, evidence):
     words = set(re.findall(r"[^\W\d_]+", normalized, flags=re.UNICODE))
     markers = {
         "origin":{"origen","salida","sale","recojo","recoger","carga","desde",
-                  "primer","primero","primera","aca","aqui"},
+                  "primer","primero","primera","aca","aqui","salimos","partimos",
+                  "partir"},
         "destination":{"destino","llegada","llega","entrega","descarga","hasta",
-                       "segundo","segunda","alla","aya"},
+                       "segundo","segunda","alla","aya","llegamos","llegar"},
         "both":{"ambos","ambas"},
     }
     return bool(words & markers.get(ref,set()))
@@ -90,7 +92,7 @@ def _truck_access_evidence_valid(proposal):
     normalized=unicodedata.normalize("NFKD",proposal.evidence_quote.casefold())
     normalized="".join(char for char in normalized if not unicodedata.combining(char))
     words=set(re.findall(r"[^\W\d_]+",normalized,flags=re.UNICODE))
-    negative=bool(words & {"no","nunca","tampoco","imposible"})
+    negative=bool(words & {"no","nunca","tampoco","imposible","ninguno","ninguna"})
     access=bool(words & {"entra","entrar","ingresa","ingresar","accede","acceso"})
     contextual=proposal.context_dependency == ContextDependency.QUESTION_TARGET
     polarity=(proposal.value is False and negative) or (proposal.value is True and not negative)
@@ -107,7 +109,20 @@ def _service_evidence_valid(proposal):
         "traslado pequeno":{"traslado","trasladar","transportar","mover","muevo","movere"},
         "carga":{"carga","mercaderia","pallet","pallets"},
     }
+    if proposal.value == "traslado pequeno" and "solo" in words and words & {"llevar","llevo"}:
+        return True
     return bool(words & markers.get(proposal.value,set()))
+
+
+def _boolean_evidence_is_uncertain(proposal):
+    value=getattr(proposal,"value",getattr(proposal,"new",None))
+    if not isinstance(value,bool):
+        return False
+    normalized=unicodedata.normalize("NFKD",proposal.evidence_quote.casefold())
+    normalized="".join(char for char in normalized if not unicodedata.combining(char))
+    words=set(re.findall(r"[^\W\d_]+",normalized,flags=re.UNICODE))
+    return bool(words & {"quizas","quiza","talvez","duda","dudando"}) or (
+        "tal" in words and "vez" in words) or ("no" in words and "se" in words)
 
 
 def _state_value(snapshot, path):
@@ -122,6 +137,8 @@ def _proposal_reason(proposal, message, targets, field, ref=None, *, check_conte
         return INFERRED_NOT_ALLOWED
     if not _anchored(proposal.evidence_quote, message):
         return NO_EVIDENCE
+    if _boolean_evidence_is_uncertain(proposal):
+        return AMBIGUOUS_BOOLEAN_EVIDENCE
     if (check_context and proposal.context_dependency == ContextDependency.QUESTION_TARGET
             and not _target_matches(targets, field, ref)):
         return CONTEXT_TARGET_MISMATCH
@@ -227,9 +244,10 @@ def validate_delta_v31(delta, snapshot, *, customer_message, question_targets=()
                     evidence_quote=location.ref_evidence_quote))
             rejected.append(RejectedChange(
                 f"changes.locations[{index}].ref",UNVERIFIED_EXPLICIT_REF)); continue
-        if location.ref_source == RefSource.QUESTION_TARGET and not any(
+        if (location.ref_source == RefSource.QUESTION_TARGET
+                and not explicit_ref_marker and not any(
                 _target_matches(targets, field, endpoint)
-                for field in fields for endpoint in refs):
+                for field in fields for endpoint in refs)):
             rejected.append(RejectedChange(f"changes.locations[{index}].ref",
                                            CONTEXT_TARGET_MISMATCH)); continue
         kept = location.model_copy(deep=True); kept.set = type(location.set)()
@@ -253,6 +271,13 @@ def validate_delta_v31(delta, snapshot, *, customer_message, question_targets=()
                 if not reason:
                     reason = _proposal_reason(
                         proposal, customer_message, targets, field, endpoint)
+                if (reason == CONTEXT_TARGET_MISMATCH
+                        and proposal.evidence_type == EvidenceType.EXPLICIT
+                        and _explicit_ref_marker_is_anchored(
+                            endpoint,location.ref_evidence_quote)):
+                    reason = _proposal_reason(
+                        proposal,customer_message,targets,field,endpoint,
+                        check_context=False)
                 if reason:
                     break
                 path = f"locations.{endpoint}.{field}"

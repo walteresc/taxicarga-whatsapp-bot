@@ -11,6 +11,7 @@ from apps.ia.delta_validator_v31 import validate_delta_v31
 from apps.ia.v31_offline_replay import adapt_v3_delta_to_v31
 from apps.ia.v3_development import v3_development_cases
 from apps.ia.v31_blind_holdout import v31_blind_holdout_cases
+from apps.ia.v31_blind_holdout_round2 import v31_blind_holdout_round2_cases
 
 
 class Command(BaseCommand):
@@ -22,9 +23,10 @@ class Command(BaseCommand):
         run_dir=options["run_dir"]
         records=[json.loads(line) for line in
                  (run_dir/"cases.jsonl").read_text(encoding="utf-8").splitlines()]
-        source_cases=(v31_blind_holdout_cases()
-                      if records and records[0]["case_id"].startswith("h31_")
-                      else v3_development_cases())
+        prefix=records[0]["case_id"].split("_",1)[0] if records else ""
+        source_cases=(v31_blind_holdout_cases() if prefix == "h31" else
+                      v31_blind_holdout_round2_cases() if prefix == "h32" else
+                      v3_development_cases())
         cases={case["id"]:case for case in source_cases}
         rows=[]
         for record in records:
