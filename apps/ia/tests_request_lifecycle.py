@@ -39,18 +39,19 @@ class RequestLifecycleTests(TestCase):
             conversation=self.conversation,action="active_request_switched").exists())
 
     @patch("apps.ia.request_lifecycle.classify_request_intent")
-    def test_ambiguous_request_when_active_converts_to_continue(self,classify):
-        """When lead is ACTIVE and intent=UNCERTAIN, never offer reactivation.
-        UNCERTAIN on ACTIVE means ambiguous msg on existing request; treat as CONTINUE_REQUEST."""
+    def test_ambiguous_request_when_active_asks_clarification(self,classify):
+        """When lead is ACTIVE and intent=UNCERTAIN, ask for clarification (not reactivation).
+        UNCERTAIN on ACTIVE means ambiguous msg on existing request; ask to clarify current vs new."""
         classify.return_value=RequestIntentResponse(intent=RequestIntent.UNCERTAIN,confidence=.8,
-            clarification_text="¿Seguimos con la anterior o hacemos otra?")
+            clarification_text=None)  # Use fallback
         lead,reply,intent=resolve_request_lifecycle(conversation_id=self.conversation.id,
             message="quiero cotizar",generation_id="g2")
         self.assertEqual(lead.id,self.old.id)
-        self.assertIsNone(reply)  # No reactivation prompt for ACTIVE leads
-        self.assertEqual(intent,RequestIntent.CONTINUE_REQUEST)  # Converted from UNCERTAIN
+        self.assertIsNotNone(reply)  # Clarification needed
+        self.assertIn("solicitud actual",reply.lower())  # Ask about current, not historical
+        self.assertEqual(intent,RequestIntent.UNCERTAIN)  # Stay UNCERTAIN
         self.conversation.refresh_from_db()
-        self.assertFalse(self.conversation.pending_request_switch)  # Not pending
+        self.assertTrue(self.conversation.pending_request_switch)  # Pending clarification
 
     @patch("apps.ia.request_lifecycle.classify_request_intent")
     def test_continue_keeps_active_request(self,classify):
@@ -61,16 +62,17 @@ class RequestLifecycleTests(TestCase):
         self.assertEqual(lead.id,self.old.id);self.assertIsNone(reply)
 
     @patch("apps.ia.request_lifecycle.classify_request_intent")
-    def test_gpt_failure_on_active_request_returns_continue(self,classify):
-        """When GPT fails on ACTIVE request, treat as CONTINUE_REQUEST (no reactivation)."""
+    def test_gpt_failure_on_active_request_asks_clarification(self,classify):
+        """When GPT fails on ACTIVE request, ask for clarification (not reactivation)."""
         classify.side_effect=Exception("invalid_api_key")
         lead,reply,intent=resolve_request_lifecycle(conversation_id=self.conversation.id,
             message="buen dia quiero cotizar una mudanza",generation_id="g4")
         self.assertEqual(lead.id,self.old.id)
-        self.assertEqual(intent,RequestIntent.CONTINUE_REQUEST)  # Not UNCERTAIN
-        self.assertIsNone(reply)  # No reactivation prompt
+        self.assertEqual(intent,RequestIntent.UNCERTAIN)  # Ask for clarification
+        self.assertIsNotNone(reply)  # Clarification needed
+        self.assertIn("solicitud actual",reply.lower())  # Ask about current, not historical
         self.conversation.refresh_from_db()
-        self.assertFalse(self.conversation.pending_request_switch)
+        self.assertTrue(self.conversation.pending_request_switch)
 
 
 class ConversationResolutionTests(TestCase):

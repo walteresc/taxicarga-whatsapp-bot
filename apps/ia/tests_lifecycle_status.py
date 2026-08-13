@@ -181,8 +181,8 @@ class RequestLifecycleIntegrationTests(TestCase):
         self.assertEqual(intent, RequestIntent.CONTINUE_REQUEST)
 
     @patch("apps.ia.request_lifecycle.classify_request_intent")
-    def test_active_lead_ambiguous_asks_clarification(self, classify_mock):
-        """lead=ACTIVE + ambiguous message → UNCERTAIN, ask for clarification."""
+    def test_active_lead_ambiguous_asks_clarification_active(self, classify_mock):
+        """lead=ACTIVE + ambiguous message → UNCERTAIN, ask about current vs new."""
         lead = Lead.objects.create(
             cliente=self.client,
             whatsapp_channel=self.channel,
@@ -194,7 +194,7 @@ class RequestLifecycleIntegrationTests(TestCase):
 
         classify_mock.return_value.intent = RequestIntent.UNCERTAIN
         classify_mock.return_value.confidence = 0.70
-        classify_mock.return_value.clarification_text = "¿Deseas continuar o una nueva solicitud?"
+        classify_mock.return_value.clarification_text = None  # GPT provides no clarification, use fallback
 
         result_lead, reply, intent = resolve_request_lifecycle(
             conversation_id=self.conversation.id,
@@ -203,7 +203,118 @@ class RequestLifecycleIntegrationTests(TestCase):
         )
 
         self.assertEqual(result_lead.id, lead.id)
-        self.assertIn("nueva", reply.lower())
+        self.assertIsNotNone(reply)
+        self.assertIn("solicitud actual", reply.lower())
+        self.assertEqual(intent, RequestIntent.UNCERTAIN)
+
+        self.conversation.refresh_from_db()
+        self.assertTrue(self.conversation.pending_request_switch)
+
+    @patch("apps.ia.request_lifecycle.classify_request_intent")
+    def test_active_lead_new_request_clear(self, classify_mock):
+        """lead=ACTIVE + client clearly initiates new service → NEW_REQUEST, new lead created."""
+        lead = Lead.objects.create(
+            cliente=self.client,
+            whatsapp_channel=self.channel,
+            estado=Lead.EN_CONVERSACION
+        )
+        self.conversation.lead = lead
+        self.conversation.ultima_actividad = timezone.now()
+        self.conversation.save()
+
+        classify_mock.return_value.intent = RequestIntent.NEW_REQUEST
+        classify_mock.return_value.confidence = 0.95
+
+        result_lead, reply, intent = resolve_request_lifecycle(
+            conversation_id=self.conversation.id,
+            message="Quiero cotizar otro servicio, una mudanza a Lima Centro",
+            generation_id="g5"
+        )
+
+        self.assertNotEqual(result_lead.id, lead.id)
+        self.assertIsNone(reply)
+        self.assertEqual(intent, RequestIntent.NEW_REQUEST)
+        self.assertEqual(result_lead.estado, Lead.NUEVO)
+
+        lead.refresh_from_db()
+        self.assertEqual(lead.estado, Lead.PERDIDO)
+
+    @patch("apps.ia.request_lifecycle.classify_request_intent")
+    def test_active_lead_resume_previous_request(self, classify_mock):
+        """lead=ACTIVE + client explicitly resumes previous → RESUME_PREVIOUS_REQUEST."""
+        lead = Lead.objects.create(
+            cliente=self.client,
+            whatsapp_channel=self.channel,
+            estado=Lead.DATOS_INCOMPLETOS
+        )
+        self.conversation.lead = lead
+        self.conversation.ultima_actividad = timezone.now()
+        self.conversation.save()
+
+        classify_mock.return_value.intent = RequestIntent.RESUME_PREVIOUS_REQUEST
+        classify_mock.return_value.confidence = 0.90
+
+        result_lead, reply, intent = resolve_request_lifecycle(
+            conversation_id=self.conversation.id,
+            message="Quiero reactivar la solicitud anterior",
+            generation_id="g6"
+        )
+
+        self.assertEqual(result_lead.id, lead.id)
+        self.assertIsNone(reply)
+        self.assertEqual(intent, RequestIntent.RESUME_PREVIOUS_REQUEST)
+        self.assertEqual(result_lead.estado, Lead.EN_CONVERSACION)
+
+    @patch("apps.ia.request_lifecycle.classify_request_intent")
+    def test_dormant_lead_resume_previous_request(self, classify_mock):
+        """lead=DORMANT + client resumes previous → RESUME_PREVIOUS_REQUEST."""
+        lead = Lead.objects.create(
+            cliente=self.client,
+            whatsapp_channel=self.channel,
+            estado=Lead.DATOS_INCOMPLETOS
+        )
+        self.conversation.lead = lead
+        self.conversation.ultima_actividad = timezone.now() - timedelta(hours=3)  # DORMANT
+        self.conversation.save()
+
+        classify_mock.return_value.intent = RequestIntent.RESUME_PREVIOUS_REQUEST
+        classify_mock.return_value.confidence = 0.92
+
+        result_lead, reply, intent = resolve_request_lifecycle(
+            conversation_id=self.conversation.id,
+            message="Quiero reactivar el servicio que cotizamos hace días",
+            generation_id="g7"
+        )
+
+        self.assertEqual(result_lead.id, lead.id)
+        self.assertIsNone(reply)
+        self.assertEqual(intent, RequestIntent.RESUME_PREVIOUS_REQUEST)
+
+    @patch("apps.ia.request_lifecycle.classify_request_intent")
+    def test_dormant_lead_ambiguous_asks_reactivation(self, classify_mock):
+        """lead=DORMANT + ambiguous message → UNCERTAIN, ask about reactivation vs new."""
+        lead = Lead.objects.create(
+            cliente=self.client,
+            whatsapp_channel=self.channel,
+            estado=Lead.DATOS_INCOMPLETOS
+        )
+        self.conversation.lead = lead
+        self.conversation.ultima_actividad = timezone.now() - timedelta(hours=3)  # DORMANT
+        self.conversation.save()
+
+        classify_mock.return_value.intent = RequestIntent.UNCERTAIN
+        classify_mock.return_value.confidence = 0.65
+        classify_mock.return_value.clarification_text = None
+
+        result_lead, reply, intent = resolve_request_lifecycle(
+            conversation_id=self.conversation.id,
+            message="Necesito cotizar",
+            generation_id="g8"
+        )
+
+        self.assertEqual(result_lead.id, lead.id)
+        self.assertIsNotNone(reply)
+        self.assertIn("reactivar", reply.lower())
         self.assertEqual(intent, RequestIntent.UNCERTAIN)
 
         self.conversation.refresh_from_db()
