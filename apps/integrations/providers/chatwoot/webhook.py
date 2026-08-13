@@ -172,6 +172,12 @@ def _classify(payload, account_id, inbox_id, message_id, mapping):
         return "unmapped_conversation"
     if _is_human_agent(payload):
         return "human_agent"
+    # Customer incoming message (only if mapping exists and sender is contact)
+    message_type = payload.get("message_type")
+    sender = payload.get("sender") if isinstance(payload.get("sender"), dict) else {}
+    sender_type = str(sender.get("type", "")).lower()
+    if mapping and message_type in (0, "0", "incoming") and sender_type == "contact":
+        return "incoming_customer"
     return "unsupported"
 
 
@@ -202,6 +208,73 @@ def _safe_payload(payload, refs, classification):
         "attention_control_before": attention_before,
         "attention_control_after": attention_after,
     }
+
+
+def _process_incoming_customer_message(mapping, payload, account_id, message_id):
+    """Process customer incoming from Chatwoot webhook.
+
+    Create MensajeWhatsApp + BotGeneration if not already present.
+    """
+    from apps.integrations.models import BotGeneration, ExternalMessageMapping
+    from apps.integrations.services.bot_generation_worker import queue_bot_generation
+    from apps.whatsapp.models import MensajeWhatsApp
+    from apps.integrations.enums import GenerationStatus, OwnerState
+
+    try:
+        # Check if message already mapped
+        msg_mapping = ExternalMessageMapping.objects.filter(
+            provider=Provider.CHATWOOT,
+            external_id=message_id,
+        ).first()
+
+        if msg_mapping and msg_mapping.internal_message_id:
+            # Message already in our system
+            message = MensajeWhatsApp.objects.get(pk=msg_mapping.internal_message_id)
+            action = "already_mapped"
+        else:
+            # Create MensajeWhatsApp for this customer inbound
+            message = MensajeWhatsApp.objects.create(
+                conversacion=mapping.conversation,
+                meta_message_id=f"chatwoot:{message_id}",  # Synthetic ID
+                direccion=MensajeWhatsApp.ENTRANTE,
+                origen=MensajeWhatsApp.ORIGEN_CLIENTE,
+                tipo="texto",
+                contenido=str(payload.get("content") or ""),
+                estado="recibido",
+            )
+            # Map Chatwoot message to our MensajeWhatsApp
+            ExternalMessageMapping.objects.get_or_create(
+                provider=Provider.CHATWOOT,
+                external_id=message_id,
+                defaults={"internal_message_id": message.id},
+            )
+            action = "message_created"
+
+        # Ensure BotGeneration exists
+        existing_gen = BotGeneration.objects.filter(
+            input_message_id=message.id
+        ).first()
+
+        if not existing_gen:
+            generation = BotGeneration.objects.create(
+                conversation_id=mapping.conversation.id,
+                status=GenerationStatus.GENERATING,
+                request_key=f"chatwoot-incoming-{message_id}",
+                control_version_started=0,
+                expected_owner_state=OwnerState.BOT_ACTIVE,
+            )
+            try:
+                queue_bot_generation(
+                    message_id=message.id,
+                    generation_id=generation.id,
+                )
+                action = "queued_for_bot"
+            except Exception:
+                pass
+
+        return action
+    except Exception:
+        return "error"
 
 
 def _create_human_message(mapping, payload, account_id, message_id):
@@ -290,7 +363,59 @@ def process_webhook(payload, delivery_id, *, chatwoot_client=None):
         return WebhookResult(classification, "ignored", duplicate=True)
 
     action = "ignored"
-    if classification == "human_agent":
+    if classification == "django_projection":
+        # django_projection can be: (1) Customer inbound that Django already processed,
+        # or (2) Bot outbound that Django created and projected to Chatwoot.
+        # Use message_type to distinguish:
+        # - message_type 0 = incoming (customer message — might need BotGeneration)
+        # - message_type 1 = outgoing (bot response — truly ignore)
+
+        message_type = payload.get("message_type")
+        if message_type in (1, "1", "outgoing"):
+            # This is bot outbound that Django already handled; truly ignore
+            action = "ignored"
+        else:
+            # Either incoming (customer) or ambiguous; try to process
+            from apps.integrations.models import BotGeneration
+            from apps.integrations.services.bot_generation_worker import queue_bot_generation
+            from apps.whatsapp.models import MensajeWhatsApp
+
+            try:
+                from apps.integrations.enums import GenerationStatus, OwnerState
+
+                msg_mapping = ExternalMessageMapping.objects.filter(
+                    provider=Provider.CHATWOOT,
+                    external_id=message_id,
+                ).first()
+
+                if msg_mapping and msg_mapping.internal_message_id:
+                    message = MensajeWhatsApp.objects.get(pk=msg_mapping.internal_message_id)
+                    # Ensure BotGeneration exists for this message
+                    existing_gen = BotGeneration.objects.filter(
+                        input_message_id=message.id
+                    ).first()
+                    if not existing_gen and message.direccion == "ENTRANTE":
+                        # No BotGeneration yet - create one
+                        generation = BotGeneration.objects.create(
+                            conversation_id=mapping.conversation.id,
+                            status=GenerationStatus.GENERATING,
+                            request_key=f"chatwoot-recovery-{message_id}",
+                            control_version_started=0,
+                            expected_owner_state=OwnerState.BOT_ACTIVE,
+                        )
+                        try:
+                            queue_bot_generation(
+                                message_id=message.id,
+                                generation_id=generation.id,
+                            )
+                            action = "queued_for_bot"
+                        except Exception:
+                            pass
+            except (MensajeWhatsApp.DoesNotExist, ExternalMessageMapping.DoesNotExist, AttributeError):
+                pass
+
+            action = "ignored" if action == "ignored" else action
+    elif classification == "human_agent":
         if (
             is_feature_enabled(mapping.conversation.channel, "human_takeover")
         ):
@@ -332,8 +457,19 @@ def process_webhook(payload, delivery_id, *, chatwoot_client=None):
                 action = "ignored"
         else:
             action = "ignored"
+    elif classification == "incoming_customer":
+        # Customer message from Chatwoot (not django_projection)
+        # Likely Meta → Chatwoot → Django flow
+        if mapping and mapping.conversation:
+            action = _process_incoming_customer_message(
+                mapping, payload, account_id, message_id
+            )
+        else:
+            action = "ignored"
+
     inbox_event.status = InboxStatus.PROCESSED if action in {
-        "normalized", "returned_to_bot", "return_blocked_pending_human_outbox"
+        "normalized", "returned_to_bot", "return_blocked_pending_human_outbox",
+        "queued_for_bot", "message_created", "already_mapped"
     } else InboxStatus.IGNORED
     inbox_event.processed_at = timezone.now()
     inbox_event.save(update_fields=["status", "processed_at"])

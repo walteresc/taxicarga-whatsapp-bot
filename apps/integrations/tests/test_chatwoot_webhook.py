@@ -174,16 +174,17 @@ class ChatwootWebhookTests(IntegrationTestCase):
         self.assertEqual(IntegrationInboxEvent.objects.count(), 2)
 
     def test_unmapped_and_unsupported_return_success(self):
-        unsupported = self.post(
-            self.payload(id=18, sender={"type": "Contact"}, message_type="incoming"), "unsupported"
+        # Incoming customer message with mapping is now "incoming_customer", not "unsupported"
+        incoming_customer = self.post(
+            self.payload(id=18, sender={"type": "Contact"}, message_type="incoming"), "incoming_customer"
         )
         self.mapping.delete()
         unmapped = self.post(self.payload(), "unmapped")
 
         self.assertEqual(unmapped.status_code, 200)
         self.assertEqual(unmapped.json()["classification"], "unmapped_conversation")
-        self.assertEqual(unsupported.status_code, 200)
-        self.assertEqual(unsupported.json()["classification"], "unsupported")
+        self.assertEqual(incoming_customer.status_code, 200)
+        self.assertEqual(incoming_customer.json()["classification"], "incoming_customer")
         self.assertEqual(IntegrationMessage.objects.count(), 0)
 
     def test_invalid_signature_timestamp_json_and_content_type_are_rejected(self):
