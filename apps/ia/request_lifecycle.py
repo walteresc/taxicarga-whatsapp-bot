@@ -128,6 +128,18 @@ def resolve_request_lifecycle(*,conversation_id,message,generation_id,telemetry=
         _switch(conversation,None,new,generation_id,RequestIntent.NEW_REQUEST)
         return new,None,RequestIntent.NEW_REQUEST
     lifecycle_status,_=_determine_lifecycle_status(old,conversation)
+
+    # PRIORITY: Check if message is a CLEAR CONTEXTUAL ANSWER to last question
+    # If yes, bypass lifecycle classification and treat as CONTINUE_REQUEST
+    if _is_contextual_answer(old,conversation,message):
+        # Message directly answers the last asked targets; no need for lifecycle classification
+        if conversation.pending_request_switch:
+            conversation.pending_request_switch=False
+            conversation.save(update_fields=["pending_request_switch","actualizada_en"])
+        _audit(conversation,old,old,generation_id,"contextual_answer_resolved",
+               {"request_intent":RequestIntent.CONTINUE_REQUEST.value})
+        return old,None,RequestIntent.CONTINUE_REQUEST
+
     try:
         result=classify_request_intent(message=message,active_lead=old,
             conversation=conversation,telemetry=telemetry)
@@ -214,6 +226,132 @@ def _audit(conversation,old,new,generation_id,action,metadata):
             "reason":"request lifecycle","metadata":{
                 "active_request_id_before":getattr(old,"id",None),
                 "active_request_id_after":getattr(new,"id",None),**metadata}})
+
+
+def _is_contextual_answer(lead,conversation,message):
+    """Check if message clearly answers the last asked targets.
+
+    CRITICAL: Separate ANSWER INTENT from FIELD EXTRACTION.
+    A message can be a contextual answer attempt even if extraction is partial/imperfect.
+    """
+    if lead is None:
+        return False
+
+    # Get the last bot message to see what was asked
+    from apps.whatsapp.models import MensajeWhatsApp
+    last_bot_msg=MensajeWhatsApp.objects.filter(
+        conversacion=conversation,
+        direccion="SALIENTE"
+    ).order_by('-creado_en').first()
+
+    if last_bot_msg is None:
+        return False
+
+    msg_lower=last_bot_msg.contenido.lower()
+    answer_lower=message.lower()
+
+    # Route question: "¿Cuál es el distrito de partida y llegada?"
+    # Accept ANY message with location-like structure when route was asked
+    if any(term in msg_lower for term in ("distrito", "partida", "llegada", "origen", "destino", "de donde", "para donde", "a donde")):
+        # Message must look like it's attempting to answer a route question
+        # Patterns: "X a Y", "de X para Y", "X y Y", etc.
+        if _looks_like_route_answer(answer_lower):
+            return True
+
+    # Floor question: "¿De qué piso sale y a qué piso llega?"
+    if any(term in msg_lower for term in ("piso", "nivel", "altura", "planta")):
+        # Answer should have floor numbers or clear floor references
+        if _has_floor_reference(answer_lower):
+            return True
+
+    # Elevator/access question: "ascensor", "escaleras"
+    if any(term in msg_lower for term in ("ascensor", "escaleras", "puerta a calle", "acceso")):
+        # Answer should be yes/no or descriptive
+        if _is_yes_no_or_descriptive(answer_lower):
+            return True
+
+    # Load/items question: "qué cosas"
+    if any(term in msg_lower for term in ("cosas", "llevas", "trasladar", "carga")):
+        # Answer should describe items (unlikely to be new request)
+        if len(answer_lower) > 5:  # Not just a single word
+            return True
+
+    return False
+
+
+def _looks_like_route_answer(msg):
+    """Check if message has structure of a route answer, regardless of exact district match.
+
+    Examples:
+    - "surquillo a san luis"
+    - "de surquillo a asn luis"
+    - "la molina para miraflores"
+    - "surco y san luis"
+    - "de aqui a ahi"
+    """
+    # Route answer patterns: contain connectors like "a", "para", "y" with location-like words on both sides
+    # Must have at least one connector AND at least 2 "words" that could be locations
+
+    # Look for connectors
+    has_connector=any(term in msg for term in (" a ", " para ", " y ", " del ", " de ", " para "))
+
+    if not has_connector:
+        return False
+
+    # Split by common connectors and check we have at least 2 parts with content
+    import re
+    parts=[p.strip() for p in re.split(r'\ba\b|\bpara\b|\by\b|\bdel\b|\bde\b', msg) if p.strip()]
+
+    # Must have at least 2 parts that look like locations (words, not single letters)
+    meaningful_parts=[p for p in parts if len(p) > 1 and len(p.split()) >= 1]
+
+    return len(meaningful_parts) >= 2
+
+
+def _extract_locations_from_message(msg):
+    """Extract possible location names from message."""
+    # Known Lima districts for quick matching
+    districts={
+        "la molina", "san luis", "surco", "miraflores", "san isidro",
+        "lima", "callao", "jesus maria", "lince", "ancón", "ate",
+        "barranco", "breña", "carabayllo", "carmen de la legua",
+        "cercado", "chaclacayo", "chorrillos", "cieneguilla", "comas",
+        "el agustino", "independencia", "la perla", "la punta",
+        "la victoria", "puente piedra", "rímac", "san bartolo",
+        "san juan de lurigancho", "san juan de miraflores",
+        "santa anita", "santa maría del mar", "santa rosa"
+    }
+    found=[]
+    for district in districts:
+        if district in msg:
+            found.append(district)
+    return found
+
+
+def _has_floor_reference(msg):
+    """Check if message contains clear floor references."""
+    import re
+    # Look for numbers (1, 2, 3, etc.) or floor words
+    if re.search(r'\b\d+\b', msg):  # Any number
+        return True
+    if any(term in msg for term in ("primero", "segundo", "tercero", "cuarto", "quinto",
+                                     "piso", "nivel", "planta", "piso bajo")):
+        return True
+    return False
+
+
+def _is_yes_no_or_descriptive(msg):
+    """Check if message is a yes/no answer or descriptive."""
+    yes_terms={"sí", "si", "yes", "yep", "claro", "ok", "okis"}
+    no_terms={"no", "nope"}
+    if any(term in msg for term in yes_terms):
+        return True
+    if any(term in msg for term in no_terms):
+        return True
+    # Descriptive answers (longer than just one word)
+    if len(msg.split()) > 2:
+        return True
+    return False
 
 
 def _clarify_active_request():
