@@ -173,7 +173,7 @@ class IntegrationBotConfigWebhookTests(TestCase):
         self.assertTrue(response.json()["human_takeover"])
         lead = Lead.objects.filter(cliente__telefono="+51988888888").first()
         self.assertIsNotNone(lead)
-        self.assertTrue(lead.atencion_humana)
+        self.assertFalse(lead.atencion_humana)
         send_mock.assert_not_called()
 
     @override_settings(OPENAI_API_KEY="")

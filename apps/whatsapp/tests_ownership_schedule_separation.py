@@ -43,7 +43,7 @@ class OwnershipScheduleSeparationTest(TestCase):
     def test_schedule_miss_never_sets_atencion_humana(self):
         """Outside hours must NOT mark atencion_humana."""
         # Outside schedule (03:00 Lima)
-        outside_hours = self.conversation.created_at.replace(hour=3, minute=0)
+        outside_hours = self.conversation.creada_en.replace(hour=3, minute=0)
 
         # Check should_bot_reply returns False (schedule miss)
         result = should_bot_reply(now=outside_hours, lead=self.lead, channel=self.channel)
@@ -73,7 +73,7 @@ class OwnershipScheduleSeparationTest(TestCase):
         self.control.save()
 
         # Bot should not respond even if schedule allows
-        inside_hours = self.conversation.created_at.replace(hour=14, minute=0)
+        inside_hours = self.conversation.creada_en.replace(hour=14, minute=0)
         # Note: should_bot_reply checks atencion_humana AND owner_state in views
         # Here we test the control is set correctly
         self.assertEqual(self.control.owner_state, OwnerState.AGENT_ACTIVE)
@@ -93,7 +93,7 @@ class OwnershipScheduleSeparationTest(TestCase):
         self.assertEqual(self.control.owner_state, OwnerState.BOT_ACTIVE)
 
 
-@override_settings(CHANNEL_SCHEDULE_BYPASS_FOR_TESTING="7")
+@override_settings(CHANNEL_SCHEDULE_BYPASS_FOR_TESTING=[7])
 class Channel7ScheduleBypassTest(TestCase):
     """Channel 7 TEST has explicit schedule bypass."""
 
@@ -120,7 +120,7 @@ class Channel7ScheduleBypassTest(TestCase):
     def test_other_channels_not_bypassed(self):
         """Other channels must NOT have bypass."""
         other_channel = WhatsAppChannel.objects.create(
-            id=99, nome="Other", phone_number_id="8888888888"
+            id=99, nombre="Other", phone_number_id="8888888888"
         )
         result = _is_schedule_bypassed_for_testing(other_channel)
         self.assertFalse(result, "Non-Channel7 must NOT have bypass")
