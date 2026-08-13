@@ -35,12 +35,17 @@ def _lead_for_generation(lead_id):
 
 
 def queue_bot_generation(*,message_id,generation_id):
+    from django.db import transaction
     message=MensajeWhatsApp.objects.select_related("conversacion__channel").get(pk=message_id)
-    return IntegrationOutboxEvent.objects.get_or_create(
-        destination=Provider.INTERNAL,destination_scope=f"channel:{message.conversacion.channel_id}",
-        idempotency_key=f"bot-generation-work:{generation_id}",defaults={
-            "event_type":BOT_GENERATION_EVENT,"conversation":message.conversacion,
-            "safe_payload":{"message_id":message.id,"generation_id":str(generation_id)}})
+    with transaction.atomic():
+        # INVARIANT: BotGeneration MUST exist before we create the event
+        generation=BotGeneration.objects.select_for_update().get(pk=generation_id)
+        event,_=IntegrationOutboxEvent.objects.get_or_create(
+            destination=Provider.INTERNAL,destination_scope=f"channel:{message.conversacion.channel_id}",
+            idempotency_key=f"bot-generation-work:{generation_id}",defaults={
+                "event_type":BOT_GENERATION_EVENT,"conversation":message.conversacion,
+                "safe_payload":{"message_id":message.id,"generation_id":str(generation_id)}})
+    return event
 
 
 def process_bot_generation_event(event_id,*,worker_id="integration"):
@@ -53,7 +58,13 @@ def process_bot_generation_event(event_id,*,worker_id="integration"):
         message=MensajeWhatsApp.objects.select_related(
             "conversacion__lead__cliente","conversacion__channel").get(
                 pk=event.safe_payload["message_id"])
-        generation=BotGeneration.objects.get(pk=event.safe_payload["generation_id"])
+        try:
+            generation=BotGeneration.objects.get(pk=event.safe_payload["generation_id"])
+        except BotGeneration.DoesNotExist:
+            event.status=OutboxStatus.DEAD_LETTER;event.error_code="generation_not_found"
+            event.error_summary="Referenced BotGeneration was never created or was deleted"
+            event.save(update_fields=["status","error_code","error_summary","updated_at"])
+            return "generation_not_found"
         if generation.conversation_id != message.conversacion_id:
             event.status=OutboxStatus.DEAD_LETTER;event.error_code="conversation_scope_mismatch"
             event.save(update_fields=["status","error_code","updated_at"]);return "dead_letter"

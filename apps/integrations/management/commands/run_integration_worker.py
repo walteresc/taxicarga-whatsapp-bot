@@ -73,6 +73,11 @@ class Command(BaseCommand):
                     process_delta_shadow_event(event.id, worker_id=worker_id)
                 elif event.destination == Provider.INTERNAL and event.event_type == BOT_GENERATION_EVENT:
                     process_bot_generation_event(event.id,worker_id=worker_id)
-            except Exception:
-                logger.exception("event_processing_failed event_id=%s", event.id)
+            except Exception as worker_exc:
+                logger.exception("event_processing_failed event_id=%s error=%s", event.id, type(worker_exc).__name__)
+                try:
+                    IntegrationOutboxEvent.objects.filter(pk=event.id, status="sending").update(
+                        status=OutboxStatus.RETRY, error_summary=str(worker_exc)[:255], locked_at=None, locked_by="")
+                except Exception:
+                    logger.exception("failed_to_mark_event_retry event_id=%s", event.id)
         close_old_connections()
