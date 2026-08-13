@@ -73,19 +73,29 @@ def finalize_generation(generation_id, *, result_text, question_targets=None,
             metadata["question_targets"] = question_targets
         if conversation_intent:
             metadata["conversation_intent"] = conversation_intent
-        message = IntegrationMessage.objects.create(
-            conversation_id=generation.conversation_id,
-            provider=Provider.INTERNAL,
-            external_scope="internal",
-            direction=Direction.OUTBOUND,
-            author_type=AuthorType.BOT,
-            visibility=Visibility.PUBLIC,
-            content_type="text",
-            text=result_text,
-            metadata=metadata,
-            idempotency_key=f"bot-generation:{generation.id}",
-            correlation_id=generation.correlation_id,
-        )
+        try:
+            message = IntegrationMessage.objects.create(
+                conversation_id=generation.conversation_id,
+                provider=Provider.INTERNAL,
+                external_scope="internal",
+                direction=Direction.OUTBOUND,
+                author_type=AuthorType.BOT,
+                visibility=Visibility.PUBLIC,
+                content_type="text",
+                text=result_text,
+                metadata=metadata,
+                idempotency_key=f"bot-generation:{generation.id}",
+                correlation_id=generation.correlation_id,
+            )
+        except Exception as exc:
+            if "UNIQUE constraint failed" in str(exc) or "unique" in str(exc).lower():
+                message = IntegrationMessage.objects.get(
+                    provider=Provider.INTERNAL,
+                    external_scope="internal",
+                    idempotency_key=f"bot-generation:{generation.id}",
+                )
+            else:
+                raise
         outbox_key = f"quote-revision:{revision.id}:whatsapp" if revision else f"meta-message:{message.id}"
         outbox, _ = IntegrationOutboxEvent.objects.get_or_create(
             destination=Provider.META_WHATSAPP,

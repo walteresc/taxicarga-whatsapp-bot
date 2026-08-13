@@ -5,7 +5,7 @@ from pydantic import Field, StrictStr
 
 from apps.integrations.models import BotGeneration
 
-from .conversation_policy import quote_requirements
+from .conversation_policy import quote_requirements, eligible_question_targets
 from .delta_contract import StrictModel
 from .delta_snapshot import build_canonical_snapshot
 from .providers import build_provider
@@ -46,11 +46,12 @@ comercial. Nunca calcules precio. Sé breve. Devuelve solo estructura solicitada
 def orchestrate_conversation(*,lead,decision,customer_message,recent_turns,generation_id,
                              last_resolution=None,telemetry=None):
     requirements=quote_requirements(lead)
+    eligible_fields=eligible_question_targets(decision.missing_relevant_data,lead)
     payload={"canonical_state":build_canonical_snapshot(lead).state,
         "phase":decision.phase,"required":requirements.required,
         "conditional":requirements.conditional,"optional":requirements.optional,
         "booking_only":requirements.booking_only,
-        "missing_required":list(decision.missing_relevant_data),
+        "missing_required":list(eligible_fields),
         "customer_message":customer_message,"recent_turns":recent_turns[-4:],
         "commercial_state":{"pricing_result":decision.pricing_result,
                             "must_handoff":decision.must_handoff},

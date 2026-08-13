@@ -182,6 +182,55 @@ def decide_conversation(lead, requires_truck_access=False, must_handoff=False):
     )
 
 
+def eligible_question_targets(missing, lead):
+    """Filter missing fields to only those eligible for conversation now."""
+    if not missing or lead is None:
+        return missing
+
+    route = route_for_lead(lead, ensure_legacy=False)
+    if not route:
+        # If no route, can only ask for service/load, not locations
+        return tuple(
+            f for f in missing
+            if f not in {
+                "piso_origen", "piso_destino", "ascensor_origen", "ascensor_destino",
+                "camion_llega_origen", "camion_llega_destino"
+            }
+            and not f.startswith("ubicacion_")
+        )
+
+    eligible = []
+    for field in missing:
+        if field == "ascensor_origen" or field == "ascensor_destino":
+            # Check if corresponding floor exists and is > 1
+            ref = "origen" if field == "ascensor_origen" else "destino"
+            location = next(
+                (loc for loc in route if loc.tipo == ref),
+                None
+            )
+            if location and location.piso is not None and location.piso > 1:
+                eligible.append(field)
+        elif field.startswith("ubicacion_") and ("ascensor" in field or "escaleras" in field):
+            # Format: ubicacion_0_ascensor, ubicacion_1_piso, etc.
+            parts = field.split("_")
+            if len(parts) >= 2:
+                try:
+                    loc_order = int(parts[1])
+                    location = next(
+                        (loc for loc in route if getattr(loc, "orden", 0) == loc_order),
+                        None
+                    )
+                    if location and location.piso is not None and location.piso > 1:
+                        eligible.append(field)
+                except (ValueError, IndexError):
+                    pass
+        else:
+            # Other fields are eligible
+            eligible.append(field)
+
+    return tuple(eligible)
+
+
 def _question_targets(missing, *, lead=None):
     route_refs = {}
     if lead is not None:
