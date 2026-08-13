@@ -115,12 +115,16 @@ def resolve_request_lifecycle(*,conversation_id,message,generation_id,telemetry=
         new=_new_lead(conversation)
         _switch(conversation,None,new,generation_id,RequestIntent.NEW_REQUEST)
         return new,None,RequestIntent.NEW_REQUEST
+    lifecycle_status,_=_determine_lifecycle_status(old,conversation)
     try:
         result=classify_request_intent(message=message,active_lead=old,
             conversation=conversation,telemetry=telemetry)
     except Exception as exc:
         _audit(conversation,old,old,generation_id,"request_intent_failure",
                {"error_type":type(exc).__name__})
+        # Never offer reactivation when ACTIVE (even on exception)
+        if lifecycle_status==RequestLifecycleStatus.ACTIVE:
+            return old,None,RequestIntent.CONTINUE_REQUEST
         if conversation.pending_request_switch:
             return old,_switch_question(),RequestIntent.UNCERTAIN
         conversation.pending_request_switch=True
@@ -136,6 +140,12 @@ def resolve_request_lifecycle(*,conversation_id,message,generation_id,telemetry=
         conversation.save(update_fields=["pending_request_switch","actualizada_en"])
         # Return continuation intent to proceed with current lead
         return old,None,RequestIntent.CONTINUE_REQUEST
+
+    # CRITICAL: Never offer reactivation when lifecycle_status=ACTIVE (lead has vigent request).
+    # UNCERTAIN for ACTIVE means ambiguous message on existing request; treat as CONTINUE_REQUEST.
+    # Reactivation prompts only make sense for DORMANT/CLOSED leads.
+    if intent==RequestIntent.UNCERTAIN and lifecycle_status==RequestLifecycleStatus.ACTIVE:
+        intent=RequestIntent.CONTINUE_REQUEST
 
     if intent==RequestIntent.NEW_REQUEST:
         new=_new_lead(conversation)
