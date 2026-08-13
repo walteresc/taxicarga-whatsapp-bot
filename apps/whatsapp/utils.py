@@ -389,7 +389,20 @@ def _marcar_derivacion(lead, motivos):
     )
 
 
+def _is_schedule_bypassed_for_testing(channel):
+    """Check if channel has schedule bypass for testing."""
+    if channel is None:
+        return False
+    from django.conf import settings
+    bypass_channels = getattr(settings, "CHANNEL_SCHEDULE_BYPASS_FOR_TESTING", [])
+    return channel.id in bypass_channels
+
+
 def should_bot_reply(now=None, lead=None, channel=None):
+    # Check schedule bypass for testing channels (e.g., Channel 7)
+    if _is_schedule_bypassed_for_testing(channel):
+        return True
+
     conf = ConfiguracionBot.obtener(channel=channel)
     now = now or timezone.localtime()
     hora_actual = now.time()

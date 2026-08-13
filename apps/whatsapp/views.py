@@ -108,10 +108,6 @@ def _receive_message(request):
             active_lead = _lead_for_image(cliente, active_lead)
             if not active_lead:
                 active_lead = Lead.objects.create(cliente=cliente, estado=Lead.NUEVO)
-            bot_deberia_responder = should_bot_reply(lead=active_lead, channel=channel)
-            if not bot_deberia_responder:
-                if not active_lead.atencion_humana:
-                    _marcar_atencion_humana(active_lead)
             response = _receive_image(cliente, active_lead, event)
             _complete_message(processed)
             return response
@@ -158,12 +154,11 @@ def _receive_message(request):
             if attention_conversation else None
         )
         human_owned = bool(
-            (active_lead and active_lead.atencion_humana)
+            (control and control.owner_state == OwnerState.AGENT_ACTIVE)
             or (attention_conversation and (
                 attention_conversation.estado_atencion == attention_conversation.ATENCION_ASESOR
                 or attention_conversation.bot_pausado
             ))
-            or (control and control.owner_state == OwnerState.AGENT_ACTIVE)
         )
         if (
             canonical_message
@@ -247,8 +242,6 @@ def _receive_message(request):
             if not active_lead:
                 active_lead = Lead.objects.create(cliente=cliente, estado=Lead.NUEVO)
             fue_derivado = active_lead.requiere_asesor and not hasattr(active_lead, '_handoff_sent')
-            if not active_lead.atencion_humana:
-                _marcar_atencion_humana(active_lead)
 
             # V2: one‑time message (only when V2 was the blocking reason)
             if v2_blocked:

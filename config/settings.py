@@ -197,3 +197,9 @@ LOGGING = {
         },
     },
 }
+
+CHANNEL_SCHEDULE_BYPASS_FOR_TESTING = [
+    int(ch.strip())
+    for ch in config("CHANNEL_SCHEDULE_BYPASS_FOR_TESTING", default="7").split(",")
+    if ch.strip()
+]
