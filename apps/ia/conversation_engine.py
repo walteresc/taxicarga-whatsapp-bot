@@ -231,7 +231,8 @@ def handle_incoming_message(cliente, message, canonical_context=None, generation
 
     packing_info = _packing_information(message)
     if packing_info:
-        next_question = _next_missing_question(lead)
+        next_question = _next_missing_question(lead,canonical_context=canonical_context,
+                                              generation_id=generation_id,telemetry=telemetry)
         if next_question:
             return f"{packing_info} {next_question}"
         return packing_info
@@ -319,7 +320,7 @@ def handle_incoming_message(cliente, message, canonical_context=None, generation
             )
             return _next_missing_question(
                 lead,message=message,canonical_context=canonical_context,
-                generation_id=generation_id)
+                generation_id=generation_id,telemetry=telemetry)
 
         # If no price/closure/acceptance matched, check AI for new quote intent.
         if _ai_detects_new_quote(ai_extracted):
@@ -575,7 +576,7 @@ def _get_active_lead(cliente):
     return Lead.objects.create(cliente=cliente, estado=Lead.NUEVO)
 
 
-def _next_missing_question(lead,message="",canonical_context=None,generation_id=None):
+def _next_missing_question(lead,message="",canonical_context=None,generation_id=None,telemetry=None):
     from .conversation_strategy import select_next_conversation_goal
     decision = decide_conversation(
         lead,
@@ -600,7 +601,7 @@ def _next_missing_question(lead,message="",canonical_context=None,generation_id=
                 last_resolution=resolution,telemetry=telemetry)
             return reply
         except Exception as exc:
-            logger.warning("Conversation orchestrator fallback error_type=%s",
+            logger.exception("Conversation orchestrator fallback error_type=%s",
                            type(exc).__name__)
     if resolution and resolution.status in {"UNRESOLVED","AMBIGUOUS","PARTIAL"} \
             and resolution.unresolved_attempts<=1:
