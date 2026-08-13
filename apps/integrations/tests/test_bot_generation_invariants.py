@@ -68,7 +68,8 @@ class BotGenerationInvariantsTest(TestCase):
             expected_owner_state=OwnerState.BOT_ACTIVE
         )
 
-        event = queue_bot_generation(message_id=self.message.id, generation_id=generation.id)
+        event, created = queue_bot_generation(message_id=self.message.id, generation_id=generation.id)
+        self.assertTrue(created)
         self.assertEqual(event.event_type, "process_bot_generation")
         self.assertEqual(event.safe_payload["generation_id"], str(generation.id))
 
@@ -119,8 +120,10 @@ class BotGenerationInvariantsTest(TestCase):
             expected_owner_state=OwnerState.BOT_ACTIVE
         )
 
-        event1 = queue_bot_generation(message_id=self.message.id, generation_id=generation.id)
-        event2 = queue_bot_generation(message_id=self.message.id, generation_id=generation.id)
+        event1, created1 = queue_bot_generation(message_id=self.message.id, generation_id=generation.id)
+        event2, created2 = queue_bot_generation(message_id=self.message.id, generation_id=generation.id)
+        self.assertTrue(created1)
+        self.assertFalse(created2)
         self.assertEqual(event1.id, event2.id)  # Same event
 
         # Verify only one event exists for this generation via idempotency key
@@ -145,7 +148,7 @@ class BotGenerationInvariantsTest(TestCase):
         generation_id = generation.id
 
         # Queue the generation
-        event = queue_bot_generation(message_id=self.message.id, generation_id=generation_id)
+        event, created = queue_bot_generation(message_id=self.message.id, generation_id=generation_id)
 
         # Verify ordering: generation exists when event references it
         # (This is guaranteed by the transaction in queue_bot_generation)

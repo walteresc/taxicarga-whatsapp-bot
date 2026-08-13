@@ -40,12 +40,12 @@ def queue_bot_generation(*,message_id,generation_id):
     with transaction.atomic():
         # INVARIANT: BotGeneration MUST exist before we create the event
         generation=BotGeneration.objects.select_for_update().get(pk=generation_id)
-        event,_=IntegrationOutboxEvent.objects.get_or_create(
+        event,created=IntegrationOutboxEvent.objects.get_or_create(
             destination=Provider.INTERNAL,destination_scope=f"channel:{message.conversacion.channel_id}",
             idempotency_key=f"bot-generation-work:{generation_id}",defaults={
                 "event_type":BOT_GENERATION_EVENT,"conversation":message.conversacion,
                 "safe_payload":{"message_id":message.id,"generation_id":str(generation_id)}})
-    return event
+    return event, created
 
 
 def process_bot_generation_event(event_id,*,worker_id="integration"):
