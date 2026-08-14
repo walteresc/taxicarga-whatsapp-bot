@@ -60,19 +60,43 @@ class ConversationService:
             "commercial_status": commercial_status,
         }
         calls_before = self.agent.calls
+
+        logger.debug(
+            "bot_v4_turn_input conversation_id=%s message_id=%s customer_message=%s "
+            "recent_conversation_len=%s commercial_status=%s "
+            "required_missing=%s current_state=%s",
+            conversation_id, message_id, customer_message[:80] if customer_message else "",
+            len(recent_conversation or []), commercial_status,
+            missing_before, state.to_dict(),
+        )
+
         raw_output = self.agent.respond(context)
+
+        logger.debug(
+            "bot_v4_raw_model_output conversation_id=%s message_id=%s raw_output=%s",
+            conversation_id, message_id, raw_output,
+        )
+
         output = self._guard_new_quote(raw_output, commercial_status)
         merge_base = BotState() if output.conversation_action == ConversationAction.NEW_QUOTE else state
 
         try:
             merged = self._validate_extraction(merge_base, output)
             self._log_extraction_attempt(
-                attempt="initial", output=raw_output, valid=True,
+                attempt="initial", output=output, valid=True,
                 conversation_id=conversation_id, message_id=message_id,
             )
         except (DomainValidationError, ValueError) as exc:
+            logger.warning(
+                "bot_v4_validation_error_initial conversation_id=%s message_id=%s "
+                "error_type=%s error_msg=%s output_updates=%s output_corrections=%s",
+                conversation_id, message_id,
+                exc.__class__.__name__, str(exc),
+                output.updates.model_dump() if output.updates else {},
+                output.corrections.model_dump() if output.corrections else {},
+            )
             self._log_extraction_attempt(
-                attempt="initial", output=raw_output, valid=False, error=exc,
+                attempt="initial", output=output, valid=False, error=exc,
                 conversation_id=conversation_id, message_id=message_id,
             )
             repair_context = {
@@ -81,12 +105,18 @@ class ConversationService:
                 "repair_scope": "extraction",
             }
             raw_output = self.agent.respond(repair_context, repair_error=str(exc))
+
+            logger.debug(
+                "bot_v4_raw_model_output_repair conversation_id=%s message_id=%s raw_output=%s",
+                conversation_id, message_id, raw_output,
+            )
+
             output = self._guard_new_quote(raw_output, commercial_status)
             merge_base = BotState() if output.conversation_action == ConversationAction.NEW_QUOTE else state
             try:
                 merged = self._validate_extraction(merge_base, output)
                 self._log_extraction_attempt(
-                    attempt="repair", output=raw_output, valid=True,
+                    attempt="repair", output=output, valid=True,
                     conversation_id=conversation_id, message_id=message_id,
                 )
             except (DomainValidationError, ValueError) as repair_exc:
