@@ -613,6 +613,17 @@ def _next_missing_question(lead,message="",canonical_context=None,generation_id=
                                       message=message)
     strategy=select_next_conversation_goal(lead,decision)
     fallback = _strategy_question(decision,strategy,message=message)
+    # OPTIMIZATION: If fallback is a simple predefined question, return it without LLM
+    if fallback:
+        from .simple_response_renderer import is_simple_response_eligible
+        # Get the next target field to check if it has a simple response
+        target_field=None
+        if strategy and strategy.targets:
+            target_field=strategy.targets[0].field
+        # If simple and has a predefined response, skip LLM
+        if target_field and is_simple_response_eligible(target_field):
+            return fallback
+    # Only use LLM for complex decisions or rephrasings
     return _generate_decision_reply(
         lead,message,decision,fallback,strategy=strategy) or fallback
 
