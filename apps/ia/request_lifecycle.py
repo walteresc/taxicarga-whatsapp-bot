@@ -13,30 +13,14 @@ from apps.whatsapp.models import ConversacionWhatsApp
 
 from .delta_contract import StrictModel
 from .providers import build_provider
-
-
-class RequestIntent(str,Enum):
-    NEW_REQUEST="NEW_REQUEST"
-    CONTINUE_REQUEST="CONTINUE_REQUEST"
-    UNCERTAIN="UNCERTAIN"
-    NO_REQUEST_SIGNAL="NO_REQUEST_SIGNAL"
-    RESUME_PREVIOUS_REQUEST="RESUME_PREVIOUS_REQUEST"
-
-
-class RequestLifecycleStatus(str,Enum):
-    ACTIVE="ACTIVE"
-    DORMANT="DORMANT"
-    CLOSED="CLOSED"
+from .request_lifecycle_types import RequestIntent, RequestLifecycleStatus, INACTIVITY_THRESHOLD
+from .understand_turn import understand_turn, TurnUnderstanding
 
 
 class RequestIntentResponse(StrictModel):
     intent:RequestIntent
     confidence:float=Field(ge=0,le=1)
     clarification_text:str|None=None
-
-
-# Business rule: Lead is DORMANT if no activity for this duration
-INACTIVITY_THRESHOLD=timedelta(hours=2)
 
 
 SYSTEM_PROMPT="""
@@ -93,30 +77,18 @@ def _determine_lifecycle_status(lead,conversation):
 
 
 def classify_request_intent(*,message,active_lead,conversation,telemetry=None):
-    lifecycle_status,lead_id=_determine_lifecycle_status(active_lead,conversation)
-
-    payload={
-        "current_customer_message":message,
-        "lifecycle_status":lifecycle_status.value,
-        "active_request":None
-    }
-
-    if active_lead is not None:
-        payload["active_request"]={
-            "id":active_lead.id,
-            "state":active_lead.estado,
-            "phase":active_lead.etapa_conversacion,
-            "has_collected_data":_has_data(active_lead),
-            "lifecycle_status":lifecycle_status.value
-        }
-
-    result=build_provider("conversation").generate_structured(
-        [{"role":"system","content":SYSTEM_PROMPT},
-         {"role":"user","content":json.dumps(payload,ensure_ascii=False)}],
-        schema_model=RequestIntentResponse,purpose="classify_request_intent")
-    if telemetry:
-        telemetry.mark_from_ai_result("classify_request_intent",result)
-    return RequestIntentResponse.model_validate_json(result.text)
+    """Classify request intent. Internally calls understand_turn (consolidated inference)."""
+    understanding=understand_turn(
+        message=message,
+        active_lead=active_lead,
+        conversation=conversation,
+        telemetry=telemetry
+    )
+    return RequestIntentResponse(
+        intent=understanding.request_intent,
+        confidence=understanding.intent_confidence,
+        clarification_text=None
+    )
 
 
 def resolve_request_lifecycle(*,conversation_id,message,generation_id,telemetry=None):
