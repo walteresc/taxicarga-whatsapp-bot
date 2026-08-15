@@ -44,13 +44,16 @@ def merge_state(state: BotState, updates: dict, corrections: dict) -> BotState:
                 )
                 continue
             else:
-                # Real conflict: log but DON'T fail, skip this field
+                # Real conflict: log with WARNING and APPLY new value
+                # (Don't silently skip - that was the original bug)
                 logger.warning(
-                    "bot_v4_merge_conflict field=%s current=%r value=%r "
-                    "skipping conflictive field, keeping current",
+                    "bot_v4_merge_conflict_apply field=%s current=%r → new=%r "
+                    "conflict detected but applying new value (requires confirmation in next turn)",
                     field, current, value,
                 )
-                continue  # Skip applying this conflictive value
+                # Apply the new value (don't skip)
+                setattr(merged, field, value)
+                continue
 
         setattr(merged, field, value)
     for field, raw_value in corrections.items():

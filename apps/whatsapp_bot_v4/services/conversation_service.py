@@ -80,18 +80,15 @@ class ConversationService:
         output = self._guard_new_quote(raw_output, commercial_status)
         merge_base = BotState() if output.conversation_action == ConversationAction.NEW_QUOTE else state
 
-        # REGLA: En NEW_QUOTE, descartar completamente updates/corrections del turno
-        # El estado arranca vacío, no se aplican datos del modelo
+        # REGLA: En NEW_QUOTE, merge_base es BotState() vacío
+        # Esto asegura que SOLO se aplican datos del mensaje actual
+        # (no los datos históricos del contexto)
         if output.conversation_action == ConversationAction.NEW_QUOTE:
             logger.debug(
                 "bot_v4_new_quote_clean conversation_id=%s message_id=%s "
-                "discarding updates and corrections, state resets to empty",
+                "state resets to empty, will apply ONLY current message data",
                 conversation_id, message_id,
             )
-            output = output.model_copy(update={
-                "updates": output.updates.model_copy(update={k: None for k in output.updates.model_fields}),
-                "corrections": output.corrections.model_copy(update={k: None for k in output.corrections.model_fields}),
-            })
 
         try:
             merged = self._validate_extraction(merge_base, output)
@@ -127,17 +124,12 @@ class ConversationService:
             output = self._guard_new_quote(raw_output, commercial_status)
             merge_base = BotState() if output.conversation_action == ConversationAction.NEW_QUOTE else state
 
-            # REGLA: En NEW_QUOTE, descartar completamente updates/corrections del turno
             if output.conversation_action == ConversationAction.NEW_QUOTE:
                 logger.debug(
                     "bot_v4_new_quote_clean conversation_id=%s message_id=%s "
-                    "repair: discarding updates and corrections, state resets to empty",
+                    "repair: state resets to empty, will apply ONLY current message data",
                     conversation_id, message_id,
                 )
-                output = output.model_copy(update={
-                    "updates": output.updates.model_copy(update={k: None for k in output.updates.model_fields}),
-                    "corrections": output.corrections.model_copy(update={k: None for k in output.corrections.model_fields}),
-                })
 
             try:
                 merged = self._validate_extraction(merge_base, output)
@@ -268,10 +260,12 @@ class ConversationService:
         # Recortar a un grupo lógico en lugar de rechazar
         if requested and not any(requested <= group for group in logical_groups):
             # Prioridad: ruta > pisos > accesos > items
+            # Mantener orden del grupo, NO alfabético
             trimmed = None
             for group in logical_groups:
                 if requested & group:
-                    trimmed = sorted(requested & group)
+                    # Keep group's order, not alphabetical
+                    trimmed = [field for field in group if field in requested]
                     break
             if trimmed:
                 logger.debug(
