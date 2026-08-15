@@ -80,6 +80,19 @@ class ConversationService:
         output = self._guard_new_quote(raw_output, commercial_status)
         merge_base = BotState() if output.conversation_action == ConversationAction.NEW_QUOTE else state
 
+        # REGLA: En NEW_QUOTE, descartar completamente updates/corrections del turno
+        # El estado arranca vacío, no se aplican datos del modelo
+        if output.conversation_action == ConversationAction.NEW_QUOTE:
+            logger.debug(
+                "bot_v4_new_quote_clean conversation_id=%s message_id=%s "
+                "discarding updates and corrections, state resets to empty",
+                conversation_id, message_id,
+            )
+            output = output.model_copy(update={
+                "updates": output.updates.model_copy(update={k: None for k in output.updates.model_fields}),
+                "corrections": output.corrections.model_copy(update={k: None for k in output.corrections.model_fields}),
+            })
+
         try:
             merged = self._validate_extraction(merge_base, output)
             self._log_extraction_attempt(
@@ -113,6 +126,19 @@ class ConversationService:
 
             output = self._guard_new_quote(raw_output, commercial_status)
             merge_base = BotState() if output.conversation_action == ConversationAction.NEW_QUOTE else state
+
+            # REGLA: En NEW_QUOTE, descartar completamente updates/corrections del turno
+            if output.conversation_action == ConversationAction.NEW_QUOTE:
+                logger.debug(
+                    "bot_v4_new_quote_clean conversation_id=%s message_id=%s "
+                    "repair: discarding updates and corrections, state resets to empty",
+                    conversation_id, message_id,
+                )
+                output = output.model_copy(update={
+                    "updates": output.updates.model_copy(update={k: None for k in output.updates.model_fields}),
+                    "corrections": output.corrections.model_copy(update={k: None for k in output.corrections.model_fields}),
+                })
+
             try:
                 merged = self._validate_extraction(merge_base, output)
                 self._log_extraction_attempt(
