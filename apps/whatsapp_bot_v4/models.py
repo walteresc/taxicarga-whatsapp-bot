@@ -21,6 +21,7 @@ class BotConversationState(models.Model):
     quote_input_hash = models.CharField(max_length=64, blank=True)
     quote_mode = models.CharField(max_length=16, blank=True)
     quote_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    request_boundary_at = models.DateTimeField(null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
