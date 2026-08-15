@@ -25,8 +25,15 @@ class DomainTests(SimpleTestCase):
         self.assertEqual(merge_state(state, {"origin_district": None}, {}).origin_district, "Surco")
 
     def test_overwrite_requires_correction(self):
-        with self.assertRaises(DomainValidationError):
-            merge_state(BotState(origin_district="Surco"), {"origin_district": "San Borja"}, {})
+        # Comportamiento nuevo: conflictos en updates se permiten pero requieren confirmación
+        # (se aplican con WARNING y pueden ser revocados en el siguiente turno si el cliente dice "no")
+        # La distinción critical: updates (tentativa) vs corrections (definitiva)
+        with self.assertLogs("apps.whatsapp_bot_v4.domain.merge", level="WARNING") as logs:
+            state = merge_state(BotState(origin_district="Surco"), {"origin_district": "San Borja"}, {})
+        # Conflicto debe estar loguado
+        self.assertIn("bot_v4_merge_conflict_apply", logs.output[0])
+        # El nuevo valor se aplica tentativo (no es definitivo como corrections)
+        self.assertEqual(state.origin_district, "San Borja")
 
     def test_explicit_correction_overwrites(self):
         state = merge_state(BotState(origin_district="Surco"), {}, {"origin_district": "San Borja"})

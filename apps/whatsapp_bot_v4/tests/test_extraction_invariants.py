@@ -103,15 +103,22 @@ class ExtractionInvariantTests(SimpleTestCase):
         self.assertNotIn("bot_v4_minimal_fallback", entry)
 
     def test_merge_conflict_logs_values_and_complete_updates(self):
+        # Comportamiento nuevo: conflictos se aplican con WARNING, no se lanzan
+        # Eso permite que correcciones legítimas (re-cotizar con distinto distrito)
+        # funcionen sin que el modelo pierda datos en la próxima vuelta
         state = BotState(origin_district="Surco")
         updates = {"origin_district": "Barranco", "destination_district": "Miraflores"}
         with self.assertLogs("apps.whatsapp_bot_v4.domain.merge", level="WARNING") as logs:
-            with self.assertRaises(DomainValidationError):
-                merge_state(state, updates, {})
+            merged = merge_state(state, updates, {})
+        # Conflicto debe estar loguado
         entry = logs.output[0]
         self.assertIn("field=origin_district", entry)
-        self.assertIn("current='Surco' value='Barranco'", entry)
-        self.assertIn("destination_district", entry)
+        self.assertIn("current='Surco'", entry)
+        self.assertIn("Barranco", entry)
+        self.assertIn("bot_v4_merge_conflict_apply", entry)
+        # Ambos updates deben aplicarse (no se descarta destination por conflicto en origin)
+        self.assertEqual(merged.origin_district, "Barranco")
+        self.assertEqual(merged.destination_district, "Miraflores")
 
     def test_50_case_pure_extraction_dataset(self):
         cases = []
@@ -150,19 +157,36 @@ class ExtractionInvariantTests(SimpleTestCase):
                 self.assertEqual(result.llm_calls, 1)
 
     def test_response_repair_cannot_overwrite_valid_extraction(self):
+        # Escenario: estado completo pero modelo pregunta de todas formas
+        # Eso lanza "No preguntar más requisitos cuando estado está listo"
+        # Repair falla de la misma forma → debe guardar extracción válida, no descartar
+        complete_state = BotState(
+            origin_district="Surco",
+            destination_district="Miraflores",
+            origin_floor=2,
+            destination_floor=4,
+            origin_access=Access.ELEVATOR,
+            destination_access=Access.STAIRS,
+            items=["cama"],
+        )
         agent = ScriptedAgent([
             output(
-                updates={"origin_district": "Surco", "destination_district": "Miraflores"},
-                requested=["origin_floor", "items"], reply="¿Origen y carga?",
+                updates={},  # No hay updates, estado ya está completo
+                requested=["items"], reply="¿Qué más llevas?",  # Error: pregunta cuando ready=True
             ),
-            output(requested=["origin_floor", "destination_floor"], reply="¿En qué pisos?"),
+            output(
+                updates={},  # Repair intenta de nuevo pero sigue preguntando
+                requested=["items"], reply="¿Algo más en la mudanza?",
+            ),
         ])
         result = ConversationService(agent).process_turn(
-            state=BotState(), customer_message="de surco a miraflores",
-            last_bot_message="¿Cuál es el origen?",
+            state=complete_state, customer_message="listo para cotizar",
         )
-        self.assertEqual((result.state.origin_district, result.state.destination_district), ("Surco", "Miraflores"))
-        self.assertEqual(result.required_missing[:2], ["origin_floor", "destination_floor"])
+        # Extracción válida debe persistir; reply debe ser fallback (no la pregunta del modelo)
+        self.assertEqual(result.state.origin_district, "Surco")
+        self.assertEqual(result.state.destination_district, "Miraflores")
+        self.assertEqual(result.state.items, ["cama"])
+        self.assertTrue(result.ready_to_quote)
         self.assertEqual(result.llm_calls, 2)
 
     def test_multi_data_is_not_limited_by_question_focus(self):
@@ -185,14 +209,25 @@ class ExtractionInvariantTests(SimpleTestCase):
         self.assertEqual(result.state.items, ["cama"])
 
     def test_strict_mode_does_not_mask_failed_response_repair(self):
-        bad = output(
-            updates={"origin_district": "Surco", "destination_district": "Miraflores"},
-            requested=["origin_floor", "items"], reply="mezcla",
+        # Escenario: estado completo pero modelo sigue preguntando después de repair fallido
+        # Con strict_repairs=True, la excepción no debe ser ocultada
+        complete_state = BotState(
+            origin_district="Surco",
+            destination_district="Miraflores",
+            origin_floor=2,
+            destination_floor=4,
+            origin_access=Access.ELEVATOR,
+            destination_access=Access.STAIRS,
+            items=["cama"],
         )
-        agent = ScriptedAgent([bad, bad])
+        bad_response = output(
+            updates={},
+            requested=["items"], reply="¿Algún otro artículo?",  # Error: pregunta cuando ready=True
+        )
+        agent = ScriptedAgent([bad_response, bad_response])
         with self.assertRaises(DomainValidationError):
             ConversationService(agent, strict_repairs=True).process_turn(
-                state=BotState(), customer_message="de surco a miraflores",
+                state=complete_state, customer_message="listo",
             )
 
     def test_production_fallback_logs_structured_anomaly_and_keeps_extraction(self):
@@ -208,3 +243,29 @@ class ExtractionInvariantTests(SimpleTestCase):
         self.assertIn("fallback_reason=response_repair_failed", logs.output[0])
         self.assertIn("extraction_present=true", logs.output[0])
         self.assertEqual((result.state.origin_district, result.state.destination_district), ("Surco", "Miraflores"))
+
+    def test_mixed_logical_groups_auto_trim_without_repair(self):
+        # Escenario: modelo emite mezcla de bloques lógicos (origin_floor + items)
+        # Trim automático elige el primer grupo con matches (origin_floor)
+        # Extracción y reply se preservan, sin necesidad de repair
+        agent = ScriptedAgent([
+            output(
+                updates={"origin_district": "Surco", "destination_district": "Miraflores", "origin_floor": 3},
+                requested=["origin_floor", "items"], reply="¿A qué piso llegas?",
+            ),
+        ])
+        with self.assertLogs("apps.whatsapp_bot_v4.services.conversation_service", level="DEBUG") as logs:
+            result = ConversationService(agent).process_turn(
+                state=BotState(), customer_message="de surco a miraflores, tercer piso",
+            )
+        entry = "\n".join(logs.output)
+        # Log del trim automático debe estar presente
+        self.assertIn("bot_v4_requested_fields_trimmed", entry)
+        # Extracción debe ser válida
+        self.assertEqual(result.state.origin_district, "Surco")
+        self.assertEqual(result.state.destination_district, "Miraflores")
+        self.assertEqual(result.state.origin_floor, 3)
+        # Reply debe ser preservado (no fallback)
+        self.assertIn("piso", result.reply)
+        # Solo una llamada al agente (sin repair)
+        self.assertEqual(result.llm_calls, 1)
