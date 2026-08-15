@@ -10,6 +10,7 @@ from apps.whatsapp.models import ConversacionWhatsApp
 from ..adapters.chatwoot import ChatwootV4Adapter
 from ..adapters.crm import CRMV4Adapter
 from ..domain.state import Access
+from ..models import BotConversationState
 from ..repositories.state import DjangoBotStateRepository
 from ..services.conversation_service import ConversationService
 from ..services.persistent_conversation_service import PersistentConversationService
@@ -71,3 +72,79 @@ class PersistentIntegrationTests(TestCase):
         self.assertEqual(resumed.state.origin_district, "San Isidro")
         self.assertEqual(resumed.state.destination_district, "Miraflores")
         self.assertEqual(resumed.state.origin_floor, 1)
+
+    def test_stale_collecting_state_discarded_after_timeout(self):
+        # Crear estado viejo 'collecting'
+        from django.utils import timezone
+        from datetime import timedelta
+
+        old_time = timezone.now() - timedelta(hours=7)
+        self.turn("de Surco a Miraflores", output(updates={"origin_district": "Surco", "destination_district": "Miraflores"}))
+
+        # Manipular updated_at para simular estado viejo
+        state_model = BotConversationState.objects.get(conversation_key=self.key)
+        state_model.updated_at = old_time
+        state_model.status = "collecting"
+        state_model.save(update_fields=["updated_at", "status"])
+
+        # Nuevo mensaje después de timeout (6 horas default)
+        with self.assertLogs("apps.whatsapp_bot_v4.services.persistent_conversation_service", level="WARNING") as logs:
+            result = self.turn("necesito otra mudanza", output(
+                requested=["origin_district", "destination_district"],
+                reply="Para la nueva mudanza, de qué distrito a qué distrito?"
+            ))
+
+        # Estado debe estar vacío (descartado)
+        self.assertIsNone(result.state.origin_district)
+        self.assertIsNone(result.state.destination_district)
+        # Debe loguear descarte
+        self.assertIn("bot_v4_stale_state_discarded", logs.output[0])
+        # Boundary debe estar set
+        state_model.refresh_from_db()
+        self.assertIsNotNone(state_model.request_boundary_at)
+
+    def test_recent_collecting_state_not_discarded(self):
+        # Crear estado 'collecting' reciente (hace 10 minutos)
+        from django.utils import timezone
+        from datetime import timedelta
+
+        recent_time = timezone.now() - timedelta(minutes=10)
+        self.turn("de Surco a Miraflores", output(updates={"origin_district": "Surco", "destination_district": "Miraflores"}))
+
+        # Manipular updated_at pero mantener reciente
+        state_model = BotConversationState.objects.get(conversation_key=self.key)
+        state_model.updated_at = recent_time
+        state_model.status = "collecting"
+        state_model.save(update_fields=["updated_at", "status"])
+
+        # Nuevo mensaje, estado reciente NO debe descartarse
+        result = self.turn("piso 3", output(
+            updates={"origin_floor": 3},
+            requested=["destination_district"],
+            reply="Tercer piso. De Surco a Miraflores. A qué piso llegas?"
+        ))
+
+        # Estado debe conservar datos anteriores
+        self.assertEqual(result.state.origin_district, "Surco")
+        self.assertEqual(result.state.destination_district, "Miraflores")
+        self.assertEqual(result.state.origin_floor, 3)
+
+    def test_quoted_state_not_discarded_by_timeout(self):
+        # Estados 'quoted' no deben descartarse por timeout
+        from django.utils import timezone
+        from datetime import timedelta
+
+        old_time = timezone.now() - timedelta(hours=10)
+        self.turn("de Surco a Miraflores", output(updates={"origin_district": "Surco", "destination_district": "Miraflores"}))
+
+        state_model = BotConversationState.objects.get(conversation_key=self.key)
+        state_model.updated_at = old_time
+        state_model.status = "quoted"
+        state_model.save(update_fields=["updated_at", "status"])
+
+        # Nuevo mensaje, estado 'quoted' NO debe descartarse
+        result = self.turn("¿cuál era el precio?", output(reply="Tu cotización fue..."))
+
+        # Estado debe conservar datos
+        self.assertEqual(result.state.origin_district, "Surco")
+        self.assertEqual(result.state.destination_district, "Miraflores")

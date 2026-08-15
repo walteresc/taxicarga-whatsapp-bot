@@ -38,6 +38,34 @@ class PersistentConversationService:
         last_bot_message="",
     ) -> PersistentTurnResult:
         state = self.repository.load(conversation_key)
+
+        # Expiración de sesión: si estado 'collecting' está muy viejo, descartarlo
+        bot_state_model = BotConversationState.objects.filter(conversation_key=conversation_key).first()
+        if bot_state_model and bot_state_model.status == BotConversationState.STATUS_COLLECTING:
+            from django.conf import settings
+            from django.utils import timezone
+            from datetime import timedelta
+
+            timeout_hours = settings.WHATSAPP_BOT_COLLECTING_TIMEOUT_HOURS
+            age = timezone.now() - bot_state_model.updated_at
+
+            if age > timedelta(hours=timeout_hours):
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(
+                    "bot_v4_stale_state_discarded conversation_key=%s age_hours=%d timeout_hours=%d "
+                    "discarded_data=%s",
+                    conversation_key,
+                    int(age.total_seconds() / 3600),
+                    timeout_hours,
+                    state.to_dict(),
+                )
+                # Descartar estado viejo y empezar vacío
+                state = BotState()
+                bot_state_model.request_boundary_at = timezone.now()
+                bot_state_model.state_data = state.to_dict()
+                bot_state_model.version = 1
+                bot_state_model.save(update_fields=['state_data', 'version', 'request_boundary_at'])
         commercial = self.repository.get_commercial(conversation_key)
         bot_allowed = True
         if conversation is not None and self.chatwoot_adapter is not None:
