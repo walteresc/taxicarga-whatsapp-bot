@@ -281,19 +281,20 @@ class ConversationService:
             "bot_v4_response_fallback conversation_id=%s message_id=%s source=%s missing=%s",
             conversation_id, message_id, source, missing,
         )
-        labels = {
-            "origin_district": "el distrito de origen",
-            "destination_district": "el distrito de destino",
-            "origin_floor": "el piso de origen",
-            "destination_floor": "el piso de destino",
-            "origin_access": "si en el origen hay ascensor o escaleras",
-            "destination_access": "si en el destino hay ascensor o escaleras",
-            "items": "qué cosas vas a trasladar",
+        fallback_phrases = {
+            "origin_district": "¿De qué distrito a qué distrito sería la mudanza?",
+            "destination_district": "¿A qué distrito necesitas ir?",
+            "origin_floor": "¿De qué piso sale y a qué piso llega?",
+            "destination_floor": "¿A qué piso llegas?",
+            "origin_access": "¿Es por ascensor o por escaleras en el origen?",
+            "destination_access": "¿Es por ascensor o por escaleras en el destino?",
+            "items": "¿Qué cosas vas a mover?",
         }
         if missing:
             field = missing[0]
+            reply = fallback_phrases.get(field, f"¿Me das más info sobre {field}?")
             return output.model_copy(update={
-                "reply": f"Para continuar, cuéntame {labels[field]}.",
+                "reply": reply,
                 "requested_fields": [field],
             })
         return output.model_copy(update={
