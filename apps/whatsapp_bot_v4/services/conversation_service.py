@@ -91,7 +91,14 @@ class ConversationService:
             )
 
         try:
-            merged = self._validate_extraction(merge_base, output)
+            # FRONTERA DE SOLICITUD: En NEW_QUOTE, no aplicar corrections (datos viejos)
+            # Solo aplicar updates (datos del nuevo mensaje)
+            extraction_output = output
+            if output.conversation_action == ConversationAction.NEW_QUOTE:
+                extraction_output = output.model_copy(
+                    update={"corrections": output.corrections.model_copy(update={}) if output.corrections else None}
+                )
+            merged = self._validate_extraction(merge_base, extraction_output)
             self._log_extraction_attempt(
                 attempt="initial", output=output, valid=True,
                 conversation_id=conversation_id, message_id=message_id,
@@ -132,7 +139,13 @@ class ConversationService:
                 )
 
             try:
-                merged = self._validate_extraction(merge_base, output)
+                # FRONTERA DE SOLICITUD: En NEW_QUOTE repair, también ignorar corrections
+                repair_output = output
+                if output.conversation_action == ConversationAction.NEW_QUOTE:
+                    repair_output = output.model_copy(
+                        update={"corrections": output.corrections.model_copy(update={}) if output.corrections else None}
+                    )
+                merged = self._validate_extraction(merge_base, repair_output)
                 self._log_extraction_attempt(
                     attempt="repair", output=output, valid=True,
                     conversation_id=conversation_id, message_id=message_id,
@@ -239,15 +252,6 @@ class ConversationService:
 
     @staticmethod
     def _validate_response(merged: BotState, missing: list[str], output: AgentOutput) -> AgentOutput:
-        invalid_requests = set(output.requested_fields) - set(missing)
-        if invalid_requests:
-            logger.debug(
-                "bot_v4_response_validation_error invalid_requests type=inconsistent "
-                "requested_fields=%s missing=%s invalid=%s",
-                output.requested_fields, missing, sorted(invalid_requests),
-            )
-            raise DomainValidationError(f"requested_fields inconsistentes: {sorted(invalid_requests)}")
-
         logical_groups = (
             {"origin_district", "destination_district"},
             {"origin_floor", "destination_floor"},
@@ -257,14 +261,12 @@ class ConversationService:
         requested = set(output.requested_fields)
 
         # REGLA DE ORO: nunca degradar reply válido por mezcla de campos
-        # Recortar a un grupo lógico en lugar de rechazar
+        # PRIMERO: recortar si hay mezcla de grupos lógicos
         if requested and not any(requested <= group for group in logical_groups):
             # Prioridad: ruta > pisos > accesos > items
-            # Mantener orden del grupo, NO alfabético
             trimmed = None
             for group in logical_groups:
                 if requested & group:
-                    # Keep group's order, not alphabetical
                     trimmed = [field for field in group if field in requested]
                     break
             if trimmed:
@@ -274,6 +276,16 @@ class ConversationService:
                 )
                 # Retornar output con requested_fields recortado
                 return output.model_copy(update={"requested_fields": trimmed})
+
+        # DESPUÉS de trim: verificar que requested_fields estén en missing
+        invalid_requests = set(output.requested_fields) - set(missing)
+        if invalid_requests:
+            logger.debug(
+                "bot_v4_response_validation_error invalid_requests type=inconsistent "
+                "requested_fields=%s missing=%s invalid=%s",
+                output.requested_fields, missing, sorted(invalid_requests),
+            )
+            raise DomainValidationError(f"requested_fields inconsistentes: {sorted(invalid_requests)}")
 
         if not missing and "?" in output.reply:
             logger.debug(
