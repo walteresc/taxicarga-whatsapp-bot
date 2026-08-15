@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     "apps.campo",
     "apps.flota",
     "apps.integrations",
+    "apps.whatsapp_bot_v4",
 ]
 
 LOGIN_URL = "/dashboard/login/"

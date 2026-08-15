@@ -1,0 +1,42 @@
+{
+  "timestamp": "20260814T042401Z",
+  "config_note": "DeepSeek v4-flash WITHOUT explicit thinking config (default behavior)",
+  "dataset_size": 60,
+  "openai": {
+    "provider": "OpenAI gpt-4.1-mini",
+    "total": 60,
+    "success": 60,
+    "failed": 0,
+    "success_rate": "100.0%",
+    "latency_mean_ms": 1454.07,
+    "latency_p50_ms": 1251.63,
+    "latency_p90_ms": 2315.74,
+    "latency_p95_ms": 2620.47,
+    "latency_max_ms": 3105.43,
+    "total_input_tokens": 1204,
+    "total_output_tokens": 1946,
+    "estimated_cost_usd": 0.00135
+  },
+  "deepseek": {
+    "provider": "DeepSeek v4-flash",
+    "total": 60,
+    "success": 60,
+    "failed": 0,
+    "success_rate": "100.0%",
+    "latency_mean_ms": 4098.27,
+    "latency_p50_ms": 2746.39,
+    "latency_p90_ms": 7384.37,
+    "latency_p95_ms": 9924.96,
+    "latency_max_ms": 21593.68,
+    "total_input_tokens": 5588,
+    "total_output_tokens": 17120,
+    "estimated_cost_usd": 0.00558
+  },
+  "comparison": {
+    "p50_delta_ms": 1494.76,
+    "p95_delta_ms": 7304.49,
+    "cost_delta_usd": 0.00423,
+    "winner_latency": "OpenAI",
+    "winner_cost": "OpenAI"
+  }
+}

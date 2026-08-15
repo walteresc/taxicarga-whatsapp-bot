@@ -140,6 +140,13 @@ class ConversationService:
         try:
             self._validate_response(merged, missing_after, output)
         except (DomainValidationError, ValueError) as exc:
+            logger.warning(
+                "bot_v4_response_validation_failed conversation_id=%s message_id=%s "
+                "error_type=%s error=%s original_reply=%s original_requested=%s",
+                conversation_id, message_id,
+                exc.__class__.__name__, str(exc),
+                output.reply[:80], output.requested_fields,
+            )
             frozen_understanding = {
                 "updates": output.updates,
                 "corrections": output.corrections,
@@ -161,6 +168,12 @@ class ConversationService:
                 "repair_scope": "response_only",
             }
             repaired = self.agent.respond(repair_context, repair_error=str(exc))
+
+            logger.debug(
+                "bot_v4_raw_model_output_response_repair conversation_id=%s message_id=%s raw_output=%s",
+                conversation_id, message_id, repaired,
+            )
+
             output = repaired.model_copy(update=frozen_understanding)
             try:
                 self._validate_response(merged, missing_after, output)
@@ -210,6 +223,11 @@ class ConversationService:
     def _validate_response(merged: BotState, missing: list[str], output: AgentOutput) -> None:
         invalid_requests = set(output.requested_fields) - set(missing)
         if invalid_requests:
+            logger.debug(
+                "bot_v4_response_validation_error invalid_requests type=inconsistent "
+                "requested_fields=%s missing=%s invalid=%s",
+                output.requested_fields, missing, sorted(invalid_requests),
+            )
             raise DomainValidationError(f"requested_fields inconsistentes: {sorted(invalid_requests)}")
         logical_groups = (
             {"origin_district", "destination_district"},
@@ -219,8 +237,18 @@ class ConversationService:
         )
         requested = set(output.requested_fields)
         if requested and not any(requested <= group for group in logical_groups):
+            logger.debug(
+                "bot_v4_response_validation_error invalid_requests type=logical_group_mix "
+                "requested_fields=%s requested_set=%s",
+                output.requested_fields, sorted(requested),
+            )
             raise DomainValidationError("requested_fields mezcla bloques lógicos")
         if not missing and "?" in output.reply:
+            logger.debug(
+                "bot_v4_response_validation_error invalid_requests type=premature_question "
+                "missing=%s reply=%s",
+                missing, output.reply[:80],
+            )
             raise DomainValidationError("No preguntar más requisitos cuando estado está listo")
 
     @classmethod

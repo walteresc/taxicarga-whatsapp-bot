@@ -268,7 +268,7 @@ def handle_incoming_message(cliente, message, canonical_context=None, generation
             message_id=trigger_message.id,customer_message=message,mode="active")
         ai_extracted=None
     else:
-        ai_extracted = extract_lead_with_ai(message, lead, recent_history)
+        ai_extracted = None
     if (
         delta_shadow_enabled()
         and canonical_context is not None
@@ -1563,10 +1563,14 @@ def _rephrase_if_unanswered(expected_field, extracted, message, lead):
     fallbacks = REPHRASED_QUESTIONS.get(expected_field)
     if not fallbacks:
         return None
-    if count >= len(fallbacks):
+    # Only trigger rephrase on RETRY (count > 0), not first attempt
+    if count == 0:
+        return None
+    # If we've exhausted rephrasings, don't return another
+    if count > len(fallbacks):
         return None
     _rephrase_counters[key] = count + 1
-    return fallbacks[count]
+    return fallbacks[count - 1]
 
 
 def _only_yes_or_no(answer):

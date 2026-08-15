@@ -37,10 +37,12 @@ class Command(BaseCommand):
         for sig in (signal.SIGTERM, signal.SIGINT):
             signal.signal(sig, lambda *_args: setattr(self, "stopping", True))
         while not self.stopping:
-            self.run_once(options)
+            # Keep processing while work is available; only sleep when queue is empty
+            work_found = self.run_once(options)
             if options["once"]:
                 break
-            time.sleep(max(0.1, options["interval"]))
+            if not work_found:
+                time.sleep(max(0.1, options["interval"]))
 
     def run_once(self, options):
         close_old_connections()
@@ -55,6 +57,8 @@ class Command(BaseCommand):
         events = IntegrationOutboxEvent.objects.filter(
             status__in=[OutboxStatus.PENDING, OutboxStatus.RETRY], available_at__lte=now
         ).order_by("available_at", "created_at")[:max(1, options["batch_size"])]
+
+        work_found = len(events) > 0
         for event in list(events):
             if self.stopping:
                 break
@@ -81,3 +85,4 @@ class Command(BaseCommand):
                 except Exception:
                     logger.exception("failed_to_mark_event_retry event_id=%s", event.id)
         close_old_connections()
+        return work_found

@@ -118,6 +118,8 @@ class DeepSeekProvider(AIProvider):
     name = "deepseek"
 
     def _request_options(self):
+        # deepseek-v4-flash has thinking ENABLED by default.
+        # Explicitly disable for non-thinking mode per official docs.
         return {"extra_body": {"thinking": {"type": "disabled"}}}
 
 
