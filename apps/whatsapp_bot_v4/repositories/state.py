@@ -18,10 +18,25 @@ class BotStateRepository(Protocol):
 
 class DjangoBotStateRepository:
     def load(self, conversation_key: str) -> BotState:
-        snapshot, _ = BotConversationState.objects.get_or_create(
+        snapshot, created = BotConversationState.objects.get_or_create(
             conversation_key=conversation_key,
             defaults={"state_data": BotState().to_dict()},
         )
+
+        # Si es nueva conversación pero hay mensajes previos, setear frontera
+        if created and conversation_key.startswith("whatsapp:"):
+            try:
+                from apps.whatsapp.models import ConversacionWhatsApp
+                conv_id = int(conversation_key.split(":")[1])
+                conversation = ConversacionWhatsApp.objects.filter(pk=conv_id).first()
+                if conversation and conversation.mensajes.exists():
+                    # Hay historial previo: setear frontera para aislarlo
+                    from django.utils import timezone
+                    snapshot.request_boundary_at = timezone.now()
+                    snapshot.save(update_fields=["request_boundary_at"])
+            except (ValueError, IndexError, Exception):
+                pass
+
         return BotState.from_dict(snapshot.state_data)
 
     get_current = load
