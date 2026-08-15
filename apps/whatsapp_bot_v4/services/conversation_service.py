@@ -138,7 +138,7 @@ class ConversationService:
 
         missing_after = required_missing(merged)
         try:
-            self._validate_response(merged, missing_after, output)
+            output = self._validate_response(merged, missing_after, output)
         except (DomainValidationError, ValueError) as exc:
             logger.warning(
                 "bot_v4_response_validation_failed conversation_id=%s message_id=%s "
@@ -176,7 +176,7 @@ class ConversationService:
 
             output = repaired.model_copy(update=frozen_understanding)
             try:
-                self._validate_response(merged, missing_after, output)
+                output = self._validate_response(merged, missing_after, output)
             except (DomainValidationError, ValueError) as repair_exc:
                 self._log_fallback(
                     reason=f"response_repair_failed:{repair_exc.__class__.__name__}",
@@ -220,7 +220,7 @@ class ConversationService:
         )
 
     @staticmethod
-    def _validate_response(merged: BotState, missing: list[str], output: AgentOutput) -> None:
+    def _validate_response(merged: BotState, missing: list[str], output: AgentOutput) -> AgentOutput:
         invalid_requests = set(output.requested_fields) - set(missing)
         if invalid_requests:
             logger.debug(
@@ -229,6 +229,7 @@ class ConversationService:
                 output.requested_fields, missing, sorted(invalid_requests),
             )
             raise DomainValidationError(f"requested_fields inconsistentes: {sorted(invalid_requests)}")
+
         logical_groups = (
             {"origin_district", "destination_district"},
             {"origin_floor", "destination_floor"},
@@ -236,13 +237,24 @@ class ConversationService:
             {"items"},
         )
         requested = set(output.requested_fields)
+
+        # REGLA DE ORO: nunca degradar reply válido por mezcla de campos
+        # Recortar a un grupo lógico en lugar de rechazar
         if requested and not any(requested <= group for group in logical_groups):
-            logger.debug(
-                "bot_v4_response_validation_error invalid_requests type=logical_group_mix "
-                "requested_fields=%s requested_set=%s",
-                output.requested_fields, sorted(requested),
-            )
-            raise DomainValidationError("requested_fields mezcla bloques lógicos")
+            # Prioridad: ruta > pisos > accesos > items
+            trimmed = None
+            for group in logical_groups:
+                if requested & group:
+                    trimmed = sorted(requested & group)
+                    break
+            if trimmed:
+                logger.debug(
+                    "bot_v4_requested_fields_trimmed original=%s trimmed=%s",
+                    output.requested_fields, trimmed,
+                )
+                # Retornar output con requested_fields recortado
+                return output.model_copy(update={"requested_fields": trimmed})
+
         if not missing and "?" in output.reply:
             logger.debug(
                 "bot_v4_response_validation_error invalid_requests type=premature_question "
@@ -250,6 +262,8 @@ class ConversationService:
                 missing, output.reply[:80],
             )
             raise DomainValidationError("No preguntar más requisitos cuando estado está listo")
+
+        return output
 
     @classmethod
     def _validate_output(cls, state: BotState, output: AgentOutput) -> tuple[BotState, list[str]]:
