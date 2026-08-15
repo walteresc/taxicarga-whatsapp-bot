@@ -86,6 +86,79 @@ class MetaFixtureIntegrationTests(TestCase):
         self.assertEqual(agent.calls, 2)
 
 
+    def test_request_boundary_filters_old_conversation_history(self):
+        # Test: conversación con 10 mensajes previos mencionando Surco/Miraflores
+        # request_boundary_at está seteado después de esos mensajes
+        # nuevo cliente envía "hola quiero cotizar una mudanza"
+        # → bot NO debe mencionar Surco/Miraflores (historial está cortado)
+        from apps.whatsapp.models import ConversacionWhatsApp, MensajeWhatsApp
+        from apps.clientes.models import Cliente
+        from apps.leads.models import Lead
+        from django.utils import timezone
+        from datetime import timedelta
+
+        # Crear cliente y conversación con historial
+        client = Cliente.objects.create(telefono="51999999999")
+        lead = Lead.objects.create(cliente=client)
+        conversation = ConversacionWhatsApp.objects.create(
+            cliente=client, lead=lead, channel=self.channel
+        )
+
+        # Crear 10 mensajes previos con Surco/Miraflores
+        old_time = timezone.now() - timedelta(hours=2)
+        old_messages = [
+            ("Cliente", "de surco a miraflores"), ("Bot", "¿A qué piso llegas?"),
+            ("Cliente", "piso 2"), ("Bot", "¿Acceso?"),
+            ("Cliente", "escaleras"), ("Bot", "¿Qué muebles?"),
+            ("Cliente", "una cama"), ("Bot", "Datos listos"),
+            ("Cliente", "ok"), ("Bot", "Cotización hecha"),
+        ]
+        for i, (origen, contenido) in enumerate(old_messages):
+            origen_enum = MensajeWhatsApp.ORIGEN_CLIENTE if origen == "Cliente" else MensajeWhatsApp.ORIGEN_BOT
+            MensajeWhatsApp.objects.create(
+                conversacion=conversation,
+                origen=origen_enum,
+                tipo="texto",
+                contenido=contenido,
+                estado="entregado",
+                fecha_mensaje=old_time + timedelta(minutes=i),
+            )
+
+        # Cargar estado (crea BotConversationState con request_boundary_at si hay historial)
+        repo = DjangoBotStateRepository()
+        state = repo.load(f"whatsapp:{conversation.pk}")
+        self.assertIsNotNone(state)  # Estado debe estar creado
+
+        # Verificar que request_boundary_at fue seteado (historial aislado)
+        from ..models import BotConversationState
+        bot_state_model = BotConversationState.objects.get(conversation_key=f"whatsapp:{conversation.pk}")
+        self.assertIsNotNone(bot_state_model.request_boundary_at)
+
+        # Nuevo cliente envía "hola quiero cotizar una mudanza"
+        # El bot debe responder sin mencionar Surco ni Miraflores
+        service, agent, meta, _ = self.build([
+            output(reply="Claro, para comenzar, de qué distrito a qué distrito será?")
+        ])
+
+        result = service.process_payload(meta_payload(
+            "hola quiero cotizar una mudanza",
+            customer="51988887777",
+            wamid="wamid.boundary.1",
+        ))
+
+        # Verificaciones:
+        # 1. Bot respondió
+        self.assertEqual(result.status, "sent")
+        # 2. Respuesta no contiene Surco ni Miraflores
+        bot_reply = meta.sent[0][1].text
+        self.assertNotIn("Surco", bot_reply)
+        self.assertNotIn("Miraflores", bot_reply)
+        self.assertNotIn("surco", bot_reply)
+        self.assertNotIn("miraflores", bot_reply)
+        # 3. Agent fue llamado solo 1 vez (sin reparación)
+        self.assertEqual(agent.calls, 1)
+
+
 class LegacyDependencyAuditTests(TestCase):
     FORBIDDEN = (
         "conversation_engine", "extract_lead_with_ai", "classify_request_intent",
