@@ -20,6 +20,22 @@ class DomainTests(SimpleTestCase):
         state = merge_state(BotState(), {"origin_floor": 3}, {})
         self.assertIn("origin_access", required_missing(state))
 
+    def test_upper_floor_clears_not_applicable_access(self):
+        # Validación cruzada: piso > 1 requiere escaleras o ascensor (no NOT_APPLICABLE)
+        # Si modelo emit NOT_APPLICABLE para piso 3, debe limpiarse y marcarse como pendiente
+        with self.assertLogs("apps.whatsapp_bot_v4.domain.merge", level="WARNING") as logs:
+            state = merge_state(
+                BotState(origin_floor=3),
+                {"origin_access": Access.NOT_APPLICABLE},
+                {}
+            )
+        # Debe loguarse el conflicto
+        self.assertIn("bot_v4_floor_access_mismatch", logs.output[0])
+        # Access debe ser None (pendiente)
+        self.assertIsNone(state.origin_access)
+        # Y estar en required_missing
+        self.assertIn("origin_access", required_missing(state))
+
     def test_null_update_does_not_erase(self):
         state = BotState(origin_district="Surco")
         self.assertEqual(merge_state(state, {"origin_district": None}, {}).origin_district, "Surco")

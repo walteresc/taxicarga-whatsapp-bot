@@ -64,9 +64,21 @@ def merge_state(state: BotState, updates: dict, corrections: dict) -> BotState:
         floor_field = f"{prefix}_floor"
         access_field = f"{prefix}_access"
         floor = getattr(merged, floor_field)
+        current_access = getattr(merged, access_field)
+
         if floor == 1:
+            # Piso 1 requiere NOT_APPLICABLE
             setattr(merged, access_field, Access.NOT_APPLICABLE)
-        elif floor and floor > 1 and getattr(merged, access_field) == Access.NOT_APPLICABLE:
-            setattr(merged, access_field, None)
+        elif floor and floor > 1:
+            # Pisos superiores requieren acceso explícito (no NOT_APPLICABLE)
+            if current_access == Access.NOT_APPLICABLE:
+                # Conflicto: piso superior pero access dice "no aplica"
+                # Solución: marcar acceso como pendiente (None)
+                logger.warning(
+                    "bot_v4_floor_access_mismatch field=%s floor=%d access=%s "
+                    "clearing access (floor requires explicit stairs/elevator)",
+                    access_field, floor, current_access,
+                )
+                setattr(merged, access_field, None)
     validate_state(merged)
     return merged
