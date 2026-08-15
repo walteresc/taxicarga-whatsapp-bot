@@ -240,6 +240,7 @@ class ExtractionInvariantTests(SimpleTestCase):
 
     def test_production_fallback_logs_structured_anomaly_and_keeps_extraction(self):
         # Scenario: valid extraction but response is premature question (state ready but asking)
+        # Repair also fails with same error → fallback used
         # Must keep extraction, use fallback phrase
         complete_state = BotState(
             origin_district="Surco", destination_district="Miraflores",
@@ -251,7 +252,7 @@ class ExtractionInvariantTests(SimpleTestCase):
             updates={},
             requested=[], reply="¿Seguro que es todo?",  # Premature question: no requested fields but asks with "?"
         )
-        agent = ScriptedAgent([bad])
+        agent = ScriptedAgent([bad, bad])  # Repair also fails
         result = ConversationService(agent).process_turn(
             state=complete_state, customer_message="listo",
         )

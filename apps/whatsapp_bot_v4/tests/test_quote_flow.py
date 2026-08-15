@@ -314,3 +314,35 @@ class QuoteFlowTests(TestCase):
         self.assertEqual(Lead.objects.filter(cliente=self.conversation.cliente).count(), 1)
         self.assertEqual(pricing.call_count, 3)
         self.assertEqual(agent.calls, 4)
+
+    def test_new_quote_with_new_data_in_same_message_clears_old(self):
+        # Frontera de solicitud: NEW_QUOTE con nuevos datos en el mismo mensaje
+        # debe resultar en SOLO los datos nuevos, no una mezcla con viejos
+        # Scenario:
+        # 1. Cotización completa: Surco → Miraflores, piso 1→2, cama
+        # 2. Mensaje: "necesito otra mudanza, de Barranco a Lince"
+        # 3. Esperado: estado con SOLO Barranco/Lince, NO Surco/Miraflores
+        service, agent, _ = self.service([
+            output(updates=self.complete.to_dict(), reply="listo"),
+            output(
+                action="new_quote",
+                updates={"origin_district": "Barranco", "destination_district": "Lince"},
+                requested=["origin_floor", "destination_floor"],
+                reply="Nueva mudanza de Barranco a Lince. ¿Qué pisos?"
+            ),
+        ], fail=True)
+        # Primera fase: cotización completa
+        first = self.process(service, "necesito una mudanza de surco a miraflores, piso 1 a 2, una cama")
+        self.assertEqual((first.turn.state.origin_district, first.turn.state.destination_district), ("Surco", "Miraflores"))
+        # Segunda fase: NEW_QUOTE con nuevos distritos en el mismo mensaje
+        second = self.process(service, "necesito otra mudanza, de Barranco a Lince")
+        self.assertEqual(second.turn.conversation_action, ConversationAction.NEW_QUOTE)
+        # Estado debe contener SOLO Barranco/Lince, no la anterior Surco/Miraflores
+        self.assertEqual(second.turn.state.origin_district, "Barranco")
+        self.assertEqual(second.turn.state.destination_district, "Lince")
+        self.assertIsNone(second.turn.state.origin_floor)  # Limpio
+        self.assertIsNone(second.turn.state.destination_floor)  # Limpio
+        self.assertEqual(second.turn.state.items, [])  # Limpio
+        # Frontera debe estar set en DB
+        db_state = BotConversationState.objects.get(conversation_key=self.key)
+        self.assertIsNotNone(db_state.request_boundary_at)
