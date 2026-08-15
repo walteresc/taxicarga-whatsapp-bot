@@ -39,7 +39,18 @@ class MetaWebhookV4Service:
         if not created:
             return MetaTurnResult("duplicate", inbound_message_id=incoming.pk)
         self._safe_project_customer(incoming)
-        history, last_bot = self._recent_context(conversation, exclude_message_id=incoming.pk)
+        # Obtener request_boundary_at para filtrar historial
+        from ..models import BotConversationState
+        bot_state_model = BotConversationState.objects.filter(
+            conversation_key=f"whatsapp:{conversation.pk}"
+        ).first()
+        request_boundary_at = bot_state_model.request_boundary_at if bot_state_model else None
+
+        history, last_bot = self._recent_context(
+            conversation,
+            exclude_message_id=incoming.pk,
+            request_boundary_at=request_boundary_at,
+        )
         persistent_result = self.persistent_service.process_turn(
             conversation_key=f"whatsapp:{conversation.pk}",
             conversation=conversation,
@@ -142,11 +153,19 @@ class MetaWebhookV4Service:
             return MensajeWhatsApp.objects.get(meta_message_id=inbound.external_message_id), False
 
     @staticmethod
-    def _recent_context(conversation, *, exclude_message_id):
-        messages = list(
+    @staticmethod
+    def _recent_context(conversation, *, exclude_message_id, request_boundary_at=None):
+        query = (
             conversation.mensajes.exclude(pk=exclude_message_id)
             .filter(origen__in=[MensajeWhatsApp.ORIGEN_CLIENTE, MensajeWhatsApp.ORIGEN_BOT])
-            .order_by("-fecha_mensaje", "-id")[:10]
+        )
+
+        # Filtrar por request_boundary_at: solo mensajes POSTERIORES a la frontera
+        if request_boundary_at:
+            query = query.filter(fecha_mensaje__gt=request_boundary_at)
+
+        messages = list(
+            query.order_by("-fecha_mensaje", "-id")[:10]
         )[::-1]
         history = [
             {
