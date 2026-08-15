@@ -58,12 +58,15 @@ class PersistentConversationService:
                 state, "Perfecto 👍", True, [], 0,
                 conversation_action=ConversationAction.ACK,
             ))
+
         # FRONTERA DE SOLICITUD: Si hay NEW_QUOTE anterior, no mostrar
         # al modelo mensajes antes de esa frontera
         contexto_conversation = recent_conversation
-        if state.request_boundary_at and contexto_conversation:
+        # Cargar el modelo para chequear si hay frontera
+        bot_state_model = BotConversationState.objects.filter(conversation_key=conversation_key).first()
+        if bot_state_model and bot_state_model.request_boundary_at and contexto_conversation:
             # Si tenemos frontera, vaciar recent_conversation
-            # (el modelo solo vera el turno actual, no el historial previo)
+            # (el modelo solo verá el turno actual, no el historial previo)
             contexto_conversation = []
 
         turn = self.conversation_service.process_turn(
@@ -78,12 +81,15 @@ class PersistentConversationService:
         if turn.conversation_action == ConversationAction.NEW_QUOTE:
             if conversation is None or self.crm_adapter is None:
                 raise ValueError("NEW_QUOTE requiere conversación y CRM adapter")
-            # FRONTERA: Marcar dónde cortar recent_conversation para siguientes turnos
-            from datetime import datetime
-            turn.state.request_boundary_at = datetime.utcnow().isoformat()
             with transaction.atomic():
                 lead = self.crm_adapter.start_new_request(conversation)
                 self.repository.start_new_request(conversation_key)
+                # FRONTERA: Marcar dónde cortar recent_conversation para siguientes turnos
+                # Persistir en columna propia de BotConversationState, no en state_data
+                from django.utils import timezone
+                bot_state = BotConversationState.objects.get(conversation_key=conversation_key)
+                bot_state.request_boundary_at = timezone.now()
+                bot_state.save(update_fields=['request_boundary_at'])
             commercial = self.repository.get_commercial(conversation_key)
             if self.chatwoot_adapter:
                 try:
