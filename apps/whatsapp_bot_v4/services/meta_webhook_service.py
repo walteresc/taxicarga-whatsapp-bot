@@ -153,7 +153,6 @@ class MetaWebhookV4Service:
             return MensajeWhatsApp.objects.get(meta_message_id=inbound.external_message_id), False
 
     @staticmethod
-    @staticmethod
     def _recent_context(conversation, *, exclude_message_id, request_boundary_at=None):
         query = (
             conversation.mensajes.exclude(pk=exclude_message_id)

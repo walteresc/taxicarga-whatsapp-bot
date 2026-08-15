@@ -4,6 +4,7 @@ from django.db import transaction
 
 from ..ai.schemas import ConversationAction
 from ..domain.requirements import ready_to_quote, required_missing
+from ..domain.state import BotState
 from ..models import BotConversationState
 from .conversation_service import ConversationService, TurnResult
 from .quote_bridge import quote_input_hash, quote_reply
