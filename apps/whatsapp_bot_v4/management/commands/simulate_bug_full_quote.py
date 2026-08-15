@@ -145,15 +145,33 @@ class Command(BaseCommand):
         self.stdout.write("DIAGNOSIS SUMMARY")
         self.stdout.write(f"{'='*70}\n")
 
-        # Check if bug reproduced
-        if results and "state" in results[-1]:
-            final_state = results[-1]["state"]
-            origin = final_state.get("origin_district")
-            dest = final_state.get("destination_district")
+        # Verify NEW_QUOTE behavior
+        if len(results) >= 2:
+            # First result: NEW_QUOTE action (new_request)
+            new_quote_result = results[0]
+            new_quote_state = new_quote_result.get("state", {})
 
-            if origin == "Surco" and dest == "Miraflores":
-                self.stdout.write("[OK] Districts retained after NEW_QUOTE")
+            # After NEW_QUOTE, state must be COMPLETELY EMPTY
+            if all(
+                new_quote_state.get(k) in (None, [], "")
+                for k in ["origin_district", "destination_district", "origin_floor",
+                          "destination_floor", "origin_access", "destination_access", "items"]
+            ):
+                self.stdout.write("[OK] NEW_QUOTE properly resets state to empty")
             else:
-                self.stderr.write(f"[BUG] Districts lost! origin={origin}, dest={dest}")
+                self.stderr.write(f"[BUG] NEW_QUOTE did not reset! state={new_quote_state}")
+
+            # Second result: client repeats districts (districts_again)
+            second_result = results[1]
+            second_state = second_result.get("state", {})
+
+            # After districts, should have ONLY distritos, no floors/access/items
+            if (second_state.get("origin_district") == "Surco" and
+                second_state.get("destination_district") == "Miraflores" and
+                all(second_state.get(k) in (None, [], "") for k in
+                    ["origin_floor", "destination_floor", "origin_access", "destination_access", "items"])):
+                self.stdout.write("[OK] Districts extracted, floors/access/items remain empty")
+            else:
+                self.stderr.write(f"[BUG] Wrong state after districts! state={second_state}")
 
         self.stdout.write(f"\nFull results:\n{json.dumps(results, indent=2)}")
