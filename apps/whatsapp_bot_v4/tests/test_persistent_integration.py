@@ -77,20 +77,22 @@ class PersistentIntegrationTests(TestCase):
         # Crear estado viejo 'collecting'
         from django.utils import timezone
         from datetime import timedelta
+        from django.db import connection
 
         old_time = timezone.now() - timedelta(hours=7)
         self.turn("de Surco a Miraflores", output(updates={"origin_district": "Surco", "destination_district": "Miraflores"}))
 
-        # Manipular updated_at para simular estado viejo
+        # Manipular updated_at usando SQL directo para bypass auto_now
         state_model = BotConversationState.objects.get(conversation_key=self.key)
-        state_model.updated_at = old_time
-        state_model.status = "collecting"
-        state_model.save(update_fields=["updated_at", "status"])
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE whatsapp_bot_v4_botconversationstate SET updated_at = %s, status = %s WHERE id = %s",
+                [old_time, "collecting", state_model.id]
+            )
 
         # Nuevo mensaje después de timeout (6 horas default)
         with self.assertLogs("apps.whatsapp_bot_v4.services.persistent_conversation_service", level="WARNING") as logs:
             result = self.turn("necesito otra mudanza", output(
-                requested=["origin_district", "destination_district"],
                 reply="Para la nueva mudanza, de qué distrito a qué distrito?"
             ))
 
@@ -107,20 +109,22 @@ class PersistentIntegrationTests(TestCase):
         # Crear estado 'collecting' reciente (hace 10 minutos)
         from django.utils import timezone
         from datetime import timedelta
+        from django.db import connection
 
         recent_time = timezone.now() - timedelta(minutes=10)
         self.turn("de Surco a Miraflores", output(updates={"origin_district": "Surco", "destination_district": "Miraflores"}))
 
-        # Manipular updated_at pero mantener reciente
+        # Manipular updated_at usando SQL directo para bypass auto_now
         state_model = BotConversationState.objects.get(conversation_key=self.key)
-        state_model.updated_at = recent_time
-        state_model.status = "collecting"
-        state_model.save(update_fields=["updated_at", "status"])
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE whatsapp_bot_v4_botconversationstate SET updated_at = %s, status = %s WHERE id = %s",
+                [recent_time, "collecting", state_model.id]
+            )
 
         # Nuevo mensaje, estado reciente NO debe descartarse
         result = self.turn("piso 3", output(
             updates={"origin_floor": 3},
-            requested=["destination_district"],
             reply="Tercer piso. De Surco a Miraflores. A qué piso llegas?"
         ))
 
@@ -133,14 +137,17 @@ class PersistentIntegrationTests(TestCase):
         # Estados 'quoted' no deben descartarse por timeout
         from django.utils import timezone
         from datetime import timedelta
+        from django.db import connection
 
         old_time = timezone.now() - timedelta(hours=10)
         self.turn("de Surco a Miraflores", output(updates={"origin_district": "Surco", "destination_district": "Miraflores"}))
 
         state_model = BotConversationState.objects.get(conversation_key=self.key)
-        state_model.updated_at = old_time
-        state_model.status = "quoted"
-        state_model.save(update_fields=["updated_at", "status"])
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE whatsapp_bot_v4_botconversationstate SET updated_at = %s, status = %s WHERE id = %s",
+                [old_time, "quoted", state_model.id]
+            )
 
         # Nuevo mensaje, estado 'quoted' NO debe descartarse
         result = self.turn("¿cuál era el precio?", output(reply="Tu cotización fue..."))
