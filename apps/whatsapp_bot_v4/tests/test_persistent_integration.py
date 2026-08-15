@@ -73,8 +73,9 @@ class PersistentIntegrationTests(TestCase):
         self.assertEqual(resumed.state.destination_district, "Miraflores")
         self.assertEqual(resumed.state.origin_floor, 1)
 
-    def test_stale_collecting_state_discarded_after_timeout(self):
-        # Crear estado viejo 'collecting'
+    def test_time_alone_does_not_discard_collecting_state(self):
+        # Verificar que tiempo NO descarta estado válido sin NEW_QUOTE explícito
+        # Cliente con datos válidos hace 7 horas continúa → datos preservados
         from django.utils import timezone
         from datetime import timedelta
         from django.db import connection
@@ -82,76 +83,22 @@ class PersistentIntegrationTests(TestCase):
         old_time = timezone.now() - timedelta(hours=7)
         self.turn("de Surco a Miraflores", output(updates={"origin_district": "Surco", "destination_district": "Miraflores"}))
 
-        # Manipular updated_at usando SQL directo para bypass auto_now
+        # Manipular updated_at para simular 7 horas de inactividad
         state_model = BotConversationState.objects.get(conversation_key=self.key)
         with connection.cursor() as cursor:
             cursor.execute(
-                "UPDATE whatsapp_bot_v4_botconversationstate SET updated_at = %s, status = %s WHERE id = %s",
-                [old_time, "collecting", state_model.id]
+                "UPDATE whatsapp_bot_v4_botconversationstate SET updated_at = %s WHERE id = %s",
+                [old_time, state_model.id]
             )
 
-        # Nuevo mensaje después de timeout (6 horas default)
-        with self.assertLogs("apps.whatsapp_bot_v4.services.persistent_conversation_service", level="WARNING") as logs:
-            result = self.turn("necesito otra mudanza", output(
-                reply="Para la nueva mudanza, de qué distrito a qué distrito?"
-            ))
-
-        # Estado debe estar vacío (descartado)
-        self.assertIsNone(result.state.origin_district)
-        self.assertIsNone(result.state.destination_district)
-        # Debe loguear descarte
-        self.assertIn("bot_v4_stale_state_discarded", logs.output[0])
-        # Boundary debe estar set
-        state_model.refresh_from_db()
-        self.assertIsNotNone(state_model.request_boundary_at)
-
-    def test_recent_collecting_state_not_discarded(self):
-        # Crear estado 'collecting' reciente (hace 10 minutos)
-        from django.utils import timezone
-        from datetime import timedelta
-        from django.db import connection
-
-        recent_time = timezone.now() - timedelta(minutes=10)
-        self.turn("de Surco a Miraflores", output(updates={"origin_district": "Surco", "destination_district": "Miraflores"}))
-
-        # Manipular updated_at usando SQL directo para bypass auto_now
-        state_model = BotConversationState.objects.get(conversation_key=self.key)
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "UPDATE whatsapp_bot_v4_botconversationstate SET updated_at = %s, status = %s WHERE id = %s",
-                [recent_time, "collecting", state_model.id]
-            )
-
-        # Nuevo mensaje, estado reciente NO debe descartarse
-        result = self.turn("piso 3", output(
-            updates={"origin_floor": 3},
-            reply="Tercer piso. De Surco a Miraflores. A qué piso llegas?"
+        # Cliente continúa después de 7 horas
+        result = self.turn("necesito otra mudanza", output(
+            reply="OK, para la nueva mudanza dime los detalles"
         ))
 
-        # Estado debe conservar datos anteriores
+        # Datos originales DEBEN preservarse (no hay NEW_QUOTE)
         self.assertEqual(result.state.origin_district, "Surco")
         self.assertEqual(result.state.destination_district, "Miraflores")
-        self.assertEqual(result.state.origin_floor, 3)
+        # Nuevo mensaje procesado con contexto anterior
+        self.assertEqual(result.llm_calls, 1)
 
-    def test_quoted_state_not_discarded_by_timeout(self):
-        # Estados 'quoted' no deben descartarse por timeout
-        from django.utils import timezone
-        from datetime import timedelta
-        from django.db import connection
-
-        old_time = timezone.now() - timedelta(hours=10)
-        self.turn("de Surco a Miraflores", output(updates={"origin_district": "Surco", "destination_district": "Miraflores"}))
-
-        state_model = BotConversationState.objects.get(conversation_key=self.key)
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "UPDATE whatsapp_bot_v4_botconversationstate SET updated_at = %s, status = %s WHERE id = %s",
-                [old_time, "quoted", state_model.id]
-            )
-
-        # Nuevo mensaje, estado 'quoted' NO debe descartarse
-        result = self.turn("¿cuál era el precio?", output(reply="Tu cotización fue..."))
-
-        # Estado debe conservar datos
-        self.assertEqual(result.state.origin_district, "Surco")
-        self.assertEqual(result.state.destination_district, "Miraflores")

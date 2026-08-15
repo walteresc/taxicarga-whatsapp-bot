@@ -86,6 +86,70 @@ class MetaFixtureIntegrationTests(TestCase):
         self.assertEqual(agent.calls, 2)
 
 
+    def test_boundary_semantics_exact_timestamp(self):
+        # Verificar que boundary filtra correctamente: fecha_mensaje__gt boundary
+        # - Mensaje con timestamp < boundary → EXCLUIDO
+        # - Mensaje con timestamp == boundary → EXCLUIDO (> no >=)
+        # - Mensaje con timestamp > boundary → INCLUIDO
+        from apps.whatsapp.models import ConversacionWhatsApp, MensajeWhatsApp
+        from apps.clientes.models import Cliente
+        from apps.leads.models import Lead
+        from django.utils import timezone
+        from datetime import timedelta
+
+        client = Cliente.objects.create(telefono="51999999989")
+        lead = Lead.objects.create(cliente=client)
+        conversation = ConversacionWhatsApp.objects.create(cliente=client, lead=lead, channel=self.channel)
+
+        base_time = timezone.now()
+
+        # Mensaje antes de boundary
+        MensajeWhatsApp.objects.create(
+            conversacion=conversation,
+            origen=MensajeWhatsApp.ORIGEN_CLIENTE,
+            tipo="texto",
+            contenido="dato viejo",
+            estado="entregado",
+            fecha_mensaje=base_time - timedelta(minutes=5),
+        )
+
+        # Boundary en este momento
+        boundary_time = base_time
+
+        # Mensaje en el exact boundary
+        MensajeWhatsApp.objects.create(
+            conversacion=conversation,
+            origen=MensajeWhatsApp.ORIGEN_CLIENTE,
+            tipo="texto",
+            contenido="exacto en boundary",
+            estado="entregado",
+            fecha_mensaje=boundary_time,
+        )
+
+        # Mensaje después de boundary
+        MensajeWhatsApp.objects.create(
+            conversacion=conversation,
+            origen=MensajeWhatsApp.ORIGEN_CLIENTE,
+            tipo="texto",
+            contenido="nuevo dato",
+            estado="entregado",
+            fecha_mensaje=base_time + timedelta(minutes=1),
+        )
+
+        # Verificar filtrado: query.filter(fecha_mensaje__gt=request_boundary_at)
+        from ..services.meta_webhook_service import MetaWebhookV4Service
+        history, _ = MetaWebhookV4Service._recent_context(
+            conversation,
+            exclude_message_id=-1,
+            request_boundary_at=boundary_time,
+        )
+
+        # Solo msg_after debe estar incluido
+        contents = [h["content"] for h in history]
+        self.assertNotIn("dato viejo", contents)
+        self.assertNotIn("exacto en boundary", contents)  # == boundary excluido
+        self.assertIn("nuevo dato", contents)
+
     def test_request_boundary_filters_old_conversation_history(self):
         # Test: conversación con 10 mensajes previos mencionando Surco/Miraflores
         # request_boundary_at está seteado después de esos mensajes
