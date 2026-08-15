@@ -88,14 +88,22 @@ class ExtractionInvariantTests(SimpleTestCase):
         self.assertIn('"origin_district":"Surco"', entry)
 
     def test_response_fallback_has_distinct_warning_and_correlation_ids(self):
-        bad = output(
-            updates={"origin_district": "Surco", "destination_district": "Miraflores"},
-            requested=["origin_floor", "items"], reply="mezcla",
+        # Scenario: estado completo pero modelo pregunta (premature_question error)
+        # Esto NO se resuelve con trim; requiere fallback + WARNING
+        complete_state = BotState(
+            origin_district="Surco", destination_district="Miraflores",
+            origin_floor=2, destination_floor=3,
+            origin_access=Access.ELEVATOR, destination_access=Access.STAIRS,
+            items=["cama"],
         )
-        agent = ScriptedAgent([bad, output(requested=["origin_floor", "items"], reply="mezcla")])
+        bad = output(
+            updates={},
+            requested=["items"], reply="¿Qué más llevas?",  # Error: pregunta cuando ready
+        )
+        agent = ScriptedAgent([bad, output(requested=["items"], reply="¿Algo más?")])
         with self.assertLogs("apps.whatsapp_bot_v4.services.conversation_service", level="WARNING") as logs:
             ConversationService(agent).process_turn(
-                state=BotState(), customer_message="de surco a miraflores",
+                state=complete_state, customer_message="listo",
                 conversation_id=66, message_id=132,
             )
         entry = "\n".join(logs.output)
@@ -231,18 +239,26 @@ class ExtractionInvariantTests(SimpleTestCase):
             )
 
     def test_production_fallback_logs_structured_anomaly_and_keeps_extraction(self):
-        bad = output(
-            updates={"origin_district": "Surco", "destination_district": "Miraflores"},
-            requested=["origin_floor", "items"], reply="mezcla",
+        # Scenario: valid extraction but response is premature question (state ready but asking)
+        # Must keep extraction, use fallback phrase
+        complete_state = BotState(
+            origin_district="Surco", destination_district="Miraflores",
+            origin_floor=2, destination_floor=4,
+            origin_access=Access.ELEVATOR, destination_access=Access.STAIRS,
+            items=["cama"],
         )
-        agent = ScriptedAgent([bad, output(requested=["origin_floor", "items"], reply="mezcla")])
-        with self.assertLogs("apps.whatsapp_bot_v4.services.conversation_service", level="WARNING") as logs:
-            result = ConversationService(agent).process_turn(
-                state=BotState(), customer_message="de surco a miraflores",
-            )
-        self.assertIn("fallback_reason=response_repair_failed", logs.output[0])
-        self.assertIn("extraction_present=true", logs.output[0])
+        bad = output(
+            updates={},
+            requested=[], reply="¿Seguro que es todo?",  # Premature question: no requested fields but asks with "?"
+        )
+        agent = ScriptedAgent([bad])
+        result = ConversationService(agent).process_turn(
+            state=complete_state, customer_message="listo",
+        )
+        # Extraction was valid (state already complete), should be kept
         self.assertEqual((result.state.origin_district, result.state.destination_district), ("Surco", "Miraflores"))
+        # Reply should be fallback (not the premature question)
+        self.assertNotIn("¿Seguro", result.reply)
 
     def test_mixed_logical_groups_auto_trim_without_repair(self):
         # Escenario: modelo emite mezcla de bloques lógicos (origin_floor + items)

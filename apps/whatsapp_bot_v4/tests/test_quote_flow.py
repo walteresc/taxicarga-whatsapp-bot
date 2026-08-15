@@ -179,13 +179,18 @@ class QuoteFlowTests(TestCase):
         chatwoot.project_commercial_status.assert_called_once_with(self.conversation)
 
     def test_one_logical_block_validation(self):
+        # Mezcla de grupos lógicos se trimea automáticamente en primera pasada
+        # (no requiere repair). Verifica que trim elige el primer grupo con matches.
         agent = ScriptedAgent([
             output(requested=["origin_district", "items"], reply="ruta y carga?"),
-            output(requested=["origin_district", "destination_district"], reply="¿de dónde a dónde?"),
         ])
-        result = ConversationService(agent).process_turn(state=BotState(), customer_message="hola")
+        with self.assertLogs("apps.whatsapp_bot_v4.services.conversation_service", level="DEBUG") as logs:
+            result = ConversationService(agent).process_turn(state=BotState(), customer_message="hola")
+        # Trim automático debe loguear el recorte
+        self.assertIn("bot_v4_requested_fields_trimmed", "\n".join(logs.output))
         self.assertEqual(result.required_missing[0], "origin_district")
-        self.assertEqual(agent.calls, 2)
+        # Solo una llamada (trim sin repair)
+        self.assertEqual(agent.calls, 1)
 
     def test_canonical_local_conversation_quotes_on_last_turn(self):
         outputs = [
