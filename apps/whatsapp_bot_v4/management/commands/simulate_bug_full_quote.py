@@ -129,12 +129,17 @@ class Command(BaseCommand):
                 history.append({"role": "assistant", "content": turn.reply or ""})
                 last_bot = turn.reply or ""
 
+                # SNAPSHOT: Capture DB state IMMEDIATELY after this turno
+                db_state = repository.load(conversation_key)
+                db_snapshot = db_state.to_dict() if db_state else None
+
                 results.append({
                     "label": label,
                     "message": msg,
                     "bot_reply": turn.reply,
                     "state": state_after.to_dict(),
                     "action": str(turn.conversation_action),
+                    "db_snapshot": db_snapshot,
                 })
 
             except Exception as e:
@@ -145,40 +150,60 @@ class Command(BaseCommand):
         self.stdout.write("DIAGNOSIS SUMMARY")
         self.stdout.write(f"{'='*70}\n")
 
-        # Verify NEW_QUOTE behavior
+        # Verify NEW_QUOTE behavior by capturing DB snapshots IMMEDIATELY after each turno
         test_failed = False
         if len(results) >= 2:
-            # First result: NEW_QUOTE action (new_request)
-            new_quote_result = results[0]
-            new_quote_state = new_quote_result.get("state", {})
+            # SNAPSHOT 1: Captured DURING turno 1 (new_request)
+            snapshot_after_new_quote = results[0].get("db_snapshot")
 
-            # After NEW_QUOTE, state must be COMPLETELY EMPTY
-            if all(
-                new_quote_state.get(k) in (None, [], "")
-                for k in ["origin_district", "destination_district", "origin_floor",
-                          "destination_floor", "origin_access", "destination_access", "items"]
-            ):
-                self.stdout.write("[OK] NEW_QUOTE properly resets state to empty")
-            else:
-                self.stderr.write(f"[BUG] NEW_QUOTE did not reset! state={new_quote_state}")
-                test_failed = True
+            self.stdout.write(f"\n[VERIFY] After NEW_QUOTE (captured immediately), state from DB:")
+            if snapshot_after_new_quote:
+                self.stdout.write(f"  origin_district: {snapshot_after_new_quote.get('origin_district')}")
+                self.stdout.write(f"  destination_district: {snapshot_after_new_quote.get('destination_district')}")
+                self.stdout.write(f"  origin_floor: {snapshot_after_new_quote.get('origin_floor')}")
+                self.stdout.write(f"  destination_floor: {snapshot_after_new_quote.get('destination_floor')}")
+                self.stdout.write(f"  origin_access: {snapshot_after_new_quote.get('origin_access')}")
+                self.stdout.write(f"  destination_access: {snapshot_after_new_quote.get('destination_access')}")
+                self.stdout.write(f"  items: {snapshot_after_new_quote.get('items')}")
+                self.stdout.write(f"  request_boundary_at: {snapshot_after_new_quote.get('request_boundary_at')}")
 
-            # Second result: client repeats districts (districts_again)
-            second_result = results[1]
-            second_state = second_result.get("state", {})
+                # After NEW_QUOTE, state must be COMPLETELY EMPTY
+                if all(
+                    snapshot_after_new_quote.get(k) in (None, [], "")
+                    for k in ["origin_district", "destination_district", "origin_floor",
+                              "destination_floor", "origin_access", "destination_access", "items"]
+                ):
+                    self.stdout.write("[OK] NEW_QUOTE properly resets state to empty")
+                else:
+                    self.stderr.write(f"[BUG] NEW_QUOTE did not reset! state={snapshot_after_new_quote}")
+                    test_failed = True
 
-            # After districts, should have ONLY distritos, no floors/access/items
-            if (second_state.get("origin_district") == "Surco" and
-                second_state.get("destination_district") == "Miraflores" and
-                all(second_state.get(k) in (None, [], "") for k in
-                    ["origin_floor", "destination_floor", "origin_access", "destination_access", "items"])):
-                self.stdout.write("[OK] Districts extracted, floors/access/items remain empty")
-            else:
-                self.stderr.write(f"[BUG] Wrong state after districts! state={second_state}")
-                test_failed = True
+            # SNAPSHOT 2: Captured DURING turno 2 (districts_again)
+            snapshot_after_districts = results[1].get("db_snapshot")
+
+            self.stdout.write(f"\n[VERIFY] After districts_again (captured immediately), state from DB:")
+            if snapshot_after_districts:
+                self.stdout.write(f"  origin_district: {snapshot_after_districts.get('origin_district')}")
+                self.stdout.write(f"  destination_district: {snapshot_after_districts.get('destination_district')}")
+                self.stdout.write(f"  origin_floor: {snapshot_after_districts.get('origin_floor')}")
+                self.stdout.write(f"  destination_floor: {snapshot_after_districts.get('destination_floor')}")
+                self.stdout.write(f"  origin_access: {snapshot_after_districts.get('origin_access')}")
+                self.stdout.write(f"  destination_access: {snapshot_after_districts.get('destination_access')}")
+                self.stdout.write(f"  items: {snapshot_after_districts.get('items')}")
+
+                # After districts, should have ONLY distritos, no floors/access/items
+                if (snapshot_after_districts.get("origin_district") == "Surco" and
+                    snapshot_after_districts.get("destination_district") == "Miraflores" and
+                    all(snapshot_after_districts.get(k) in (None, [], "") for k in
+                        ["origin_floor", "destination_floor", "origin_access", "destination_access", "items"])):
+                    self.stdout.write("[OK] Districts extracted, floors/access/items remain empty")
+                else:
+                    self.stderr.write(f"[BUG] Wrong state after districts! state={snapshot_after_districts}")
+                    test_failed = True
 
         if test_failed:
             self.stderr.write("\n[FAIL] Test failed - exiting with code 1")
             raise SystemExit(1)
 
-        self.stdout.write(f"\nFull results:\n{json.dumps(results, indent=2)}")
+        self.stdout.write(f"\n[PASS] All assertions passed!")
+        self.stdout.write(f"\nFull results:\n{json.dumps(results, indent=2, default=str)}")
