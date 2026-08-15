@@ -17,6 +17,9 @@ class BotState:
     origin_access: Access | None = None
     destination_access: Access | None = None
     items: list[str] = field(default_factory=list)
+    # Request boundary: when NEW_QUOTE occurred, don't show model
+    # messages before this boundary. Format: ISO timestamp string.
+    request_boundary_at: str | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)

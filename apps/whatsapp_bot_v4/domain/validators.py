@@ -30,6 +30,11 @@ def validate_value(field: str, value):
         if not isinstance(value, list) or not all(isinstance(item, str) and item.strip() for item in value):
             raise DomainValidationError("items debe ser lista de textos no vacíos")
         return [item.strip() for item in value]
+    if field == "request_boundary_at":
+        # ISO timestamp or None
+        if not isinstance(value, str):
+            raise DomainValidationError(f"{field} debe ser ISO timestamp string")
+        return value
     raise DomainValidationError(f"Campo sin validador: {field}")
 
 

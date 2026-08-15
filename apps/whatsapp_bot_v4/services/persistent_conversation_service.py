@@ -58,10 +58,18 @@ class PersistentConversationService:
                 state, "Perfecto 👍", True, [], 0,
                 conversation_action=ConversationAction.ACK,
             ))
+        # FRONTERA DE SOLICITUD: Si hay NEW_QUOTE anterior, no mostrar
+        # al modelo mensajes antes de esa frontera
+        contexto_conversation = recent_conversation
+        if state.request_boundary_at and contexto_conversation:
+            # Si tenemos frontera, vaciar recent_conversation
+            # (el modelo solo vera el turno actual, no el historial previo)
+            contexto_conversation = []
+
         turn = self.conversation_service.process_turn(
             state=state,
             customer_message=customer_message,
-            recent_conversation=recent_conversation,
+            recent_conversation=contexto_conversation,
             last_bot_message=last_bot_message,
             commercial_status=commercial["status"],
             conversation_id=getattr(conversation, "pk", None),
@@ -70,6 +78,9 @@ class PersistentConversationService:
         if turn.conversation_action == ConversationAction.NEW_QUOTE:
             if conversation is None or self.crm_adapter is None:
                 raise ValueError("NEW_QUOTE requiere conversación y CRM adapter")
+            # FRONTERA: Marcar dónde cortar recent_conversation para siguientes turnos
+            from datetime import datetime
+            turn.state.request_boundary_at = datetime.utcnow().isoformat()
             with transaction.atomic():
                 lead = self.crm_adapter.start_new_request(conversation)
                 self.repository.start_new_request(conversation_key)

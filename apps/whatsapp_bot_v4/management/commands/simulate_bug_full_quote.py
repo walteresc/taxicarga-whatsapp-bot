@@ -146,6 +146,7 @@ class Command(BaseCommand):
         self.stdout.write(f"{'='*70}\n")
 
         # Verify NEW_QUOTE behavior
+        test_failed = False
         if len(results) >= 2:
             # First result: NEW_QUOTE action (new_request)
             new_quote_result = results[0]
@@ -160,6 +161,7 @@ class Command(BaseCommand):
                 self.stdout.write("[OK] NEW_QUOTE properly resets state to empty")
             else:
                 self.stderr.write(f"[BUG] NEW_QUOTE did not reset! state={new_quote_state}")
+                test_failed = True
 
             # Second result: client repeats districts (districts_again)
             second_result = results[1]
@@ -173,5 +175,10 @@ class Command(BaseCommand):
                 self.stdout.write("[OK] Districts extracted, floors/access/items remain empty")
             else:
                 self.stderr.write(f"[BUG] Wrong state after districts! state={second_state}")
+                test_failed = True
+
+        if test_failed:
+            self.stderr.write("\n[FAIL] Test failed - exiting with code 1")
+            raise SystemExit(1)
 
         self.stdout.write(f"\nFull results:\n{json.dumps(results, indent=2)}")
