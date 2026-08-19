@@ -64,13 +64,14 @@ class SingleTurnDatasetTests(SimpleTestCase):
         )
         self.assertTrue(result.ready_to_quote)
 
-    def test_ready_state_repquestion_is_repaired(self):
+    def test_ready_state_repquestion_is_preserved_when_no_requested(self):
+        # Cuando requested_fields está vacío, "?" en reply es válido
+        # No se rechaza, no se repara, se preserva el reply
         complete = CASES[-1][1]
         agent = ScriptedAgent([
             output(updates=complete, reply="¿Deseas agregar algo más?"),
-            output(updates=complete, reply="Perfecto, datos listos para cotizar."),
         ])
         result = ConversationService(agent).process_turn(state=BotState(), customer_message=CASES[-1][0])
         self.assertTrue(result.ready_to_quote)
-        self.assertEqual(result.llm_calls, 2)
-        self.assertNotIn("?", result.reply)
+        self.assertEqual(result.llm_calls, 1)  # Solo un call, no hay reparación
+        self.assertIn("?", result.reply)  # Reply con "?" se preserva

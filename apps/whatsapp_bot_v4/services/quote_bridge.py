@@ -41,6 +41,7 @@ def quote_input_hash(state) -> str:
         "origin_access": str(state.origin_access) if state.origin_access is not None else None,
         "destination_access": str(state.destination_access) if state.destination_access is not None else None,
         "items": list(state.items),
+        "packing_modalidad": state.packing_modalidad,
     }
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()

@@ -250,16 +250,16 @@ class ExtractionInvariantTests(SimpleTestCase):
         )
         bad = output(
             updates={},
-            requested=[], reply="¿Seguro que es todo?",  # Premature question: no requested fields but asks with "?"
+            requested=[], reply="¿Seguro que es todo?",  # No requested fields = validation skipped, reply preserved
         )
-        agent = ScriptedAgent([bad, bad])  # Repair also fails
+        agent = ScriptedAgent([bad])
         result = ConversationService(agent).process_turn(
             state=complete_state, customer_message="listo",
         )
         # Extraction was valid (state already complete), should be kept
         self.assertEqual((result.state.origin_district, result.state.destination_district), ("Surco", "Miraflores"))
-        # Reply should be fallback (not the premature question)
-        self.assertNotIn("¿Seguro", result.reply)
+        # Reply should be preserved (validation skips when requested_fields is empty)
+        self.assertIn("¿Seguro", result.reply)
 
     def test_mixed_logical_groups_auto_trim_without_repair(self):
         # Escenario: modelo emite mezcla de bloques lógicos (origin_floor + items)
@@ -286,3 +286,82 @@ class ExtractionInvariantTests(SimpleTestCase):
         self.assertIn("piso", result.reply)
         # Solo una llamada al agente (sin repair)
         self.assertEqual(result.llm_calls, 1)
+
+    def test_new_quote_with_new_districts_in_same_message(self):
+        # Escenario: cotización completa (Surco→Miraflores), cliente dice
+        # "necesito otra mudanza, de Barranco a Lince" en el siguiente turno
+        # Modelo emite NEW_QUOTE en primera pasada (contaminada con datos viejos)
+        # Se re-extrae con contexto limpio y extrae correctamente Barranco/Lince
+        complete_state = BotState(
+            origin_district="Surco", destination_district="Miraflores",
+            origin_floor=1, destination_floor=2,
+            origin_access=Access.ELEVATOR, destination_access=Access.STAIRS,
+            items=["cama"],
+        )
+        # Primera pasada emite datos viejos + NEW_QUOTE (será descartada)
+        # Segunda pasada con contexto limpio extrae correctamente
+        agent = ScriptedAgent([
+            output(
+                updates={"origin_district": "Surco", "destination_district": "Miraflores"},  # viejos
+                requested=["origin_floor"],
+                reply="Viejos datos",
+                action="new_quote"
+            ),
+            output(
+                updates={"origin_district": "Barranco", "destination_district": "Lince"},  # nuevos
+                requested=["origin_floor", "destination_floor", "items"],
+                reply="Perfecto, nueva mudanza de Barranco a Lince. ¿De qué piso a qué piso?",
+                action="new_quote"
+            )
+        ])
+        result = ConversationService(agent).process_turn(
+            state=complete_state,
+            customer_message="necesito otra mudanza, de Barranco a Lince",
+            commercial_status="quoted",
+        )
+        # Estado debe tener SOLO los nuevos distritos (de la segunda pasada)
+        self.assertEqual(result.state.origin_district, "Barranco")
+        self.assertEqual(result.state.destination_district, "Lince")
+        self.assertIsNone(result.state.origin_floor)
+        self.assertIsNone(result.state.destination_floor)
+        self.assertEqual(result.state.items, [])
+        # No debe estar listo para cotizar (falta piso e items)
+        self.assertFalse(result.ready_to_quote)
+        # Debe haber 2 llamadas al agente (primera contaminada, segunda limpia)
+        self.assertEqual(result.llm_calls, 2)
+
+    def test_new_quote_without_data_resets_completely(self):
+        # Escenario: cotización completa, cliente dice solo
+        # "Hola, necesito un presupuesto" sin datos nuevos
+        # El estado debe quedar completamente vacío
+        complete_state = BotState(
+            origin_district="Surco", destination_district="Miraflores",
+            origin_floor=1, destination_floor=2,
+            items=["cama"],
+        )
+        agent = ScriptedAgent([
+            output(
+                updates={},
+                requested=["origin_district", "destination_district"],
+                reply="Claro, para empezar ¿de dónde a dónde?",
+                action="new_quote"
+            ),
+            output(
+                updates={},  # Sin datos nuevos
+                requested=["origin_district", "destination_district"],
+                reply="Claro, para empezar ¿de dónde a dónde?",
+                action="new_quote"
+            )
+        ])
+        result = ConversationService(agent).process_turn(
+            state=complete_state,
+            customer_message="Hola, necesito un presupuesto",
+            commercial_status="quoted",
+        )
+        # Estado completamente vacío (no hay datos nuevos en mensaje)
+        self.assertIsNone(result.state.origin_district)
+        self.assertIsNone(result.state.destination_district)
+        self.assertEqual(result.state.items, [])
+        # Debe estar pidiendo datos iniciales
+        self.assertEqual(result.required_missing, ["origin_district", "destination_district", "origin_floor", "destination_floor", "items"])
+        self.assertEqual(result.llm_calls, 2)

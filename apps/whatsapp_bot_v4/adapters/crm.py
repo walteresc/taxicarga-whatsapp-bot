@@ -17,7 +17,7 @@ class CRMSyncResult:
 class CRMV4Adapter:
     LEAD_FIELDS = (
         "tipo_servicio", "distrito_origen", "distrito_destino", "piso_origen",
-        "piso_destino", "acceso_origen", "acceso_destino", "lista_objetos", "estado",
+        "piso_destino", "acceso_origen", "acceso_destino", "lista_objetos", "modalidad_servicio", "estado",
     )
 
     @transaction.atomic
@@ -104,6 +104,8 @@ class CRMV4Adapter:
             lead.acceso_destino = str(state.destination_access)
         if state.items:
             lead.lista_objetos = "\n".join(state.items)
+        if state.packing_modalidad:
+            lead.modalidad_servicio = state.packing_modalidad
         return lead
 
     @staticmethod

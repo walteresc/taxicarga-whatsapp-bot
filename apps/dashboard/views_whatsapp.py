@@ -1,10 +1,14 @@
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db.models import Q
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
+import logging
+
+logger = logging.getLogger(__name__)
 
 from apps.clientes.models import Conversacion as ConversacionLegacy
 from apps.dashboard.permissions import whatsapp_required
@@ -58,10 +62,8 @@ def whatsapp_conversacion_accion(request, conversation_id):
     try:
         if accion == "take":
             tomar_conversacion(conversacion.id, request.user)
-            messages.success(request, "Conversacion tomada. Bot pausado.")
         elif accion == "return_bot":
             devolver_al_bot(conversacion.id, request.user, request.POST.get("instruction", "esperar"))
-            messages.success(request, "Conversacion devuelta al bot.")
         elif accion == "quote":
             enviar_a_cotizar(
                 conversacion.id,
@@ -69,13 +71,10 @@ def whatsapp_conversacion_accion(request, conversation_id):
                 motivo=request.POST.get("reason", "Revision solicitada por asesor"),
                 datos_faltantes=conversacion.datos_faltantes,
             )
-            messages.success(request, "Solicitud enviada a Por cotizar.")
         elif accion == "close":
             cerrar_conversacion(conversacion.id, request.user)
-            messages.success(request, "Conversacion cerrada.")
         elif accion == "reply":
             _enviar_respuesta(conversacion, request.user, request.POST.get("message", ""))
-            messages.success(request, "Respuesta enviada.")
         else:
             messages.error(request, "Accion no reconocida.")
     except (ConversacionOcupada, TransicionConversacionInvalida) as exc:
@@ -86,10 +85,17 @@ def whatsapp_conversacion_accion(request, conversation_id):
 
 
 def _filtrar_conversaciones(queryset, request):
+    from datetime import timedelta
     search = request.GET.get("q", "").strip()
     state = request.GET.get("state", "all")
     channel = request.GET.get("channel", "")
     advisor = request.GET.get("advisor", "")
+
+    # Filtrar últimas 24h (como polling)
+    queryset = queryset.filter(
+        creada_en__gte=timezone.now() - timedelta(hours=24)
+    )
+
     if search:
         queryset = queryset.filter(
             Q(cliente__nombre__icontains=search)
@@ -113,7 +119,7 @@ def _filtrar_conversaciones(queryset, request):
         queryset = queryset.filter(channel_id=int(channel))
     if advisor.isdigit():
         queryset = queryset.filter(responsable_id=int(advisor))
-    return queryset.order_by("-ultima_actividad")
+    return queryset.order_by("-actualizada_en", "-id")
 
 
 def _seleccionar_conversacion(queryset, conversation_id):
@@ -127,32 +133,18 @@ def _seleccionar_conversacion(queryset, conversation_id):
 def _mensajes_para_chat(conversacion):
     if not conversacion:
         return []
-    normalizados = list(conversacion.mensajes.select_related("autor", "evidencia").all())
-    if normalizados:
-        return [
-            {
-                "origen": mensaje.origen,
-                "contenido": mensaje.contenido,
-                "tipo": mensaje.tipo,
-                "estado": mensaje.estado,
-                "fecha": mensaje.fecha_mensaje,
-                "evidencia": mensaje.evidencia,
-            }
-            for mensaje in normalizados
-        ]
-    resultado = []
-    for legacy in ConversacionLegacy.objects.filter(cliente=conversacion.cliente).order_by("fecha"):
-        if legacy.mensaje_entrada:
-            resultado.append({
-                "origen": "cliente", "contenido": legacy.mensaje_entrada,
-                "tipo": "texto", "estado": "recibido", "fecha": legacy.fecha,
-            })
-        if legacy.mensaje_salida:
-            resultado.append({
-                "origen": "bot", "contenido": legacy.mensaje_salida,
-                "tipo": "texto", "estado": "enviado", "fecha": legacy.fecha,
-            })
-    return resultado
+    mensajes = list(conversacion.mensajes.select_related("autor", "evidencia").all())
+    return [
+        {
+            "origen": mensaje.origen,
+            "contenido": mensaje.contenido,
+            "tipo": mensaje.tipo,
+            "estado": mensaje.estado,
+            "fecha": mensaje.fecha_mensaje,
+            "evidencia": mensaje.evidencia,
+        }
+        for mensaje in mensajes
+    ]
 
 
 def _ficha_lead(lead):
@@ -196,30 +188,90 @@ def _asesores_activos():
     ).distinct().order_by("first_name", "username")
 
 
+@login_required
+@whatsapp_required
+def api_active_conversations(request):
+    """API endpoint: traer conversaciones activas (últimas 24h, no cerradas)"""
+    from datetime import timedelta
+    from apps.whatsapp_bot_v4.models import ConversationOwnership
+
+    conversations = ConversacionWhatsApp.objects.filter(
+        creada_en__gte=timezone.now() - timedelta(hours=24),
+        estado_atencion__in=[ConversacionWhatsApp.ATENCION_BOT, ConversacionWhatsApp.ATENCION_ASESOR]
+    ).select_related('cliente').order_by('-actualizada_en', '-id')[:100]
+
+    data = []
+    for conv in conversations:
+        ownership = ConversationOwnership.objects.filter(conversation=conv).first()
+        data.append({
+            'id': conv.id,
+            'cliente_phone': conv.cliente.telefono if conv.cliente else 'N/A',
+            'cliente_nombre': conv.cliente.nombre if conv.cliente else 'Sin nombre',
+            'estado_atencion': conv.estado_atencion,
+            'owner_type': ownership.owner_type if ownership else 'bot',
+            'actualizada_en': conv.actualizada_en.isoformat(),
+            'ultima_actividad': conv.ultima_actividad.isoformat() if conv.ultima_actividad else None,
+        })
+
+    return JsonResponse({'conversations': data})
+
+
 def _enviar_respuesta(conversacion, actor, contenido):
     contenido = contenido.strip()
     if not contenido:
         raise TransicionConversacionInvalida("Escribe un mensaje.")
     conversacion = tomar_conversacion(conversacion.id, actor)
-    resultado = send_whatsapp_message(
-        conversacion.cliente.telefono,
-        contenido,
-        channel=conversacion.channel,
-    )
-    meta_id = ""
-    if isinstance(resultado, dict) and resultado.get("messages"):
-        meta_id = resultado["messages"][0].get("id", "")
+
+    # PAUSA BOT: asesor tiene control (desde CRM)
+    from apps.whatsapp_bot_v4.models import ConversationOwnership
+    ownership, _ = ConversationOwnership.objects.get_or_create(conversation=conversacion)
+    ownership.owner_type = ConversationOwnership.OWNER_ADVISOR
+    ownership.control_mode = ConversationOwnership.MODE_MANUAL
+    ownership.advisor_id = actor
+    ownership.last_human_message_at = timezone.now()
+    ownership.save()
+
+    # 1. GUARDAR EN BD PRIMERO (para que aparezca inmediatamente en el chat)
     mensaje = MensajeWhatsApp.objects.create(
         conversacion=conversacion,
-        meta_message_id=meta_id,
         direccion=MensajeWhatsApp.SALIENTE,
         origen=MensajeWhatsApp.ORIGEN_ASESOR,
         tipo="texto",
         contenido=contenido,
         autor=actor,
-        estado="enviado" if meta_id else "error",
-        error_detalle="" if meta_id else str(resultado.get("reason", "Meta no confirmo el envio")) if isinstance(resultado, dict) else "Meta no confirmo el envio",
+        estado="enviando",  # Estado temporal
+        error_detalle="",
     )
+
+    # 2. ENVIAR A WHATSAPP (Meta o YCloud)
+    resultado = send_whatsapp_message(
+        conversacion.cliente.telefono,
+        contenido,
+        channel=conversacion.channel,
+    )
+
+    # 3. ACTUALIZAR ESTADO SEGÚN RESULTADO
+    meta_id = ""
+    if isinstance(resultado, dict):
+        if resultado.get("sent"):  # YCloud
+            meta_id = resultado.get("id", "")
+            mensaje.estado = "enviado"
+        elif resultado.get("messages"):  # Meta
+            meta_id = resultado["messages"][0].get("id", "")
+            mensaje.estado = "enviado"
+        else:  # Error
+            error_msg = resultado.get("reason", "Error al enviar")
+            mensaje.estado = "error"
+            mensaje.error_detalle = error_msg
+    else:
+        mensaje.estado = "error"
+        mensaje.error_detalle = "Respuesta inválida del servidor"
+
+    if meta_id:
+        mensaje.meta_message_id = meta_id
+
+    mensaje.save()
+
     ConversacionLegacy.objects.create(cliente=conversacion.cliente, mensaje_salida=contenido)
     conversacion.ultimo_mensaje_enviado = timezone.now()
     conversacion.ultima_actividad = timezone.now()
@@ -233,3 +285,57 @@ def _si_no(value):
     if value is None:
         return "Pendiente"
     return "Si" if value else "No"
+
+
+@login_required
+@whatsapp_required
+def conversation_messages(request, conversation_id):
+    """Endpoint para traer mensajes de conversación (para polling en vivo)"""
+    conversation = get_object_or_404(ConversacionWhatsApp, pk=conversation_id)
+    messages = MensajeWhatsApp.objects.filter(
+        conversacion=conversation
+    ).order_by('fecha_mensaje')
+
+    messages_list = list(messages.values(
+        'id', 'origen', 'contenido', 'fecha_mensaje', 'estado'
+    ))
+
+    logger.info(f"conversation_messages: {conversation_id} → {len(messages_list)} mensajes")
+
+    return JsonResponse({
+        'mensajes': messages_list,
+        'total': len(messages_list)
+    })
+
+
+@login_required
+@whatsapp_required
+def pause_bot(request, conversation_id):
+    """Asesor está escribiendo, pausar bot"""
+    conversation = get_object_or_404(ConversacionWhatsApp, pk=conversation_id)
+    from apps.whatsapp_bot_v4.models import ConversationOwnership
+    ownership, created = ConversationOwnership.objects.get_or_create(
+        conversation=conversation
+    )
+    ownership.owner_type = ConversationOwnership.OWNER_ADVISOR
+    ownership.advisor_id = request.user
+    ownership.control_mode = ConversationOwnership.MODE_MANUAL
+    ownership.save()
+    logger.info(f"Bot paused by advisor {request.user.id} for conversation {conversation_id}")
+    return JsonResponse({'status': 'paused'})
+
+
+@login_required
+@whatsapp_required
+def resume_bot(request, conversation_id):
+    """Asesor terminó, reactivar bot"""
+    conversation = get_object_or_404(ConversacionWhatsApp, pk=conversation_id)
+    from apps.whatsapp_bot_v4.models import ConversationOwnership
+    ownership, created = ConversationOwnership.objects.get_or_create(
+        conversation=conversation
+    )
+    ownership.owner_type = ConversationOwnership.OWNER_BOT
+    ownership.advisor_id = None
+    ownership.save()
+    logger.info(f"Bot reactivated for conversation {conversation_id}")
+    return JsonResponse({'status': 'active'})

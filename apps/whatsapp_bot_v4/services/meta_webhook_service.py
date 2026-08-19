@@ -1,3 +1,5 @@
+import logging
+import time
 from dataclasses import dataclass
 
 from django.db import IntegrityError, transaction
@@ -9,6 +11,12 @@ from apps.whatsapp.models import ConversacionWhatsApp, MensajeWhatsApp, WhatsApp
 from ..adapters.meta import InboundMessage, OutboundMessage
 from ..models import V4ChannelRoute
 from .persistent_conversation_service import PersistentConversationService
+
+logger = logging.getLogger(__name__)
+
+ALLOWED_NUMBERS = [
+    "+51995403320",
+]
 
 
 @dataclass(frozen=True)
@@ -28,9 +36,19 @@ class MetaWebhookV4Service:
         self.chatwoot_adapter = chatwoot_adapter
 
     def process_payload(self, payload) -> MetaTurnResult:
+        t0_total = time.time()
+
         inbound = self.meta_adapter.parse_inbound(payload)
         if inbound is None:
             return MetaTurnResult("ignored")
+
+        if ALLOWED_NUMBERS and f"+{inbound.customer_id}" not in ALLOWED_NUMBERS:
+            logger.debug(
+                "bot_v4_whitelist_reject customer_id=%s not in allowed_numbers=%s",
+                inbound.customer_id, ALLOWED_NUMBERS,
+            )
+            return MetaTurnResult("whitelist_rejected")
+
         channel = self._resolve_channel(inbound.channel_id)
         if channel is None:
             return MetaTurnResult("ignored_channel")
@@ -39,6 +57,10 @@ class MetaWebhookV4Service:
         if not created:
             return MetaTurnResult("duplicate", inbound_message_id=incoming.pk)
         self._safe_project_customer(incoming)
+
+        t1_setup = time.time()
+        setup_ms = (t1_setup - t0_total) * 1000
+
         # Obtener request_boundary_at para filtrar historial
         from ..models import BotConversationState
         bot_state_model = BotConversationState.objects.filter(
@@ -51,6 +73,10 @@ class MetaWebhookV4Service:
             exclude_message_id=incoming.pk,
             request_boundary_at=request_boundary_at,
         )
+
+        t2_context = time.time()
+        context_ms = (t2_context - t1_setup) * 1000
+
         persistent_result = self.persistent_service.process_turn(
             conversation_key=f"whatsapp:{conversation.pk}",
             conversation=conversation,
@@ -60,8 +86,18 @@ class MetaWebhookV4Service:
             recent_conversation=history,
             last_bot_message=last_bot,
         )
+
+        t3_process = time.time()
+        process_ms = (t3_process - t2_context) * 1000
+
         turn = persistent_result.turn
         if turn.suppressed or not turn.reply:
+            total_ms = (t3_process - t0_total) * 1000
+            logger.info(
+                "bot_v4_webhook_latency conversation_id=%s status=suppressed "
+                "setup=%0.1fms context=%0.1fms process_turn=%0.1fms total=%0.1fms llm_calls=%d",
+                conversation.pk, setup_ms, context_ms, process_ms, total_ms, turn.llm_calls,
+            )
             return MetaTurnResult(
                 "suppressed",
                 inbound_message_id=incoming.pk,
@@ -76,10 +112,18 @@ class MetaWebhookV4Service:
             contenido=turn.reply,
             estado="pendiente",
         )
+
+        t4_db = time.time()
+        db_ms = (t4_db - t3_process) * 1000
+
         send_result = self.meta_adapter.send_text(
             channel,
             OutboundMessage(inbound.customer_id, turn.reply, conversation.pk),
         )
+
+        t5_send = time.time()
+        send_ms = (t5_send - t4_db) * 1000
+
         if send_result.sent:
             outgoing.meta_message_id = send_result.external_message_id
             outgoing.estado = "enviado"
@@ -92,6 +136,17 @@ class MetaWebhookV4Service:
             outgoing.error_detalle = send_result.error_message
             outgoing.save(update_fields=["estado", "error_codigo", "error_detalle"])
             status = "send_failed"
+
+        t6_total = time.time()
+        total_ms = (t6_total - t0_total) * 1000
+
+        logger.info(
+            "bot_v4_webhook_latency conversation_id=%s status=%s "
+            "setup=%0.1fms context=%0.1fms process_turn=%0.1fms db=%0.1fms send=%0.1fms total=%0.1fms llm_calls=%d",
+            conversation.pk, status,
+            setup_ms, context_ms, process_ms, db_ms, send_ms, total_ms, turn.llm_calls,
+        )
+
         return MetaTurnResult(
             status,
             incoming.pk,

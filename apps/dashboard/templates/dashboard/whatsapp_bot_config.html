@@ -41,8 +41,40 @@
   .rule { display:flex; gap:8px; align-items:flex-start; font-size:12px; color:#475467; }
   .save-row { display:flex; justify-content:flex-end; margin-top:16px; }
   .save-btn { border:0; border-radius:7px; padding:11px 18px; background:#f57c00; color:#fff; font-weight:750; cursor:pointer; }
+  /* Tab styles */
+  .config-tabs { display:flex; gap:12px; margin-bottom:18px; border-bottom:2px solid #e3e7ed; }
+  .config-tab { padding:12px 18px; cursor:pointer; border:none; background:transparent; color:#667085; font-weight:600; font-size:13px; border-bottom:3px solid transparent; margin-bottom:-2px; }
+  .config-tab.active { color:#f57c00; border-bottom-color:#f57c00; }
+  .config-tab-content { display:none; }
+  .config-tab-content.active { display:block; }
+  /* Global control styles */
+  .global-status-box { background:#f0f9ff; border:1px solid #bfdbfe; border-radius:9px; padding:15px; margin-bottom:18px; }
+  .status-badge { display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:12px; font-weight:600; font-size:12px; }
+  .status-badge.active { background:#d1fae5; color:#065f46; }
+  .status-badge.paused { background:#fee2e2; color:#991b1b; }
+  .btn-group { display:flex; gap:9px; margin-top:12px; }
+  .btn-action { border:0; border-radius:7px; padding:9px 15px; font-size:12px; font-weight:700; cursor:pointer; transition:all 0.2s; }
+  .btn-pause { background:#dc2626; color:#fff; }
+  .btn-pause:hover { background:#991b1b; }
+  .btn-activate { background:#10b981; color:#fff; }
+  .btn-activate:hover { background:#059669; }
+  .conversation-list { margin-top:12px; }
+  .conversation-row { display:flex; justify-content:space-between; align-items:center; padding:12px; background:#f9fafb; border-radius:7px; margin-bottom:8px; border-left:3px solid #f57c00; }
+  .conversation-info { flex:1; }
+  .conversation-phone { font-weight:600; font-size:13px; }
+  .conversation-owner { font-size:11px; color:#667085; margin-top:3px; }
+  .conversation-actions { display:flex; gap:6px; }
+  .btn-small { padding:6px 12px; font-size:11px; border:0; border-radius:6px; cursor:pointer; transition:all 0.2s; }
+  .btn-take { background:#2563eb; color:#fff; }
+  .btn-take:hover { background:#1d4ed8; }
+  .btn-return { background:#8b5cf6; color:#fff; }
+  .btn-return:hover { background:#7c3aed; }
+  .status-msg { padding:12px; border-radius:7px; margin-bottom:12px; display:none; font-size:12px; font-weight:600; }
+  .status-msg.show { display:block; }
+  .status-msg.success { background:#d1fae5; color:#065f46; border:1px solid #6ee7b7; }
+  .status-msg.error { background:#fee2e2; color:#991b1b; border:1px solid #fca5a5; }
   @media(max-width:1100px){.channel-grid{grid-template-columns:1fr 1fr}.mode-grid{grid-template-columns:1fr 1fr}}
-  @media(max-width:800px){.config-grid{grid-template-columns:1fr}}
+  @media(max-width:800px){.config-grid{grid-template-columns:1fr}.config-tabs{flex-wrap:wrap}}
   @media(max-width:600px){.bot-config{padding:14px}.channel-grid,.mode-grid,.field-grid{grid-template-columns:1fr}}
 </style>
 {% endblock %}
@@ -50,6 +82,15 @@
 {% block content %}
 <div class="bot-config">
   <header class="config-head"><h1>Configuración del Bot</h1></header>
+
+  <!-- TABS -->
+  <div class="config-tabs">
+    <button class="config-tab active" onclick="switchTab(event, 'channels')">📱 Canales</button>
+    <button class="config-tab" onclick="switchTab(event, 'global-control')">🤖 Control Global</button>
+  </div>
+
+  <!-- TAB: CANALES -->
+  <div id="channels" class="config-tab-content active">
   <section class="channel-grid">
     {% for card in channel_cards %}<a class="channel-card {% if channel and channel.id == card.channel.id %}active{% endif %}" href="?channel={{ card.channel.id }}">
       <div class="channel-name"><span class="mdi mdi-whatsapp"></span>{{ card.channel.nombre }}</div>
@@ -88,5 +129,249 @@
     </div>
     <div class="save-row"><button class="save-btn" type="submit">Guardar configuración</button></div>
   </form>{% else %}<div class="config-empty">Selecciona un canal para editar su configuración.</div>{% endif %}
+  </div>
+
+  <!-- TAB: CONTROL GLOBAL -->
+  <div id="global-control" class="config-tab-content">
+    <div class="config-panel">
+      <div class="config-panel-title">🤖 Control Global del Bot</div>
+      <div class="config-panel-body">
+        <div class="status-msg" id="statusMsg"></div>
+
+        <div class="global-status-box">
+          <div style="display:flex; align-items:center; gap:12px;">
+            <span class="status-badge active" id="globalStatusBadge">🟢 Activo</span>
+            <span id="pausedInfo" style="display:none; font-size:12px; color:#667085;"></span>
+          </div>
+          <div class="btn-group">
+            <button class="btn-action btn-pause" id="pauseGlobalBtn" onclick="pauseGlobal()">⏸ Pausar Bot Global</button>
+            <button class="btn-action btn-activate" id="activateGlobalBtn" onclick="activateGlobal()" style="display:none;">▶ Activar Bot Global</button>
+          </div>
+          <p style="font-size:11px; color:#667085; margin-top:12px; margin-bottom:0;">
+            Pausar el bot detiene su respuesta automática en <strong>todas las conversaciones</strong>. Los asesores pueden seguir escribiendo manualmente.
+          </p>
+        </div>
+
+        <div style="margin-top:18px; padding-top:18px; border-top:1px solid #e3e7ed;">
+          <div class="section-label" style="margin-bottom:12px;">Conversaciones Activas</div>
+          <div class="conversation-list" id="conversationsList">
+            <p style="color:#667085; font-size:12px;">Cargando conversaciones...</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+'use strict';
+
+const API_BASE = '/webhooks/api/control';
+const CSRF_TOKEN = document.querySelector('meta[name="csrf-token"]')?.content || '';
+
+console.log('Bot Control Panel JS loaded. API_BASE:', API_BASE, 'CSRF_TOKEN:', CSRF_TOKEN);
+
+function switchTab(e, tabName) {
+  e.preventDefault();
+  document.querySelectorAll('.config-tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.config-tab').forEach(el => el.classList.remove('active'));
+  document.getElementById(tabName).classList.add('active');
+  e.target.classList.add('active');
+  if (tabName === 'global-control') {
+    loadBotStatus();
+    loadConversations();
+  }
+}
+
+function showMessage(msg, type = 'success') {
+  const el = document.getElementById('statusMsg');
+  if (!el) return console.error('statusMsg element not found');
+  el.textContent = msg;
+  el.className = `status-msg show ${type}`;
+  setTimeout(() => el.classList.remove('show'), 5000);
+}
+
+async function loadBotStatus() {
+  try {
+    console.log('loadBotStatus: fetching', `${API_BASE}/bot-status/`);
+    const res = await fetch(`${API_BASE}/bot-status/`);
+    console.log('loadBotStatus response:', res.status);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    console.log('loadBotStatus data:', data);
+    updateStatusUI(data);
+  } catch (err) {
+    console.error('loadBotStatus error:', err);
+    showMessage('⚠ Error cargando estado: ' + err.message, 'error');
+  }
+}
+
+function updateStatusUI(data) {
+  console.log('updateStatusUI called with data:', data);
+  const badge = document.getElementById('globalStatusBadge');
+  const pauseBtn = document.getElementById('pauseGlobalBtn');
+  const activateBtn = document.getElementById('activateGlobalBtn');
+  const pausedInfo = document.getElementById('pausedInfo');
+
+  if (!badge || !pauseBtn || !activateBtn || !pausedInfo) {
+    console.error('UI elements not found');
+    return;
+  }
+
+  if (data.is_paused === true) {
+    console.log('Setting UI to PAUSED state');
+    badge.className = 'status-badge paused';
+    badge.textContent = '🔴 Pausado';
+    pausedInfo.style.display = 'inline';
+    pausedInfo.textContent = data.paused_at ? `desde ${new Date(data.paused_at).toLocaleTimeString()}` : '';
+    pauseBtn.style.display = 'none';
+    activateBtn.style.display = 'block';
+  } else {
+    console.log('Setting UI to ACTIVE state');
+    badge.className = 'status-badge active';
+    badge.textContent = '🟢 Activo';
+    pausedInfo.style.display = 'none';
+    pauseBtn.style.display = 'block';
+    activateBtn.style.display = 'none';
+  }
+}
+
+async function loadConversations() {
+  try {
+    const res = await fetch(`${API_BASE}/conversations/`, {
+      headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    });
+    if (!res.ok) throw new Error('Failed');
+    const convs = await res.json();
+    renderConversations(convs);
+  } catch (err) {
+    console.error(err);
+    document.getElementById('conversationsList').innerHTML =
+      '<p style="color:#dc2626; font-size:12px;">Error al cargar conversaciones</p>';
+  }
+}
+
+function renderConversations(convs) {
+  const container = document.getElementById('conversationsList');
+  if (!convs.length) {
+    container.innerHTML = '<p style="color:#667085; font-size:12px;">No hay conversaciones activas</p>';
+    return;
+  }
+  container.innerHTML = convs.map(c => `
+    <div class="conversation-row">
+      <div class="conversation-info">
+        <div class="conversation-phone">📞 ${c.cliente_phone}</div>
+        <div class="conversation-owner">
+          ${c.owner_type === 'bot' ? '🤖 Bot' : `👤 ${c.advisor_name || 'Asesor'}`}
+        </div>
+      </div>
+      <div class="conversation-actions">
+        ${c.owner_type === 'bot'
+          ? `<button class="btn-small btn-take" onclick="takeControl(${c.id})">Tomar Control</button>`
+          : `<button class="btn-small btn-return" onclick="returnToBot(${c.id})">Devolver Bot</button>`}
+      </div>
+    </div>
+  `).join('');
+}
+
+async function pauseGlobal() {
+  console.log('pauseGlobal called', 'CSRF_TOKEN:', CSRF_TOKEN);
+  try {
+    const res = await fetch(`${API_BASE}/pause-global/`, {
+      method: 'POST',
+      headers: { 'X-CSRFToken': CSRF_TOKEN },
+      credentials: 'same-origin'
+    });
+    console.log('pauseGlobal response:', res.status);
+    if (res.ok) {
+      const data = await res.json();
+      console.log('pauseGlobal data:', data);
+      showMessage('✓ Bot pausado', 'success');
+      updateStatusUI(data);
+    } else {
+      const error = await res.text();
+      console.error('pauseGlobal error:', error);
+      showMessage('✗ Error: ' + res.status, 'error');
+    }
+  } catch (err) {
+    console.error('pauseGlobal catch:', err);
+    showMessage('✗ Error de conexión: ' + err.message, 'error');
+  }
+}
+
+async function activateGlobal() {
+  console.log('activateGlobal called');
+  try {
+    const res = await fetch(`${API_BASE}/activate-global/`, {
+      method: 'POST',
+      headers: { 'X-CSRFToken': CSRF_TOKEN },
+      credentials: 'same-origin'
+    });
+    console.log('activateGlobal response:', res.status);
+    if (res.ok) {
+      const data = await res.json();
+      console.log('activateGlobal data:', data);
+      showMessage('✓ Bot activado', 'success');
+      updateStatusUI(data);
+    } else {
+      const error = await res.text();
+      console.error('activateGlobal error:', error);
+      showMessage('✗ Error: ' + res.status, 'error');
+    }
+  } catch (err) {
+    console.error('activateGlobal catch:', err);
+    showMessage('✗ Error de conexión: ' + err.message, 'error');
+  }
+}
+
+async function takeControl(convId) {
+  try {
+    const res = await fetch(`${API_BASE}/transfer-to-advisor/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': CSRF_TOKEN
+      },
+      body: JSON.stringify({
+        conversation_id: convId,
+        advisor_id: {{ user.id }},
+        mode: 'manual'
+      })
+    });
+    if (res.ok) {
+      showMessage('✓ Controlando', 'success');
+      loadConversations();
+    } else {
+      showMessage('✗ Error', 'error');
+    }
+  } catch (err) {
+    console.error(err);
+    showMessage('✗ Error', 'error');
+  }
+}
+
+async function returnToBot(convId) {
+  try {
+    const res = await fetch(`${API_BASE}/return-to-bot/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': CSRF_TOKEN
+      },
+      body: JSON.stringify({ conversation_id: convId })
+    });
+    if (res.ok) {
+      showMessage('✓ Devuelto al bot', 'success');
+      loadConversations();
+    } else {
+      showMessage('✗ Error', 'error');
+    }
+  } catch (err) {
+    console.error(err);
+    showMessage('✗ Error', 'error');
+  }
+}
+</script>
 {% endblock %}

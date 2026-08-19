@@ -30,7 +30,7 @@ MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
 def send_whatsapp_message(
     to, body, channel=None, *, author_type=None, conversation_id=None
 ):
-    """Envía un mensaje simple o de plantilla por WhatsApp."""
+    """Envía un mensaje simple o de plantilla por WhatsApp (Meta o YCloud)."""
     import json
     import requests
 
@@ -46,10 +46,25 @@ def send_whatsapp_message(
         )
         return {"sent": False, "reason": "ownership_gate"}
 
-    is_template = isinstance(body, dict) and body.get("type") == "template"
+    if not channel or not channel.activo:
+        logger.info("WhatsApp send omitted: channel inactive")
+        return {"sent": False, "reason": "channel_inactive"}
 
+    # Determinar si usar YCloud o Meta
+    if settings.YCLOUD_ENABLED and settings.YCLOUD_API_KEY:
+        logger.info(f"Usando YCloud para enviar a {_masked_phone(to)}")
+        from apps.whatsapp_bot_v4.services.ycloud_webhook_service import send_via_ycloud
+        try:
+            send_via_ycloud(to, body if isinstance(body, str) else body.get('text', {}).get('body', ''))
+            return {"sent": True, "reason": "ycloud"}
+        except Exception as e:
+            logger.error(f"Error enviando con YCloud: {e}")
+            return {"sent": False, "reason": "ycloud_error", "error": str(e)}
+
+    # Fallback a Meta
+    is_template = isinstance(body, dict) and body.get("type") == "template"
     phone_number_id = getattr(channel, "phone_number_id", "")
-    if not channel or not channel.activo or not settings.WHATSAPP_ACCESS_TOKEN or not phone_number_id:
+    if not settings.WHATSAPP_ACCESS_TOKEN or not phone_number_id:
         logger.info(
             "WhatsApp send omitted (channel_id=%s, recipient=%s).",
             getattr(channel, "id", None), _masked_phone(to),
@@ -87,13 +102,22 @@ def send_whatsapp_message(
                 error_subcode = error.get("error_subcode")
             except ValueError:
                 pass
-        logger.exception(
-            "Error enviando mensaje de WhatsApp a %s (HTTP %s, codigo %s, subcodigo %s)",
-            _masked_phone(to),
-            status_code,
-            error_code,
-            error_subcode,
-        )
+
+        # Detección explícita de error 190 (token expirado/inválido)
+        if error_code == 190:
+            logger.error(
+                "META ACCESS TOKEN EXPIRADO O INVÁLIDO - regenerar en Business Settings "
+                "(conversation=%s, recipient=%s, status=%s)",
+                conversation_id, _masked_phone(to), status_code,
+            )
+        else:
+            logger.exception(
+                "Error enviando mensaje de WhatsApp a %s (HTTP %s, codigo %s, subcodigo %s)",
+                _masked_phone(to),
+                status_code,
+                error_code,
+                error_subcode,
+            )
         return {
             "sent": False,
             "reason": "request_error",

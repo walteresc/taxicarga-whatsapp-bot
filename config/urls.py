@@ -24,5 +24,5 @@ urlpatterns = [
     path("api/whatsapp-channels/<int:channel_id>/", whatsapp_channel_detail, name="api-whatsapp-channel-detail"),
     path("webhook/whatsapp/", include("apps.whatsapp.urls")),
     path("webhooks/chatwoot/", include("apps.integrations.urls")),
-    path("webhooks/whatsapp/v4/", include("apps.whatsapp_bot_v4.urls")),
+    path("webhooks/", include("apps.whatsapp_bot_v4.urls")),
 ]

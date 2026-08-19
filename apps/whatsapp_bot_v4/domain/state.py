@@ -17,6 +17,7 @@ class BotState:
     origin_access: Access | None = None
     destination_access: Access | None = None
     items: list[str] = field(default_factory=list)
+    packing_modalidad: str | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)

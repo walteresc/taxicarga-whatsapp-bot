@@ -80,6 +80,16 @@ def tomar_conversacion(conversacion_id, actor):
         conversacion.bot_pausado = True
         conversacion.instruccion_retorno_bot = ""
         conversacion.ultima_actividad = timezone.now()
+
+        # PAUSA BOT: asesor toma control
+        from apps.whatsapp_bot_v4.models import ConversationOwnership
+        ownership, _ = ConversationOwnership.objects.get_or_create(conversation=conversacion)
+        ownership.owner_type = ConversationOwnership.OWNER_ADVISOR
+        ownership.control_mode = ConversationOwnership.MODE_MANUAL
+        ownership.advisor_id = actor
+        ownership.last_human_message_at = timezone.now()
+        ownership.save()
+
         conversacion.save(update_fields=[
             "estado_atencion",
             "responsable",
@@ -107,6 +117,15 @@ def devolver_al_bot(conversacion_id, actor, instruccion):
         conversacion.bot_pausado = False
         conversacion.instruccion_retorno_bot = instruccion
         conversacion.ultima_actividad = timezone.now()
+
+        # DEVUELVE BOT: bot retoma control
+        from apps.whatsapp_bot_v4.models import ConversationOwnership
+        ownership, _ = ConversationOwnership.objects.get_or_create(conversation=conversacion)
+        ownership.owner_type = ConversationOwnership.OWNER_BOT
+        ownership.control_mode = ConversationOwnership.MODE_AUTOMATIC
+        ownership.advisor_id = None
+        ownership.save()
+
         conversacion.save(update_fields=[
             "estado_atencion",
             "responsable",

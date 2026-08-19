@@ -135,6 +135,12 @@ WHATSAPP_PHONE_NUMBER_ID = config("WHATSAPP_PHONE_NUMBER_ID", default="")
 WHATSAPP_API_VERSION = config("WHATSAPP_API_VERSION", default="v20.0")
 WHATSAPP_BOT_COLLECTING_TIMEOUT_HOURS = int(config("WHATSAPP_BOT_COLLECTING_TIMEOUT_HOURS", default="6"))
 
+# YCloud Configuration (API v2 - uses E.164 phone number, not channel_id)
+YCLOUD_API_KEY = env_value("YCLOUD_API_KEY", default="")
+YCLOUD_WEBHOOK_SECRET = env_value("YCLOUD_WEBHOOK_SECRET", default="")
+YCLOUD_SENDER_PHONE = config("YCLOUD_SENDER_PHONE", default="")  # E.164 format: +51967619238
+YCLOUD_ENABLED = env_bool("YCLOUD_ENABLED", default=False)
+
 CHATWOOT_INTEGRATION_ENABLED = env_bool("CHATWOOT_INTEGRATION_ENABLED", default=False)
 CHATWOOT_SHADOW_SYNC_ENABLED = env_bool("CHATWOOT_SHADOW_SYNC_ENABLED", default=False)
 CHATWOOT_AGENT_OUTBOUND_ENABLED = env_bool("CHATWOOT_AGENT_OUTBOUND_ENABLED", default=False)
@@ -195,6 +201,11 @@ LOGGING = {
         "apps.whatsapp": {
             "handlers": ["console", "file"],
             "level": DJANGO_LOG_LEVEL,
+            "propagate": True,
+        },
+        "apps.whatsapp_bot_v4.services": {
+            "handlers": ["console", "file"],
+            "level": "INFO",
             "propagate": True,
         },
     },

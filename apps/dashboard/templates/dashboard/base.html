@@ -191,6 +191,13 @@
     </select>
     {% endif %}
 
+    <!-- CONTROL GLOBAL DEL BOT -->
+    <div style="display:flex; align-items:center; gap:8px; margin:0 auto;">
+      <span style="font-size:11px; font-weight:600; color:#e0edf2;">Bot:</span>
+      <span id="headerBotStatus" style="display:inline-flex; align-items:center; gap:4px; padding:4px 10px; border-radius:12px; background:rgba(16,185,129,0.2); color:#d1fae5; font-size:11px; font-weight:600;">🟢 Activo</span>
+      <button id="headerBotToggleBtn" onclick="toggleHeaderBotStatus()" style="background:#dc2626; color:#fff; border:none; border-radius:4px; padding:4px 10px; font-size:10px; font-weight:600; cursor:pointer; transition:all 0.2s;">Pausar</button>
+    </div>
+
     <div class="user-menu">
       <div class="header-link" id="user-name" tabindex="0" aria-haspopup="true" aria-expanded="false">
         {{ user.get_username|default:"Usuario" }} &#x25BC;
@@ -325,6 +332,70 @@
       localStorage.setItem('sidebar-collapsed', isCollapsed);
       toggleBtn.textContent = isCollapsed ? '⟩' : '☰';
     });
+  </script>
+
+  <!-- BOT STATUS CONTROL -->
+  <script>
+  'use strict';
+  const BOT_API = '/webhooks/api/control';
+  const CSRF_TOKEN_META = document.querySelector('meta[name="csrf-token"]');
+  const CSRF_TOKEN = CSRF_TOKEN_META ? CSRF_TOKEN_META.content : '';
+
+  async function loadHeaderBotStatus() {
+    try {
+      const res = await fetch(`${BOT_API}/bot-status/`);
+      if (res.ok) {
+        const data = await res.json();
+        updateHeaderBotUI(data);
+      }
+    } catch (e) {
+      console.error('Error loading bot status:', e);
+    }
+  }
+
+  function updateHeaderBotUI(data) {
+    const statusEl = document.getElementById('headerBotStatus');
+    const btnEl = document.getElementById('headerBotToggleBtn');
+    if (!statusEl || !btnEl) return;
+
+    if (data.is_paused) {
+      statusEl.style.background = 'rgba(220,38,38,0.2)';
+      statusEl.style.color = '#fecaca';
+      statusEl.textContent = '🔴 Pausado';
+      btnEl.textContent = 'Activar';
+      btnEl.style.background = '#10b981';
+    } else {
+      statusEl.style.background = 'rgba(16,185,129,0.2)';
+      statusEl.style.color = '#d1fae5';
+      statusEl.textContent = '🟢 Activo';
+      btnEl.textContent = 'Pausar';
+      btnEl.style.background = '#dc2626';
+    }
+  }
+
+  async function toggleHeaderBotStatus() {
+    const statusEl = document.getElementById('headerBotStatus');
+    const isPaused = statusEl.textContent.includes('Pausado');
+    const endpoint = isPaused ? 'activate-global' : 'pause-global';
+
+    try {
+      const res = await fetch(`${BOT_API}/${endpoint}/`, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': CSRF_TOKEN }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        updateHeaderBotUI(data);
+      }
+    } catch (e) {
+      console.error('Error toggling bot status:', e);
+    }
+  }
+
+  // Cargar estado al iniciar
+  document.addEventListener('DOMContentLoaded', loadHeaderBotStatus);
+  // Refresh cada 15 segundos
+  setInterval(loadHeaderBotStatus, 15000);
   </script>
 
   <script src="https://cdn.jsdelivr.net/npm/vue@3.5.13/dist/vue.global.prod.js"></script>

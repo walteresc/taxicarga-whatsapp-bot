@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ConversationAction(str, Enum):
@@ -28,6 +28,7 @@ class StatePatch(BaseModel):
     origin_access: Literal["ascensor", "escaleras", "NOT_APPLICABLE"] | None = Field(None, description="Acceso asociado explícitamente al origen/salida.")
     destination_access: Literal["ascensor", "escaleras", "NOT_APPLICABLE"] | None = Field(None, description="Acceso asociado explícitamente al destino/llegada.")
     items: list[str] | None = Field(None, description="Todos los objetos/carga explícitos en mensaje actual.")
+    packing_modalidad: str | None = Field(None, description="Modalidad de embalaje solicitado por cliente: 'embalaje basico', 'embalaje premium', etc. Extraer solo si cliente menciona explícitamente embalaje.")
 
     def explicit_values(self) -> dict:
         return {

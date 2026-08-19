@@ -87,19 +87,19 @@ class QuoteFlowTests(TestCase):
     def test_all_data_one_turn_quotes(self):
         updates = self.complete.to_dict()
         service, _, _ = self.service([output(updates=updates, reply="Datos listos")])
-        result = self.process(service, "todo en un mensaje")
+        result = self.process(service, "de Surco a Miraflores, del piso 1 sin ascensor al 2 con escaleras, 1 cama")
         self.assertEqual(result.quote_decision.mode, AUTO_QUOTE)
 
     def test_no_safe_price_creates_pending_human(self):
         service, _, _ = self.service([output(updates=self.complete.to_dict(), reply="Datos listos")], fail=True)
-        result = self.process(service, "todo")
+        result = self.process(service, "de Surco a Miraflores, del piso 1 sin ascensor al 2 con escaleras, 1 cama")
         self.assertEqual(result.quote_decision.mode, HUMAN_QUOTE)
         self.assertEqual(SolicitudCotizacion.objects.filter(estado="pendiente").count(), 1)
         self.assertEqual(BotConversationState.objects.get().status, BotConversationState.STATUS_PENDING_HUMAN)
 
     def test_ok_after_quoted_skips_agent_and_quote(self):
         service, agent, pricing = self.service([output(updates=self.complete.to_dict(), reply="listo")])
-        self.process(service, "todo")
+        self.process(service, "de Surco a Miraflores, del piso 1 sin ascensor al 2 con escaleras, 1 cama")
         result = self.process(service, "ok")
         self.assertEqual((result.turn.llm_calls, agent.calls, pricing.call_count), (0, 1, 1))
         self.assertEqual(RevisionCotizacion.objects.count(), 1)
@@ -109,20 +109,20 @@ class QuoteFlowTests(TestCase):
             output(updates=self.complete.to_dict(), reply="listo"),
             output(reply="Perfecto"),
         ])
-        self.process(service, "todo")
+        self.process(service, "de Surco a Miraflores, del piso 1 sin ascensor al 2 con escaleras, 1 cama")
         self.process(service, "una cama")
         self.assertEqual((SolicitudCotizacion.objects.count(), RevisionCotizacion.objects.count()), (1, 1))
         self.assertEqual((agent.calls, pricing.call_count), (2, 1))
 
     def test_gracias_after_quoted_skips_collection(self):
         service, agent, _ = self.service([output(updates=self.complete.to_dict(), reply="listo")])
-        self.process(service, "todo")
+        self.process(service, "de Surco a Miraflores, del piso 1 sin ascensor al 2 con escaleras, 1 cama")
         result = self.process(service, "gracias")
         self.assertEqual((result.turn.required_missing, agent.calls), ([], 1))
 
     def test_ok_pending_human_does_not_duplicate_request(self):
         service, agent, _ = self.service([output(updates=self.complete.to_dict(), reply="listo")], fail=True)
-        self.process(service, "todo")
+        self.process(service, "de Surco a Miraflores, del piso 1 sin ascensor al 2 con escaleras, 1 cama")
         self.process(service, "ok")
         self.assertEqual((SolicitudCotizacion.objects.count(), agent.calls), (1, 1))
 
@@ -131,7 +131,7 @@ class QuoteFlowTests(TestCase):
             output(updates=self.complete.to_dict(), reply="listo"),
             output(corrections={"origin_district": "San Borja"}, reply="corregido"),
         ])
-        self.process(service, "todo")
+        self.process(service, "de Surco a Miraflores, del piso 1 sin ascensor al 2 con escaleras, 1 cama")
         result = self.process(service, "origen San Borja")
         self.assertEqual(result.turn.state.origin_district, "San Borja")
         self.assertEqual((pricing.call_count, RevisionCotizacion.objects.count()), (2, 2))
@@ -141,7 +141,7 @@ class QuoteFlowTests(TestCase):
             output(updates=self.complete.to_dict(), reply="listo"),
             output(corrections={"items": ["1 cama", "20 cajas"]}, reply="agregado"),
         ])
-        self.process(service, "todo")
+        self.process(service, "de Surco a Miraflores, del piso 1 sin ascensor al 2 con escaleras, 1 cama")
         result = self.process(service, "también 20 cajas")
         self.assertEqual(result.turn.state.items, ["1 cama", "20 cajas"])
         self.assertEqual(pricing.call_count, 2)
@@ -175,7 +175,7 @@ class QuoteFlowTests(TestCase):
         chatwoot = Mock()
         chatwoot.is_bot_allowed.return_value = True
         service, _, _ = self.service([output(updates=self.complete.to_dict(), reply="listo")], chatwoot=chatwoot)
-        self.process(service, "todo")
+        self.process(service, "de Surco a Miraflores, del piso 1 sin ascensor al 2 con escaleras, 1 cama")
         chatwoot.project_commercial_status.assert_called_once_with(self.conversation)
 
     def test_one_logical_block_validation(self):
@@ -229,13 +229,21 @@ class QuoteFlowTests(TestCase):
                 "destination_access": "escaleras",
                 "items": ["cama", "cocina", "escritorio"],
             }, reply="listo"),
+            # Primera pasada NEW_QUOTE (contaminada, será descartada)
+            output(
+                action="new_quote",
+                updates={"origin_district": "Surco"},  # datos viejos
+                requested=["origin_floor"],
+                reply="Viejos",
+            ),
+            # Segunda pasada NEW_QUOTE (limpia, con contexto vacío)
             output(
                 action="new_quote",
                 requested=["origin_district", "destination_district"],
                 reply="Claro, iniciemos una nueva cotización. ¿De qué distrito a qué distrito?",
             ),
         ], price="440.00")
-        first = self.process(service, "datos completos")
+        first = self.process(service, "de Surco a Cercado de Lima, del piso 1 al 2 por escaleras, cama cocina escritorio")
         self.assertEqual(first.quote_decision.price, Decimal("440.00"))
         old_quote_id = RevisionCotizacion.objects.get(pk=first.quote_decision.revision_id).cotizacion_id
 
@@ -255,18 +263,22 @@ class QuoteFlowTests(TestCase):
         self.assertEqual(SolicitudCotizacion.objects.filter(lead=self.conversation.lead).count(), 1)
         forbidden = ("440", "surco", "cercado", "cama", "cocina", "escritorio")
         self.assertFalse(any(value in result.turn.reply.lower() for value in forbidden))
-        self.assertEqual((agent.calls, pricing.call_count), (2, 1))
+        # 3 llamadas: 1er turno (1 call) + 2do turno NEW_QUOTE (2 calls: primera pasada + segunda pasada limpia)
+        self.assertEqual((agent.calls, pricing.call_count), (3, 1))
 
     def test_explicit_new_quote_after_quoted_uses_same_customer_and_thread(self):
         service, _, _ = self.service([
             output(updates=self.complete.to_dict(), reply="listo"),
+            # Primera pasada NEW_QUOTE (contaminada, será descartada)
+            output(action="new_quote", updates=self.complete.to_dict(), requested=["origin_district"], reply="Viejos"),
+            # Segunda pasada NEW_QUOTE (limpia)
             output(action="new_quote", requested=["origin_district", "destination_district"], reply="¿Nueva ruta?"),
             output(
                 updates={"origin_district": "Surco", "destination_district": "Miraflores"},
                 requested=["origin_floor", "destination_floor"], reply="¿En qué pisos?",
             ),
         ])
-        self.process(service, "todo")
+        self.process(service, "de Surco a Miraflores, del piso 1 sin ascensor al 2 con escaleras, 1 cama")
         customer_id = self.conversation.cliente_id
         conversation_id = self.conversation.pk
         result = self.process(service, "quiero otra mudanza")
@@ -280,9 +292,12 @@ class QuoteFlowTests(TestCase):
     def test_new_quote_after_pending_human_starts_clean_request(self):
         service, _, _ = self.service([
             output(updates=self.complete.to_dict(), reply="listo"),
+            # Primera pasada NEW_QUOTE (contaminada, será descartada)
+            output(action="new_quote", updates=self.complete.to_dict(), requested=["origin_floor"], reply="Viejos"),
+            # Segunda pasada NEW_QUOTE (limpia)
             output(action="new_quote", requested=["origin_district", "destination_district"], reply="¿Nueva ruta?"),
         ], fail=True)
-        self.process(service, "todo")
+        self.process(service, "de Surco a Miraflores, del piso 1 sin ascensor al 2 con escaleras, 1 cama")
         old_lead_id = self.lead.pk
         result = self.process(service, "quiero cotizar otra mudanza")
         self.conversation.refresh_from_db()
@@ -297,7 +312,7 @@ class QuoteFlowTests(TestCase):
             output(action="correction", corrections={"items": ["1 cama", "10 cajas"]}, reply="agregado"),
             output(action="question", reply="El detalle depende del servicio contratado.", question=True),
         ])
-        self.process(service, "todo")
+        self.process(service, "de Surco a Miraflores, del piso 1 sin ascensor al 2 con escaleras, 1 cama")
         lead_id = self.conversation.lead_id
         ok = self.process(service, "ok")
         thanks = self.process(service, "gracias")
@@ -324,6 +339,14 @@ class QuoteFlowTests(TestCase):
         # 3. Esperado: estado con SOLO Barranco/Lince, NO Surco/Miraflores
         service, agent, _ = self.service([
             output(updates=self.complete.to_dict(), reply="listo"),
+            # Primera pasada NEW_QUOTE (contaminada, será descartada)
+            output(
+                action="new_quote",
+                updates={"origin_district": "Surco", "destination_district": "Miraflores"},  # datos viejos
+                requested=["origin_floor"],
+                reply="Viejos datos"
+            ),
+            # Segunda pasada NEW_QUOTE (limpia, con contexto vacío)
             output(
                 action="new_quote",
                 updates={"origin_district": "Barranco", "destination_district": "Lince"},
@@ -332,10 +355,10 @@ class QuoteFlowTests(TestCase):
             ),
         ], fail=True)
         # Primera fase: cotización completa
-        first = self.process(service, "necesito una mudanza de surco a miraflores, piso 1 a 2, una cama")
+        first = self.process(service, "necesito una mudanza de surco a miraflores, piso 1 sin ascensor al 2 con escaleras, una cama")
         self.assertEqual((first.turn.state.origin_district, first.turn.state.destination_district), ("Surco", "Miraflores"))
         # Segunda fase: NEW_QUOTE con nuevos distritos en el mismo mensaje
-        second = self.process(service, "necesito otra mudanza, de Barranco a Lince")
+        second = self.process(service, "necesito otra mudanza, de Barranco a Lince sin ascensor")
         self.assertEqual(second.turn.conversation_action, ConversationAction.NEW_QUOTE)
         # Estado debe contener SOLO Barranco/Lince, no la anterior Surco/Miraflores
         self.assertEqual(second.turn.state.origin_district, "Barranco")

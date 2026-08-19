@@ -2,7 +2,7 @@ from django.shortcuts import redirect
 from django.urls import include, path
 
 from apps.campo.views import pizarra
-from .views_whatsapp import whatsapp_conversacion_accion, whatsapp_conversaciones
+from .views_whatsapp import whatsapp_conversacion_accion, whatsapp_conversaciones, conversation_messages, pause_bot, resume_bot, api_active_conversations
 from .views_quotes import whatsapp_crear_cotizacion, whatsapp_por_cotizar, whatsapp_solicitud_accion
 from .views_quote_history import whatsapp_cotizacion_accion, whatsapp_cotizacion_detalle, whatsapp_cotizaciones
 from .views_bot_config import whatsapp_configuracion as whatsapp_configuracion_v2
@@ -46,7 +46,11 @@ urlpatterns = [
     path("reportes/", placeholder_reportes, name="dashboard-reportes"),
     path("whatsapp/", placeholder_whatsapp, name="dashboard-whatsapp"),
     path("whatsapp/conversaciones/", whatsapp_conversaciones, name="dashboard-whatsapp-conversaciones"),
+    path("whatsapp/conversaciones/api/active/", api_active_conversations, name="api-active-conversations"),
     path("whatsapp/conversaciones/<int:conversation_id>/accion/", whatsapp_conversacion_accion, name="dashboard-whatsapp-conversacion-accion"),
+    path("whatsapp/conversaciones/<int:conversation_id>/mensajes/", conversation_messages, name="conversation-messages"),
+    path("whatsapp/conversaciones/<int:conversation_id>/pause-bot/", pause_bot, name="pause-bot"),
+    path("whatsapp/conversaciones/<int:conversation_id>/resume-bot/", resume_bot, name="resume-bot"),
     path("whatsapp/por-cotizar/", whatsapp_por_cotizar, name="dashboard-whatsapp-por-cotizar"),
     path("whatsapp/por-cotizar/<int:request_id>/accion/", whatsapp_solicitud_accion, name="dashboard-whatsapp-solicitud-accion"),
     path("whatsapp/por-cotizar/<int:request_id>/crear/", whatsapp_crear_cotizacion, name="dashboard-whatsapp-crear-cotizacion"),

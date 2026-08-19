@@ -30,6 +30,10 @@ def validate_value(field: str, value):
         if not isinstance(value, list) or not all(isinstance(item, str) and item.strip() for item in value):
             raise DomainValidationError("items debe ser lista de textos no vacíos")
         return [item.strip() for item in value]
+    if field == "packing_modalidad":
+        if not isinstance(value, str) or not value.strip():
+            raise DomainValidationError(f"{field} debe ser texto no vacío")
+        return value.strip()
     raise DomainValidationError(f"Campo sin validador: {field}")
 
 

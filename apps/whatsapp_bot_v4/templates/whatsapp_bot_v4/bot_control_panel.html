@@ -1,0 +1,441 @@
+{% extends "base.html" %}
+
+{% block title %}Control Bot WhatsApp{% endblock %}
+
+{% block extra_head %}
+<style>
+  .bot-control-container {
+    max-width: 1000px;
+    margin: 2rem auto;
+    padding: 0 1rem;
+  }
+  .bot-control-section {
+    background: white;
+    border-radius: 8px;
+    padding: 2rem;
+    margin-bottom: 2rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  }
+  .bot-control-section h2 {
+    margin-top: 0;
+    color: #1f2937;
+    font-size: 1.5rem;
+    border-bottom: 2px solid #3949AB;
+    padding-bottom: 1rem;
+  }
+  .global-status {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin: 1rem 0;
+    padding: 1rem;
+    background: #f0f4ff;
+    border-radius: 6px;
+    border-left: 4px solid #3949AB;
+  }
+  .global-status .status-badge {
+    display: inline-block;
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    font-weight: 600;
+    font-size: 0.9rem;
+  }
+  .status-badge.active {
+    background: #d1fae5;
+    color: #065f46;
+  }
+  .status-badge.paused {
+    background: #fee2e2;
+    color: #991b1b;
+  }
+  .bot-buttons {
+    display: flex;
+    gap: 1rem;
+    margin: 2rem 0;
+    flex-wrap: wrap;
+  }
+  .btn-control {
+    padding: 0.75rem 1.5rem;
+    border: none;
+    border-radius: 6px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+  }
+  .btn-pause {
+    background: #DC2626;
+    color: white;
+  }
+  .btn-pause:hover {
+    background: #991b1b;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(220, 38, 38, 0.3);
+  }
+  .btn-activate {
+    background: #10B981;
+    color: white;
+  }
+  .btn-activate:hover {
+    background: #059669;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+  }
+  .status-message {
+    padding: 1rem;
+    border-radius: 6px;
+    margin-bottom: 1rem;
+    display: none;
+  }
+  .status-message.success {
+    background: #d1fae5;
+    color: #065f46;
+    border: 1px solid #6ee7b7;
+    display: block;
+  }
+  .status-message.error {
+    background: #fee2e2;
+    color: #991b1b;
+    border: 1px solid #fca5a5;
+    display: block;
+  }
+  .conversation-list {
+    margin-top: 1rem;
+  }
+  .conversation-item {
+    background: #f9fafb;
+    padding: 1rem;
+    margin-bottom: 0.5rem;
+    border-radius: 6px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-left: 4px solid #3949AB;
+  }
+  .conversation-info {
+    flex: 1;
+  }
+  .conversation-phone {
+    font-weight: 600;
+    color: #1f2937;
+  }
+  .conversation-owner {
+    font-size: 0.85rem;
+    color: #6b7280;
+    margin-top: 0.25rem;
+  }
+  .conversation-actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+  .btn-small {
+    padding: 0.5rem 1rem;
+    font-size: 0.85rem;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .btn-take-control {
+    background: #2563EB;
+    color: white;
+  }
+  .btn-take-control:hover {
+    background: #1d4ed8;
+  }
+  .btn-return-bot {
+    background: #8B5CF6;
+    color: white;
+  }
+  .btn-return-bot:hover {
+    background: #7c3aed;
+  }
+  .loading {
+    display: none;
+    text-align: center;
+    color: #6b7280;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="bot-control-container">
+  <!-- CONTROL GLOBAL -->
+  <div class="bot-control-section">
+    <h2>🤖 Control Global del Bot</h2>
+
+    <div class="global-status">
+      <span>Estado actual:</span>
+      <span class="status-badge active" id="globalStatusBadge">🟢 Activo</span>
+      <span id="pausedInfo" style="display: none; color: #991b1b; font-size: 0.9rem;">
+        Pausado desde <span id="pausedTime"></span>
+      </span>
+    </div>
+
+    <div class="status-message" id="statusMessage"></div>
+    <div class="loading" id="loading">⏳ Procesando...</div>
+
+    <div class="bot-buttons">
+      <button class="btn-control btn-pause" id="pauseGlobalBtn">⏸ Pausar Bot Global</button>
+      <button class="btn-control btn-activate" id="activateGlobalBtn">▶ Activar Bot Global</button>
+    </div>
+
+    <p style="font-size: 0.9rem; color: #6b7280; margin-top: 1rem;">
+      Pausar el bot detiene su respuesta automática en <strong>todas las conversaciones</strong>.
+      Los asesores pueden seguir escribiendo manualmente.
+    </p>
+  </div>
+
+  <!-- CONVERSACIONES ACTIVAS -->
+  <div class="bot-control-section">
+    <h2>💬 Conversaciones Activas</h2>
+
+    <div class="conversation-list" id="conversationsList">
+      <p style="color: #6b7280; font-size: 0.9rem;">Cargando conversaciones...</p>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+'use strict';
+
+const API_BASE = '/api/v4/conversation-control';
+const CSRF_TOKEN = document.querySelector('meta[name="csrf-token"]')?.content || '';
+
+// Estado global
+let globalBotStatus = {
+  is_paused: false,
+  paused_at: null
+};
+
+// Inicializar
+document.addEventListener('DOMContentLoaded', () => {
+  setupEventListeners();
+  loadBotStatus();
+  loadConversations();
+
+  // Refresh cada 10 segundos
+  setInterval(() => {
+    loadBotStatus();
+    loadConversations();
+  }, 10000);
+});
+
+function setupEventListeners() {
+  document.getElementById('pauseGlobalBtn').addEventListener('click', pauseGlobal);
+  document.getElementById('activateGlobalBtn').addEventListener('click', activateGlobal);
+}
+
+function showMessage(message, type = 'success') {
+  const msgEl = document.getElementById('statusMessage');
+  msgEl.className = `status-message ${type}`;
+  msgEl.textContent = message;
+  setTimeout(() => {
+    msgEl.className = 'status-message';
+  }, 5000);
+}
+
+function setLoading(show) {
+  document.getElementById('loading').style.display = show ? 'block' : 'none';
+}
+
+async function loadBotStatus() {
+  try {
+    const res = await fetch(`${API_BASE}/bot-status/`, {
+      headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    });
+    if (!res.ok) throw new Error('Failed to load status');
+
+    const data = await res.json();
+    globalBotStatus = data;
+    updateStatusUI();
+  } catch (err) {
+    console.error('Error loading bot status:', err);
+  }
+}
+
+function updateStatusUI() {
+  const badge = document.getElementById('globalStatusBadge');
+  const pausedInfo = document.getElementById('pausedInfo');
+  const pauseBtn = document.getElementById('pauseGlobalBtn');
+  const activateBtn = document.getElementById('activateGlobalBtn');
+
+  if (globalBotStatus.is_paused) {
+    badge.className = 'status-badge paused';
+    badge.textContent = '🔴 Pausado';
+    pausedInfo.style.display = 'inline';
+    document.getElementById('pausedTime').textContent =
+      new Date(globalBotStatus.paused_at).toLocaleTimeString();
+    pauseBtn.disabled = true;
+    activateBtn.disabled = false;
+  } else {
+    badge.className = 'status-badge active';
+    badge.textContent = '🟢 Activo';
+    pausedInfo.style.display = 'none';
+    pauseBtn.disabled = false;
+    activateBtn.disabled = true;
+  }
+}
+
+async function pauseGlobal() {
+  setLoading(true);
+  try {
+    const res = await fetch(`${API_BASE}/pause-global/`, {
+      method: 'POST',
+      headers: {
+        'X-CSRFToken': CSRF_TOKEN,
+        'X-Requested-With': 'XMLHttpRequest'
+      }
+    });
+
+    if (res.ok) {
+      showMessage('✓ Bot pausado globalmente', 'success');
+      loadBotStatus();
+    } else {
+      showMessage('✗ Error al pausar bot', 'error');
+    }
+  } catch (err) {
+    console.error('Error:', err);
+    showMessage('✗ Error de conexión', 'error');
+  } finally {
+    setLoading(false);
+  }
+}
+
+async function activateGlobal() {
+  setLoading(true);
+  try {
+    const res = await fetch(`${API_BASE}/activate-global/`, {
+      method: 'POST',
+      headers: {
+        'X-CSRFToken': CSRF_TOKEN,
+        'X-Requested-With': 'XMLHttpRequest'
+      }
+    });
+
+    if (res.ok) {
+      showMessage('✓ Bot activado globalmente', 'success');
+      loadBotStatus();
+    } else {
+      showMessage('✗ Error al activar bot', 'error');
+    }
+  } catch (err) {
+    console.error('Error:', err);
+    showMessage('✗ Error de conexión', 'error');
+  } finally {
+    setLoading(false);
+  }
+}
+
+async function loadConversations() {
+  try {
+    const res = await fetch('/api/whatsapp-conversations/', {
+      headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    });
+    if (!res.ok) throw new Error('Failed to load conversations');
+
+    const conversations = await res.json();
+    renderConversations(conversations);
+  } catch (err) {
+    console.error('Error loading conversations:', err);
+    document.getElementById('conversationsList').innerHTML =
+      '<p style="color: #dc2626;">Error al cargar conversaciones</p>';
+  }
+}
+
+function renderConversations(conversations) {
+  const container = document.getElementById('conversationsList');
+
+  if (!conversations.length) {
+    container.innerHTML = '<p style="color: #6b7280;">No hay conversaciones activas</p>';
+    return;
+  }
+
+  container.innerHTML = conversations.map(conv => `
+    <div class="conversation-item">
+      <div class="conversation-info">
+        <div class="conversation-phone">📞 ${conv.cliente_phone}</div>
+        <div class="conversation-owner">
+          ${conv.owner_type === 'bot'
+            ? '🤖 Bot atendiendo'
+            : `👤 Asesor: ${conv.advisor_name || 'Desconocido'}`}
+        </div>
+      </div>
+      <div class="conversation-actions">
+        ${conv.owner_type === 'bot'
+          ? `<button class="btn-small btn-take-control"
+               onclick="takeControl(${conv.id})">
+               Tomar Control
+             </button>`
+          : `<button class="btn-small btn-return-bot"
+               onclick="returnToBot(${conv.id})">
+               Devolver al Bot
+             </button>`}
+      </div>
+    </div>
+  `).join('');
+}
+
+async function takeControl(conversationId) {
+  setLoading(true);
+  try {
+    const res = await fetch(`${API_BASE}/transfer-to-advisor/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': CSRF_TOKEN,
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      body: JSON.stringify({
+        conversation_id: conversationId,
+        advisor_id: {{ user.id }},
+        mode: 'manual'
+      })
+    });
+
+    if (res.ok) {
+      showMessage('✓ Controlando conversación', 'success');
+      loadConversations();
+    } else {
+      showMessage('✗ Error al tomar control', 'error');
+    }
+  } catch (err) {
+    console.error('Error:', err);
+    showMessage('✗ Error de conexión', 'error');
+  } finally {
+    setLoading(false);
+  }
+}
+
+async function returnToBot(conversationId) {
+  setLoading(true);
+  try {
+    const res = await fetch(`${API_BASE}/return-to-bot/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': CSRF_TOKEN,
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      body: JSON.stringify({
+        conversation_id: conversationId
+      })
+    });
+
+    if (res.ok) {
+      showMessage('✓ Devuelto al bot', 'success');
+      loadConversations();
+    } else {
+      showMessage('✗ Error al devolver al bot', 'error');
+    }
+  } catch (err) {
+    console.error('Error:', err);
+    showMessage('✗ Error de conexión', 'error');
+  } finally {
+    setLoading(false);
+  }
+}
+</script>
+{% endblock %}

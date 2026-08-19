@@ -150,7 +150,7 @@ class MetaAdapterTests(TestCase):
     def test_18_complete_state_handoff_ready_for_quote(self):
         updates = {"origin_district": "Surco", "destination_district": "Miraflores", "origin_floor": 1, "destination_floor": 2, "destination_access": "escaleras", "items": ["1 cama"]}
         service, _, _ = self.service([output(updates=updates, reply="Datos listos para cotizar.")])
-        result = service.process_payload(meta_payload())
+        result = service.process_payload(meta_payload(text="de Surco a Miraflores, del piso 1 al 2 con escaleras, 1 cama"))
         self.assertTrue(result.ready_to_quote)
         self.assertEqual(SolicitudCotizacion.objects.get().datos_faltantes, [])
 
