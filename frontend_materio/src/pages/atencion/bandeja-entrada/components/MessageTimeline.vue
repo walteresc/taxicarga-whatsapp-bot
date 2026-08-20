@@ -24,7 +24,9 @@
 
         <!-- Messages in this group -->
         <div v-for="message in group.messages" :key="message.id">
-          <MessageBubble v-if="message.type !== 'internal-note'" :message="message" />
+          <!-- Use MensajeMedia for WhatsApp multimedia messages, MessageBubble for legacy text -->
+          <MensajeMedia v-if="message.tipo && message.tipo !== 'internal-note'" :message="message" />
+          <MessageBubble v-else-if="message.type !== 'internal-note'" :message="message" />
           <InternalNote v-else :note="message" />
         </div>
       </div>
@@ -35,6 +37,7 @@
 <script setup>
 import { computed } from 'vue'
 import MessageBubble from './MessageBubble.vue'
+import MensajeMedia from './MensajeMedia.vue'
 import InternalNote from './InternalNote.vue'
 import { groupMessagesByDate } from '@/utils/dateUtils'
 
