@@ -128,11 +128,21 @@ const isInboxRoute = computed(() => route.path.includes('bandeja-entrada'))
 
 :deep(.hide-navbar) {
   .layout-navbar {
-    display: none;
+    display: none !important;
+    height: 0 !important;
+    min-height: 0 !important;
+    max-height: 0 !important;
+    overflow: hidden !important;
+  }
+
+  .layout-page-content {
+    padding-block-start: 0 !important;
+    margin-block-start: 0 !important;
   }
 
   .layout-content-wrapper {
     margin-block-start: 0 !important;
+    padding-block-start: 0 !important;
   }
 }
 </style>
