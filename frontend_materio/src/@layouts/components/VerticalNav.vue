@@ -66,8 +66,8 @@ const handleNavScroll = evt => {
             v-html="logo"
           />
 
-          <h1 class="font-weight-medium leading-normal text-xl text-uppercase">
-            Materio
+          <h1 class="font-weight-medium text-base text-uppercase">
+            TaxiCarga
           </h1>
         </RouterLink>
       </slot>
