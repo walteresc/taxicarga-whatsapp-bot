@@ -131,14 +131,16 @@
       >
         <div class="avatar">
           <img v-if="conv.avatar" :src="conv.avatar" :alt="conv.name" />
-          <div v-else class="avatar-placeholder">{{ getInitials(conv.name) }}</div>
+          <div v-else class="avatar-placeholder" :style="getAvatarStyle(conv.id)">
+            {{ getInitials(conv.name || conv.phone) }}
+          </div>
         </div>
         <div class="content">
           <div class="header">
-            <h4 class="name">{{ conv.name }}</h4>
+            <h4 class="name">{{ conv.name || formatPhone(conv.phone) }}</h4>
             <span class="time">{{ formatTime(conv.lastActivity) }}</span>
           </div>
-          <p class="preview">{{ conv.preview || conv.phone }}</p>
+          <p class="preview">{{ conv.preview }}</p>
           <div class="badges">
             <span v-if="conv.estadoCotizacion === 'Por cotizar'" class="badge orange">Por cotizar</span>
             <span v-if="conv.attentionMode === 'bot'" class="badge">🤖 Bot</span>
@@ -312,6 +314,23 @@ const getChannelIcon = channel => {
     Otros: 'more-2-fill',
   }
   return icons[channel] || 'global-line'
+}
+
+const getAvatarStyle = contactId => {
+  const colors = ['#FF6B9D', '#C44569', '#F8B500', '#56AB2F', '#0085CA', '#662E9B']
+  const index = Math.abs(contactId % colors.length)
+  return {
+    backgroundColor: colors[index],
+    color: '#fff',
+  }
+}
+
+const formatPhone = phone => {
+  if (!phone) return 'Desconocido'
+  if (phone.startsWith('+')) {
+    return phone.slice(0, 3) + ' ' + phone.slice(3)
+  }
+  return phone
 }
 
 const toggleDropdown = () => {
@@ -733,8 +752,9 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   font-weight: 600;
-  font-size: 14px;
-  color: #666;
+  font-size: 16px;
+  color: #fff;
+  text-transform: uppercase;
 }
 
 .content {

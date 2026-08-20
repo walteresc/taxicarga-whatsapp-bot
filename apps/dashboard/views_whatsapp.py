@@ -1,6 +1,6 @@
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.db.models import Q
+from django.db.models import Q, Prefetch
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -10,6 +10,24 @@ from django.views.decorators.http import require_POST
 import logging
 
 logger = logging.getLogger(__name__)
+
+def _get_message_preview(mensaje):
+  """Generar preview del mensaje según su tipo"""
+  if not mensaje:
+    return "Conversación nueva"
+
+  tipo_map = {
+    "texto": lambda m: (m.contenido or "")[:100],
+    "imagen": lambda m: "📷 Foto",
+    "audio": lambda m: "🎤 Audio",
+    "documento": lambda m: f"📄 Documento",
+    "ubicacion": lambda m: "📍 Ubicación",
+    "sticker": lambda m: "Sticker",
+    "sistema": lambda m: "Mensaje del sistema",
+  }
+
+  generator = tipo_map.get(mensaje.tipo, lambda m: "Mensaje no disponible")
+  return generator(mensaje)
 
 from apps.clientes.models import Conversacion as ConversacionLegacy
 from apps.dashboard.permissions import whatsapp_required
@@ -201,8 +219,16 @@ def api_active_conversations(request):
     )
     conversaciones = _filtrar_conversaciones(conversaciones, request)
 
+    # Prefetch último mensaje eficientemente
+    last_mensaje = MensajeWhatsApp.objects.filter(
+        conversacion_id=Q
+    ).order_by('-fecha_mensaje')[:1]
+
     data = []
     for conv in conversaciones[:100]:
+        # Obtener último mensaje eficientemente
+        ultimo_mensaje = conv.mensajes.order_by('-fecha_mensaje').first()
+
         # Contar mensajes no leídos (entrantes que no están leídos)
         unread_count = MensajeWhatsApp.objects.filter(
             conversacion=conv,
@@ -211,9 +237,11 @@ def api_active_conversations(request):
             estado__in=['leido', 'entregado']
         ).count()
 
+        # Generar preview del último mensaje
+        preview = _get_message_preview(ultimo_mensaje)
+
         # Obtener información del lead para resumen
         lead = conv.lead
-        resumen = conv.resumen or conv.motivo_derivacion or f"Vía {conv.channel.nombre if conv.channel else 'desconocido'}"
 
         data.append({
             'id': conv.id,
@@ -227,8 +255,7 @@ def api_active_conversations(request):
             },
             'estado_atencion': conv.estado_atencion,
             'estado_cotizacion': conv.estado_cotizacion,
-            'resumen': resumen,
-            'preview': conv.resumen or '',
+            'preview': preview,
             'unread_count': unread_count,
             'last_activity': conv.ultima_actividad.isoformat() if conv.ultima_actividad else conv.actualizada_en.isoformat(),
             'lead_id': conv.lead.id if conv.lead else None,
