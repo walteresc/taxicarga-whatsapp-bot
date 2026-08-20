@@ -36,6 +36,16 @@
         Reabrir
       </button>
 
+      <!-- Theme switcher -->
+      <button class="icon-btn" title="Cambiar tema">
+        <i class="ri-contrast-2-line"></i>
+      </button>
+
+      <!-- Notifications -->
+      <button class="icon-btn" title="Notificaciones">
+        <i class="ri-notification-line"></i>
+      </button>
+
       <!-- Menu button -->
       <button class="menu-btn" @click="showMenu = !showMenu">
         <i class="ri-more-2-fill"></i>
@@ -244,6 +254,23 @@ const getStatus = conversation => {
 }
 
 .menu-btn:hover {
+  background: #f0f0f0;
+  color: #333;
+}
+
+.icon-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: transparent;
+  border: none;
+  color: #666;
+  cursor: pointer;
+  font-size: 16px;
+  transition: all 0.2s;
+}
+
+.icon-btn:hover {
   background: #f0f0f0;
   color: #333;
 }

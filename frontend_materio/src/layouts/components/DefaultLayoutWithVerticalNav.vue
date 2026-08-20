@@ -1,5 +1,5 @@
 <script setup>
-import { useRoute } from 'vue-router'
+import { useRoute, computed } from 'vue-router'
 import NavItems from '@/layouts/components/NavItems.vue'
 import logo from '@images/logo.svg?raw'
 import VerticalNavLayout from '@layouts/components/VerticalNavLayout.vue'
@@ -11,12 +11,13 @@ import UserProfile from '@/layouts/components/UserProfile.vue'
 
 const route = useRoute()
 const hideFooter = route.meta?.hideFooter ?? false
+const isInboxRoute = computed(() => route.path.includes('bandeja-entrada'))
 </script>
 
 <template>
-  <VerticalNavLayout>
-    <!-- 👉 navbar -->
-    <template #navbar="{ toggleVerticalOverlayNavActive }">
+  <VerticalNavLayout :class="{ 'hide-navbar': isInboxRoute }">
+    <!-- 👉 navbar (hidden in bandeja-entrada) -->
+    <template v-if="!isInboxRoute" #navbar="{ toggleVerticalOverlayNavActive }">
       <div class="d-flex h-100 align-center">
         <!-- 👉 Vertical nav toggle in overlay mode -->
         <IconBtn
@@ -121,6 +122,16 @@ const hideFooter = route.meta?.hideFooter ?? false
     font-weight: 500;
     line-height: 1.75rem;
     text-transform: uppercase;
+  }
+}
+
+:deep(.hide-navbar) {
+  .layout-navbar {
+    display: none;
+  }
+
+  .layout-content-wrapper {
+    margin-block-start: 0 !important;
   }
 }
 </style>
