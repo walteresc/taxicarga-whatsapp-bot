@@ -540,22 +540,23 @@ const insertEmoji = (emoji) => {
 
 .message-textarea {
   flex: 1;
-  padding: 8px 12px;
-  border: 1px solid #e0e0e0;
+  padding: 10px 12px;
+  border: 1px solid #d0d0d0;
   border-radius: 6px;
-  background: #f5f5f7;
+  background: #fff;
   font-size: 13px;
   font-family: inherit;
   resize: none;
-  min-height: 36px;
+  min-height: 40px;
   max-height: 120px;
   outline: none;
   transition: all 0.2s;
+  color: #333;
 }
 
 .message-textarea:focus {
   border-color: var(--v-primary-base, #ff6b3d);
-  background: #fff;
+  box-shadow: 0 0 0 3px rgba(255, 107, 61, 0.1);
 }
 
 .message-textarea::placeholder {
