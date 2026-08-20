@@ -235,13 +235,33 @@ onMounted(async () => {
 
 .main-container {
   display: grid;
-  grid-template-columns: 350px 1fr 340px;
+  grid-template-columns: 350px minmax(500px, 1fr) 330px;
   gap: 0;
   overflow: hidden;
   min-height: 0;
   height: 100%;
   width: 100%;
   align-items: stretch;
+}
+
+@media (max-width: 1439px) {
+  .main-container {
+    grid-template-columns: 330px minmax(450px, 1fr);
+  }
+
+  .right-panel {
+    display: none !important;
+  }
+}
+
+@media (max-width: 1024px) {
+  .main-container {
+    grid-template-columns: 1fr;
+  }
+
+  .left-panel {
+    display: none;
+  }
 }
 
 .left-panel {
@@ -265,7 +285,7 @@ onMounted(async () => {
 }
 
 .right-panel {
-  width: 340px;
+  width: 330px;
   background: #fff;
   border-left: 1px solid #e0e0e0;
   display: flex;
