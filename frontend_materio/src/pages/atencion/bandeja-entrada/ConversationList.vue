@@ -55,7 +55,7 @@
           @click="toggleChannel(channel)"
           class="filter-chip"
         >
-          <i :class="`ri-${getChannelIcon(channel)}-line`"></i>
+          <i :class="`ri-${getChannelIcon(channel)}`"></i>
           {{ channel }}
           <i class="ri-close-line"></i>
         </button>
