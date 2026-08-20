@@ -15,10 +15,10 @@
         v-for="channel in channels"
         :key="channel"
         class="channel-item"
-        :class="{ active: activeChannels.includes(channel) }"
+        :class="{ active: props.activeChannels.includes(channel) }"
         @click="toggleChannel(channel)"
       >
-        <i :class="`ri-${getChannelIcon(channel)}-line`"></i>
+        <i :class="`ri-${getChannelIcon(channel)}`"></i>
         {{ channel }}
       </button>
     </div>
@@ -28,7 +28,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 
-defineProps({
+const props = defineProps({
   activeChannels: {
     type: Array,
     default: () => ['Todos'],
@@ -41,9 +41,9 @@ const isOpen = ref(false)
 const channels = ['Todos', 'WhatsApp', 'Correo', 'Instagram', 'Facebook', 'Chat web', 'TikTok', 'Otros']
 
 const selectedLabel = computed(() => {
-  if (activeChannels.length === 0) return 'Todos'
-  if (activeChannels.includes('Todos')) return 'Todos'
-  return activeChannels[0]
+  if (props.activeChannels.length === 0) return 'Todos'
+  if (props.activeChannels.includes('Todos')) return 'Todos'
+  return props.activeChannels[0]
 })
 
 const selectedIcon = computed(() => getChannelIcon(selectedLabel.value))
@@ -63,7 +63,7 @@ const getChannelIcon = (channel) => {
 }
 
 const toggleChannel = (channel) => {
-  let newChannels = [...activeChannels]
+  let newChannels = [...props.activeChannels]
 
   if (channel === 'Todos') {
     newChannels = ['Todos']
