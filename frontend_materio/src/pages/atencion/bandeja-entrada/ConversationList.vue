@@ -134,7 +134,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { conversationService } from '@/services/conversationService'
 import ChannelDropdown from './components/ChannelDropdown.vue'
 
@@ -357,8 +357,23 @@ const loadConversations = async () => {
   }
 }
 
+// Auto-refresh polling
+let pollingInterval = null
+
 onMounted(() => {
   loadConversations()
+
+  // Start polling every 5 seconds for real-time updates
+  pollingInterval = setInterval(() => {
+    loadConversations()
+  }, 5000)
+})
+
+onUnmounted(() => {
+  // Clean up polling on component unmount
+  if (pollingInterval) {
+    clearInterval(pollingInterval)
+  }
 })
 
 // Emit count update whenever filtered results change

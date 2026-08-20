@@ -894,13 +894,19 @@ def _get_or_create_conversation(lead, channel=None):
     """Get or create ConversacionWhatsApp for a lead."""
     if not lead:
         return None
-    return ConversacionWhatsApp.objects.filter(lead=lead).exclude(
+    conversacion = ConversacionWhatsApp.objects.filter(lead=lead).exclude(
         estado_atencion=ConversacionWhatsApp.ATENCION_CERRADA
     ).first() or ConversacionWhatsApp.objects.create(
         cliente=lead.cliente,
         lead=lead,
         channel=channel,
     )
+
+    # Update ultima_actividad every time message received (for real-time ordering)
+    conversacion.ultima_actividad = timezone.now()
+    conversacion.save(update_fields=['ultima_actividad'])
+
+    return conversacion
 
 
 def _queue_multimedia_download(mensaje_id):
