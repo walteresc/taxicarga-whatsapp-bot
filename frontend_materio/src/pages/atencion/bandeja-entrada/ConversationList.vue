@@ -374,10 +374,6 @@ const loadConversations = async () => {
 
 onMounted(() => {
   loadConversations()
-  // Poll every 3 seconds for new conversations
-  const pollInterval = setInterval(loadConversations, 3000)
-  // Cleanup interval on unmount
-  return () => clearInterval(pollInterval)
 })
 </script>
 
