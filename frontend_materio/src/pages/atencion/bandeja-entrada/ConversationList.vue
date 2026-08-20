@@ -370,8 +370,8 @@ watch(() => filteredConversations.value.length, (newCount) => {
   background: #fff;
   border-right: 1px solid #e0e0e0;
   width: 350px;
-  overflow: hidden;
   min-height: 0;
+  overflow: visible;
 }
 
 /* FILA 1: BUSCADOR */
@@ -419,8 +419,6 @@ watch(() => filteredConversations.value.length, (newCount) => {
   padding: 6px 12px 8px;
   min-height: auto;
   border-bottom: 1px solid rgba(0, 0, 0, 0.08);
-  overflow-x: hidden;
-  overflow-y: visible;
   position: relative;
   flex-shrink: 0;
   z-index: 100;
