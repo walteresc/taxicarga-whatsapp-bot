@@ -3,7 +3,7 @@
     <!-- Cabecera principal -->
     <div class="page-header">
       <div class="header-left">
-        <h1>Bandeja de entrada</h1>
+        <h1>Bandeja de entrada <span class="count-badge">{{ conversationCount }}</span></h1>
       </div>
       <div class="header-right">
         <div class="status-indicator">
@@ -31,6 +31,7 @@
         <ConversationListComponent
           :selected-conversation-id="selectedConversationId"
           @conversation-selected="selectConversation"
+          @update-count="conversationCount = $event"
         />
       </div>
 
@@ -70,6 +71,7 @@ const { mdAndUp } = useDisplay()
 const selectedConversationId = ref(null)
 const selectedConversation = ref(null)
 const botActive = ref(true)
+const conversationCount = ref(0)
 
 // Computed
 const isDesktop = computed(() => mdAndUp.value)
@@ -140,6 +142,22 @@ onMounted(async () => {
   font-size: 20px;
   font-weight: 600;
   color: #333;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  background: #f0f0f0;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #666;
+  min-width: 28px;
 }
 
 .header-right {

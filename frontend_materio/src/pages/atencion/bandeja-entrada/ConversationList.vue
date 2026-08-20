@@ -1,85 +1,59 @@
 <template>
-  <div class="conversation-list">
-    <!-- COMPACT HEADER -->
-    <div class="compact-header">
-      <div class="header-top">
-        <h3>Bandeja de entrada <span class="count">{{ totalCount }}</span></h3>
-        <div class="header-controls">
-          <div class="search-section">
-            <i class="ri-search-line search-icon"></i>
-            <input
-              v-model="searchPhone"
-              type="text"
-              placeholder="Buscar..."
-              class="search-input"
-            />
-          </div>
-
-          <!-- Filter menu button -->
-          <button
-            class="filter-btn"
-            @click="showFilterMenu = !showFilterMenu"
-            :title="activeFiltersCount > 0 ? `${activeFiltersCount} filtro(s) activo(s)` : 'Filtros avanzados'"
-          >
-            <i class="ri-filter-line"></i>
-            <span v-if="activeFiltersCount > 0" class="badge">{{ activeFiltersCount }}</span>
-          </button>
-
-          <!-- Channel dropdown -->
-          <ChannelDropdown
-            :active-channels="activeChannels"
-            @update:active-channels="activeChannels = $event"
-          />
-        </div>
-      </div>
-
-      <!-- ACTIVE FILTERS CHIPS (only show if filters active) -->
-      <div v-if="hasActiveFilters" class="active-filters">
-        <!-- State filter chips -->
-        <button
-          v-for="tag in activeFilters"
-          v-if="tag !== 'Todos'"
-          :key="tag"
-          @click="toggleFilter(tag)"
-          class="filter-chip"
-        >
-          {{ tag }}
-          <i class="ri-close-line"></i>
-        </button>
-
-        <!-- Channel filter chips -->
-        <button
-          v-for="channel in activeChannels"
-          v-if="channel !== 'Todos'"
-          :key="`ch-${channel}`"
-          @click="toggleChannel(channel)"
-          class="filter-chip"
-        >
-          <i :class="`ri-${getChannelIcon(channel)}`"></i>
-          {{ channel }}
-          <i class="ri-close-line"></i>
-        </button>
-
-        <!-- Clear all button -->
-        <button @click="clearFilters" class="clear-all-btn">
-          Limpiar todo
-        </button>
-      </div>
+  <div class="conversation-sidebar">
+    <!-- FILA 1: BUSCADOR -->
+    <div class="conversation-search">
+      <i class="ri-search-line search-icon"></i>
+      <input
+        v-model="searchPhone"
+        type="text"
+        placeholder="Buscar por nombre, teléfono o mensaje"
+        class="search-input"
+      />
     </div>
 
-    <!-- FILTER MENU (dropdown) -->
-    <div v-if="showFilterMenu" class="filter-menu">
-      <div class="filter-group">
-        <label class="group-title">Estado</label>
-        <button
-          v-for="tag in filterTags"
-          :key="tag"
-          @click="toggleFilter(tag)"
-          :class="['menu-item', { active: activeFilters.includes(tag) }]"
-        >
-          <i class="ri-checkbox-blank-circle-line"></i>
-          {{ tag }}
-        </button>
+    <!-- FILA 2: FILTROS -->
+    <div class="conversation-filters">
+      <!-- State filter tabs -->
+      <button
+        v-for="tag in filterTabs"
+        :key="tag"
+        @click="toggleFilter(tag)"
+        :class="['filter-tab', { active: activeFilters.includes(tag) }]"
+        :title="tag"
+      >
+        {{ tag }}
+      </button>
+
+      <!-- Channel dropdown -->
+      <ChannelDropdown
+        :active-channels="activeChannels"
+        @update:active-channels="activeChannels = $event"
+      />
+
+      <!-- Advanced filters button -->
+      <button
+        class="filter-btn"
+        @click="showFilterMenu = !showFilterMenu"
+        :title="activeFiltersCount > 0 ? `${activeFiltersCount} filtro(s) activo(s)` : 'Filtros avanzados'"
+      >
+        <i class="ri-filter-line"></i>
+        <span v-if="activeFiltersCount > 0" class="badge">{{ activeFiltersCount }}</span>
+      </button>
+
+      <!-- Advanced filter menu (positioned absolutely) -->
+      <div v-if="showFilterMenu" class="filter-menu">
+        <div class="filter-group">
+          <label class="group-title">Más filtros</label>
+          <button
+            v-for="tag in advancedFilterTags"
+            :key="tag"
+            @click="toggleFilter(tag)"
+            :class="['menu-item', { active: activeFilters.includes(tag) }]"
+          >
+            <i class="ri-checkbox-blank-circle-line"></i>
+            {{ tag }}
+          </button>
+        </div>
       </div>
     </div>
 
@@ -158,7 +132,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { conversationService } from '@/services/conversationService'
 import ChannelDropdown from './components/ChannelDropdown.vue'
 
@@ -169,29 +143,30 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['conversation-selected'])
+const emit = defineEmits(['conversation-selected', 'update-count'])
 
 const loading = ref(false)
 const error = ref(false)
 const searchPhone = ref('')
-const activeFilters = ref(['Todos'])
+const activeFilters = ref(['Todas'])
 const activeChannels = ref(['Todos'])
 const conversations = ref([])
 const showFilterMenu = ref(false)
 
-const filterTags = ['Todos', 'Mías', 'No leídas', 'Sin asignar']
+const filterTabs = ['Todas', 'Mías', 'No leídas']
+const advancedFilterTags = ['Sin asignar', 'Bot atendiendo', 'Asesor atendiendo', 'Cerradas']
 
 const totalCount = computed(() => conversations.value.length)
 
 const activeFiltersCount = computed(() => {
-  const count = activeFilters.value.filter(f => f !== 'Todos').length +
+  const count = activeFilters.value.filter(f => f !== 'Todas').length +
     activeChannels.value.filter(c => c !== 'Todos').length
   return count > 0 ? count : 0
 })
 
 const hasActiveFilters = computed(() => {
   return searchPhone.value.trim() !== '' ||
-    !activeFilters.value.includes('Todos') ||
+    !activeFilters.value.includes('Todas') ||
     !activeChannels.value.includes('Todos')
 })
 
@@ -215,11 +190,14 @@ const filteredConversations = computed(() => {
   }
 
   // Apply state filters
-  if (!activeFilters.value.includes('Todos')) {
+  if (!activeFilters.value.includes('Todas')) {
     filtered = filtered.filter(conv => {
       if (activeFilters.value.includes('Mías') && (!conv.responsable || !conv.responsable.id)) return false
       if (activeFilters.value.includes('No leídas') && conv.unread === 0) return false
       if (activeFilters.value.includes('Sin asignar') && conv.responsable && conv.responsable.id) return false
+      if (activeFilters.value.includes('Bot atendiendo') && conv.attentionMode !== 'bot') return false
+      if (activeFilters.value.includes('Asesor atendiendo') && conv.attentionMode !== 'advisor') return false
+      if (activeFilters.value.includes('Cerradas') && conv.attentionMode !== 'closed') return false
       return true
     })
   }
@@ -233,21 +211,21 @@ const filteredConversations = computed(() => {
 })
 
 const toggleFilter = tag => {
-  if (tag === 'Todos') {
-    activeFilters.value = ['Todos']
+  if (tag === 'Todas') {
+    activeFilters.value = ['Todas']
   } else {
     const index = activeFilters.value.indexOf(tag)
     if (index > -1) {
       activeFilters.value.splice(index, 1)
     } else {
-      const todoIndex = activeFilters.value.indexOf('Todos')
-      if (todoIndex > -1) {
-        activeFilters.value.splice(todoIndex, 1)
+      const todasIndex = activeFilters.value.indexOf('Todas')
+      if (todasIndex > -1) {
+        activeFilters.value.splice(todasIndex, 1)
       }
       activeFilters.value.push(tag)
     }
     if (activeFilters.value.length === 0) {
-      activeFilters.value = ['Todos']
+      activeFilters.value = ['Todas']
     }
   }
   // Close filter menu after selection
@@ -276,7 +254,7 @@ const toggleChannel = channel => {
 
 const clearFilters = () => {
   searchPhone.value = ''
-  activeFilters.value = ['Todos']
+  activeFilters.value = ['Todas']
   activeChannels.value = ['Todos']
 }
 
@@ -365,91 +343,96 @@ const loadConversations = async () => {
 onMounted(() => {
   loadConversations()
 })
+
+// Emit count update whenever filtered results change
+watch(() => filteredConversations.value.length, (newCount) => {
+  emit('update-count', newCount)
+})
 </script>
 
 <style scoped>
-.conversation-list {
-  display: flex;
-  flex-direction: column;
+.conversation-sidebar {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
   height: 100%;
   background: #fff;
   border-right: 1px solid #e0e0e0;
   width: 350px;
+  overflow: hidden;
+  min-height: 0;
 }
 
-.compact-header {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  background: #fff;
-  border-bottom: 1px solid #e0e0e0;
+/* FILA 1: BUSCADOR */
+.conversation-search {
+  padding: 10px 12px 6px;
   position: relative;
-}
-
-.header-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.header-top h3 {
-  margin: 0;
-  font-size: 13px;
-  font-weight: 600;
-  color: #333;
-  white-space: nowrap;
-}
-
-.count {
-  margin-left: 6px;
-  padding: 2px 6px;
-  background: #f0f0f0;
-  border-radius: 10px;
-  font-size: 11px;
-  font-weight: 500;
-  color: #666;
-}
-
-.header-controls {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  flex: 1;
-  min-width: 0;
-  justify-content: flex-end;
-}
-
-.search-section {
-  position: relative;
-  flex: 1;
-  min-width: 120px;
-  max-width: 180px;
 }
 
 .search-icon {
   position: absolute;
-  left: 8px;
+  left: 20px;
   top: 50%;
   transform: translateY(-50%);
   color: #999;
-  font-size: 14px;
+  font-size: 16px;
   pointer-events: none;
 }
 
 .search-input {
   width: 100%;
-  padding: 4px 8px 4px 26px;
-  border: 1px solid #ddd;
+  padding: 6px 12px 6px 32px;
+  border: 1px solid #e0e0e0;
   border-radius: 4px;
-  font-size: 11px;
-  min-height: 28px;
+  font-size: 12px;
+  min-height: 40px;
+  background: #fff;
+  transition: border-color 0.2s;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: var(--v-primary-base, #ff6b3d);
 }
 
 .search-input::placeholder {
   color: #ccc;
+}
+
+/* FILA 2: FILTROS */
+.conversation-filters {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px 10px;
+  min-height: 48px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  overflow-x: hidden;
+  position: relative;
+}
+
+.filter-tab {
+  padding: 4px 10px;
+  border: 1px solid #ddd;
+  background: #fff;
+  border-radius: 16px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+  flex-shrink: 0;
+  min-width: fit-content;
+}
+
+.filter-tab:hover {
+  border-color: #999;
+  background: #f9f9f9;
+}
+
+.filter-tab.active {
+  background: var(--v-primary-base, #ff6b3d);
+  color: white;
+  border-color: var(--v-primary-base, #ff6b3d);
 }
 
 .filter-btn {
@@ -468,6 +451,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
+  margin-left: auto;
 }
 
 .filter-btn:hover {
@@ -489,56 +473,6 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-.active-filters {
-  display: flex;
-  gap: 6px;
-  padding: 6px 12px;
-  flex-wrap: wrap;
-  align-items: center;
-  border-top: 1px solid #f0f0f0;
-}
-
-.active-filters .filter-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 8px;
-  background: #ffe8d6;
-  border: 1px solid var(--v-primary-base, #ff6b3d);
-  color: var(--v-primary-base, #ff6b3d);
-  border-radius: 12px;
-  font-size: 11px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.active-filters .filter-chip:hover {
-  background: #ffd6b8;
-}
-
-.active-filters .filter-chip i {
-  font-size: 11px;
-  opacity: 0.7;
-}
-
-.clear-all-btn {
-  padding: 3px 8px;
-  border: 1px solid #ddd;
-  background: #f5f5f5;
-  border-radius: 4px;
-  font-size: 10px;
-  font-weight: 500;
-  color: #666;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.clear-all-btn:hover {
-  background: #e8e8e8;
-  border-color: #999;
 }
 
 .filter-menu {
