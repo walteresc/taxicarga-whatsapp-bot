@@ -78,9 +78,10 @@ const handleNavScroll = evt => {
       <button
         class="nav-collapse-btn"
         @click="toggleVerticalNav"
-        :title="isVerticalNavCollapsed ? 'Expandir' : 'Contraer'"
+        :title="isVerticalNavCollapsed ? 'Expandir menú' : 'Contraer menú'"
       >
         <i :class="isVerticalNavCollapsed ? 'ri-arrow-right-s-line' : 'ri-arrow-left-s-line'"></i>
+        <span class="nav-collapse-tooltip">{{ isVerticalNavCollapsed ? 'Expandir' : 'Contraer' }}</span>
       </button>
     </div>
     <slot name="before-nav-items">
@@ -119,8 +120,9 @@ const handleNavScroll = evt => {
 
 .nav-collapse-btn {
   display: none;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
   padding: 0;
   border: none;
   background: transparent;
@@ -131,6 +133,9 @@ const handleNavScroll = evt => {
   transition: all 0.2s;
   flex-shrink: 0;
   margin-left: auto;
+  align-items: center;
+  justify-content: center;
+  position: relative;
 
   &:hover {
     background: rgba(0, 0, 0, 0.05);
@@ -139,8 +144,27 @@ const handleNavScroll = evt => {
 
   @media (min-width: 1280px) {
     display: flex;
-    align-items: center;
-    justify-content: center;
+  }
+
+  .nav-collapse-tooltip {
+    display: none;
+    position: absolute;
+    right: -50px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: #333;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 500;
+    white-space: nowrap;
+    pointer-events: none;
+    z-index: 1000;
+  }
+
+  &:hover .nav-collapse-tooltip {
+    display: block;
   }
 }
 </style>
