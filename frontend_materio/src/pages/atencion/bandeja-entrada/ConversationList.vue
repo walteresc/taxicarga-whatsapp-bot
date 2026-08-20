@@ -1,83 +1,85 @@
 <template>
   <div class="conversation-list">
-    <!-- HEADER -->
-    <div class="list-header">
-      <h3>Conversaciones</h3>
-      <span class="count-badge">{{ totalCount }}</span>
-    </div>
+    <!-- COMPACT HEADER -->
+    <div class="compact-header">
+      <div class="header-top">
+        <h3>Bandeja de entrada <span class="count">{{ totalCount }}</span></h3>
+        <div class="header-controls">
+          <div class="search-section">
+            <i class="ri-search-line search-icon"></i>
+            <input
+              v-model="searchPhone"
+              type="text"
+              placeholder="Buscar..."
+              class="search-input"
+            />
+          </div>
 
-    <!-- SEARCH -->
-    <div class="search-section">
-      <i class="ri-search-line search-icon"></i>
-      <input
-        v-model="searchPhone"
-        type="text"
-        placeholder="Buscar por nombre, teléfono o mensaje"
-        class="search-input"
-      />
-    </div>
-
-    <!-- FILTERS ROW 1 -->
-    <div class="filters-row">
-      <button
-        v-for="tag in filterTags"
-        :key="tag"
-        @click="toggleFilter(tag)"
-        :class="['filter-chip', { active: activeFilters.includes(tag) }]"
-      >
-        {{ tag }}
-      </button>
-      <button class="filter-chip filter-button">
-        <i class="ri-filter-line"></i>
-        <span v-if="activeFiltersCount > 0" class="badge">{{ activeFiltersCount }}</span>
-      </button>
-    </div>
-
-    <!-- FILTERS ROW 2 (Channels) -->
-    <div class="channels-row">
-      <!-- Visible channels -->
-      <button
-        v-for="channel in visibleChannels"
-        :key="channel"
-        @click="toggleChannel(channel)"
-        :class="['channel-chip', { active: activeChannels.includes(channel) }]"
-      >
-        <i :class="`ri-${getChannelIcon(channel)}`"></i>
-        {{ channel }}
-      </button>
-
-      <!-- Selected hidden channels as chips with close button -->
-      <button
-        v-for="channel in selectedHiddenChannels"
-        :key="`selected-${channel}`"
-        @click.stop="removeChannel(channel)"
-        :class="['channel-chip', 'active', 'removable']"
-      >
-        <i :class="`ri-${getChannelIcon(channel)}`"></i>
-        {{ channel }}
-        <span class="remove-icon">×</span>
-      </button>
-
-      <!-- Dropdown for more channels -->
-      <div class="channel-dropdown-wrapper">
-        <button
-          @click="toggleDropdown"
-          :class="['channel-chip', { active: showDropdown }]"
-        >
-          <span>Más</span>
-          <i class="ri-arrow-down-s-line dropdown-arrow" :class="{ rotated: showDropdown }"></i>
-        </button>
-        <div v-if="showDropdown" class="channel-dropdown">
+          <!-- Filter menu button -->
           <button
-            v-for="channel in hiddenChannels"
-            :key="`hidden-${channel}`"
-            @click="toggleChannel(channel); toggleDropdown()"
-            :class="['dropdown-item', { selected: activeChannels.includes(channel) }]"
+            class="filter-btn"
+            @click="showFilterMenu = !showFilterMenu"
+            :title="activeFiltersCount > 0 ? `${activeFiltersCount} filtro(s) activo(s)` : 'Filtros avanzados'"
           >
-            <i :class="`ri-${getChannelIcon(channel)}`"></i>
-            {{ channel }}
+            <i class="ri-filter-line"></i>
+            <span v-if="activeFiltersCount > 0" class="badge">{{ activeFiltersCount }}</span>
           </button>
+
+          <!-- Channel dropdown -->
+          <ChannelDropdown
+            :active-channels="activeChannels"
+            @update:active-channels="activeChannels = $event"
+          />
         </div>
+      </div>
+
+      <!-- ACTIVE FILTERS CHIPS (only show if filters active) -->
+      <div v-if="hasActiveFilters" class="active-filters">
+        <!-- State filter chips -->
+        <button
+          v-for="tag in activeFilters"
+          v-if="tag !== 'Todos'"
+          :key="tag"
+          @click="toggleFilter(tag)"
+          class="filter-chip"
+        >
+          {{ tag }}
+          <i class="ri-close-line"></i>
+        </button>
+
+        <!-- Channel filter chips -->
+        <button
+          v-for="channel in activeChannels"
+          v-if="channel !== 'Todos'"
+          :key="`ch-${channel}`"
+          @click="toggleChannel(channel)"
+          class="filter-chip"
+        >
+          <i :class="`ri-${getChannelIcon(channel)}-line`"></i>
+          {{ channel }}
+          <i class="ri-close-line"></i>
+        </button>
+
+        <!-- Clear all button -->
+        <button @click="clearFilters" class="clear-all-btn">
+          Limpiar todo
+        </button>
+      </div>
+    </div>
+
+    <!-- FILTER MENU (dropdown) -->
+    <div v-if="showFilterMenu" class="filter-menu">
+      <div class="filter-group">
+        <label class="group-title">Estado</label>
+        <button
+          v-for="tag in filterTags"
+          :key="tag"
+          @click="toggleFilter(tag)"
+          :class="['menu-item', { active: activeFilters.includes(tag) }]"
+        >
+          <i class="ri-checkbox-blank-circle-line"></i>
+          {{ tag }}
+        </button>
       </div>
     </div>
 
@@ -158,6 +160,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { conversationService } from '@/services/conversationService'
+import ChannelDropdown from './components/ChannelDropdown.vue'
 
 const props = defineProps({
   selectedConversationId: {
@@ -174,17 +177,15 @@ const searchPhone = ref('')
 const activeFilters = ref(['Todos'])
 const activeChannels = ref(['Todos'])
 const conversations = ref([])
+const showFilterMenu = ref(false)
 
 const filterTags = ['Todos', 'Mías', 'No leídas', 'Sin asignar']
-const visibleChannels = ['Todos', 'WhatsApp', 'Correo']
-const hiddenChannels = ['Instagram', 'Facebook', 'Chat web', 'TikTok', 'Otros']
-const showDropdown = ref(false)
 
 const totalCount = computed(() => conversations.value.length)
 
 const activeFiltersCount = computed(() => {
   const count = activeFilters.value.filter(f => f !== 'Todos').length +
-    activeChannels.value.filter(c => c !== 'Todos los canales').length
+    activeChannels.value.filter(c => c !== 'Todos').length
   return count > 0 ? count : 0
 })
 
@@ -249,6 +250,8 @@ const toggleFilter = tag => {
       activeFilters.value = ['Todos']
     }
   }
+  // Close filter menu after selection
+  showFilterMenu.value = false
 }
 
 const toggleChannel = channel => {
@@ -333,19 +336,6 @@ const formatPhone = phone => {
   return phone
 }
 
-const toggleDropdown = () => {
-  showDropdown.value = !showDropdown.value
-}
-
-const removeChannel = channel => {
-  const index = activeChannels.value.indexOf(channel)
-  if (index > -1) {
-    activeChannels.value.splice(index, 1)
-  }
-  if (activeChannels.value.length === 0) {
-    activeChannels.value = ['Todos los canales']
-  }
-}
 
 const loadConversations = async () => {
   loading.value = true
@@ -387,177 +377,198 @@ onMounted(() => {
   width: 350px;
 }
 
-.list-header {
+.compact-header {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 16px;
-  border-bottom: 1px solid #e0e0e0;
-}
-
-.list-header h3 {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 600;
-  color: #333;
-}
-
-.count-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: #f0f0f0;
-  font-size: 12px;
-  font-weight: 600;
-  color: #666;
-}
-
-.search-section {
-  padding: 8px 12px;
+  flex-direction: column;
+  gap: 0;
+  background: #fff;
   border-bottom: 1px solid #e0e0e0;
   position: relative;
 }
 
+.header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.header-top h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #333;
+  white-space: nowrap;
+}
+
+.count {
+  margin-left: 6px;
+  padding: 2px 6px;
+  background: #f0f0f0;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #666;
+}
+
+.header-controls {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  justify-content: flex-end;
+}
+
+.search-section {
+  position: relative;
+  flex: 1;
+  min-width: 120px;
+  max-width: 180px;
+}
+
 .search-icon {
   position: absolute;
-  left: 20px;
+  left: 8px;
   top: 50%;
   transform: translateY(-50%);
   color: #999;
-  font-size: 16px;
+  font-size: 14px;
   pointer-events: none;
 }
 
 .search-input {
   width: 100%;
-  padding: 6px 12px 6px 32px;
-  border: 1px solid #e0e0e0;
+  padding: 4px 8px 4px 26px;
+  border: 1px solid #ddd;
   border-radius: 4px;
-  font-size: 12px;
+  font-size: 11px;
+  min-height: 28px;
 }
 
-.filters-row {
-  display: flex;
-  gap: 6px;
-  padding: 8px 12px;
-  flex-wrap: wrap;
-  border-bottom: 1px solid #e0e0e0;
+.search-input::placeholder {
+  color: #ccc;
 }
 
-.channels-row {
-  display: flex;
-  gap: 6px;
-  padding: 8px 12px;
-  border-bottom: 1px solid #e0e0e0;
-  flex-wrap: wrap;
-  align-items: center;
-}
-
-.filter-chip,
-.channel-chip {
-  padding: 4px 10px;
+.filter-btn {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  padding: 0;
   border: 1px solid #ddd;
   background: #fff;
-  border-radius: 16px;
-  font-size: 11px;
-  font-weight: 500;
+  border-radius: 4px;
+  color: #666;
+  font-size: 14px;
   cursor: pointer;
   transition: all 0.2s;
-  white-space: nowrap;
-  position: relative;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.filter-chip:hover,
-.channel-chip:hover {
+.filter-btn:hover {
   border-color: #999;
   background: #f9f9f9;
 }
 
-.filter-chip.active,
-.channel-chip.active {
-  background: var(--v-primary-base, #ff6b3d);
-  color: white;
-  border-color: var(--v-primary-base, #ff6b3d);
-}
-
-.filter-chip.filter-button {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.filter-chip.filter-button .badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+.filter-btn .badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: #ff6b3d;
+  background: var(--v-primary-base, #ff6b3d);
   color: white;
   font-size: 9px;
   font-weight: 600;
-  position: absolute;
-  right: -4px;
-  top: -4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.channel-chip {
+.active-filters {
+  display: flex;
+  gap: 6px;
+  padding: 6px 12px;
+  flex-wrap: wrap;
+  align-items: center;
+  border-top: 1px solid #f0f0f0;
+}
+
+.active-filters .filter-chip {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  padding: 3px 8px;
+  background: #ffe8d6;
+  border: 1px solid var(--v-primary-base, #ff6b3d);
+  color: var(--v-primary-base, #ff6b3d);
+  border-radius: 12px;
   font-size: 11px;
-  flex-shrink: 0;
-  min-width: fit-content;
-}
-
-.channel-chip.removable {
-  padding: 4px 8px 4px 10px;
-}
-
-.remove-icon {
+  font-weight: 500;
   cursor: pointer;
-  font-weight: bold;
-  margin-left: 2px;
+  transition: all 0.2s;
+}
+
+.active-filters .filter-chip:hover {
+  background: #ffd6b8;
+}
+
+.active-filters .filter-chip i {
+  font-size: 11px;
   opacity: 0.7;
-  transition: opacity 0.2s;
 }
 
-.channel-chip.removable:hover .remove-icon {
-  opacity: 1;
+.clear-all-btn {
+  padding: 3px 8px;
+  border: 1px solid #ddd;
+  background: #f5f5f5;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 500;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.2s;
 }
 
-.dropdown-arrow {
-  transition: transform 0.2s;
-  font-size: 14px;
+.clear-all-btn:hover {
+  background: #e8e8e8;
+  border-color: #999;
 }
 
-.dropdown-arrow.rotated {
-  transform: rotate(180deg);
-}
-
-.channel-dropdown-wrapper {
-  position: relative;
-  display: inline-block;
-}
-
-.channel-dropdown {
+.filter-menu {
   position: absolute;
   top: 100%;
   right: 0;
-  margin-top: 4px;
+  z-index: 1000;
   background: white;
   border: 1px solid #ddd;
-  border-radius: 6px;
+  border-radius: 4px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  z-index: 1000;
-  min-width: 140px;
+  min-width: 180px;
+  margin-top: 4px;
 }
 
-.dropdown-item {
+.filter-group {
+  padding: 8px 0;
+}
+
+.group-title {
+  display: block;
+  padding: 6px 12px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #999;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.menu-item {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -566,34 +577,31 @@ onMounted(() => {
   border: none;
   background: none;
   font-size: 11px;
-  cursor: pointer;
-  transition: all 0.2s;
   color: #333;
   text-align: left;
-  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.2s;
 }
 
-.dropdown-item:first-child {
-  border-radius: 5px 5px 0 0;
+.menu-item:hover {
+  background: #f5f5f5;
 }
 
-.dropdown-item:last-child {
-  border-radius: 0 0 5px 5px;
-}
-
-.dropdown-item:hover {
-  background: #f0f0f0;
-}
-
-.dropdown-item.selected {
-  background: #ffe8d6;
+.menu-item.active {
   color: var(--v-primary-base, #ff6b3d);
   font-weight: 600;
 }
 
-.dropdown-item i {
-  font-size: 14px;
+.menu-item i {
+  font-size: 12px;
+  opacity: 0;
+  transition: opacity 0.2s;
 }
+
+.menu-item.active i {
+  opacity: 1;
+}
+
 
 .conversations-container {
   flex: 1 1 auto;
