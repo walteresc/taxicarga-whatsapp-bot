@@ -2,6 +2,7 @@
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar'
 import { useDisplay } from 'vuetify'
 import logo from '@images/logo.svg?raw'
+import { useVerticalNavCollapse } from '@/composables/useVerticalNavCollapse'
 
 const props = defineProps({
   tag: {
@@ -20,6 +21,7 @@ const props = defineProps({
 })
 
 const { mdAndDown } = useDisplay()
+const { toggleVerticalNav, isVerticalNavCollapsed } = useVerticalNavCollapse()
 const refNav = ref()
 
 /*ℹ️ Close overlay side when route is changed
@@ -71,6 +73,15 @@ const handleNavScroll = evt => {
           </h1>
         </RouterLink>
       </slot>
+
+      <!-- Toggle button (desktop only) -->
+      <button
+        class="nav-collapse-btn"
+        @click="toggleVerticalNav"
+        :title="isVerticalNavCollapsed ? 'Expandir' : 'Contraer'"
+      >
+        <i :class="isVerticalNavCollapsed ? 'ri-arrow-right-s-line' : 'ri-arrow-left-s-line'"></i>
+      </button>
     </div>
     <slot name="before-nav-items">
       <div class="vertical-nav-items-shadow" />
@@ -103,6 +114,33 @@ const handleNavScroll = evt => {
     font-weight: 500;
     line-height: 1.75rem;
     text-transform: uppercase;
+  }
+}
+
+.nav-collapse-btn {
+  display: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #666;
+  font-size: 18px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.2s;
+  flex-shrink: 0;
+  margin-left: auto;
+
+  &:hover {
+    background: rgba(0, 0, 0, 0.05);
+    color: #333;
+  }
+
+  @media (min-width: 1280px) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 }
 </style>
