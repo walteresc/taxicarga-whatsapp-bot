@@ -219,11 +219,6 @@ def api_active_conversations(request):
     )
     conversaciones = _filtrar_conversaciones(conversaciones, request)
 
-    # Prefetch último mensaje eficientemente
-    last_mensaje = MensajeWhatsApp.objects.filter(
-        conversacion_id=Q
-    ).order_by('-fecha_mensaje')[:1]
-
     data = []
     for conv in conversaciones[:100]:
         # Obtener último mensaje eficientemente
