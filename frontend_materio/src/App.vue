@@ -43,6 +43,29 @@ html.inbox-route body {
 html.inbox-route #app {
   overflow: hidden !important;
 }
+
+/* Hide navbar completely in inbox route */
+html.inbox-route .layout-navbar {
+  display: none !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  max-height: 0 !important;
+  overflow: hidden !important;
+}
+
+html.inbox-route .layout-page-content {
+  padding-block-start: 0 !important;
+  padding-top: 0 !important;
+  margin-block-start: 0 !important;
+  margin-top: 0 !important;
+}
+
+html.inbox-route .layout-content-wrapper {
+  margin-block-start: 0 !important;
+  margin-top: 0 !important;
+  padding-block-start: 0 !important;
+  padding-top: 0 !important;
+}
 </style>
 
 <style scoped>
