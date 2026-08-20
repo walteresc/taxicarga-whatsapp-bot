@@ -23,7 +23,7 @@
 | **A** | Add multimedia fields | ✅ DONE | 17 fields added |
 | **B** | Create MensajeAdjunto | ✅ DONE | models.py, 0015_* |
 | **B** | Add retention tracking | ✅ DONE | 22 fields, indexes |
-| **C** | Webhook integration | ⏳ TODO | views.py |
+| **C** | Webhook integration | ✅ DONE | views.py |
 | **D** | Secure downloads | ✅ DONE | services.py |
 | **E** | API serializers | ✅ DONE | serializers.py |
 | **F** | Management commands | ✅ DONE | 2 commands |
