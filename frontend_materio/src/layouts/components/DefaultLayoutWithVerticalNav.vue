@@ -1,5 +1,6 @@
 <script setup>
-import { useRoute, computed } from 'vue-router'
+import { useRoute } from 'vue-router'
+import { computed } from 'vue'
 import NavItems from '@/layouts/components/NavItems.vue'
 import logo from '@images/logo.svg?raw'
 import VerticalNavLayout from '@layouts/components/VerticalNavLayout.vue'
