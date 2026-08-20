@@ -116,8 +116,8 @@ onMounted(async () => {
 
 <style scoped>
 .bandeja-page {
-  height: auto;
-  max-height: calc(100dvh - 88px);
+  height: 100dvh;
+  max-height: 100dvh;
   min-height: 0;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
