@@ -124,8 +124,8 @@ const handleNavScroll = evt => {
   height: 32px;
   min-width: 32px;
   padding: 0;
-  border: none;
-  background: transparent;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  background: white;
   color: #666;
   font-size: 18px;
   cursor: pointer;
@@ -138,8 +138,14 @@ const handleNavScroll = evt => {
   position: relative;
 
   &:hover {
-    background: rgba(0, 0, 0, 0.05);
+    background: #f5f5f5;
+    border-color: rgba(0, 0, 0, 0.2);
     color: #333;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  }
+
+  &:active {
+    background: #ececec;
   }
 
   @media (min-width: 1280px) {
@@ -149,18 +155,19 @@ const handleNavScroll = evt => {
   .nav-collapse-tooltip {
     display: none;
     position: absolute;
-    right: -50px;
+    right: -60px;
     top: 50%;
     transform: translateY(-50%);
     background: #333;
     color: white;
-    padding: 4px 8px;
+    padding: 6px 10px;
     border-radius: 4px;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 500;
     white-space: nowrap;
     pointer-events: none;
     z-index: 1000;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
   }
 
   &:hover .nav-collapse-tooltip {

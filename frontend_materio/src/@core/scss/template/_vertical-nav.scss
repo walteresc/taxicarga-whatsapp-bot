@@ -41,6 +41,10 @@
     .nav-header {
       padding-block: 1.25rem;
       padding-inline: 23px 0;
+      min-height: 64px;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
     }
   }
 }
