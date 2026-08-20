@@ -3,6 +3,7 @@ from django.urls import include, path
 
 from apps.campo.views import pizarra
 from .views_whatsapp import whatsapp_conversacion_accion, whatsapp_conversaciones, conversation_messages, pause_bot, resume_bot, api_active_conversations
+from .views_auth_api import api_login, api_logout, api_user, api_check_auth
 from .views_quotes import whatsapp_crear_cotizacion, whatsapp_por_cotizar, whatsapp_solicitud_accion
 from .views_quote_history import whatsapp_cotizacion_accion, whatsapp_cotizacion_detalle, whatsapp_cotizaciones
 from .views_bot_config import whatsapp_configuracion as whatsapp_configuracion_v2
@@ -37,6 +38,10 @@ urlpatterns = [
     path("leads/<int:lead_id>/", dashboard_home, name="dashboard-lead-detail"),
     path("leads/<int:lead_id>/accion/", lead_action, name="dashboard-lead-action"),
     path("api/stats/", stats_api, name="api-stats"),
+    path("api/auth/login/", api_login, name="api-login"),
+    path("api/auth/logout/", api_logout, name="api-logout"),
+    path("api/auth/user/", api_user, name="api-user"),
+    path("api/auth/check/", api_check_auth, name="api-check-auth"),
     path("servicios/", include("apps.servicios.urls")),
     path("clientes/", include("apps.clientes.urls_dashboard")),
     path("pizarra/", pizarra, name="dashboard-pizarra"),

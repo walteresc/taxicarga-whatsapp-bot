@@ -5,6 +5,7 @@ from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 import logging
 
@@ -188,29 +189,59 @@ def _asesores_activos():
     ).distinct().order_by("first_name", "username")
 
 
-@login_required
-@whatsapp_required
+@csrf_exempt
 def api_active_conversations(request):
-    """API endpoint: traer conversaciones activas (últimas 24h, no cerradas)"""
+    """API endpoint: traer conversaciones activas con filtros para Materio"""
     from datetime import timedelta
     from apps.whatsapp_bot_v4.models import ConversationOwnership
 
-    conversations = ConversacionWhatsApp.objects.filter(
-        creada_en__gte=timezone.now() - timedelta(hours=24),
-        estado_atencion__in=[ConversacionWhatsApp.ATENCION_BOT, ConversacionWhatsApp.ATENCION_ASESOR]
-    ).select_related('cliente').order_by('-actualizada_en', '-id')[:100]
+    # Filtrar (mismo código que whatsapp_conversaciones)
+    conversaciones = ConversacionWhatsApp.objects.select_related(
+        "cliente", "lead", "channel", "responsable"
+    )
+    conversaciones = _filtrar_conversaciones(conversaciones, request)
 
     data = []
-    for conv in conversations:
-        ownership = ConversationOwnership.objects.filter(conversation=conv).first()
+    for conv in conversaciones[:100]:
+        # Contar mensajes no leídos (entrantes que no están leídos)
+        unread_count = MensajeWhatsApp.objects.filter(
+            conversacion=conv,
+            direccion=MensajeWhatsApp.ENTRANTE
+        ).exclude(
+            estado__in=['leido', 'entregado']
+        ).count()
+
+        # Obtener información del lead para resumen
+        lead = conv.lead
+        resumen = conv.resumen or conv.motivo_derivacion or f"Vía {conv.channel.nombre if conv.channel else 'desconocido'}"
+
         data.append({
             'id': conv.id,
-            'cliente_phone': conv.cliente.telefono if conv.cliente else 'N/A',
-            'cliente_nombre': conv.cliente.nombre if conv.cliente else 'Sin nombre',
+            'name': conv.cliente.nombre if conv.cliente and conv.cliente.nombre else conv.cliente.telefono if conv.cliente else 'Sin nombre',
+            'phone': conv.cliente.telefono if conv.cliente else 'N/A',
+            'avatar': None,  # Se genera con iniciales en el front
+            'channel': {
+                'id': conv.channel.id if conv.channel else None,
+                'name': conv.channel.nombre if conv.channel else 'Desconocido',
+                'icon': _get_channel_icon(conv.channel.nombre if conv.channel else None),
+            },
             'estado_atencion': conv.estado_atencion,
-            'owner_type': ownership.owner_type if ownership else 'bot',
-            'actualizada_en': conv.actualizada_en.isoformat(),
-            'ultima_actividad': conv.ultima_actividad.isoformat() if conv.ultima_actividad else None,
+            'estado_cotizacion': conv.estado_cotizacion,
+            'resumen': resumen,
+            'preview': conv.resumen or '',
+            'unread_count': unread_count,
+            'last_activity': conv.ultima_actividad.isoformat() if conv.ultima_actividad else conv.actualizada_en.isoformat(),
+            'lead_id': conv.lead.id if conv.lead else None,
+            'responsable': {
+                'id': conv.responsable.id if conv.responsable else None,
+                'nombre': conv.responsable.get_full_name() or conv.responsable.username if conv.responsable else None,
+            },
+            'service_data': {
+                'origin': lead.distrito_origen if lead and lead.distrito_origen else None,
+                'destination': lead.distrito_destino if lead and lead.distrito_destino else None,
+                'status': _get_cotizacion_status(conv.estado_cotizacion),
+                'price': lead.precio_sugerido if lead and lead.precio_sugerido else None,
+            } if lead else None,
         })
 
     return JsonResponse({'conversations': data})
@@ -281,6 +312,43 @@ def _enviar_respuesta(conversacion, actor, contenido):
     return mensaje
 
 
+def _map_mensaje_origen_to_sender(origen):
+    """Map MensajeWhatsApp origen to Vue component sender type"""
+    origen_map = {
+        MensajeWhatsApp.ORIGEN_CLIENTE: 'client',
+        MensajeWhatsApp.ORIGEN_BOT: 'bot',
+        MensajeWhatsApp.ORIGEN_ASESOR: 'advisor',
+        'sistema': 'system',
+    }
+    return origen_map.get(origen, 'system')
+
+
+def _get_channel_icon(channel_name):
+    """Map channel names to Remixicon icons"""
+    if not channel_name:
+        return "global-line"
+    channel_map = {
+        "WhatsApp": "whatsapp-line",
+        "Correo": "mail-line",
+        "Instagram": "instagram-line",
+        "Facebook": "facebook-circle-line",
+        "Chat web": "chat-3-line",
+        "TikTok": "tiktok-line",
+    }
+    return channel_map.get(channel_name, "global-line")
+
+
+def _get_cotizacion_status(estado_cotizacion):
+    """Map cotización states to display names"""
+    status_map = {
+        ConversacionWhatsApp.COTIZACION_SIN_INICIAR: "Sin cotizar",
+        ConversacionWhatsApp.COTIZACION_PENDIENTE: "Por cotizar",
+        ConversacionWhatsApp.COTIZACION_PRECIO_ENVIADO: "Precio enviado",
+        ConversacionWhatsApp.COTIZACION_CERRADA: "Cerrada",
+    }
+    return status_map.get(estado_cotizacion, "Desconocido")
+
+
 def _si_no(value):
     if value is None:
         return "Pendiente"
@@ -290,21 +358,44 @@ def _si_no(value):
 @login_required
 @whatsapp_required
 def conversation_messages(request, conversation_id):
-    """Endpoint para traer mensajes de conversación (para polling en vivo)"""
+    """Endpoint para traer mensajes de conversación con info completa (polling en vivo)"""
     conversation = get_object_or_404(ConversacionWhatsApp, pk=conversation_id)
     messages = MensajeWhatsApp.objects.filter(
         conversacion=conversation
-    ).order_by('fecha_mensaje')
+    ).select_related('autor').order_by('fecha_mensaje')
 
-    messages_list = list(messages.values(
-        'id', 'origen', 'contenido', 'fecha_mensaje', 'estado'
-    ))
+    messages_list = []
+    for msg in messages:
+        # Mapear origen a sender type
+        sender_type = _map_mensaje_origen_to_sender(msg.origen)
+
+        # Obtener nombre del remitente
+        if msg.origen == MensajeWhatsApp.ORIGEN_CLIENTE:
+            sender_name = conversation.cliente.nombre if conversation.cliente else 'Cliente'
+        elif msg.origen == MensajeWhatsApp.ORIGEN_BOT:
+            sender_name = 'TaxiCarga Bot'
+        elif msg.origen == MensajeWhatsApp.ORIGEN_ASESOR:
+            sender_name = msg.autor.get_full_name() or msg.autor.username if msg.autor else 'Asesor'
+        else:
+            sender_name = 'Sistema'
+
+        messages_list.append({
+            'id': msg.id,
+            'sender': sender_type,
+            'senderName': sender_name,
+            'type': 'text',  # Por ahora solo texto
+            'text': msg.contenido,
+            'timestamp': msg.fecha_mensaje.isoformat(),
+            'status': msg.estado,
+            'avatar': None,
+        })
 
     logger.info(f"conversation_messages: {conversation_id} → {len(messages_list)} mensajes")
 
     return JsonResponse({
-        'mensajes': messages_list,
-        'total': len(messages_list)
+        'messages': messages_list,
+        'total': len(messages_list),
+        'conversation_id': conversation_id,
     })
 
 
