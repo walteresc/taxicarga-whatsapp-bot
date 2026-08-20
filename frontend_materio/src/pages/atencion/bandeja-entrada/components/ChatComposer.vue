@@ -1,7 +1,7 @@
 <template>
   <div class="chat-composer">
     <!-- Estado bot atendiendo -->
-    <div v-if="botAttending" class="bot-attending">
+    <div v-if="attentionMode === 'bot'" class="bot-attending">
       <div class="bot-message">
         <i class="ri-robot-line"></i>
         <span>El bot está atendiendo esta conversación</span>
@@ -11,19 +11,30 @@
       </button>
     </div>
 
-    <!-- Estado ventana cerrada -->
-    <div v-else-if="windowClosed" class="window-closed">
-      <div class="window-message">
-        <i class="ri-time-line"></i>
-        <span>La ventana de atención de 24 horas está cerrada</span>
+    <!-- Estado sin asignar -->
+    <div v-else-if="attentionMode === 'unassigned'" class="unassigned-state">
+      <div class="unassigned-message">
+        <i class="ri-user-line"></i>
+        <span>Esta conversación todavía no tiene asesor</span>
       </div>
-      <button class="template-btn" @click="$emit('select-template')">
-        Seleccionar plantilla
+      <button class="assign-btn" @click="$emit('assign-me')">
+        Asignarme
       </button>
     </div>
 
-    <!-- Composer activo -->
-    <div v-else class="composer-content">
+    <!-- Estado conversación cerrada -->
+    <div v-else-if="attentionMode === 'closed'" class="closed-state">
+      <div class="closed-message">
+        <i class="ri-lock-line"></i>
+        <span>Conversación cerrada</span>
+      </div>
+      <button class="reopen-btn" @click="$emit('reopen')">
+        Reabrir
+      </button>
+    </div>
+
+    <!-- Composer activo (asesor atendiendo) -->
+    <div v-else-if="attentionMode === 'advisor'" class="composer-content">
       <!-- Línea informativa -->
       <div class="composer-header">
         <div class="channel-info">
@@ -165,15 +176,18 @@ import { ref, nextTick } from 'vue'
 
 defineProps({
   replyingTo: Object,
-  botAttending: Boolean,
-  windowClosed: Boolean,
+  attentionMode: {
+    type: String,
+    default: 'unassigned',
+    validator: (v) => ['bot', 'advisor', 'unassigned', 'closed'].includes(v),
+  },
   advisorName: {
     type: String,
     default: 'Walter Escobar',
   },
 })
 
-const emit = defineEmits(['send-message', 'clear-reply', 'take-control', 'select-template'])
+const emit = defineEmits(['send-message', 'clear-reply', 'take-control', 'assign-me', 'reopen'])
 
 const messageText = ref('')
 const showQuickReplies = ref(false)
@@ -285,35 +299,67 @@ const insertEmoji = (emoji) => {
 }
 
 .bot-attending,
-.window-closed {
+.window-closed,
+.unassigned-state,
+.closed-state {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 12px 16px;
-  background: #fff3cd;
-  border-top: 1px solid #e0e0e0;
   gap: 12px;
 }
 
+.bot-attending {
+  background: #fff3cd;
+  border-top: 1px solid #e0e0e0;
+}
+
+.unassigned-state {
+  background: #e3f2fd;
+  border-top: 1px solid #e0e0e0;
+}
+
+.closed-state {
+  background: #f5f5f5;
+  border-top: 1px solid #e0e0e0;
+}
+
 .bot-message,
-.window-message {
+.window-message,
+.unassigned-message,
+.closed-message {
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 13px;
-  color: #664d03;
   flex: 1;
 }
 
+.bot-message,
+.window-message {
+  color: #664d03;
+}
+
+.unassigned-message {
+  color: #1565c0;
+}
+
+.closed-message {
+  color: #666;
+}
+
 .bot-message i,
-.window-message i {
+.window-message i,
+.unassigned-message i,
+.closed-message i {
   font-size: 16px;
 }
 
 .take-control-btn,
-.template-btn {
+.template-btn,
+.assign-btn,
+.reopen-btn {
   padding: 6px 14px;
-  background: #664d03;
   color: white;
   border: none;
   border-radius: 4px;
@@ -324,9 +370,30 @@ const insertEmoji = (emoji) => {
   transition: background 0.2s;
 }
 
+.take-control-btn,
+.template-btn {
+  background: #664d03;
+}
+
 .take-control-btn:hover,
 .template-btn:hover {
   background: #5a4402;
+}
+
+.assign-btn {
+  background: #1565c0;
+}
+
+.assign-btn:hover {
+  background: #0d47a1;
+}
+
+.reopen-btn {
+  background: #666;
+}
+
+.reopen-btn:hover {
+  background: #555;
 }
 
 .composer-content {

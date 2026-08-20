@@ -141,8 +141,10 @@
           <p class="preview">{{ conv.preview || conv.phone }}</p>
           <div class="badges">
             <span v-if="conv.estadoCotizacion === 'Por cotizar'" class="badge orange">Por cotizar</span>
-            <span v-if="conv.estadoAtencion === 'bot'" class="badge">🤖 Bot</span>
-            <span v-if="conv.estadoAtencion === 'asesor'" class="badge">👤 Asesor</span>
+            <span v-if="conv.attentionMode === 'bot'" class="badge">🤖 Bot</span>
+            <span v-if="conv.attentionMode === 'advisor'" class="badge">👤 Asesor</span>
+            <span v-if="conv.attentionMode === 'unassigned'" class="badge gray">Sin asignar</span>
+            <span v-if="conv.attentionMode === 'closed'" class="badge gray">Cerrada</span>
             <span v-if="conv.unread > 0" class="badge-number">{{ conv.unread }}</span>
           </div>
         </div>

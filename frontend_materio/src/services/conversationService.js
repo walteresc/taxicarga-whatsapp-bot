@@ -2,6 +2,15 @@
 
 const DASHBOARD_BASE = '/dashboard/whatsapp/conversaciones'
 
+// Mapear estado_atencion del backend a attentionMode unificado
+const mapAttentionMode = (conv) => {
+  if (conv.estado_atencion === 'cerrada') return 'closed'
+  if (conv.estado_atencion === 'asesor') return 'advisor'
+  if (conv.estado_atencion === 'bot') return 'bot'
+  // Fallback: si no está cerrada y no tiene asesor, es unassigned
+  return conv.responsable ? 'advisor' : 'unassigned'
+}
+
 export const conversationService = {
   // Obtener conversaciones activas con filtros
   async getActiveConversations(filters = {}) {
@@ -32,7 +41,7 @@ export const conversationService = {
           channel: conv.channel.name,
           channelIcon: conv.channel.icon,
           avatar: conv.avatar,
-          status: conv.estado_atencion === 'asesor' ? 'ASESOR' : 'BOT',
+          attentionMode: mapAttentionMode(conv),
           estadoAtencion: conv.estado_atencion,
           estadoCotizacion: conv.estado_cotizacion,
           resumen: conv.resumen,

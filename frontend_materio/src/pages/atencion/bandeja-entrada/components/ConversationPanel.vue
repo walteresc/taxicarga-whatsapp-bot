@@ -14,10 +14,12 @@
       <!-- Composer -->
       <ChatComposer
         class="chat-composer"
-        :bot-attending="conversation?.estadoAtencion === 'bot'"
-        :advisor-name="conversation?.responsable?.name || 'Walter Escobar'"
+        :attention-mode="conversation?.attentionMode || 'unassigned'"
+        :advisor-name="conversation?.responsable?.nombre || 'Walter Escobar'"
         @send-message="handleSendMessage"
         @take-control="handleTakeControl"
+        @assign-me="handleAssignMe"
+        @reopen="handleReopen"
         @clear-reply="clearReply"
       />
     </div>
@@ -72,6 +74,16 @@ const handleSendMessage = (messageData) => {
 const handleTakeControl = () => {
   console.log('Take control of conversation')
   // TODO: Implement take control
+}
+
+const handleAssignMe = () => {
+  console.log('Assign conversation to me')
+  // TODO: Implement assign to me
+}
+
+const handleReopen = () => {
+  console.log('Reopen conversation')
+  // TODO: Implement reopen conversation
 }
 
 const clearReply = () => {

@@ -18,14 +18,22 @@
     </div>
 
     <div class="header-actions">
-      <!-- Action button -->
-      <button v-if="conversation.isBotActive" class="action-btn primary" @click="$emit('take-conversation')">
+      <!-- Action button (dynamic based on attention mode) -->
+      <button v-if="conversation.attentionMode === 'bot'" class="action-btn primary" @click="$emit('take-conversation')">
         <i class="ri-user-add-line"></i>
-        Tomar
+        Tomar conversación
       </button>
-      <button v-else class="action-btn secondary" @click="$emit('return-bot')">
+      <button v-else-if="conversation.attentionMode === 'advisor'" class="action-btn secondary" @click="$emit('return-bot')">
         <i class="ri-robot-line"></i>
-        Devolver
+        Devolver al bot
+      </button>
+      <button v-else-if="conversation.attentionMode === 'unassigned'" class="action-btn primary" @click="$emit('assign-me')">
+        <i class="ri-user-add-line"></i>
+        Asignarme
+      </button>
+      <button v-else-if="conversation.attentionMode === 'closed'" class="action-btn secondary" @click="$emit('reopen')">
+        <i class="ri-refresh-line"></i>
+        Reabrir
       </button>
 
       <!-- Menu button -->
@@ -67,7 +75,7 @@ defineProps({
   },
 })
 
-defineEmits(['take-conversation', 'return-bot'])
+defineEmits(['take-conversation', 'return-bot', 'assign-me', 'reopen'])
 
 const showMenu = ref(false)
 
@@ -92,9 +100,10 @@ const getChannelIcon = channel => {
 }
 
 const getStatus = conversation => {
-  if (conversation.status === 'online') return 'En línea'
-  if (conversation.status === 'offline') return 'Desconectado'
-  if (conversation.lastSeen) return `Activo hace ${conversation.lastSeen}`
+  if (conversation.attentionMode === 'bot') return 'Bot atendiendo'
+  if (conversation.attentionMode === 'advisor') return `Atendido por ${conversation.responsable?.nombre || 'Asesor'}`
+  if (conversation.attentionMode === 'unassigned') return 'Esperando asignación'
+  if (conversation.attentionMode === 'closed') return 'Conversación cerrada'
   return 'Esperando'
 }
 </script>
