@@ -419,9 +419,11 @@ watch(() => filteredConversations.value.length, (newCount) => {
   padding: 6px 12px 8px;
   min-height: auto;
   border-bottom: 1px solid rgba(0, 0, 0, 0.08);
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: visible;
   position: relative;
   flex-shrink: 0;
+  z-index: 100;
 }
 
 .filter-tab {
@@ -491,15 +493,14 @@ watch(() => filteredConversations.value.length, (newCount) => {
 
 .filter-menu {
   position: absolute;
-  top: 100%;
+  top: calc(100% + 4px);
   right: 0;
-  z-index: 1000;
+  z-index: 10000;
   background: white;
   border: 1px solid #ddd;
   border-radius: 4px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   min-width: 180px;
-  margin-top: 4px;
 }
 
 .filter-group {

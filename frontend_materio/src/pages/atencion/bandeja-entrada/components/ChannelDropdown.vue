@@ -104,6 +104,7 @@ const toggleChannel = (channel) => {
 <style scoped>
 .channel-dropdown-wrapper {
   position: relative;
+  z-index: 100;
 }
 
 .channel-btn {
@@ -137,14 +138,13 @@ const toggleChannel = (channel) => {
 
 .channel-menu {
   position: absolute;
-  top: 100%;
+  top: calc(100% + 4px);
   left: 0;
-  margin-top: 4px;
   background: white;
   border: 1px solid #ddd;
   border-radius: 6px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  z-index: 1000;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 10000;
   min-width: 150px;
   overflow: hidden;
 }
