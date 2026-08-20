@@ -28,12 +28,13 @@
       <ChannelDropdown
         :active-channels="activeChannels"
         @update:active-channels="activeChannels = $event"
+        @open-dropdown="showFilterMenu = false"
       />
 
       <!-- Advanced filters button -->
       <button
         class="filter-btn"
-        @click="showFilterMenu = !showFilterMenu"
+        @click="toggleFilterMenu"
         :title="activeFiltersCount > 0 ? `${activeFiltersCount} filtro(s) activo(s)` : 'Filtros avanzados'"
       >
         <i class="ri-filter-line"></i>
@@ -210,6 +211,10 @@ const filteredConversations = computed(() => {
 
   return filtered
 })
+
+const toggleFilterMenu = () => {
+  showFilterMenu.value = !showFilterMenu.value
+}
 
 const toggleFilter = tag => {
   if (tag === 'Todas') {

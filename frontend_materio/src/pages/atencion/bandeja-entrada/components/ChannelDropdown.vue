@@ -35,7 +35,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 
 const props = defineProps({
   activeChannels: {
@@ -44,9 +44,15 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['update:activeChannels'])
+const emit = defineEmits(['update:activeChannels', 'open-dropdown'])
 
 const isOpen = ref(false)
+
+watch(isOpen, (newVal) => {
+  if (newVal) {
+    emit('open-dropdown')
+  }
+})
 const channels = ['Todos', 'WhatsApp', 'Correo', 'Instagram', 'Facebook', 'Chat web', 'TikTok', 'Otros']
 
 const selectedLabel = computed(() => {
