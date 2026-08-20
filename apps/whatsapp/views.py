@@ -32,7 +32,14 @@ from apps.whatsapp.domain import obtener_o_crear_conversacion
 from apps.whatsapp.identity import resolve_whatsapp_identity
 
 from . import models as whatsapp_models
-from .models import BotSchedule, ConfiguracionBot, MensajeWhatsappProcesado, WhatsAppChannel
+from .models import (
+    BotSchedule,
+    ConfiguracionBot,
+    MensajeWhatsappProcesado,
+    WhatsAppChannel,
+    ConversacionWhatsApp,
+    MensajeWhatsApp,
+)
 from .services import download_whatsapp_image, download_whatsapp_media, send_whatsapp_message
 from .status import apply_status, extract_statuses
 from .utils import extract_event, should_bot_reply, should_bot_handle_lead, evaluar_mixto_inteligente, evaluar_conversacion_avanzada, _marcar_derivacion
@@ -104,39 +111,28 @@ def _receive_message(request):
             active_lead.save(update_fields=["whatsapp_channel"])
         if not active_lead and channel and not resolved_conversation:
             active_lead = Lead.objects.create(cliente=cliente, estado=Lead.NUEVO, whatsapp_channel=channel)
+        # Phase C: Multimedia handling (non-blocking)
         if event["type"] == "image":
             active_lead = _lead_for_image(cliente, active_lead)
             if not active_lead:
                 active_lead = Lead.objects.create(cliente=cliente, estado=Lead.NUEVO)
-            response = _receive_image(cliente, active_lead, event)
+            response = _receive_multimedia(cliente, active_lead, event, channel)
             _complete_message(processed)
             return response
-        if event["type"] in {"audio", "document"}:
+        if event["type"] in {"audio", "video", "document"}:
             active_lead = active_lead or Lead.objects.create(
                 cliente=cliente, estado=Lead.NUEVO, whatsapp_channel=channel
             )
-            result = download_whatsapp_media(cliente, active_lead, event)
-            label = "[Audio recibido]" if event["type"] == "audio" else "[Documento recibido]"
-            if event.get("caption"):
-                label += f" {event['caption']}"
-            Conversacion.objects.create(
-                cliente=cliente, mensaje_entrada=label, mensaje_salida="",
-                canal=Conversacion.CANAL_WHATSAPP,
-            )
+            response = _receive_multimedia(cliente, active_lead, event, channel)
             _complete_message(processed)
-            return JsonResponse({"ok": True, "media_saved": result.get("saved", False)})
+            return response
         if event["type"] == "location":
             active_lead = active_lead or Lead.objects.create(
                 cliente=cliente, estado=Lead.NUEVO, whatsapp_channel=channel
             )
-            Conversacion.objects.create(
-                cliente=cliente,
-                mensaje_entrada=f"[Ubicación recibida] {event['text']}",
-                mensaje_salida="",
-                canal=Conversacion.CANAL_WHATSAPP,
-            )
+            response = _receive_multimedia(cliente, active_lead, event, channel)
             _complete_message(processed)
-            return JsonResponse({"ok": True, "location_saved": True})
+            return response
 
         bot_deberia_responder = should_bot_reply(lead=active_lead, channel=channel)
         if event["type"] != "text" or not event["text"]:
@@ -887,4 +883,160 @@ def bot_schedule_detail(request, schedule_id):
         "end_time": schedule.end_time.strftime("%H:%M"),
         "is_active": schedule.is_active,
         "modo": schedule.modo,
+    })
+
+
+# ============================================================================
+# Phase C: Multimedia message tracking (non-blocking downloads) - 2026-08-20
+# ============================================================================
+
+def _get_or_create_conversation(lead, channel=None):
+    """Get or create ConversacionWhatsApp for a lead."""
+    if not lead:
+        return None
+    return ConversacionWhatsApp.objects.filter(lead=lead).exclude(
+        estado_atencion=ConversacionWhatsApp.ATENCION_CERRADA
+    ).first() or ConversacionWhatsApp.objects.create(
+        cliente=lead.cliente,
+        lead=lead,
+        channel=channel,
+    )
+
+
+def _queue_multimedia_download(mensaje_id):
+    """
+    Queue multimedia download for async processing.
+
+    In production, this would queue a Celery task or trigger
+    a scheduled management command. For now, returns immediately.
+    """
+    # TODO: Integrate with Celery or background task system
+    # For now, the management command download_pending_multimedia
+    # will pick this up via media_status=pending polling
+    logger.info(f"Queued multimedia download for mensaje_id={mensaje_id}")
+
+
+def _create_mensaje_multimedia(
+    conversacion,
+    event_type,
+    event,
+    direccion,
+    origen,
+    caption="",
+):
+    """
+    Create MensajeWhatsApp for multimedia content (no blocking downloads).
+
+    Args:
+        conversacion: ConversacionWhatsApp instance
+        event_type: 'imagen', 'video', 'audio', 'documento', 'ubicacion'
+        event: Event dict from WhatsApp webhook
+        direccion: 'entrante' or 'saliente'
+        origen: 'cliente', 'bot', 'asesor', 'sistema'
+        caption: User caption if provided
+
+    Returns:
+        MensajeWhatsApp instance or None on error
+    """
+    try:
+        # Extract metadata from event
+        ycloud_media_id = event.get("media_id", "")
+        mime_type_client = event.get("mime_type", "")
+        filename_client = event.get("filename", "")
+
+        # Determine retention policy based on lead context
+        retention_policy = MensajeWhatsApp.RETAIN_DEFAULT
+        if conversacion.lead:
+            # Could check for quote/service links here
+            # For now, use default
+            pass
+
+        # Create message with pending download status
+        mensaje = MensajeWhatsApp(
+            conversacion=conversacion,
+            direccion=direccion,
+            origen=origen,
+            tipo=event_type,
+            caption=caption or event.get("caption", ""),
+            ycloud_media_id=ycloud_media_id,
+            mime_type=mime_type_client,  # Will be validated during download
+            media_status=MensajeWhatsApp.MEDIA_PENDING,
+            sender_type=_map_origen_to_sender_type(origen),
+            source=MensajeWhatsApp.SOURCE_WEBHOOK,
+            retention_policy=retention_policy,
+            meta_message_id=event.get("message_id", ""),
+        )
+        mensaje.save()
+
+        # Queue download for async processing
+        _queue_multimedia_download(mensaje.id)
+
+        logger.info(
+            "Created MensajeWhatsApp for multimedia (msg_id=%s, type=%s, ycloud_id=%s)",
+            mensaje.id,
+            event_type,
+            ycloud_media_id,
+        )
+        return mensaje
+
+    except Exception as e:
+        logger.exception(f"Error creating mensaje multimedia: {e}")
+        return None
+
+
+def _map_origen_to_sender_type(origen):
+    """Map origen to sender_type for message classification."""
+    mapping = {
+        "cliente": MensajeWhatsApp.SENDER_CUSTOMER,
+        "bot": MensajeWhatsApp.SENDER_BOT,
+        "asesor": MensajeWhatsApp.SENDER_ADVISOR,
+        "sistema": MensajeWhatsApp.SENDER_SYSTEM,
+    }
+    return mapping.get(origen, MensajeWhatsApp.SENDER_CUSTOMER)
+
+
+def _receive_multimedia(cliente, active_lead, event, channel):
+    """
+    Phase C: Receive multimedia message without blocking on download.
+
+    Creates MensajeWhatsApp with pending download status and returns
+    HTTP 200 immediately. Download happens async via management command.
+    """
+    event_type = event.get("type", "")
+
+    # Get or create conversation
+    conversacion = _get_or_create_conversation(active_lead, channel)
+    if not conversacion:
+        logger.warning(f"Could not create conversation for multimedia (lead_id={active_lead.id if active_lead else None})")
+        return JsonResponse({"ok": True, "ignored": True, "reason": "no_conversation"})
+
+    # Create MensajeWhatsApp (no blocking download)
+    mensaje = _create_mensaje_multimedia(
+        conversacion=conversacion,
+        event_type=event_type,
+        event=event,
+        direccion=MensajeWhatsApp.ENTRANTE,
+        origen=MensajeWhatsApp.ORIGEN_CLIENTE,
+        caption=event.get("caption", ""),
+    )
+
+    if not mensaje:
+        logger.warning(f"Could not create MensajeWhatsApp for multimedia (type={event_type})")
+        return JsonResponse({"ok": False, "error": "message_creation_failed"}, status=500)
+
+    # For images, queue IA analysis in background
+    if event_type == "imagen" and not event.get("caption"):
+        # TODO: Async IA analysis job
+        pass
+
+    logger.info(
+        "Received multimedia message: type=%s, mensaje_id=%s, client=%s",
+        event_type, mensaje.id, cliente.telefono,
+    )
+
+    return JsonResponse({
+        "ok": True,
+        "message_id": mensaje.id,
+        "type": event_type,
+        "status": "pending_download",
     })
