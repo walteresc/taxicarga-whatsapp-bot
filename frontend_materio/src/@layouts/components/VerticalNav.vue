@@ -58,6 +58,15 @@ const handleNavScroll = evt => {
   >
     <!-- 👉 Header -->
     <div class="nav-header">
+      <!-- Hamburger toggle (desktop only) -->
+      <button
+        class="nav-toggle-hamburger"
+        @click="toggleVerticalNav"
+        :title="isVerticalNavCollapsed ? 'Expandir menú' : 'Contraer menú'"
+      >
+        <i class="ri-menu-line"></i>
+      </button>
+
       <slot name="nav-header">
         <RouterLink
           to="/"
@@ -73,16 +82,6 @@ const handleNavScroll = evt => {
           </h1>
         </RouterLink>
       </slot>
-
-      <!-- Toggle button (desktop only) -->
-      <button
-        class="nav-collapse-btn"
-        @click="toggleVerticalNav"
-        :title="isVerticalNavCollapsed ? 'Expandir menú' : 'Contraer menú'"
-      >
-        <i :class="isVerticalNavCollapsed ? 'ri-arrow-right-s-line' : 'ri-arrow-left-s-line'"></i>
-        <span class="nav-collapse-tooltip">{{ isVerticalNavCollapsed ? 'Expandir' : 'Contraer' }}</span>
-      </button>
     </div>
     <slot name="before-nav-items">
       <div class="vertical-nav-items-shadow" />
@@ -118,60 +117,33 @@ const handleNavScroll = evt => {
   }
 }
 
-.nav-collapse-btn {
+.nav-toggle-hamburger {
   display: none;
-  width: 32px;
-  height: 32px;
-  min-width: 32px;
+  width: 36px;
+  height: 36px;
   padding: 0;
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  background: white;
-  color: #666;
-  font-size: 18px;
+  border: none;
+  background: transparent;
+  color: #333;
+  font-size: 20px;
   cursor: pointer;
   border-radius: 4px;
   transition: all 0.2s;
   flex-shrink: 0;
-  margin-left: auto;
   align-items: center;
   justify-content: center;
-  position: relative;
 
   &:hover {
-    background: #f5f5f5;
-    border-color: rgba(0, 0, 0, 0.2);
-    color: #333;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    background: rgba(0, 0, 0, 0.05);
+    color: #000;
   }
 
   &:active {
-    background: #ececec;
+    background: rgba(0, 0, 0, 0.1);
   }
 
   @media (min-width: 1280px) {
     display: flex;
-  }
-
-  .nav-collapse-tooltip {
-    display: none;
-    position: absolute;
-    right: -60px;
-    top: 50%;
-    transform: translateY(-50%);
-    background: #333;
-    color: white;
-    padding: 6px 10px;
-    border-radius: 4px;
-    font-size: 12px;
-    font-weight: 500;
-    white-space: nowrap;
-    pointer-events: none;
-    z-index: 1000;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-  }
-
-  &:hover .nav-collapse-tooltip {
-    display: block;
   }
 }
 </style>
