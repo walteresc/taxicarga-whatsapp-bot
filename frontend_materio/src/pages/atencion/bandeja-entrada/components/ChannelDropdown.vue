@@ -12,8 +12,17 @@
 
     <div v-if="isOpen" class="channel-menu">
       <button
+        class="channel-item"
+        :class="{ active: props.activeChannels.includes('Todos') }"
+        @click="toggleChannel('Todos')"
+      >
+        <i class="ri-global-line"></i>
+        Todos los canales
+      </button>
+      <button
         v-for="channel in channels"
         :key="channel"
+        v-if="channel !== 'Todos'"
         class="channel-item"
         :class="{ active: props.activeChannels.includes(channel) }"
         @click="toggleChannel(channel)"
@@ -41,16 +50,19 @@ const isOpen = ref(false)
 const channels = ['Todos', 'WhatsApp', 'Correo', 'Instagram', 'Facebook', 'Chat web', 'TikTok', 'Otros']
 
 const selectedLabel = computed(() => {
-  if (props.activeChannels.length === 0) return 'Todos'
-  if (props.activeChannels.includes('Todos')) return 'Todos'
+  if (props.activeChannels.length === 0) return 'Canal'
+  if (props.activeChannels.includes('Todos')) return 'Canal'
   return props.activeChannels[0]
 })
 
-const selectedIcon = computed(() => getChannelIcon(selectedLabel.value))
+const selectedIcon = computed(() => {
+  const selected = selectedLabel.value
+  if (selected === 'Canal') return 'global-line'
+  return getChannelIcon(selected)
+})
 
 const getChannelIcon = (channel) => {
   const icons = {
-    Todos: 'global-line',
     WhatsApp: 'whatsapp-line',
     Correo: 'mail-line',
     Instagram: 'instagram-line',

@@ -131,33 +131,33 @@ onMounted(async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 24px;
+  height: 64px;
+  padding: 0 20px;
   background: #fff;
   border-bottom: 1px solid #e0e0e0;
-  min-height: 0;
 }
 
 .header-left h1 {
   margin: 0;
-  font-size: 20px;
+  font-size: 24px;
   font-weight: 600;
   color: #333;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 
 .count-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 4px 8px;
+  padding: 4px 10px;
   background: #f0f0f0;
-  border-radius: 12px;
+  border-radius: 14px;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   color: #666;
-  min-width: 28px;
+  min-width: 32px;
 }
 
 .header-right {

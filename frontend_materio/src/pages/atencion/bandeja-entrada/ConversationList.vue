@@ -108,7 +108,8 @@
         <div class="avatar">
           <img v-if="conv.avatar" :src="conv.avatar" :alt="conv.name" />
           <div v-else class="avatar-placeholder" :style="getAvatarStyle(conv.id)">
-            {{ getInitials(conv.name || conv.phone) }}
+            <span v-if="conv.name">{{ getInitials(conv.name) }}</span>
+            <i v-else class="ri-account-circle-line"></i>
           </div>
         </div>
         <div class="content">
@@ -116,11 +117,11 @@
             <h4 class="name">{{ conv.name || formatPhone(conv.phone) }}</h4>
             <span class="time">{{ formatTime(conv.lastActivity) }}</span>
           </div>
-          <p class="preview">{{ conv.preview }}</p>
+          <p class="preview">{{ formatPreview(conv.preview) }}</p>
           <div class="badges">
             <span v-if="conv.estadoCotizacion === 'Por cotizar'" class="badge orange">Por cotizar</span>
-            <span v-if="conv.attentionMode === 'bot'" class="badge">🤖 Bot</span>
-            <span v-if="conv.attentionMode === 'advisor'" class="badge">👤 Asesor</span>
+            <span v-if="conv.attentionMode === 'bot'" class="badge">Bot</span>
+            <span v-if="conv.attentionMode === 'advisor'" class="badge">Asesor</span>
             <span v-if="conv.attentionMode === 'unassigned'" class="badge gray">Sin asignar</span>
             <span v-if="conv.attentionMode === 'closed'" class="badge gray">Cerrada</span>
             <span v-if="conv.unread > 0" class="badge-number">{{ conv.unread }}</span>
@@ -275,12 +276,23 @@ const formatTime = time => {
 }
 
 const getInitials = name => {
+  if (!name) return ''
   return name
     .split(' ')
     .map(n => n[0])
     .join('')
     .toUpperCase()
     .slice(0, 2)
+}
+
+const formatPreview = text => {
+  if (!text) return 'Conversación nueva'
+  // Normalize common message types
+  if (text.includes('Imagen') || text.match(/📷|Foto/i)) return '📷 Foto'
+  if (text.includes('Audio') || text.match(/🎤|Audio/i)) return '🎤 Audio'
+  if (text.includes('Documento') || text.match(/📄|Documento/i)) return '📄 Documento'
+  if (text.includes('Ubicación') || text.match(/📍|Ubicación/i)) return '📍 Ubicación'
+  return text
 }
 
 const getChannelIcon = channel => {
@@ -364,8 +376,9 @@ watch(() => filteredConversations.value.length, (newCount) => {
 
 /* FILA 1: BUSCADOR */
 .conversation-search {
-  padding: 10px 12px 6px;
+  padding: 8px 12px;
   position: relative;
+  flex-shrink: 0;
 }
 
 .search-icon {
@@ -384,7 +397,7 @@ watch(() => filteredConversations.value.length, (newCount) => {
   border: 1px solid #e0e0e0;
   border-radius: 4px;
   font-size: 12px;
-  min-height: 40px;
+  height: 42px;
   background: #fff;
   transition: border-color 0.2s;
 }
@@ -403,11 +416,12 @@ watch(() => filteredConversations.value.length, (newCount) => {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 12px 10px;
-  min-height: 48px;
+  padding: 6px 12px 8px;
+  min-height: auto;
   border-bottom: 1px solid rgba(0, 0, 0, 0.08);
-  overflow-x: hidden;
+  overflow: hidden;
   position: relative;
+  flex-shrink: 0;
 }
 
 .filter-tab {
@@ -651,29 +665,33 @@ watch(() => filteredConversations.value.length, (newCount) => {
 
 .conversation-item {
   display: flex;
-  gap: 12px;
-  padding: 12px;
+  gap: 10px;
+  padding: 10px 12px;
   border-bottom: 1px solid #f0f0f0;
   cursor: pointer;
   transition: background 0.15s;
+  min-height: 88px;
+  border-left: 3px solid transparent;
 }
 
 .conversation-item:hover {
-  background: #f9f9f9;
+  background: #fafafa;
 }
 
 .conversation-item.active {
-  background: #f0f4ff;
-  border-left: 3px solid var(--v-primary-base, #ff6b3d);
-  padding-left: 9px;
+  background: #fffaf5;
+  border-left-color: var(--v-primary-base, #ff6b3d);
 }
 
 .avatar {
-  width: 48px;
-  height: 48px;
+  width: 46px;
+  height: 46px;
   border-radius: 50%;
   overflow: hidden;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .avatar img {
@@ -695,50 +713,60 @@ watch(() => filteredConversations.value.length, (newCount) => {
   text-transform: uppercase;
 }
 
+.avatar-placeholder i {
+  font-size: 24px;
+  color: #999;
+}
+
 .content {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
 }
 
 .header {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  margin-bottom: 4px;
+  gap: 6px;
 }
 
 .name {
   margin: 0;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
   color: #333;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 1;
 }
 
 .time {
   font-size: 11px;
   color: #999;
   flex-shrink: 0;
-  margin-left: 4px;
+  white-space: nowrap;
 }
 
 .preview {
-  margin: 4px 0;
-  font-size: 12px;
+  margin: 0;
+  font-size: 13px;
   color: #666;
-  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.2;
 }
 
 .badges {
   display: flex;
-  gap: 6px;
+  gap: 4px;
   align-items: center;
   flex-wrap: wrap;
-  margin-top: 4px;
 }
 
 .badge {
@@ -749,6 +777,7 @@ watch(() => filteredConversations.value.length, (newCount) => {
   font-weight: 600;
   background: #e8eaf6;
   color: var(--v-primary-base, #ff6b3d);
+  white-space: nowrap;
 }
 
 .badge.orange {
@@ -756,12 +785,17 @@ watch(() => filteredConversations.value.length, (newCount) => {
   color: var(--v-primary-base, #ff6b3d);
 }
 
+.badge.gray {
+  background: #f0f0f0;
+  color: #666;
+}
+
 .badge-number {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   background: var(--v-error-base, #f87171);
   color: white;
