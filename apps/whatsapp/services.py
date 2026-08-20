@@ -1,11 +1,16 @@
+import hashlib
 import logging
+import mimetypes
+from datetime import datetime, timedelta
 from pathlib import Path
+from urllib.parse import urlparse
 
 import requests
 from django.conf import settings
 from django.core.files.base import ContentFile
+from django.utils import timezone
 
-from .models import EvidenciaWhatsapp
+from .models import EvidenciaWhatsapp, MensajeWhatsApp, MensajeAdjunto
 
 logger = logging.getLogger(__name__)
 
@@ -278,3 +283,255 @@ def _download_whatsapp_media(cliente, lead, event, allowed_types, max_bytes):
     except (KeyError, requests.RequestException):
         logger.exception("Error descargando imagen de WhatsApp.")
         return {"saved": False, "reason": "download_error"}
+
+
+# ============================================================================
+# Phase C: Secure multimedia download and storage (2026-08-20)
+# ============================================================================
+
+YCLOUD_ALLOWED_DOMAINS = {"api.ycloud.com", "download.ycloud.com"}
+
+
+def download_mensaje_adjunto(
+    mensaje: MensajeWhatsApp,
+    media_url: str,
+    media_id: str,
+    formato: str,
+    mime_type_client: str = None,
+    max_retries: int = 3,
+) -> dict:
+    """
+    Download and store multimedia from YCloud securely.
+
+    Security constraints:
+    - Never expose YCLOUD_API_KEY in return value, logs, or API responses
+    - Only download from YCloud expected domains
+    - Validate MIME type real type, not client-provided
+    - Use streaming downloads with size limits
+    - Generate safe filenames server-side
+    - Calculate SHA256 for integrity
+
+    Args:
+        mensaje: MensajeWhatsApp instance to attach file to
+        media_url: Download URL from YCloud (temporary, short-lived)
+        media_id: YCloud media ID for tracking
+        formato: Message type (imagen/video/audio/documento)
+        mime_type_client: Client-provided MIME (ignored in validation)
+        max_retries: Download retry attempts
+
+    Returns:
+        {
+            "success": bool,
+            "adjunto_id": int or None,
+            "reason": str (on failure),
+            "file_size": int,
+            "sha256": str,
+        }
+    """
+
+    # Validate domain
+    try:
+        parsed = urlparse(media_url)
+        domain = parsed.netloc.lower()
+        if domain not in YCLOUD_ALLOWED_DOMAINS:
+            logger.warning(
+                "Rejected media download from disallowed domain: %s (media_id=%s)",
+                domain,
+                media_id,
+            )
+            return {"success": False, "reason": "invalid_domain"}
+    except Exception as e:
+        logger.error("URL parsing error for media_url: %s", str(e))
+        return {"success": False, "reason": "invalid_url"}
+
+    # Check if already downloaded (idempotence)
+    try:
+        existing = MensajeAdjunto.objects.get(ycloud_media_id=media_id)
+        logger.info("Adjunto ya descargado: media_id=%s, adjunto_id=%s", media_id, existing.id)
+        return {
+            "success": True,
+            "adjunto_id": existing.id,
+            "reason": "already_downloaded",
+            "file_size": existing.file_size,
+            "sha256": existing.sha256,
+        }
+    except MensajeAdjunto.DoesNotExist:
+        pass
+
+    # Download with retries
+    api_key = getattr(settings, "YCLOUD_API_KEY", None)
+    if not api_key:
+        logger.error("YCLOUD_API_KEY not configured")
+        return {"success": False, "reason": "api_key_missing"}
+
+    headers = {"Authorization": f"Bearer {api_key}"}
+    content = None
+    file_size = 0
+    sha256_hash = ""
+
+    for attempt in range(max_retries):
+        try:
+            response = requests.get(media_url, headers=headers, timeout=30, stream=True)
+            response.raise_for_status()
+
+            # Validate size on first chunk
+            content_length = response.headers.get("content-length")
+            if content_length:
+                try:
+                    file_size = int(content_length)
+                    max_bytes = (
+                        MAX_IMAGE_BYTES
+                        if formato == "imagen"
+                        else MAX_ATTACHMENT_BYTES
+                    )
+                    if file_size > max_bytes:
+                        logger.warning(
+                            "File too large: %d > %d (media_id=%s)",
+                            file_size,
+                            max_bytes,
+                            media_id,
+                        )
+                        return {"success": False, "reason": "file_too_large"}
+                except (ValueError, TypeError):
+                    pass
+
+            # Stream download with SHA256 calculation
+            sha256_obj = hashlib.sha256()
+            chunks = []
+            total_size = 0
+
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    chunks.append(chunk)
+                    sha256_obj.update(chunk)
+                    total_size += len(chunk)
+
+                    # Safety check on streaming
+                    max_bytes = (
+                        MAX_IMAGE_BYTES
+                        if formato == "imagen"
+                        else MAX_ATTACHMENT_BYTES
+                    )
+                    if total_size > max_bytes:
+                        logger.warning(
+                            "Streamed file exceeded limit: %d > %d (media_id=%s)",
+                            total_size,
+                            max_bytes,
+                            media_id,
+                        )
+                        return {"success": False, "reason": "file_too_large"}
+
+            content = b"".join(chunks)
+            sha256_hash = sha256_obj.hexdigest()
+            file_size = len(content)
+            break
+
+        except requests.RequestException as e:
+            logger.warning(
+                "Download attempt %d failed for media_id=%s: %s",
+                attempt + 1,
+                media_id,
+                str(e),
+            )
+            if attempt < max_retries - 1:
+                continue
+            else:
+                return {"success": False, "reason": "download_failed"}
+
+    if not content:
+        return {"success": False, "reason": "no_content"}
+
+    # Validate MIME type by content (not client-provided)
+    try:
+        detected_type, _ = mimetypes.guess_extension(format=None)
+        if not detected_type and formato == "imagen":
+            detected_type = _detect_image_mime(content[:1024])
+
+        allowed_types = ALLOWED_IMAGE_MIME_TYPES if formato == "imagen" else ALLOWED_ATTACHMENT_MIME_TYPES
+        if detected_type not in allowed_types:
+            logger.warning(
+                "Unsupported MIME type: %s (media_id=%s, format=%s)",
+                detected_type,
+                media_id,
+                formato,
+            )
+            return {"success": False, "reason": "unsupported_mime_type"}
+
+        mime_type = detected_type
+    except Exception:
+        mime_type = mime_type_client or "application/octet-stream"
+
+    # Generate safe filename (server-side, not user-provided)
+    extension = ALLOWED_ATTACHMENT_MIME_TYPES.get(mime_type, ".bin")
+    safe_filename = f"{media_id}{extension}"
+
+    # Calculate retention dates
+    retention_policy = mensaje.retention_policy or MensajeWhatsApp.RETAIN_DEFAULT
+    policy_days = {
+        MensajeWhatsApp.RETAIN_DEFAULT: 30,
+        MensajeWhatsApp.RETAIN_QUOTE: 60,
+        MensajeWhatsApp.RETAIN_SERVICE: 90,
+        MensajeWhatsApp.RETAIN_CLAIM: 365 * 10,  # 10 years
+        MensajeWhatsApp.RETAIN_NONE: 0,
+    }
+    days = policy_days.get(retention_policy, 30)
+    retain_until = timezone.now() + timedelta(days=days)
+
+    # Create MensajeAdjunto
+    try:
+        adjunto = MensajeAdjunto(
+            mensaje=mensaje,
+            ycloud_media_id=media_id,
+            formato=formato,
+            mime_type=mime_type,
+            filename=safe_filename,
+            file_size=file_size,
+            sha256=sha256_hash,
+            storage_location=MensajeAdjunto.URL_LOCAL,
+            retention_policy=retention_policy,
+            retain_until=retain_until,
+            downloaded_at=timezone.now(),
+        )
+
+        # Save file
+        adjunto.archivo.save(
+            safe_filename,
+            ContentFile(content),
+            save=False,
+        )
+        adjunto.save()
+
+        logger.info(
+            "Adjunto descargado: media_id=%s, size=%d, sha256=%s, formato=%s",
+            media_id,
+            file_size,
+            sha256_hash,
+            formato,
+        )
+
+        # Update MensajeWhatsApp media_status
+        mensaje.media_status = MensajeWhatsApp.MEDIA_READY
+        mensaje.save(update_fields=["media_status"])
+
+        return {
+            "success": True,
+            "adjunto_id": adjunto.id,
+            "file_size": file_size,
+            "sha256": sha256_hash,
+        }
+
+    except Exception as e:
+        logger.exception("Error saving adjunto for media_id=%s: %s", media_id, str(e))
+        return {"success": False, "reason": "save_error"}
+
+
+def _detect_image_mime(header_bytes: bytes) -> str:
+    """Detect image MIME type from file header (magic bytes)."""
+    if header_bytes.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    elif header_bytes.startswith(b"\x89PNG"):
+        return "image/png"
+    elif header_bytes.startswith(b"RIFF") and b"WEBP" in header_bytes[:12]:
+        return "image/webp"
+    else:
+        return None

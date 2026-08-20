@@ -408,6 +408,100 @@ class MensajeWhatsApp(models.Model):
     leido_en = models.DateTimeField(null=True, blank=True)
     creado_en = models.DateTimeField(auto_now_add=True)
 
+    # Multimedia fields (Phase A extension)
+    ycloud_media_id = models.CharField(max_length=255, blank=True, db_index=True)
+    mime_type = models.CharField(max_length=100, blank=True)
+    filename = models.CharField(max_length=255, blank=True)
+    file_size = models.BigIntegerField(null=True, blank=True)
+    sha256 = models.CharField(max_length=64, blank=True, db_index=True)
+    caption = models.TextField(blank=True)
+
+    # Status tracking
+    MEDIA_PENDING = "pending"
+    MEDIA_DOWNLOADING = "downloading"
+    MEDIA_READY = "ready"
+    MEDIA_FAILED = "failed"
+    MEDIA_EXPIRED = "expired"
+    MEDIA_STATUSES = [
+        (MEDIA_PENDING, "Pending download"),
+        (MEDIA_DOWNLOADING, "Downloading"),
+        (MEDIA_READY, "Ready (file saved)"),
+        (MEDIA_FAILED, "Download failed"),
+        (MEDIA_EXPIRED, "URL expired"),
+    ]
+    media_status = models.CharField(
+        max_length=20,
+        choices=MEDIA_STATUSES,
+        default=MEDIA_PENDING,
+        blank=True,
+    )
+
+    # Sender classification
+    SENDER_CUSTOMER = "customer"
+    SENDER_BOT = "bot"
+    SENDER_ADVISOR = "advisor"
+    SENDER_SYSTEM = "system"
+    SENDER_TYPES = [
+        (SENDER_CUSTOMER, "Customer"),
+        (SENDER_BOT, "Bot"),
+        (SENDER_ADVISOR, "Advisor"),
+        (SENDER_SYSTEM, "System"),
+    ]
+    sender_type = models.CharField(
+        max_length=20,
+        choices=SENDER_TYPES,
+        default=SENDER_CUSTOMER,
+    )
+
+    # Message source
+    SOURCE_WHATSAPP_API = "whatsapp_api"
+    SOURCE_WHATSAPP_WEB = "whatsapp_web"
+    SOURCE_CRM = "crm"
+    SOURCE_WEBHOOK = "webhook"
+    SOURCES = [
+        (SOURCE_WHATSAPP_API, "WhatsApp API"),
+        (SOURCE_WHATSAPP_WEB, "WhatsApp Web"),
+        (SOURCE_CRM, "Manual CRM entry"),
+        (SOURCE_WEBHOOK, "Webhook"),
+    ]
+    source = models.CharField(
+        max_length=30,
+        choices=SOURCES,
+        default=SOURCE_WHATSAPP_API,
+    )
+
+    # Retention policy
+    RETAIN_DEFAULT = "default"
+    RETAIN_QUOTE = "quote"
+    RETAIN_SERVICE = "service"
+    RETAIN_CLAIM = "claim"
+    RETAIN_NONE = "none"
+    RETENTION_POLICIES = [
+        (RETAIN_DEFAULT, "Default (30 days)"),
+        (RETAIN_QUOTE, "Quote-linked (60 days)"),
+        (RETAIN_SERVICE, "Service-linked (90 days)"),
+        (RETAIN_CLAIM, "Claim (no limit)"),
+        (RETAIN_NONE, "No cleanup"),
+    ]
+    retention_policy = models.CharField(
+        max_length=20,
+        choices=RETENTION_POLICIES,
+        default=RETAIN_DEFAULT,
+    )
+    retain_until = models.DateTimeField(null=True, blank=True, db_index=True)
+
+    # Manual protection
+    protected_from_cleanup = models.BooleanField(default=False, db_index=True)
+    protection_reason = models.CharField(max_length=255, blank=True)
+    protected_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="mensajes_protegidos",
+    )
+    protection_date = models.DateTimeField(null=True, blank=True)
+
     class Meta:
         ordering = ["fecha_mensaje", "id"]
         constraints = [
@@ -456,3 +550,85 @@ class AuditoriaWhatsApp(models.Model):
 
     def __str__(self):
         return f"{self.evento} - {self.creado_en:%Y-%m-%d %H:%M}"
+
+
+class MensajeAdjunto(models.Model):
+    """Phase B: Media attachment tracking with download + retention metadata."""
+
+    FORMATO_IMAGEN = "imagen"
+    FORMATO_VIDEO = "video"
+    FORMATO_AUDIO = "audio"
+    FORMATO_DOCUMENTO = "documento"
+    FORMATOS = [
+        (FORMATO_IMAGEN, "Imagen"),
+        (FORMATO_VIDEO, "Video"),
+        (FORMATO_AUDIO, "Audio"),
+        (FORMATO_DOCUMENTO, "Documento"),
+    ]
+
+    mensaje = models.ForeignKey(
+        MensajeWhatsApp,
+        on_delete=models.CASCADE,
+        related_name="adjuntos",
+        limit_choices_to={"tipo__in": ["imagen", "audio", "video", "documento"]},
+    )
+    ycloud_media_id = models.CharField(
+        max_length=255,
+        unique=True,
+        db_index=True,
+        help_text="YCloud unique media identifier",
+    )
+    formato = models.CharField(max_length=20, choices=FORMATOS)
+    mime_type = models.CharField(max_length=100)
+    filename = models.CharField(max_length=255)
+    file_size = models.BigIntegerField()
+    sha256 = models.CharField(max_length=64, db_index=True)
+
+    # Download tracking
+    URL_YCLOUD = "ycloud"
+    URL_LOCAL = "local"
+    STORAGE_LOCATIONS = [
+        (URL_YCLOUD, "YCloud (temporary)"),
+        (URL_LOCAL, "Local MEDIA_ROOT"),
+    ]
+    storage_location = models.CharField(
+        max_length=20,
+        choices=STORAGE_LOCATIONS,
+        default=URL_LOCAL,
+    )
+    archivo = models.FileField(
+        upload_to="whatsapp/multimedia/%Y/%m/",
+        blank=True,
+        help_text="Stored multimedia file in MEDIA_ROOT",
+    )
+    downloaded_at = models.DateTimeField(null=True, blank=True)
+    download_attempts = models.PositiveSmallIntegerField(default=0)
+    last_download_error = models.TextField(blank=True)
+
+    # Retention
+    retention_policy = models.CharField(
+        max_length=20,
+        choices=MensajeWhatsApp.RETENTION_POLICIES,
+        default=MensajeWhatsApp.RETAIN_DEFAULT,
+    )
+    retain_until = models.DateTimeField(db_index=True)
+    protected_from_cleanup = models.BooleanField(default=False, db_index=True)
+
+    # Lifecycle
+    ia_analysis_result = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Result of IA/vision analysis (persists even if file deleted)",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["mensaje", "-created_at"]),
+            models.Index(fields=["retain_until", "protected_from_cleanup"]),
+        ]
+
+    def __str__(self):
+        return f"{self.formato}: {self.filename} ({self.ycloud_media_id})"
