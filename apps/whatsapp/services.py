@@ -721,6 +721,7 @@ def process_whatsapp_message(
 
             if should_update_summary:
                 old_ua = conversation.ultima_actividad
+                old_resumen = conversation.resumen
                 conversation.ultima_actividad = message_timestamp
                 conversation.resumen = str(event.get("text") or "")[:100]
 
@@ -740,8 +741,13 @@ def process_whatsapp_message(
                 result["summary_updated"] = True
 
                 logger.info(
-                    "[Summary Updated] conv=%s old_ua=%s new_ua=%s preview=%s",
-                    conversation.id, old_ua, message_timestamp, conversation.resumen[:50],
+                    "[Summary Updated] conv=%s old_ua=%s new_ua=%s old_resumen=%s new_resumen=%s",
+                    conversation.id, old_ua, message_timestamp, old_resumen[:50] if old_resumen else "empty", conversation.resumen[:50],
+                )
+            else:
+                logger.warning(
+                    "[Summary NOT Updated] conv=%s created=%s should_update=%s current_ua=%s msg_timestamp=%s",
+                    conversation.id, created, should_update_summary, conversation.ultima_actividad, message_timestamp,
                 )
 
         # 7. Handle takeover: outbound from WhatsApp Business App (Web/mobile echo) = human intervention

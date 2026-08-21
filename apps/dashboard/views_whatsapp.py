@@ -290,8 +290,8 @@ def api_active_conversations(request):
             } if lead else None,
         })
 
-    # Response with pagination metadata
-    return JsonResponse({
+    # Response with pagination metadata and no-cache headers
+    response = JsonResponse({
         'conversations': data,
         'pagination': {
             'page': page,
@@ -302,6 +302,13 @@ def api_active_conversations(request):
             'has_prev': page > 1,
         }
     })
+
+    # Disable caching to ensure fresh data
+    response['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response['Pragma'] = 'no-cache'
+    response['Expires'] = '0'
+
+    return response
 
 
 def _enviar_respuesta(conversacion, actor, contenido):
