@@ -104,21 +104,20 @@ def whatsapp_conversacion_accion(request, conversation_id):
 
 
 def _filtrar_conversaciones(queryset, request):
-    from datetime import timedelta
     search = request.GET.get("q", "").strip()
     state = request.GET.get("state", "all")
     channel = request.GET.get("channel", "")
     advisor = request.GET.get("advisor", "")
 
-    # Filtrar últimas 24h (como polling)
-    queryset = queryset.filter(
-        creada_en__gte=timezone.now() - timedelta(hours=24)
-    )
+    # Remove 24h filter - show ALL conversations
+    # Frontend polls every 5 seconds anyway
+    # Only filter by explicit criteria
 
     if search:
         queryset = queryset.filter(
             Q(cliente__nombre__icontains=search)
             | Q(cliente__telefono__icontains=search)
+            | Q(cliente__phone_e164__icontains=search)
             | Q(resumen__icontains=search)
             | Q(motivo_derivacion__icontains=search)
         )
@@ -138,7 +137,8 @@ def _filtrar_conversaciones(queryset, request):
         queryset = queryset.filter(channel_id=int(channel))
     if advisor.isdigit():
         queryset = queryset.filter(responsable_id=int(advisor))
-    return queryset.order_by("-actualizada_en", "-id")
+    # Order by last activity DESC, then by ID DESC
+    return queryset.order_by("-ultima_actividad", "-id")
 
 
 def _seleccionar_conversacion(queryset, conversation_id):
@@ -210,8 +210,18 @@ def _asesores_activos():
 @csrf_exempt
 def api_active_conversations(request):
     """API endpoint: traer conversaciones activas con filtros para Materio"""
-    from datetime import timedelta
     from apps.whatsapp_bot_v4.models import ConversationOwnership
+
+    # Pagination
+    page = int(request.GET.get("page", 1))
+    page_size = int(request.GET.get("limit", 25))
+
+    if page < 1:
+        page = 1
+    if page_size > 100:
+        page_size = 100
+    if page_size < 5:
+        page_size = 5
 
     # Filtrar (mismo código que whatsapp_conversaciones)
     conversaciones = ConversacionWhatsApp.objects.select_related(
@@ -219,18 +229,22 @@ def api_active_conversations(request):
     )
     conversaciones = _filtrar_conversaciones(conversaciones, request)
 
+    # Total count
+    total_count = conversaciones.count()
+
+    # Apply pagination
+    start_idx = (page - 1) * page_size
+    end_idx = start_idx + page_size
+    conversaciones_page = conversaciones[start_idx:end_idx]
+
     data = []
-    for conv in conversaciones[:100]:
+    for conv in conversaciones_page:
         # Obtener último mensaje eficientemente
         ultimo_mensaje = conv.mensajes.order_by('-fecha_mensaje').first()
 
-        # Contar mensajes no leídos (entrantes que no están leídos)
-        unread_count = MensajeWhatsApp.objects.filter(
-            conversacion=conv,
-            direccion=MensajeWhatsApp.ENTRANTE
-        ).exclude(
-            estado__in=['leido', 'entregado']
-        ).count()
+        # Contar mensajes no leídos para este usuario
+        from apps.whatsapp.services_read_state import get_unread_count
+        unread_count = get_unread_count(conv, request.user)
 
         # Generar preview del último mensaje
         preview = _get_message_preview(ultimo_mensaje)
@@ -238,9 +252,19 @@ def api_active_conversations(request):
         # Obtener información del lead para resumen
         lead = conv.lead
 
+        # Get display name (prefer display_name, then nombre, then phone)
+        cliente_name = 'Sin nombre'
+        if conv.cliente:
+            cliente_name = (
+                conv.cliente.display_name or
+                conv.cliente.nombre or
+                conv.cliente.telefono or
+                'Sin nombre'
+            )
+
         data.append({
             'id': conv.id,
-            'name': conv.cliente.nombre if conv.cliente and conv.cliente.nombre else conv.cliente.telefono if conv.cliente else 'Sin nombre',
+            'name': cliente_name,
             'phone': conv.cliente.telefono if conv.cliente else 'N/A',
             'avatar': None,  # Se genera con iniciales en el front
             'channel': {
@@ -262,11 +286,22 @@ def api_active_conversations(request):
                 'origin': lead.distrito_origen if lead and lead.distrito_origen else None,
                 'destination': lead.distrito_destino if lead and lead.distrito_destino else None,
                 'status': _get_cotizacion_status(conv.estado_cotizacion),
-                'price': lead.precio_sugerido if lead and lead.precio_sugerido else None,
+                'price': lead.precio_recomendado if lead and lead.precio_recomendado else None,
             } if lead else None,
         })
 
-    return JsonResponse({'conversations': data})
+    # Response with pagination metadata
+    return JsonResponse({
+        'conversations': data,
+        'pagination': {
+            'page': page,
+            'limit': page_size,
+            'total': total_count,
+            'pages': (total_count + page_size - 1) // page_size,
+            'has_next': (page * page_size) < total_count,
+            'has_prev': page > 1,
+        }
+    })
 
 
 def _enviar_respuesta(conversacion, actor, contenido):
@@ -382,30 +417,45 @@ def _si_no(value):
 def conversation_messages(request, conversation_id):
     """Endpoint para traer mensajes de conversación con info completa (polling en vivo)"""
     conversation = get_object_or_404(ConversacionWhatsApp, pk=conversation_id)
+
+    # Mark conversation as read for this user
+    from apps.whatsapp.services_read_state import mark_conversation_as_read
+    mark_conversation_as_read(conversation, request.user)
     messages = MensajeWhatsApp.objects.filter(
         conversacion=conversation
     ).select_related('autor').order_by('fecha_mensaje')
 
     messages_list = []
     for msg in messages:
-        # Mapear origen a sender type
-        sender_type = _map_mensaje_origen_to_sender(msg.origen)
+        # Use canonical sender_type and source
+        sender_type = msg.sender_type or _map_mensaje_origen_to_sender(msg.origen)
+        source = msg.source or "unknown"
 
-        # Obtener nombre del remitente
-        if msg.origen == MensajeWhatsApp.ORIGEN_CLIENTE:
+        # Determine sender name and badge
+        if msg.sender_type == MensajeWhatsApp.SENDER_CUSTOMER:
             sender_name = conversation.cliente.nombre if conversation.cliente else 'Cliente'
-        elif msg.origen == MensajeWhatsApp.ORIGEN_BOT:
+            badge = None
+        elif msg.sender_type == MensajeWhatsApp.SENDER_BOT:
             sender_name = 'TaxiCarga Bot'
-        elif msg.origen == MensajeWhatsApp.ORIGEN_ASESOR:
-            sender_name = msg.autor.get_full_name() or msg.autor.username if msg.autor else 'Asesor'
+            badge = 'bot'
+        elif msg.sender_type == MensajeWhatsApp.SENDER_ADVISOR:
+            if msg.source == MensajeWhatsApp.SOURCE_WHATSAPP_BUSINESS_APP:
+                sender_name = 'Atención humana desde WhatsApp'
+                badge = 'whatsapp'
+            else:
+                sender_name = msg.autor.get_full_name() or msg.autor.username if msg.autor else 'Asesor'
+                badge = 'crm'
         else:
             sender_name = 'Sistema'
+            badge = 'system'
 
         messages_list.append({
             'id': msg.id,
-            'sender': sender_type,
+            'sender': msg.sender_type or 'unknown',
             'senderName': sender_name,
-            'type': 'text',  # Por ahora solo texto
+            'source': source,
+            'badge': badge,
+            'type': 'text',
             'text': msg.contenido,
             'timestamp': msg.fecha_mensaje.isoformat(),
             'status': msg.estado,
@@ -418,6 +468,20 @@ def conversation_messages(request, conversation_id):
         'messages': messages_list,
         'total': len(messages_list),
         'conversation_id': conversation_id,
+    })
+
+
+@login_required
+@whatsapp_required
+def api_unread_counts(request):
+    """Get unread message counts for all conversations for the current user"""
+    from apps.whatsapp.services_read_state import get_unread_conversations
+
+    unread_map = get_unread_conversations(request.user)
+
+    return JsonResponse({
+        'unread': unread_map,
+        'total_unread': sum(unread_map.values()),
     })
 
 

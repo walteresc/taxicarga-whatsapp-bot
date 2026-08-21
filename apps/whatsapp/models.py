@@ -314,7 +314,7 @@ class ConversacionWhatsApp(models.Model):
     datos_faltantes = models.JSONField(default=list, blank=True)
     porcentaje_informacion = models.PositiveSmallIntegerField(default=0)
     motivo_derivacion = models.TextField(blank=True)
-    ultima_actividad = models.DateTimeField(default=timezone.now)
+    ultima_actividad = models.DateTimeField(null=True, blank=True)
     ultimo_mensaje_cliente = models.DateTimeField(null=True, blank=True)
     ultimo_mensaje_enviado = models.DateTimeField(null=True, blank=True)
     cerrada_en = models.DateTimeField(null=True, blank=True)
@@ -453,21 +453,23 @@ class MensajeWhatsApp(models.Model):
         default=SENDER_CUSTOMER,
     )
 
-    # Message source
-    SOURCE_WHATSAPP_API = "whatsapp_api"
-    SOURCE_WHATSAPP_WEB = "whatsapp_web"
-    SOURCE_CRM = "crm"
-    SOURCE_WEBHOOK = "webhook"
+    # Message source — canonical contract
+    SOURCE_WHATSAPP_CUSTOMER = "whatsapp_customer"  # Inbound from customer
+    SOURCE_WHATSAPP_BUSINESS_APP = "whatsapp_business_app"  # Outbound echo from WhatsApp Web/mobile
+    SOURCE_BOT = "bot"  # Outbound from bot
+    SOURCE_CRM = "crm"  # Outbound from CRM advisor
+    SOURCE_SYSTEM = "system"  # System-generated
     SOURCES = [
-        (SOURCE_WHATSAPP_API, "WhatsApp API"),
-        (SOURCE_WHATSAPP_WEB, "WhatsApp Web"),
-        (SOURCE_CRM, "Manual CRM entry"),
-        (SOURCE_WEBHOOK, "Webhook"),
+        (SOURCE_WHATSAPP_CUSTOMER, "WhatsApp Customer (inbound)"),
+        (SOURCE_WHATSAPP_BUSINESS_APP, "WhatsApp Business App (Web/mobile echo)"),
+        (SOURCE_BOT, "Bot (automated response)"),
+        (SOURCE_CRM, "CRM (advisor manual entry)"),
+        (SOURCE_SYSTEM, "System (automated action)"),
     ]
     source = models.CharField(
         max_length=30,
         choices=SOURCES,
-        default=SOURCE_WHATSAPP_API,
+        default=SOURCE_WHATSAPP_CUSTOMER,
     )
 
     # Retention policy
@@ -632,3 +634,4 @@ class MensajeAdjunto(models.Model):
 
     def __str__(self):
         return f"{self.formato}: {self.filename} ({self.ycloud_media_id})"
+from .models_read_state import ConversationReadState  # noqa
