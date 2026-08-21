@@ -5,6 +5,7 @@ from apps.campo.views import pizarra
 from .views_whatsapp import whatsapp_conversacion_accion, whatsapp_conversaciones, conversation_messages, pause_bot, resume_bot, api_active_conversations, api_unread_counts
 from .views_auth_api import api_login, api_logout, api_user, api_check_auth
 from apps.whatsapp.views_realtime import sse_conversation_updates
+from apps.whatsapp.views_sse_global import sse_global_updates
 from .views_quotes import whatsapp_crear_cotizacion, whatsapp_por_cotizar, whatsapp_solicitud_accion
 from .views_quote_history import whatsapp_cotizacion_accion, whatsapp_cotizacion_detalle, whatsapp_cotizaciones
 from .views_bot_config import whatsapp_configuracion as whatsapp_configuracion_v2
@@ -59,6 +60,7 @@ urlpatterns = [
     path("whatsapp/conversaciones/<int:conversation_id>/pause-bot/", pause_bot, name="pause-bot"),
     path("whatsapp/conversaciones/<int:conversation_id>/resume-bot/", resume_bot, name="resume-bot"),
     path("whatsapp/conversaciones/<int:conversation_id>/sse/", sse_conversation_updates, name="sse-conversation-updates"),
+    path("whatsapp/sse/", sse_global_updates, name="sse-global-updates"),
     path("whatsapp/por-cotizar/", whatsapp_por_cotizar, name="dashboard-whatsapp-por-cotizar"),
     path("whatsapp/por-cotizar/<int:request_id>/accion/", whatsapp_solicitud_accion, name="dashboard-whatsapp-solicitud-accion"),
     path("whatsapp/por-cotizar/<int:request_id>/crear/", whatsapp_crear_cotizacion, name="dashboard-whatsapp-crear-cotizacion"),

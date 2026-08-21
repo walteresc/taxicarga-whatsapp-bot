@@ -405,6 +405,29 @@ onMounted(() => {
     loadConversationsWithChangeDetection()
   }, 10000)
 
+  // Connect to global SSE for real-time updates
+  const sseUrl = '/dashboard/whatsapp/sse/'
+  const eventSource = new EventSource(sseUrl)
+
+  eventSource.addEventListener('message.created', (event) => {
+    const data = JSON.parse(event.data)
+    console.log('[SSE] New message:', data)
+    // Reload conversations immediately when new message arrives
+    loadConversationsWithChangeDetection()
+  })
+
+  eventSource.addEventListener('conversation.updated', (event) => {
+    const data = JSON.parse(event.data)
+    console.log('[SSE] Conversation updated:', data)
+    // Reload conversations when state changes
+    loadConversationsWithChangeDetection()
+  })
+
+  eventSource.onerror = (error) => {
+    console.error('[SSE] Connection error:', error)
+    eventSource.close()
+  }
+
   // Listen for realtime events from server
   document.addEventListener('message.created', handleMessageCreated)
   document.addEventListener('conversation.updated', handleConversationUpdated)
