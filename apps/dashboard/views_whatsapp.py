@@ -224,18 +224,9 @@ def api_active_conversations(request):
         page_size = 5
 
     # Filtrar (mismo código que whatsapp_conversaciones)
-    from django.db.models import Prefetch
-
-    # Prefetch últimos mensajes para cada conversación (evita N queries)
-    last_msgs_prefetch = Prefetch(
-        'mensajes',
-        MensajeWhatsApp.objects.order_by('-fecha_mensaje')[:1]
-    )
-
     conversaciones = ConversacionWhatsApp.objects.select_related(
         "cliente", "lead", "channel", "responsable"
-    ).prefetch_related(last_msgs_prefetch)
-
+    )
     conversaciones = _filtrar_conversaciones(conversaciones, request)
 
     # Total count
@@ -248,10 +239,10 @@ def api_active_conversations(request):
 
     data = []
     for conv in conversaciones_page:
-        # Obtener último mensaje desde prefetch (sin query adicional)
-        ultimo_mensaje = conv.mensajes.all()[0] if conv.mensajes.all() else None
+        # Obtener último mensaje eficientemente
+        ultimo_mensaje = conv.mensajes.order_by('-fecha_mensaje').first()
 
-        # Contar mensajes no leídos para este usuario (usando modelo en caché)
+        # Contar mensajes no leídos para este usuario
         from apps.whatsapp.services_read_state import get_unread_count
         unread_count = get_unread_count(conv, request.user)
 
