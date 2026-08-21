@@ -33,13 +33,23 @@ def _normalize_ycloud_payload(event_type, payload):
         if msg_data:
             # Flatten structure
             canonical["from"] = msg_data.get("from")
+            canonical["from_name"] = msg_data.get("fromName", "")  # Contact name from YCloud
             canonical["wamid"] = msg_data.get("id")
             canonical["text"] = msg_data.get("text", {}).get("body", "")
-            canonical["type"] = payload.get("type")
             canonical["image"] = msg_data.get("image")
             canonical["audio"] = msg_data.get("audio")
             canonical["document"] = msg_data.get("document")
             canonical["timestamp"] = payload.get("timestamp")
+
+            # Detect content type based on what's present
+            if msg_data.get("image"):
+                canonical["type"] = "image"
+            elif msg_data.get("audio"):
+                canonical["type"] = "audio"
+            elif msg_data.get("document"):
+                canonical["type"] = "document"
+            else:
+                canonical["type"] = "text"
 
     elif event_type == "whatsapp.smb.message.echoes":
         msg_data = payload.get("whatsappMessage", {})
