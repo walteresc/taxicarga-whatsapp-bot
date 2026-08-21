@@ -81,10 +81,7 @@ class YCloudWebhookIntegrationTests(TestCase):
     @patch('apps.whatsapp.views._send_bot_message')
     def test_inbound_creates_conversation_and_message(self, mock_send):
         """Test: Inbound message creates conversation and message correctly."""
-        # Mock bot message sending to avoid YCloud API errors in test
-        mock_send.return_value = {
-            "messages": [{"id": "mock_msg_id"}]
-        }
+        mock_send.return_value = {"messages": [{"id": "mock_msg_id"}]}
 
         phone = "+51987654322"
         ts = timezone.make_aware(datetime(2026, 8, 21, 10, 0, 0))
@@ -128,7 +125,7 @@ class YCloudWebhookIntegrationTests(TestCase):
     @patch('apps.whatsapp.views._send_bot_message')
     def test_echo_from_whatsapp_web_triggers_takeover(self, mock_send):
         """Test: Echo from WhatsApp Web sets takeover and pauses bot."""
-        mock_send.return_value = MagicMock(sent=True, id="mock_msg_id")
+        mock_send.return_value = {"messages": [{"id": "mock_msg_id"}]}
 
         phone = "+51987654323"
 
@@ -142,7 +139,7 @@ class YCloudWebhookIntegrationTests(TestCase):
         )
 
         response1 = self.client.post(
-            "/dashboard/webhook/whatsapp/",
+            "/webhook/whatsapp/",
             data=json.dumps(payload1),
             content_type="application/json",
         )
@@ -161,7 +158,7 @@ class YCloudWebhookIntegrationTests(TestCase):
         )
 
         response2 = self.client.post(
-            "/dashboard/webhook/whatsapp/",
+            "/webhook/whatsapp/",
             data=json.dumps(payload2),
             content_type="application/json",
         )
@@ -184,7 +181,7 @@ class YCloudWebhookIntegrationTests(TestCase):
     @patch('apps.whatsapp.views._send_bot_message')
     def test_duplicate_inbound_not_created_twice(self, mock_send):
         """Test: Same wamid sent twice doesn't create duplicate message."""
-        mock_send.return_value = MagicMock(sent=True, id="mock_msg_id")
+        mock_send.return_value = {"messages": [{"id": "mock_msg_id"}]}
 
         phone = "+51987654324"
         ts = timezone.make_aware(datetime(2026, 8, 21, 10, 0, 0))
@@ -197,14 +194,14 @@ class YCloudWebhookIntegrationTests(TestCase):
 
         # Send twice
         response1 = self.client.post(
-            "/dashboard/webhook/whatsapp/",
+            "/webhook/whatsapp/",
             data=json.dumps(payload),
             content_type="application/json",
         )
         self.assertEqual(response1.status_code, 200)
 
         response2 = self.client.post(
-            "/dashboard/webhook/whatsapp/",
+            "/webhook/whatsapp/",
             data=json.dumps(payload),
             content_type="application/json",
         )
@@ -217,7 +214,7 @@ class YCloudWebhookIntegrationTests(TestCase):
     @patch('apps.whatsapp.views._send_bot_message')
     def test_newer_message_updates_ultima_actividad(self, mock_send):
         """Test: Newer message updates ultima_actividad, older doesn't retro-grade."""
-        mock_send.return_value = MagicMock(sent=True, id="mock_msg_id")
+        mock_send.return_value = {"messages": [{"id": "mock_msg_id"}]}
 
         phone = "+51987654325"
 
@@ -231,7 +228,7 @@ class YCloudWebhookIntegrationTests(TestCase):
         )
 
         self.client.post(
-            "/dashboard/webhook/whatsapp/",
+            "/webhook/whatsapp/",
             data=json.dumps(payload1),
             content_type="application/json",
         )
@@ -249,7 +246,7 @@ class YCloudWebhookIntegrationTests(TestCase):
         )
 
         self.client.post(
-            "/dashboard/webhook/whatsapp/",
+            "/webhook/whatsapp/",
             data=json.dumps(payload2),
             content_type="application/json",
         )
@@ -268,7 +265,7 @@ class YCloudWebhookIntegrationTests(TestCase):
         )
 
         self.client.post(
-            "/dashboard/webhook/whatsapp/",
+            "/webhook/whatsapp/",
             data=json.dumps(payload3),
             content_type="application/json",
         )
@@ -282,7 +279,7 @@ class YCloudWebhookIntegrationTests(TestCase):
     @patch('apps.whatsapp.views._send_bot_message')
     def test_webhook_response_contains_required_fields(self, mock_send):
         """Test: Webhook response includes conversation_id and message_id."""
-        mock_send.return_value = MagicMock(sent=True, id="mock_msg_id")
+        mock_send.return_value = {"messages": [{"id": "mock_msg_id"}]}
 
         phone = "+51987654326"
         ts = timezone.make_aware(datetime(2026, 8, 21, 10, 0, 0))
