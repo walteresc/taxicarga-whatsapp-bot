@@ -549,8 +549,10 @@ def extract_event(payload):
 
         event = {
             "phone": message["from"],
+            "to": message.get("to", ""),  # Echo events have 'to' field (customer)
             "phone_number_id": metadata.get("phone_number_id", ""),
             "message_id": message.get("id", ""),
+            "timestamp": message.get("timestamp", ""),
             "type": message_type,
             "text": "",
             "media_id": "",

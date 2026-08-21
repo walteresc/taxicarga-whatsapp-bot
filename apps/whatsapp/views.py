@@ -386,6 +386,10 @@ def _receive_message(request):
 def _detect_ycloud_event_type(payload, phone_number_id):
     """Detect if event is inbound message or outbound echo from YCloud webhook.
 
+    Correct identification:
+    - Inbound: message from customer (no 'to' field in standard inbound)
+    - Echo: message has BOTH 'from' (business) AND 'to' (customer) fields
+
     Args:
         payload: YCloud webhook payload
         phone_number_id: The business phone_number_id
@@ -406,13 +410,15 @@ def _detect_ycloud_event_type(payload, phone_number_id):
 
         message = value["messages"][0]
         message_from = message.get("from", "")
+        message_to = message.get("to", "")  # KEY: Echo has 'to' field
 
-        # Echo: message originated from our business phone (outbound that was echoed back)
-        if message_from == phone_number_id:
+        # Echo: Official YCloud structure has BOTH 'from' (business) and 'to' (customer)
+        # This identifies whatsapp.smb.message.echoes events correctly
+        if message_from and message_to:
             return "echo"
 
-        # Inbound: message from customer
-        if message_from:
+        # Inbound: Only has 'from' (customer), no 'to'
+        if message_from and not message_to:
             return "inbound_message"
 
         return None

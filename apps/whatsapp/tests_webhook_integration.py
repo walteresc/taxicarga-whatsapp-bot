@@ -52,8 +52,12 @@ class YCloudWebhookIntegrationTests(TestCase):
             }]
         }
 
-    def _build_echo_payload(self, phone, text, wamid, ts=None):
-        """Build YCloud echo (outbound from Web/mobile) payload."""
+    def _build_echo_payload(self, customer_phone, text, wamid, ts=None):
+        """Build YCloud official smb.message.echoes payload structure.
+
+        Echo comes from business account (from) sent to customer (to).
+        This is the real structure from whatsapp.smb.message.echoes event.
+        """
         if ts is None:
             ts = int(timezone.now().timestamp())
 
@@ -67,7 +71,8 @@ class YCloudWebhookIntegrationTests(TestCase):
                             "display_phone_number": self.channel.numero_visible,
                         },
                         "messages": [{
-                            "from": self.channel.phone_number_id,  # Echo from business
+                            "from": self.channel.numero_visible,  # Business phone that sent
+                            "to": customer_phone,  # Customer who received (KEY FOR IDENTITY)
                             "id": wamid,
                             "timestamp": str(ts),
                             "type": "text",
@@ -151,7 +156,7 @@ class YCloudWebhookIntegrationTests(TestCase):
         # Now send echo from WhatsApp Web
         ts2 = timezone.make_aware(datetime(2026, 8, 21, 10, 5, 0))
         payload2 = self._build_echo_payload(
-            phone=phone,
+            customer_phone=phone,
             text="Advisor reply from Web",
             wamid="ycloud_echo_101",
             ts=int(ts2.timestamp()),

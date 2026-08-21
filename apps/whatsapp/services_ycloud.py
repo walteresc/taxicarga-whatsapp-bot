@@ -104,6 +104,9 @@ class YCloudMessageProcessor:
         """
         Process single YCloud event atomically.
 
+        For echoes: resolves customer from 'to' field, not 'from'.
+        For inbound: resolves customer from 'from' field.
+
         Args:
             event_type: str — EVENT_INBOUND | EVENT_ECHO | EVENT_STATUS
             event_data: dict — Full event payload from YCloud
@@ -138,11 +141,19 @@ class YCloudMessageProcessor:
                 result["error"] = "Status update only — handled separately"
                 return result
 
-            # 2. Resolve client identity
-            phone = event_data.get("from") or event_data.get("phone")
-            if not phone:
-                result["error"] = "No phone number in event"
-                return result
+            # 2. Resolve client identity (CRITICAL: use 'to' for echo, 'from' for inbound)
+            if event_type == self.EVENT_ECHO:
+                # Echo: 'to' is the customer, 'from' is the business
+                phone = event_data.get("to")
+                if not phone:
+                    result["error"] = "Echo event missing 'to' field (customer phone)"
+                    return result
+            else:
+                # Inbound: 'from' is the customer
+                phone = event_data.get("from") or event_data.get("phone")
+                if not phone:
+                    result["error"] = "No phone number in event"
+                    return result
 
             cliente, _ = Cliente.objects.get_or_create(
                 telefono=phone,
