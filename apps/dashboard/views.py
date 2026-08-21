@@ -7,11 +7,11 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import LoginView
 from apps.dashboard.permissions import role_required, can_manage_pizarra,can_view_assigned_services,can_driver_update_status
 from django.db.models import Count, OuterRef, Prefetch, Subquery, Sum
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_POST, require_http_methods
 from django.views.generic.base import RedirectView
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
@@ -1173,3 +1173,31 @@ def _datetime_or_none(value):
     if timezone.is_naive(parsed):
         parsed = timezone.make_aware(parsed, timezone.get_current_timezone())
     return parsed
+
+
+@login_required
+@require_http_methods(["GET"])
+def api_conversaciones_activas(request):
+    """API endpoint: /dashboard/whatsapp/conversaciones/api/active/
+    Returns active conversations ordered by ultima_actividad DESC."""
+    convs = ConversacionWhatsApp.objects.filter(
+        cerrada_en__isnull=True
+    ).select_related(
+        'cliente'
+    ).order_by('-ultima_actividad')[:100]
+
+    conversations = []
+    for conv in convs:
+        conversations.append({
+            'id': conv.id,
+            'cliente_id': conv.cliente_id,
+            'cliente_nombre': conv.cliente.nombre if conv.cliente else '',
+            'preview': conv.resumen or '',
+            'ultima_actividad': conv.ultima_actividad.isoformat() if conv.ultima_actividad else None,
+            'estado': conv.estado_atencion,
+        })
+
+    return JsonResponse({
+        'conversations': conversations,
+        'count': len(conversations),
+    })

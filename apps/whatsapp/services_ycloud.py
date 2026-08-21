@@ -162,11 +162,11 @@ class YCloudMessageProcessor:
             cliente.ultima_interaccion = timezone.now()
             cliente.save(update_fields=["ultima_interaccion"])
 
-            # 3. Resolve or create conversation
-            conversation, conv_created = ConversacionWhatsApp.objects.get_or_create(
+            # 3. Resolve or create conversation (using central service)
+            from apps.whatsapp.services_conversation_resolver import resolve_or_create_active_conversation
+            conversation, conv_created = resolve_or_create_active_conversation(
                 cliente=cliente,
                 channel=channel,
-                defaults={"estado_atencion": ConversacionWhatsApp.ATENCION_BOT}
             )
 
             # 4. Lock conversation for atomic update

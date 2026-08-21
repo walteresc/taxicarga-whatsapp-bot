@@ -19,6 +19,48 @@ from .bot_control_service import can_bot_respond
 logger = logging.getLogger(__name__)
 
 
+def _normalize_ycloud_payload(event_type, payload):
+    """Transform YCloud payload format to canonical format expected by YCloudMessageProcessor.
+
+    YCloud format → Canonical format:
+    - whatsappInboundMessage → root level fields (from, id, text, etc.)
+    - whatsappMessage (echoes) → root level fields (from, to, id, text, etc.)
+    """
+    canonical = dict(payload)
+
+    if event_type == "whatsapp.inbound_message.received":
+        msg_data = payload.get("whatsappInboundMessage", {})
+        if msg_data:
+            # Flatten structure
+            canonical["from"] = msg_data.get("from")
+            canonical["wamid"] = msg_data.get("id")
+            canonical["text"] = msg_data.get("text", {}).get("body", "")
+            canonical["type"] = payload.get("type")
+            canonical["image"] = msg_data.get("image")
+            canonical["audio"] = msg_data.get("audio")
+            canonical["document"] = msg_data.get("document")
+            canonical["timestamp"] = payload.get("timestamp")
+
+    elif event_type == "whatsapp.smb.message.echoes":
+        msg_data = payload.get("whatsappMessage", {})
+        if msg_data:
+            # Echo: 'to' is customer, 'from' is business
+            canonical["from"] = msg_data.get("from")
+            canonical["to"] = msg_data.get("to")
+            canonical["wamid"] = msg_data.get("id")
+            canonical["text"] = msg_data.get("text", {}).get("body", "")
+            canonical["type"] = payload.get("type")
+            canonical["timestamp"] = payload.get("timestamp")
+
+    elif event_type == "whatsapp.message.updated":
+        # Status update
+        canonical["wamid"] = payload.get("id") or payload.get("wamid")
+        canonical["status"] = payload.get("status")
+        canonical["type"] = "status"
+
+    return canonical if canonical.get("wamid") or canonical.get("from") or canonical.get("status") else None
+
+
 def verify_ycloud_signature(request):
     """Validar firma HMAC de YCloud. Formato: Ycloud-Signature: t=timestamp,s=signature"""
 
@@ -73,16 +115,23 @@ def verify_ycloud_signature(request):
 @csrf_exempt
 @require_http_methods(["POST"])
 def ycloud_webhook(request):
-    """Webhook de YCloud - reemplaza a Meta Graph API"""
+    """Webhook de YCloud - adaptador delgado que delega al procesador canónico.
 
-    # Log inmediato
-    print(f"[YCloud] WEBHOOK RECEIVED AT {timezone.now()}")
+    Responsabilidades:
+    1. Validar firma HMAC
+    2. Registrar evento para idempotencia (WebhookEvent)
+    3. Delegar persistencia a YCloudMessageProcessor.process_ycloud_event()
+    4. Retornar HTTP 200 inmediatamente (no bloquear por bot processing)
+    5. Disparar bot processing en background (si aplica)
+    """
     logger.warning(f"[YCloud] WEBHOOK RECEIVED AT {timezone.now()}")
 
+    # 1. VALIDAR FIRMA
     if not verify_ycloud_signature(request):
         logger.warning("[YCloud] Invalid YCloud signature")
         return JsonResponse({'error': 'Invalid signature'}, status=401)
 
+    # 2. PARSEAR JSON
     try:
         payload = json.loads(request.body)
     except json.JSONDecodeError:
@@ -91,56 +140,112 @@ def ycloud_webhook(request):
 
     logger.warning(f"[YCloud] FULL PAYLOAD:\n{json.dumps(payload, indent=2)}")
 
-    import uuid
-
-    # YCloud usa 'type' no 'event'
+    # 3. EXTRAER METADATOS
     event_type = payload.get('type') or payload.get('event')
-    data = payload.get('data', {})
+    if not event_type:
+        logger.warning("[YCloud] Missing event type")
+        return JsonResponse({'error': 'Missing event type'}, status=400)
 
-    # Generar ID único: usar 'id' de data o 'id' del evento o generar UUID
-    message_id = data.get('id') or payload.get('id') or str(uuid.uuid4())
+    event_id = payload.get('id') or payload.get('event_id')
+    if not event_id:
+        import uuid
+        event_id = str(uuid.uuid4())
 
-    logger.warning(f"[YCloud] Event: {event_type}, Message ID: {message_id}")
+    logger.warning(f"[YCloud] Event type={event_type}, event_id={event_id}")
 
-    # Idempotencia: no procesar dos veces
+    # 4. IDEMPOTENCIA: No procesar dos veces
     if WebhookEvent.objects.filter(
         source='ycloud',
-        external_message_id=message_id
+        external_message_id=event_id
     ).exists():
-        logger.info(f"Duplicate YCloud message {message_id}, skipping")
+        logger.info(f"[YCloud] Duplicate event {event_id}, skipping")
         return JsonResponse({'status': 'skipped'})
 
-    # Registrar evento
+    # 5. REGISTRAR EVENTO
     try:
         WebhookEvent.objects.create(
             source='ycloud',
-            external_message_id=message_id,
+            external_message_id=event_id,
             event_type=event_type
         )
     except Exception as e:
         logger.error(f"[YCloud] Error creating WebhookEvent: {e}", exc_info=True)
 
-    # Procesar según tipo (pasar payload completo, no data)
-    try:
-        logger.warning(f"[YCloud] ROUTING: event_type={event_type}")
-        if event_type == 'whatsapp.inbound_message.received':
-            logger.warning(f"[YCloud] CALLING handle_inbound_message")
-            handle_inbound_message(payload)
-        elif event_type == 'whatsapp.smb.message.echoes':
-            logger.warning(f"[YCloud] CALLING handle_advisor_message")
-            handle_advisor_message(payload)
-        elif event_type == 'whatsapp.message.updated':
-            logger.warning(f"[YCloud] CALLING handle_message_update")
-            handle_message_update(payload)
-        elif event_type == 'whatsapp.smb.history':
-            logger.info(f"History event, ignoring")
-        else:
-            logger.warning(f"Unknown YCloud event type: {event_type}")
-    except Exception as e:
-        logger.error(f"[YCloud] Error processing YCloud event: {e}", exc_info=True)
-        return JsonResponse({'error': str(e)}, status=500)
+    # 6. TRANSFORMAR PAYLOAD A FORMATO CANÓNICO
+    # YCloud structure → canonical format for processor
+    canonical_payload = _normalize_ycloud_payload(event_type, payload)
+    if not canonical_payload:
+        logger.warning("[YCloud] Failed to normalize payload")
+        return JsonResponse({'status': 'ok'})
 
+    # 7. DELEGAR PERSISTENCIA AL PROCESADOR CANÓNICO
+    try:
+        # Determinar channel (ahora es requerido)
+        from apps.whatsapp.models import WhatsAppChannel
+        channel = WhatsAppChannel.objects.filter(activo=True).first()
+        if not channel:
+            logger.error("[YCloud] No active WhatsApp channel configured")
+            return JsonResponse({'status': 'ok'})  # HTTP 200 but no processing
+
+        # Importar procesador
+        from apps.whatsapp.services_ycloud import process_ycloud_event
+
+        # Procesar evento (persistencia atómica: cliente, conversación, mensaje)
+        result = process_ycloud_event(event_type, canonical_payload, channel)
+
+        logger.info(f"[YCloud] Persistence result: {result}")
+
+        # 7. PROCESAR BOT EN BACKGROUND (no bloquear HTTP 200)
+        if result.get("message") and result.get("conversation"):
+            try:
+                # Disparar bot processing sin esperar (puede ser async en el futuro)
+                process_bot_for_conversation_async(result["conversation"], result["message"])
+            except Exception as e:
+                logger.error(f"[YCloud] Error dispatching bot: {e}", exc_info=True)
+                # NO retornar error — mensaje ya fue persistido
+
+    except Exception as e:
+        logger.error(f"[YCloud] Error processing event: {e}", exc_info=True)
+        # HTTP 200 igual — idempotencia registrada, no intentar de nuevo
+
+    # 8. RETORNAR HTTP 200 (mensaje ya persistido)
     return JsonResponse({'status': 'ok'})
+
+
+def process_bot_for_conversation_async(conversation, message):
+    """Procesar respuesta del bot para una conversación.
+
+    Se ejecuta DESPUÉS de retornar HTTP 200 — no bloquea webhook.
+    Verifica: bot pausado, control, can_bot_respond, etc.
+    """
+    from apps.whatsapp_bot_v4.models import ConversationOwnership
+    from apps.whatsapp_bot_v4.services.bot_control_service import can_bot_respond
+
+    logger.info(f"[BotAsync] Processing conversation {conversation.id}, message {message.id}")
+
+    # Verificar si puede responder el bot
+    if not can_bot_respond(conversation.id):
+        logger.info(f"[BotAsync] Bot cannot respond for conversation {conversation.id}")
+        return
+
+    # Solo procesar mensajes de cliente (ENTRANTE)
+    if message.direccion != MensajeWhatsApp.ENTRANTE:
+        logger.info(f"[BotAsync] Skipping non-inbound message {message.id}")
+        return
+
+    # Solo procesar si origen es cliente
+    if message.origen != MensajeWhatsApp.ORIGEN_CLIENTE:
+        logger.info(f"[BotAsync] Skipping non-customer message {message.id}")
+        return
+
+    try:
+        process_bot_response(
+            conversation.cliente.telefono.lstrip('+'),
+            message.contenido,
+            conversation
+        )
+    except Exception as e:
+        logger.error(f"[BotAsync] Error processing bot response: {e}", exc_info=True)
 
 
 def handle_inbound_message(data):
