@@ -10,7 +10,7 @@ from django.conf import settings
 from django.core.files.base import ContentFile
 from django.utils import timezone
 
-from .models import EvidenciaWhatsapp, MensajeWhatsApp, MensajeAdjunto
+from .models import EvidenciaWhatsapp, MensajeWhatsApp, MensajeAdjunto, ConversacionWhatsApp
 
 logger = logging.getLogger(__name__)
 
@@ -35,9 +35,13 @@ MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
 def send_whatsapp_message(
     to, body, channel=None, *, author_type=None, conversation_id=None
 ):
-    """Envía un mensaje simple o de plantilla por WhatsApp (Meta o YCloud)."""
+    """Envía un mensaje simple o de plantilla por WhatsApp (Meta o YCloud).
+
+    Si conversation_id se proporciona, registra el mensaje en BD via process_whatsapp_message().
+    """
     import json
     import requests
+    from apps.clientes.models import Cliente
 
     if author_type and conversation_id and not _ownership_allows_send(
         author_type=author_type,
@@ -95,7 +99,51 @@ def send_whatsapp_message(
     try:
         response = requests.post(url, headers=headers, json=payload, timeout=5)
         response.raise_for_status()
-        return response.json()
+        result = response.json()
+
+        # Register outbound message in BD if conversation provided
+        if conversation_id and result.get("messages"):
+            try:
+                conversation = ConversacionWhatsApp.objects.get(pk=conversation_id)
+                client = conversation.cliente
+                meta_id = result["messages"][0].get("id", "")
+
+                # Determine sender_type from author_type
+                from apps.whatsapp_bot_v4.models import AuthorType
+                if author_type == AuthorType.BOT:
+                    sender_type = MensajeWhatsApp.SENDER_BOT
+                    source = MensajeWhatsApp.SOURCE_BOT
+                elif author_type == AuthorType.HUMAN:
+                    sender_type = MensajeWhatsApp.SENDER_ADVISOR
+                    source = MensajeWhatsApp.SOURCE_WHATSAPP_BUSINESS_APP
+                else:
+                    sender_type = MensajeWhatsApp.SENDER_SYSTEM
+                    source = MensajeWhatsApp.SOURCE_SYSTEM
+
+                msg_text = body if isinstance(body, str) else body.get('text', {}).get('body', '')
+                process_whatsapp_message(
+                    client=client,
+                    channel=channel,
+                    event={
+                        "message_id": meta_id,
+                        "text": msg_text,
+                        "created_at": timezone.now().isoformat(),
+                    },
+                    direction=MensajeWhatsApp.SALIENTE,
+                    sender_type=sender_type,
+                    source=source,
+                    conversation=conversation,
+                )
+                logger.info(
+                    "[Outbound Message Recorded] conversation=%s sender=%s meta_id=%s",
+                    conversation_id, sender_type, meta_id,
+                )
+            except ConversacionWhatsApp.DoesNotExist:
+                logger.warning("[Outbound Message] conversation %s not found", conversation_id)
+            except Exception as e:
+                logger.error("[Outbound Message Recording Failed] %s", str(e), exc_info=True)
+
+        return result
     except requests.RequestException as exc:
         status_code = getattr(exc.response, "status_code", None)
         error_code = None
@@ -535,3 +583,192 @@ def _detect_image_mime(header_bytes: bytes) -> str:
         return "image/webp"
     else:
         return None
+
+
+def process_whatsapp_message(
+    *,
+    client,
+    channel,
+    event,
+    direction,
+    sender_type,
+    source=None,
+    conversation=None,
+    lead=None,
+):
+    """
+    Process and persist a WhatsApp message atomically.
+
+    Handles: persistence, conversation update, unread count, realtime events.
+
+    Args:
+        client: Cliente instance (canonical)
+        channel: WhatsAppChannel instance
+        event: Event dict with keys: text, message_id (wamid), created_at (ISO 8601 or timestamp)
+        direction: MensajeWhatsApp.ENTRANTE or MensajeWhatsApp.SALIENTE
+        sender_type: 'customer', 'advisor', 'bot', 'system'
+        conversation: Existing ConversacionWhatsApp or None (will be obtained/created)
+        lead: Lead instance (optional)
+
+    Returns:
+        {
+            "message": MensajeWhatsApp instance,
+            "conversation": ConversacionWhatsApp instance,
+            "created": bool,
+            "summary_updated": bool,
+            "unread_incremented": bool,
+        }
+    """
+    from django.db import transaction
+    from apps.integrations.models import ConversationControl
+
+    result = {
+        "message": None,
+        "conversation": None,
+        "created": False,
+        "summary_updated": False,
+        "unread_incremented": False,
+        "takeover_activated": False,
+    }
+
+    # Default source based on direction and sender_type
+    if not source:
+        if direction == MensajeWhatsApp.ENTRANTE:
+            source = MensajeWhatsApp.SOURCE_WHATSAPP_CUSTOMER
+        elif sender_type == MensajeWhatsApp.SENDER_BOT:
+            source = MensajeWhatsApp.SOURCE_BOT
+        elif sender_type == MensajeWhatsApp.SENDER_ADVISOR:
+            source = MensajeWhatsApp.SOURCE_CRM
+        else:
+            source = MensajeWhatsApp.SOURCE_SYSTEM
+
+    with transaction.atomic():
+        # 1. Resolve or create conversation
+        if not conversation:
+            conversation, _ = ConversacionWhatsApp.objects.get_or_create(
+                cliente=client,
+                channel=channel,
+                defaults={
+                    "estado_atencion": ConversacionWhatsApp.ATENCION_BOT,
+                }
+            )
+
+        # Ensure ConversationControl exists
+        ConversationControl.objects.get_or_create(conversation=conversation)
+
+        # 2. Lock conversation for atomic update
+        conversation = ConversacionWhatsApp.objects.select_for_update().get(pk=conversation.pk)
+
+        # 3. Parse message timestamp (prefer event's timestamp/created_at from webhook)
+        message_timestamp = event.get("created_at") or event.get("timestamp")
+        if isinstance(message_timestamp, str):
+            try:
+                # Try unix timestamp string first
+                if message_timestamp.isdigit():
+                    message_timestamp = timezone.make_aware(datetime.fromtimestamp(int(message_timestamp)))
+                else:
+                    message_timestamp = datetime.fromisoformat(message_timestamp.replace("Z", "+00:00"))
+                    if message_timestamp.tzinfo is None:
+                        message_timestamp = timezone.make_aware(message_timestamp)
+            except (ValueError, TypeError):
+                message_timestamp = timezone.now()
+        elif isinstance(message_timestamp, (int, float)):
+            message_timestamp = timezone.make_aware(datetime.fromtimestamp(message_timestamp))
+        else:
+            message_timestamp = timezone.now()
+
+        # 4. Map sender_type to legacy origen for backward compat
+        origen_map = {
+            MensajeWhatsApp.SENDER_CUSTOMER: "cliente",
+            MensajeWhatsApp.SENDER_BOT: "bot",
+            MensajeWhatsApp.SENDER_ADVISOR: "asesor",
+            MensajeWhatsApp.SENDER_SYSTEM: "sistema",
+        }
+        origen = origen_map.get(sender_type, "sistema")
+
+        # 5. Create or get message (idempotent by wamid)
+        wamid = str(event.get("message_id") or "")
+        message, created = MensajeWhatsApp.objects.get_or_create(
+            meta_message_id=wamid,
+            conversacion=conversation,
+            defaults={
+                "direccion": direction,
+                "origen": origen,
+                "tipo": "texto",
+                "contenido": str(event.get("text") or "")[:500],
+                "estado": "recibido",
+                "sender_type": sender_type,
+                "source": source,
+                "fecha_mensaje": message_timestamp,
+            }
+        )
+
+        result["message"] = message
+        result["conversation"] = conversation
+        result["created"] = created
+
+        logger.info(
+            "[WhatsApp Message] wamid=%s conversation_id=%s message_id=%s created=%s sender=%s dir=%s",
+            wamid, conversation.id, message.id, created, sender_type, direction,
+        )
+
+        # 6. Update conversation summary if message is new and strictly newer than ultima_actividad
+        if created:
+            should_update_summary = (
+                conversation.ultima_actividad is None
+                or message_timestamp > conversation.ultima_actividad
+            )
+
+            if should_update_summary:
+                old_ua = conversation.ultima_actividad
+                conversation.ultima_actividad = message_timestamp
+                conversation.resumen = str(event.get("text") or "")[:100]
+
+                if direction == MensajeWhatsApp.ENTRANTE:
+                    conversation.ultimo_mensaje_cliente = message_timestamp
+                else:
+                    conversation.ultimo_mensaje_enviado = message_timestamp
+
+                conversation.save(
+                    update_fields=[
+                        "ultima_actividad",
+                        "resumen",
+                        "ultimo_mensaje_cliente",
+                        "ultimo_mensaje_enviado",
+                    ]
+                )
+                result["summary_updated"] = True
+
+                logger.info(
+                    "[Summary Updated] conv=%s old_ua=%s new_ua=%s preview=%s",
+                    conversation.id, old_ua, message_timestamp, conversation.resumen[:50],
+                )
+
+        # 7. Handle takeover: outbound from WhatsApp Business App (Web/mobile echo) = human intervention
+        if (direction == MensajeWhatsApp.SALIENTE and
+            sender_type == MensajeWhatsApp.SENDER_ADVISOR and
+            source == MensajeWhatsApp.SOURCE_WHATSAPP_BUSINESS_APP):
+            conversation.bot_pausado = True
+            conversation.estado_atencion = ConversacionWhatsApp.ATENCION_ASESOR
+            conversation.save(update_fields=["bot_pausado", "estado_atencion"])
+            result["takeover_activated"] = True
+            logger.info("[Takeover] conv=%s advisor_web_intervention", conversation.id)
+
+        # 8. Update unread count (only for inbound messages from customers)
+        if created and direction == MensajeWhatsApp.ENTRANTE and sender_type == MensajeWhatsApp.SENDER_CUSTOMER:
+            result["unread_incremented"] = True
+            logger.info("[Unread +1] conv=%s", conversation.id)
+
+        # 9. Schedule realtime event after commit
+        if created:
+            def publish_event():
+                try:
+                    from apps.integrations.services.live_sync import project_new_incoming
+                    project_new_incoming(message)
+                    logger.info("[RealTime Event] scheduled for message_id=%s conversation_id=%s", message.id, conversation.id)
+                except Exception as e:
+                    logger.error("[RealTime Event] failed to schedule: %s", str(e), exc_info=True)
+
+            transaction.on_commit(publish_event)
+
+    return result
