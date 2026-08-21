@@ -1069,6 +1069,15 @@ def _create_mensaje_multimedia(
             # For now, use default
             pass
 
+        # Map origen to source
+        source_mapping = {
+            "cliente": MensajeWhatsApp.SOURCE_WHATSAPP_CUSTOMER,
+            "bot": MensajeWhatsApp.SOURCE_BOT,
+            "asesor": MensajeWhatsApp.SOURCE_WHATSAPP_BUSINESS_APP,
+            "sistema": MensajeWhatsApp.SOURCE_SYSTEM,
+        }
+        source = source_mapping.get(origen, MensajeWhatsApp.SOURCE_WHATSAPP_CUSTOMER)
+
         # Create message with pending download status
         mensaje = MensajeWhatsApp(
             conversacion=conversacion,
@@ -1080,7 +1089,7 @@ def _create_mensaje_multimedia(
             mime_type=mime_type_client,  # Will be validated during download
             media_status=MensajeWhatsApp.MEDIA_PENDING,
             sender_type=_map_origen_to_sender_type(origen),
-            source=MensajeWhatsApp.SOURCE_WEBHOOK,
+            source=source,
             retention_policy=retention_policy,
             meta_message_id=event.get("message_id", ""),
         )
