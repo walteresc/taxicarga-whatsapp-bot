@@ -272,12 +272,28 @@ const formatTime = time => {
   if (!time) return ''
   const date = new Date(time)
   const now = new Date()
-  const diff = (now - date) / 1000
 
-  if (diff < 60) return 'Ahora'
-  if (diff < 3600) return `${Math.floor(diff / 60)}m`
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h`
-  return date.toLocaleDateString('es-ES', { month: 'short', day: 'numeric' })
+  // Get date at start of day (00:00:00)
+  const dateAtMidnight = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+  const nowAtMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const diffDays = (nowAtMidnight - dateAtMidnight) / (1000 * 60 * 60 * 24)
+
+  // Today: show time (HH:MM)
+  if (diffDays < 1) {
+    return date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
+  }
+
+  // Yesterday: show "Ayer"
+  if (diffDays < 2) return 'Ayer'
+
+  // Last 7 days: show day name (Lun, Mar, etc)
+  if (diffDays < 7) {
+    const dayName = date.toLocaleDateString('es-ES', { weekday: 'short' })
+    return dayName.charAt(0).toUpperCase() + dayName.slice(1)
+  }
+
+  // Older: show date (dd/mm)
+  return date.toLocaleDateString('es-ES', { month: '2-digit', day: '2-digit' })
 }
 
 const getInitials = name => {
@@ -331,16 +347,17 @@ const formatPhone = phone => {
   return phone
 }
 
+// Auto-refresh polling
+let pollingInterval = null
+let lastDataHash = null
 
-const loadConversations = async () => {
+const loadConversationsWithChangeDetection = async () => {
   loading.value = true
   error.value = false
   try {
-    // Build filters object from active filters
     const filters = {}
     if (searchPhone.value) filters.q = searchPhone.value
 
-    // Map state filters to backend states
     if (!activeFilters.value.includes('Todos')) {
       if (activeFilters.value.includes('No leídas')) filters.state = 'unread'
       else if (activeFilters.value.includes('Mías')) filters.state = 'assigned'
@@ -348,7 +365,13 @@ const loadConversations = async () => {
     }
 
     const data = await conversationService.getActiveConversations(filters)
-    conversations.value = data.conversations || []
+
+    // Hash the data to detect real changes
+    const newHash = JSON.stringify(data.conversations).slice(0, 100)
+    if (newHash !== lastDataHash) {
+      conversations.value = data.conversations || []
+      lastDataHash = newHash
+    }
   } catch (err) {
     console.error('Error loading conversations:', err)
     error.value = true
@@ -357,16 +380,34 @@ const loadConversations = async () => {
   }
 }
 
-// Auto-refresh polling
-let pollingInterval = null
+const loadConversations = loadConversationsWithChangeDetection
+
+// Handle realtime message events from server
+const handleMessageCreated = (event) => {
+  if (event.detail && event.detail.conversation_id) {
+    // Reload conversations when new message arrives to reorder them
+    loadConversationsWithChangeDetection()
+  }
+}
+
+const handleConversationUpdated = (event) => {
+  if (event.detail && event.detail.conversation_id) {
+    // Reload when conversation state changes (takeover, etc)
+    loadConversationsWithChangeDetection()
+  }
+}
 
 onMounted(() => {
-  loadConversations()
+  loadConversationsWithChangeDetection()
 
-  // Start polling every 5 seconds for real-time updates
+  // Start polling every 10 seconds and only update on real changes (change detection prevents unnecessary re-renders)
   pollingInterval = setInterval(() => {
-    loadConversations()
-  }, 5000)
+    loadConversationsWithChangeDetection()
+  }, 10000)
+
+  // Listen for realtime events from server
+  document.addEventListener('message.created', handleMessageCreated)
+  document.addEventListener('conversation.updated', handleConversationUpdated)
 })
 
 onUnmounted(() => {
@@ -374,6 +415,9 @@ onUnmounted(() => {
   if (pollingInterval) {
     clearInterval(pollingInterval)
   }
+  // Clean up event listeners
+  document.removeEventListener('message.created', handleMessageCreated)
+  document.removeEventListener('conversation.updated', handleConversationUpdated)
 })
 
 // Emit count update whenever filtered results change
