@@ -113,6 +113,11 @@ def _filtrar_conversaciones(queryset, request):
     # Frontend polls every 5 seconds anyway
     # Only filter by explicit criteria
 
+    # Exclude test/demo clients from interface
+    queryset = queryset.exclude(cliente__nombre__icontains="TEST").exclude(
+        cliente__nombre__icontains="Stage"
+    )
+
     if search:
         queryset = queryset.filter(
             Q(cliente__nombre__icontains=search)
