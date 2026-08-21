@@ -365,19 +365,38 @@ def _receive_message(request):
             _complete_message(processed)
             return JsonResponse({"ok": True, "human_takeover": True, "sent": None})
 
-        send_result = _send_bot_message(phone, reply, channel, canonical_conversation)
-        if not _message_was_sent(send_result):
-            raise WhatsappSendError("Meta no acepto la respuesta saliente.")
+        # CRITICAL DECOUPLING: Message is persisted. Bot processing is best-effort.
+        # If bot fails, we still return 200 (message already saved).
+        # Webhook ACK is independent of bot response success.
         Conversacion.objects.create(
             cliente=cliente,
             mensaje_entrada=message,
-            mensaje_salida=reply,
+            mensaje_salida="",  # Will be updated if bot succeeds
             canal=Conversacion.CANAL_WHATSAPP,
         )
         _complete_message(processed)
-        return JsonResponse({"ok": True, "sent": send_result})
+
+        # Bot processing — failure does NOT fail the webhook
+        try:
+            send_result = _send_bot_message(phone, reply, channel, canonical_conversation)
+            if not _message_was_sent(send_result):
+                logger.warning("Meta no acepto la respuesta saliente para %s (lead %s)",
+                              phone, active_lead.id if active_lead else "None")
+                return JsonResponse({"ok": True, "sent": None, "bot_status": "failed"})
+            # Update Conversacion with bot reply
+            Conversacion.objects.filter(
+                cliente=cliente,
+                mensaje_entrada=message,
+                mensaje_salida="",
+            ).update(mensaje_salida=reply)
+            return JsonResponse({"ok": True, "sent": send_result, "bot_status": "sent"})
+        except Exception as e:
+            # Bot processing failed but message already persisted ✓
+            logger.warning("Bot processing error for %s: %s (message persisted)",
+                          phone, str(e), exc_info=True)
+            return JsonResponse({"ok": True, "sent": None, "bot_status": "error"})
     except Exception:
-        logger.exception("Error procesando mensaje entrante.")
+        logger.exception("Error procesando mensaje entrante (antes de persistencia).")
         if processed:
             processed.delete()
         return JsonResponse({"ok": False, "error": "processing_error"}, status=500)

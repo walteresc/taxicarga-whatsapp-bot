@@ -306,3 +306,63 @@ class YCloudWebhookIntegrationTests(TestCase):
         # but basic ok should be present
         data = response.json()
         self.assertTrue(data["ok"])
+
+    @patch('apps.whatsapp.views._send_bot_message')
+    def test_bot_failure_after_persistence_returns_200(self, mock_send):
+        """Test: Bot generation failure after message persisted returns 200, not 500.
+
+        Critical for decoupling:
+        - Message persisted atomically → confirmed in DB
+        - Bot processing fails (exception)
+        - Webhook still returns 2xx (not 500)
+        - Error logged and trackable
+        - Retry without duplicating message
+        """
+        # Mock bot to raise exception AFTER message was sent to webhook
+        mock_send.side_effect = Exception("Bot processing failed: simulated AI timeout")
+
+        phone = "+51987654327"
+        ts = timezone.make_aware(datetime(2026, 8, 21, 10, 0, 0))
+        payload = self._build_inbound_payload(
+            phone=phone,
+            text="Message that will cause bot failure",
+            wamid="ycloud_bot_fail_001",
+            ts=int(ts.timestamp()),
+        )
+
+        response = self.client.post(
+            "/webhook/whatsapp/",
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+
+        # CRITICAL: Must return 2xx even if bot fails after persistence
+        self.assertEqual(response.status_code, 200,
+            "Bot failure after persistence must not return 500")
+        data = response.json()
+        self.assertTrue(data["ok"],
+            "Response ok=True even if bot processing failed")
+
+        # VERIFY: Message was still persisted despite bot failure
+        msg = MensajeWhatsApp.objects.filter(meta_message_id="ycloud_bot_fail_001").first()
+        self.assertIsNotNone(msg, "Message must be persisted even if bot fails")
+        self.assertEqual(msg.direccion, MensajeWhatsApp.ENTRANTE)
+        self.assertEqual(msg.sender_type, MensajeWhatsApp.SENDER_CUSTOMER)
+
+        # VERIFY: Conversation updated despite bot failure
+        conv = ConversacionWhatsApp.objects.filter(cliente__telefono=phone).first()
+        self.assertIsNotNone(conv, "Conversation must exist even if bot fails")
+        self.assertEqual(conv.ultima_actividad, ts)
+        self.assertIn("Message that will cause bot failure", conv.resumen)
+
+        # VERIFY: Retry same webhook (idempotency)
+        response2 = self.client.post(
+            "/webhook/whatsapp/",
+            data=json.dumps(payload),
+            content_type="application/json",
+        )
+        self.assertEqual(response2.status_code, 200)
+
+        # VERIFY: No duplicate message created
+        count = MensajeWhatsApp.objects.filter(meta_message_id="ycloud_bot_fail_001").count()
+        self.assertEqual(count, 1, "Same wamid must not create duplicate after bot failure retry")
