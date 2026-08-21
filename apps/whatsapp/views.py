@@ -40,7 +40,7 @@ from .models import (
     ConversacionWhatsApp,
     MensajeWhatsApp,
 )
-from .services import download_whatsapp_image, download_whatsapp_media, send_whatsapp_message
+from .services import download_whatsapp_image, download_whatsapp_media, send_whatsapp_message, process_whatsapp_message
 from .status import apply_status, extract_statuses
 from .utils import extract_event, should_bot_reply, should_bot_handle_lead, evaluar_mixto_inteligente, evaluar_conversacion_avanzada, _marcar_derivacion
 
@@ -92,7 +92,9 @@ def _receive_message(request):
     channel = WhatsAppChannel.objects.filter(phone_number_id=phone_number_id).first()
     if channel is None:
         scope_hash = hashlib.sha256(str(phone_number_id).encode("utf-8")).hexdigest()[:12]
-        logger.warning("WhatsApp inbound ignored (reason=unknown_channel, scope_hash=%s).", scope_hash)
+        logger.warning("WhatsApp inbound ignored (reason=unknown_channel, phone_number_id=%s, scope_hash=%s). Active channels: %s",
+                      phone_number_id, scope_hash,
+                      list(WhatsAppChannel.objects.filter(activo=True).values_list('phone_number_id', flat=True)))
         _complete_message(processed)
         return JsonResponse({"ok": True, "ignored": True, "reason": "unknown_channel"})
     if not channel.activo:
@@ -141,9 +143,24 @@ def _receive_message(request):
             return JsonResponse({"ok": True, "ignored": True})
 
         message = event["text"]
-        canonical_message, _canonical_created, canonical_conversation = canonical_incoming_message(
-            lead=active_lead, channel=channel, event=event, conversation=resolved_conversation
+
+        # Use central atomic service for message processing
+        msg_result = process_whatsapp_message(
+            client=cliente,
+            channel=channel,
+            event=event,
+            direction=MensajeWhatsApp.ENTRANTE,
+            sender_type=MensajeWhatsApp.SENDER_CUSTOMER,
+            source=MensajeWhatsApp.SOURCE_WHATSAPP_CUSTOMER,
+            conversation=resolved_conversation,
+            lead=active_lead,
         )
+        canonical_message = msg_result["message"]
+        canonical_conversation = msg_result["conversation"]
+        # Refresh from DB to ensure ultima_actividad and resumen are current (not cached from before update)
+        if canonical_conversation:
+            canonical_conversation.refresh_from_db()
+
         attention_conversation = canonical_conversation or resolved_conversation
         control = (
             ConversationControl.objects.filter(conversation=attention_conversation).first()
@@ -890,8 +907,14 @@ def bot_schedule_detail(request, schedule_id):
 # Phase C: Multimedia message tracking (non-blocking downloads) - 2026-08-20
 # ============================================================================
 
-def _get_or_create_conversation(lead, channel=None):
-    """Get or create ConversacionWhatsApp for a lead."""
+def _get_or_create_conversation(lead, channel=None, message_timestamp=None):
+    """Get or create ConversacionWhatsApp for a lead.
+
+    Args:
+        lead: Lead instance (required)
+        channel: WhatsAppChannel instance (optional)
+        message_timestamp: datetime to use for ultima_actividad. If None, uses timezone.now()
+    """
     if not lead:
         return None
     conversacion = ConversacionWhatsApp.objects.filter(lead=lead).exclude(
@@ -902,9 +925,11 @@ def _get_or_create_conversation(lead, channel=None):
         channel=channel,
     )
 
-    # Update ultima_actividad every time message received (for real-time ordering)
-    conversacion.ultima_actividad = timezone.now()
-    conversacion.save(update_fields=['ultima_actividad'])
+    # Update ultima_actividad with actual message timestamp if provided, else use server time
+    timestamp_to_use = message_timestamp or timezone.now()
+    if not conversacion.ultima_actividad or timestamp_to_use > conversacion.ultima_actividad:
+        conversacion.ultima_actividad = timestamp_to_use
+        conversacion.save(update_fields=['ultima_actividad'])
 
     return conversacion
 
@@ -1010,8 +1035,22 @@ def _receive_multimedia(cliente, active_lead, event, channel):
     """
     event_type = event.get("type", "")
 
+    # Parse message timestamp (use real timestamp if available)
+    message_timestamp = event.get("timestamp") or event.get("created_at")
+    if isinstance(message_timestamp, str) and message_timestamp.isdigit():
+        message_timestamp = timezone.make_aware(datetime.fromtimestamp(int(message_timestamp)))
+    elif isinstance(message_timestamp, str):
+        try:
+            message_timestamp = datetime.fromisoformat(message_timestamp.replace("Z", "+00:00"))
+            if message_timestamp.tzinfo is None:
+                message_timestamp = timezone.make_aware(message_timestamp)
+        except (ValueError, TypeError):
+            message_timestamp = None
+    elif not isinstance(message_timestamp, datetime):
+        message_timestamp = None
+
     # Get or create conversation
-    conversacion = _get_or_create_conversation(active_lead, channel)
+    conversacion = _get_or_create_conversation(active_lead, channel, message_timestamp=message_timestamp)
     if not conversacion:
         logger.warning(f"Could not create conversation for multimedia (lead_id={active_lead.id if active_lead else None})")
         return JsonResponse({"ok": True, "ignored": True, "reason": "no_conversation"})
