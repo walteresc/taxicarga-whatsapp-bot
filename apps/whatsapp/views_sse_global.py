@@ -2,9 +2,6 @@
 from django.http import StreamingHttpResponse
 from django.views.decorators.http import require_http_methods
 from django.contrib.auth.decorators import login_required
-from django.db.models.signals import post_save
-from django.dispatch import receiver
-from apps.whatsapp.models import MensajeWhatsApp
 import json
 import logging
 import queue
@@ -32,28 +29,6 @@ def broadcast_to_user(user_id, event_type, data):
         q.put_nowait({'type': event_type, 'data': data})
     except queue.Full:
         logger.warning(f"Event queue full for user {user_id}")
-
-
-@receiver(post_save, sender=MensajeWhatsApp)
-def on_message_created(sender, instance, created, **kwargs):
-    """Broadcast new message to all users with access"""
-    if not created:
-        return
-
-    from apps.whatsapp.models import ConversacionWhatsApp
-    conv = instance.conversacion
-
-    # Broadcast to all users (in production: only users with access to this conversation)
-    from django.contrib.auth import get_user_model
-    User = get_user_model()
-
-    for user in User.objects.filter(is_active=True):
-        broadcast_to_user(user.id, 'message.created', {
-            'conversation_id': conv.id,
-            'message_id': instance.id,
-            'timestamp': instance.fecha_mensaje.isoformat(),
-        })
-        logger.info(f"[SSE] Broadcast message {instance.id} to user {user.id}")
 
 
 @login_required

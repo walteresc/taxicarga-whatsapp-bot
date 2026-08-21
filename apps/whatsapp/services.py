@@ -763,11 +763,28 @@ def process_whatsapp_message(
         if created:
             def publish_event():
                 try:
-                    from apps.integrations.services.live_sync import project_new_incoming
-                    project_new_incoming(message)
-                    logger.info("[RealTime Event] scheduled for message_id=%s conversation_id=%s", message.id, conversation.id)
+                    from apps.whatsapp.views_sse_global import broadcast_to_user
+                    from django.contrib.auth import get_user_model
+
+                    # Broadcast to all active users
+                    User = get_user_model()
+                    for user in User.objects.filter(is_active=True):
+                        broadcast_to_user(user.id, 'message.created', {
+                            'conversation_id': conversation.id,
+                            'message_id': message.id,
+                            'timestamp': message.fecha_mensaje.isoformat(),
+                        })
+
+                    logger.info("[SSE Broadcast] message_id=%s conversation_id=%s to all users", message.id, conversation.id)
+
+                    # Also try legacy integration if available
+                    try:
+                        from apps.integrations.services.live_sync import project_new_incoming
+                        project_new_incoming(message)
+                    except:
+                        pass
                 except Exception as e:
-                    logger.error("[RealTime Event] failed to schedule: %s", str(e), exc_info=True)
+                    logger.error("[RealTime Event] failed: %s", str(e), exc_info=True)
 
             transaction.on_commit(publish_event)
 
