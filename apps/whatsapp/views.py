@@ -41,6 +41,7 @@ from .models import (
     MensajeWhatsApp,
 )
 from .services import download_whatsapp_image, download_whatsapp_media, send_whatsapp_message, process_whatsapp_message
+from .services_ycloud import process_ycloud_event
 from .status import apply_status, extract_statuses
 from .utils import extract_event, should_bot_reply, should_bot_handle_lead, evaluar_mixto_inteligente, evaluar_conversacion_avanzada, _marcar_derivacion
 
@@ -136,7 +137,6 @@ def _receive_message(request):
             _complete_message(processed)
             return response
 
-        bot_deberia_responder = should_bot_reply(lead=active_lead, channel=channel)
         if event["type"] != "text" or not event["text"]:
             logger.info("Tipo de mensaje WhatsApp no procesable: %s", event["type"])
             _complete_message(processed)
@@ -144,23 +144,47 @@ def _receive_message(request):
 
         message = event["text"]
 
-        # Use central atomic service for message processing
-        msg_result = process_whatsapp_message(
-            client=cliente,
-            channel=channel,
-            event=event,
-            direction=MensajeWhatsApp.ENTRANTE,
-            sender_type=MensajeWhatsApp.SENDER_CUSTOMER,
-            source=MensajeWhatsApp.SOURCE_WHATSAPP_CUSTOMER,
-            conversation=resolved_conversation,
-            lead=active_lead,
-        )
-        canonical_message = msg_result["message"]
-        canonical_conversation = msg_result["conversation"]
-        # Refresh from DB to ensure ultima_actividad and resumen are current (not cached from before update)
-        if canonical_conversation:
-            canonical_conversation.refresh_from_db()
+        # Detect if this is inbound message or outbound echo
+        ycloud_event_type = _detect_ycloud_event_type(payload, phone_number_id)
 
+        if ycloud_event_type == "echo":
+            # Outbound echo from WhatsApp Web/mobile — advisor intervention
+            ycloud_result = process_ycloud_event(
+                event_type="whatsapp.smb.message.echoes",
+                event_data=event,
+                channel=channel,
+            )
+            canonical_message = ycloud_result.get("message")
+            canonical_conversation = ycloud_result.get("conversation")
+            human_takeover_detected = ycloud_result.get("human_intervention", False)
+
+            if canonical_conversation:
+                canonical_conversation.refresh_from_db()
+
+            # Echo processed — don't respond, just update state
+            _complete_message(processed)
+            return JsonResponse({
+                "ok": True,
+                "type": "echo",
+                "message_id": canonical_message.id if canonical_message else None,
+                "conversation_id": canonical_conversation.id if canonical_conversation else None,
+                "human_takeover": human_takeover_detected,
+            })
+
+        else:
+            # Inbound message from customer
+            ycloud_result = process_ycloud_event(
+                event_type="whatsapp.inbound_message.received",
+                event_data=event,
+                channel=channel,
+            )
+            canonical_message = ycloud_result.get("message")
+            canonical_conversation = ycloud_result.get("conversation")
+
+            if canonical_conversation:
+                canonical_conversation.refresh_from_db()
+
+        bot_deberia_responder = should_bot_reply(lead=active_lead, channel=channel)
         attention_conversation = canonical_conversation or resolved_conversation
         control = (
             ConversationControl.objects.filter(conversation=attention_conversation).first()
@@ -357,6 +381,44 @@ def _receive_message(request):
         if processed:
             processed.delete()
         return JsonResponse({"ok": False, "error": "processing_error"}, status=500)
+
+
+def _detect_ycloud_event_type(payload, phone_number_id):
+    """Detect if event is inbound message or outbound echo from YCloud webhook.
+
+    Args:
+        payload: YCloud webhook payload
+        phone_number_id: The business phone_number_id
+
+    Returns:
+        "inbound_message" | "echo" | "status" | None
+    """
+    try:
+        value = payload.get("entry", [{}])[0].get("changes", [{}])[0].get("value", {})
+
+        # Check for status updates
+        if value.get("statuses"):
+            return "status"
+
+        # Check for messages
+        if not value.get("messages"):
+            return None
+
+        message = value["messages"][0]
+        message_from = message.get("from", "")
+
+        # Echo: message originated from our business phone (outbound that was echoed back)
+        if message_from == phone_number_id:
+            return "echo"
+
+        # Inbound: message from customer
+        if message_from:
+            return "inbound_message"
+
+        return None
+
+    except (KeyError, IndexError, TypeError):
+        return None
 
 
 MENSAJE_V2 = "Tu consulta será revisada por un asesor."
