@@ -118,6 +118,10 @@ def _filtrar_conversaciones(queryset, request):
         cliente__nombre__icontains="Stage"
     )
 
+    # FASE 5B: Filter only active channels for operational bandeja
+    # Seed/inactive channels excluded from normal interface
+    queryset = queryset.filter(channel__activo=True)
+
     if search:
         queryset = queryset.filter(
             Q(cliente__nombre__icontains=search)
