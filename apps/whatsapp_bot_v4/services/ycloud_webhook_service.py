@@ -5,6 +5,7 @@ import logging
 from datetime import timedelta
 
 from django.conf import settings
+from django.db import models
 from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
@@ -17,6 +18,80 @@ from .conversation_service import ConversationService
 from .bot_control_service import can_bot_respond
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_phone_number(phone):
+    """Normalize phone to E.164 format without +.
+
+    Examples:
+      +51 967 619 238 → 51967619238
+      51967619238 → 51967619238
+      +51967619238 → 51967619238
+    """
+    if not phone:
+        return None
+    # Remove all non-digit characters
+    normalized = ''.join(filter(str.isdigit, str(phone)))
+    return normalized if normalized else None
+
+
+def _resolve_channel_from_payload(event_type, canonical_payload, payload):
+    """Resolve WhatsAppChannel from payload business number.
+
+    For inbound (whatsapp.inbound_message.received):
+      - Business number is in 'to' field (customer sends TO business)
+      - Lookup from whatsappInboundMessage.to
+
+    For echo (whatsapp.smb.message.echoes):
+      - Business number is in 'from' field (business sends FROM here)
+      - Lookup from whatsappMessage.from
+
+    Returns WhatsAppChannel or None if not found.
+    """
+    from apps.whatsapp.models import WhatsAppChannel
+
+    business_number = None
+
+    # Extract business number based on event type
+    if event_type == "whatsapp.inbound_message.received":
+        # Try canonical first, then raw payload
+        business_number = canonical_payload.get("to") or \
+                         payload.get("whatsappInboundMessage", {}).get("to")
+    elif event_type == "whatsapp.smb.message.echoes":
+        # Try canonical first, then raw payload
+        business_number = canonical_payload.get("from") or \
+                         payload.get("whatsappMessage", {}).get("from")
+
+    if not business_number:
+        logger.error(f"[YCloud] Cannot extract business number from event {event_type}")
+        return None
+
+    # Normalize to E.164 without +
+    normalized = _normalize_phone_number(business_number)
+    if not normalized:
+        logger.error(f"[YCloud] Failed to normalize business number: {business_number}")
+        return None
+
+    logger.info(f"[YCloud] Resolving channel for normalized number: {normalized}")
+
+    # Lookup by numero_visible (normalized) or phone_number_id
+    channel = WhatsAppChannel.objects.filter(
+        activo=True
+    ).filter(
+        # Match numero_visible (with or without +)
+        models.Q(numero_visible=normalized) |
+        models.Q(numero_visible=f"+{normalized}") |
+        # Also check phone_number_id for backward compatibility
+        models.Q(phone_number_id=normalized) |
+        models.Q(phone_number_id=f"+{normalized}")
+    ).first()
+
+    if channel:
+        logger.info(f"[YCloud] Resolved channel {channel.id} ({channel.nombre}) for number {normalized}")
+    else:
+        logger.error(f"[YCloud] No active channel found for business number {normalized}")
+
+    return channel
 
 
 def _normalize_ycloud_payload(event_type, payload):
@@ -134,11 +209,11 @@ def ycloud_webhook(request):
     4. Retornar HTTP 200 inmediatamente (no bloquear por bot processing)
     5. Disparar bot processing en background (si aplica)
     """
-    logger.warning(f"[YCloud] WEBHOOK RECEIVED AT {timezone.now()}")
+    logger.warning(f"[YCloud] WEBHOOK HANDLER EXECUTED - RECEIVED AT {timezone.now()}")
 
     # 1. VALIDAR FIRMA
     if not verify_ycloud_signature(request):
-        logger.warning("[YCloud] Invalid YCloud signature")
+        logger.error("[YCloud] Invalid YCloud signature - REJECTING")
         return JsonResponse({'error': 'Invalid signature'}, status=401)
 
     # 2. PARSEAR JSON
@@ -173,11 +248,12 @@ def ycloud_webhook(request):
 
     # 5. REGISTRAR EVENTO
     try:
-        WebhookEvent.objects.create(
+        webhook_evt = WebhookEvent.objects.create(
             source='ycloud',
             external_message_id=event_id,
             event_type=event_type
         )
+        logger.warning(f"[YCloud] WebhookEvent created: ID={webhook_evt.id}")
     except Exception as e:
         logger.error(f"[YCloud] Error creating WebhookEvent: {e}", exc_info=True)
 
@@ -190,12 +266,13 @@ def ycloud_webhook(request):
 
     # 7. DELEGAR PERSISTENCIA AL PROCESADOR CANÓNICO
     try:
-        # Determinar channel (ahora es requerido)
-        from apps.whatsapp.models import WhatsAppChannel
-        channel = WhatsAppChannel.objects.filter(activo=True).first()
+        logger.warning(f"[YCloud] Resolving channel for event {event_type}")
+        # Resolve channel from payload (business number)
+        channel = _resolve_channel_from_payload(event_type, canonical_payload, payload)
         if not channel:
-            logger.error("[YCloud] No active WhatsApp channel configured")
+            logger.error(f"[YCloud] Channel resolution FAILED for event {event_type} - SKIPPING")
             return JsonResponse({'status': 'ok'})  # HTTP 200 but no processing
+        logger.warning(f"[YCloud] Channel resolved: ID={channel.id} ({channel.nombre})")
 
         # Importar procesador
         from apps.whatsapp.services_ycloud import process_ycloud_event
