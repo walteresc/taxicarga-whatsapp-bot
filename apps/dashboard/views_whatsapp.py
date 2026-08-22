@@ -532,3 +532,39 @@ def resume_bot(request, conversation_id):
     ownership.save()
     logger.info(f"Bot reactivated for conversation {conversation_id}")
     return JsonResponse({'status': 'active'})
+
+
+@login_required
+def api_events_stream(request):
+    """FASE 5B: Stream events for real-time UI updates.
+
+    Cursor-based polling endpoint (no external dependencies).
+    Returns events since last_event_id with auto-reconnect support.
+
+    Query params:
+        - cursor: Last event ID seen (default=0, means all events)
+
+    Response:
+        {
+            "events": [
+                {"id": 1, "type": "conversation_update", "timestamp": "2026-08-21T...", "data": {...}},
+                ...
+            ],
+            "latest_cursor": 42
+        }
+    """
+    from apps.whatsapp.events_service import get_events, get_latest_cursor
+
+    try:
+        cursor = int(request.GET.get('cursor', 0))
+    except (ValueError, TypeError):
+        cursor = 0
+
+    events = get_events(cursor=cursor)
+    latest_cursor = get_latest_cursor()
+
+    return JsonResponse({
+        'events': [e.to_dict() for e in events],
+        'latest_cursor': latest_cursor,
+        'timestamp': timezone.now().isoformat()
+    })
