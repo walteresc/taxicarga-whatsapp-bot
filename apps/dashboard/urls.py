@@ -3,6 +3,7 @@ from django.urls import include, path
 
 from apps.campo.views import pizarra
 from .views_whatsapp import whatsapp_conversacion_accion, whatsapp_conversaciones, conversation_messages, pause_bot, resume_bot, api_active_conversations, api_unread_counts, api_events_stream
+from .views_sse import sse_events_stream
 from .views_auth_api import api_login, api_logout, api_user, api_check_auth
 from apps.whatsapp.views_realtime import sse_conversation_updates
 from apps.whatsapp.views_sse_global import sse_global_updates
@@ -55,7 +56,8 @@ urlpatterns = [
     path("whatsapp/conversaciones/", whatsapp_conversaciones, name="dashboard-whatsapp-conversaciones"),
     path("whatsapp/conversaciones/api/active/", api_active_conversations, name="api-active-conversations"),
     path("whatsapp/conversaciones/api/unread-counts/", api_unread_counts, name="api-unread-counts"),
-    path("whatsapp/api/events/stream/", api_events_stream, name="api-events-stream"),
+    path("whatsapp/api/events/stream/", sse_events_stream, name="sse-events-stream"),
+    path("whatsapp/api/events/poll/", api_events_stream, name="api-events-poll"),  # Fallback REST polling
     path("whatsapp/conversaciones/<int:conversation_id>/accion/", whatsapp_conversacion_accion, name="dashboard-whatsapp-conversacion-accion"),
     path("whatsapp/conversaciones/<int:conversation_id>/mensajes/", conversation_messages, name="conversation-messages"),
     path("whatsapp/conversaciones/<int:conversation_id>/pause-bot/", pause_bot, name="pause-bot"),

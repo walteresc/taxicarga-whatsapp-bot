@@ -6,7 +6,7 @@ from django.urls import reverse
 
 from apps.clientes.models import Cliente
 from apps.whatsapp.models import WhatsAppChannel, ConversacionWhatsApp
-from apps.whatsapp.events_service import _reset_for_testing
+from apps.whatsapp.redis_events import RedisEventBus
 
 
 class EventStreamingIntegrationTest(TestCase):
@@ -19,7 +19,11 @@ class EventStreamingIntegrationTest(TestCase):
 
     def setUp(self):
         """Reset event bus and authenticate."""
-        _reset_for_testing()
+        try:
+            bus = RedisEventBus()
+            bus.clear()
+        except Exception:
+            self.skipTest("Redis not available")
         self.client = Client()
         self.client.login(username='testuser', password='pass123')
 

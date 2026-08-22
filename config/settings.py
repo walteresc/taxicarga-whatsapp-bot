@@ -87,6 +87,11 @@ DATABASES = {
     )
 }
 
+# FASE 5B: Redis for event streaming
+REDIS_URL = config("REDIS_URL", default="redis://localhost:6379/0")
+WHATSAPP_EVENTS_STREAM_KEY = "whatsapp:events"
+WHATSAPP_EVENTS_MAXLEN = 10000
+
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},

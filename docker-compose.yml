@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: taxicarga_redis_dev
+    ports:
+      - "127.0.0.1:6379:6379"
+    environment:
+      # No password for local development
+      REDIS_COMMAND: "redis-server --appendonly no"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - taxicarga_dev
+    command: redis-server --appendonly no --maxmemory 256mb --maxmemory-policy allkeys-lru
+
+networks:
+  taxicarga_dev:
+    driver: bridge

@@ -536,10 +536,11 @@ def resume_bot(request, conversation_id):
 
 @login_required
 def api_events_stream(request):
-    """FASE 5B: Stream events for real-time UI updates.
+    """FASE 5B: Fallback REST polling endpoint for events.
 
-    Cursor-based polling endpoint (no external dependencies).
-    Returns events since last_event_id with auto-reconnect support.
+    Used when SSE is not available or as reconciliation source.
+    Cursor-based pagination using Redis Stream IDs.
+    Same authorization as SSE: filtered by active channels.
 
     Query params:
         - cursor: Last event ID seen (default=0, means all events)
@@ -547,24 +548,40 @@ def api_events_stream(request):
     Response:
         {
             "events": [
-                {"id": 1, "type": "conversation_update", "timestamp": "2026-08-21T...", "data": {...}},
+                {"id": "...", "type": "message.created", "timestamp": "2026-08-21T...", "data": {...}},
                 ...
             ],
-            "latest_cursor": 42
+            "latest_cursor": "..."
         }
     """
-    from apps.whatsapp.events_service import get_events, get_latest_cursor
+    from apps.dashboard.permissions import can_manage_whatsapp
+    from apps.whatsapp.redis_events import get_events, get_latest_cursor
+    from apps.whatsapp.models import WhatsAppChannel
 
-    try:
-        cursor = int(request.GET.get('cursor', 0))
-    except (ValueError, TypeError):
-        cursor = 0
+    # Check authorization (same as SSE)
+    if not can_manage_whatsapp(request.user):
+        raise PermissionDenied("No tienes permisos para acceder a eventos de WhatsApp")
 
-    events = get_events(cursor=cursor)
+    # Get authorized channels
+    authorized_channels = set(
+        WhatsAppChannel.objects.filter(activo=True).values_list('id', flat=True)
+    )
+
+    cursor = request.GET.get('cursor', '0')
+
+    # Get events from Redis Stream
+    all_events = get_events(cursor=cursor)
+
+    # Filter by authorized channels
+    filtered_events = [
+        e for e in all_events
+        if e.data.get('channel_id') in authorized_channels
+    ]
+
     latest_cursor = get_latest_cursor()
 
     return JsonResponse({
-        'events': [e.to_dict() for e in events],
+        'events': [e.to_dict() for e in filtered_events],
         'latest_cursor': latest_cursor,
         'timestamp': timezone.now().isoformat()
     })
