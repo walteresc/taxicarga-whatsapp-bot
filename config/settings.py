@@ -22,7 +22,22 @@ def env_value(name, default="", required=False):
 SECRET_KEY = env_value("DJANGO_SECRET_KEY", default=config("SECRET_KEY", default="django-insecure-dev-only-change-me"))
 DEBUG = env_bool("DJANGO_DEBUG", default=True)
 STRICT_ADMIN_OPERATIONS = env_bool("STRICT_ADMIN_OPERATIONS", default=False)
-ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="localhost,127.0.0.1,testserver").split(",")
+ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="localhost,127.0.0.1,testserver,.ngrok-free.app").split(",")
+
+# CSRF and CORS for development
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://localhost:5175",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:5174",
+    "http://127.0.0.1:5175",
+    "http://localhost:8001",
+    "http://127.0.0.1:8001",
+]
+SESSION_COOKIE_SAMESITE = "Lax"
+SESSION_COOKIE_SECURE = False
+CSRF_COOKIE_SAMESITE = "Lax"
 
 INSTALLED_APPS = [
     "django.contrib.admin",
