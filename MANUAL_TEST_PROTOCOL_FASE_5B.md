@@ -1,13 +1,14 @@
 # Manual Test Protocol — FASE 5B Real-Time Chat
 
 **Date**: 2026-08-22  
-**Objective**: Validate end-to-end real-time updates (event streaming) without page refresh  
+**Objective**: Validate end-to-end SSE + polling with real-time bandeja/timeline updates  
 **Prerequisites**:
+- Redis running (docker-compose up redis)
 - PostgreSQL running (DATABASE_URL set)
 - Django runserver on localhost:8001
-- Frontend dev server (Vite) proxying /dashboard to localhost:8001
-- Channel 2 (Lima Express) active
-- Walter (cliente 77) with conv 226 in Channel 2
+- Frontend dev server (Vite) on localhost:5173
+- Channel 2 (Lima Express) active in PostgreSQL
+- User authenticated with can_manage_whatsapp permission
 
 ---
 

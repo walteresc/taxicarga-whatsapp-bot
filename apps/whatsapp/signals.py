@@ -36,8 +36,9 @@ def publish_message_created_event(sender, instance, created, **kwargs):
 
             # Calculate unread for this conversation at commit time
             unread_inbound = conv.mensajes.filter(
-                dirección=MensajeWhatsApp.ENTRANTE
-            ).exclude(leido_por__isnull=False).count()
+                direccion=MensajeWhatsApp.ENTRANTE,
+                leido_en__isnull=True
+            ).count()
 
             # Complete event with all data frontend needs for bandeja + timeline
             event_data = {
@@ -47,7 +48,7 @@ def publish_message_created_event(sender, instance, created, **kwargs):
                 'message_id': instance.id,
                 'meta_message_id': instance.meta_message_id,
                 'sender_type': instance.sender_type,  # 'customer' or 'advisor'
-                'direction': instance.dirección,  # 'entrante' or 'saliente'
+                'direction': instance.direccion,  # 'entrante' or 'saliente'
                 'content_type': instance.tipo,
                 'preview': instance.contenido[:100] if instance.contenido else f"[{instance.tipo}]",
                 'timestamp': instance.fecha_mensaje.isoformat() if instance.fecha_mensaje else timezone.now().isoformat(),

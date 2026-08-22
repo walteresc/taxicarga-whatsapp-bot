@@ -92,10 +92,16 @@ class TransactionCommitCallbackTest(TransactionTestCase):
         events1 = self.bus.get_events_since('0')
         self.assertEqual(len(events1), 1)
 
-        # Second conversation
+        # Create second cliente+channel to avoid UNIQUE constraint
+        cliente2 = Cliente.objects.create(
+            nombre='Test Cliente 2',
+            telefono='+5199999991'
+        )
+
+        # Second conversation with different cliente
         with transaction.atomic():
             conv2 = ConversacionWhatsApp.objects.create(
-                cliente=self.cliente,
+                cliente=cliente2,
                 channel=self.channel
             )
 
@@ -144,8 +150,8 @@ class TransactionCommitCallbackTest(TransactionTestCase):
         self.assertEqual(len(conv2_events), 1)
 
 
-class EventDataCompletnessTest(TestCase):
-    """Test that events contain complete, up-to-date data."""
+class EventDataCompletnessTest(TransactionTestCase):
+    """Test that events contain complete, up-to-date data (must use TransactionTestCase)."""
 
     def setUp(self):
         """Setup."""
@@ -156,13 +162,13 @@ class EventDataCompletnessTest(TestCase):
             self.skipTest("Redis not available")
 
         self.cliente = Cliente.objects.create(
-            nombre='Test Cliente',
-            telefono='+5199999999'
+            nombre='Test Cliente Data',
+            telefono='+5199999998'
         )
         self.channel = WhatsAppChannel.objects.create(
-            nombre='Test Channel',
-            phone_number_id='test_ch',
-            numero_visible='+5199999999',
+            nombre='Test Channel Data',
+            phone_number_id='test_ch_data',
+            numero_visible='+5199999998',
             activo=True
         )
 

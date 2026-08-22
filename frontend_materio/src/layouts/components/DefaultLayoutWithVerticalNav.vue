@@ -1,6 +1,6 @@
 <script setup>
 import { useRoute } from 'vue-router'
-import { computed } from 'vue'
+import { computed, onMounted, onUnmounted } from 'vue'
 import NavItems from '@/layouts/components/NavItems.vue'
 import logo from '@images/logo.svg?raw'
 import VerticalNavLayout from '@layouts/components/VerticalNavLayout.vue'
@@ -10,9 +10,31 @@ import Footer from '@/layouts/components/Footer.vue'
 import NavbarThemeSwitcher from '@/layouts/components/NavbarThemeSwitcher.vue'
 import UserProfile from '@/layouts/components/UserProfile.vue'
 
+// FASE 5B: Real-time event streaming
+import { useWhatsAppRealtime } from '@/composables/useWhatsAppRealtime'
+import { useConversationsStore } from '@/stores/conversationsStore'
+import { useMessagesStore } from '@/stores/messagesStore'
+
 const route = useRoute()
 const hideFooter = route.meta?.hideFooter ?? false
 const isInboxRoute = computed(() => route.path.includes('bandeja-entrada'))
+
+// Initialize real-time streaming
+const conversationsStore = useConversationsStore()
+const messagesStore = useMessagesStore()
+const { initialize, cleanup } = useWhatsAppRealtime(conversationsStore, messagesStore)
+
+onMounted(async () => {
+  try {
+    await initialize()
+  } catch (error) {
+    console.error('Failed to initialize real-time:', error)
+  }
+})
+
+onUnmounted(() => {
+  cleanup()
+})
 </script>
 
 <template>
