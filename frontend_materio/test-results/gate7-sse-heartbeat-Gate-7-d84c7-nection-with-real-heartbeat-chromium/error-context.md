@@ -1,0 +1,168 @@
+# Instructions
+
+- Following Playwright test failed.
+- Explain why, be concise, respect Playwright best practices.
+- Provide a snippet of code with the fix, if possible.
+
+# Test info
+
+- Name: gate7-sse-heartbeat.spec.js >> Gate 7: SSE Heartbeat Real >> SSE primary connection with real heartbeat
+- Location: src\__tests__\gate7-sse-heartbeat.spec.js:15:3
+
+# Error details
+
+```
+Test timeout of 90000ms exceeded.
+```
+
+# Page snapshot
+
+```yaml
+- generic [ref=f3e5]:
+  - complementary [ref=f3e6]:
+    - generic [ref=f3e7]:
+      - button "Contraer menú" [ref=f3e8] [cursor=pointer]
+      - link [ref=f3e10] [cursor=pointer]:
+        - /url: /
+        - heading "Materio" [level=1] [ref=f3e23]
+    - list [ref=f3e24]:
+      - listitem [ref=f3e25]:
+        - generic [ref=f3e26] [cursor=pointer]: Dashboard
+      - listitem [ref=f3e30]:
+        - generic [ref=f3e31]: ATENCIÓN
+      - listitem [ref=f3e33]:
+        - generic [ref=f3e34] [cursor=pointer]: Bandeja de entrada
+      - listitem [ref=f3e38]:
+        - generic [ref=f3e39] [cursor=pointer]: Leads
+      - listitem [ref=f3e43]:
+        - generic [ref=f3e44]: COMERCIAL
+      - listitem [ref=f3e46]:
+        - generic [ref=f3e47] [cursor=pointer]: Por Cotizar
+        - generic:
+          - list:
+            - listitem [ref=f3e52]:
+              - generic [ref=f3e53] [cursor=pointer]: Lista
+      - listitem [ref=f3e57]:
+        - generic [ref=f3e58] [cursor=pointer]: Cotizaciones
+        - generic:
+          - list:
+            - listitem [ref=f3e63]:
+              - generic [ref=f3e64] [cursor=pointer]: Historial
+      - listitem [ref=f3e68]:
+        - generic [ref=f3e69] [cursor=pointer]: Clientes
+      - listitem [ref=f3e73]:
+        - generic [ref=f3e74] [cursor=pointer]: Reservas
+      - listitem [ref=f3e78]:
+        - generic [ref=f3e79]: OPERACIONES
+      - listitem [ref=f3e81]:
+        - generic [ref=f3e82] [cursor=pointer]: Pizarra
+        - generic:
+          - list:
+            - listitem [ref=f3e87]:
+              - generic [ref=f3e88] [cursor=pointer]: Programación Visual
+      - listitem [ref=f3e92]:
+        - generic [ref=f3e93] [cursor=pointer]: Programación
+      - listitem [ref=f3e97]:
+        - generic [ref=f3e98] [cursor=pointer]: Servicios
+      - listitem [ref=f3e102]:
+        - generic [ref=f3e103]: PERSONAL DE CAMPO
+      - listitem [ref=f3e105]:
+        - generic [ref=f3e106] [cursor=pointer]: Personal
+        - generic:
+          - list:
+            - listitem [ref=f3e111]:
+              - generic [ref=f3e112] [cursor=pointer]: Conductores
+            - listitem [ref=f3e116]:
+              - generic [ref=f3e117] [cursor=pointer]: Ayudantes
+      - listitem [ref=f3e121]:
+        - generic [ref=f3e122] [cursor=pointer]: Equipos
+      - listitem [ref=f3e126]:
+        - generic [ref=f3e127]: FLOTA
+      - listitem [ref=f3e129]:
+        - generic [ref=f3e130] [cursor=pointer]: Vehículos
+        - generic:
+          - list:
+            - listitem [ref=f3e135]:
+              - generic [ref=f3e136] [cursor=pointer]: Inventario
+      - listitem [ref=f3e140]:
+        - generic [ref=f3e141] [cursor=pointer]: Mantenimientos
+      - listitem [ref=f3e145]:
+        - generic [ref=f3e146]: AUTOMATIZACIÓN
+      - listitem [ref=f3e148]:
+        - generic [ref=f3e149] [cursor=pointer]: Bot WhatsApp
+        - generic:
+          - list:
+            - listitem [ref=f3e154]:
+              - generic [ref=f3e155] [cursor=pointer]: Bots
+            - listitem [ref=f3e159]:
+              - generic [ref=f3e160] [cursor=pointer]: Flujos
+            - listitem [ref=f3e164]:
+              - generic [ref=f3e165] [cursor=pointer]: Respuestas
+            - listitem [ref=f3e169]:
+              - generic [ref=f3e170] [cursor=pointer]: Canales
+      - listitem [ref=f3e174]:
+        - generic [ref=f3e175]: ANALÍTICA
+      - listitem [ref=f3e177]:
+        - generic [ref=f3e178] [cursor=pointer]: Reportes
+        - generic:
+          - list:
+            - listitem [ref=f3e183]:
+              - generic [ref=f3e184] [cursor=pointer]: Reportes
+            - listitem [ref=f3e188]:
+              - generic [ref=f3e189] [cursor=pointer]: Rendimiento
+      - listitem [ref=f3e193]:
+        - generic [ref=f3e194]: SISTEMA
+      - listitem [ref=f3e196]:
+        - generic [ref=f3e197] [cursor=pointer]: Administración
+        - generic:
+          - list:
+            - listitem [ref=f3e202]:
+              - generic [ref=f3e203] [cursor=pointer]: Usuarios
+            - listitem [ref=f3e207]:
+              - generic [ref=f3e208] [cursor=pointer]: Integraciones
+            - listitem [ref=f3e212]:
+              - generic [ref=f3e213] [cursor=pointer]: Configuración
+  - generic [ref=f3e219]:
+    - main [ref=f3e220]:
+      - generic [ref=f3e222]:
+        - generic [ref=f3e223]:
+          - heading "Bandeja de entrada 2" [level=1] [ref=f3e225]:
+            - text: Bandeja de entrada
+            - generic [ref=f3e226]: "2"
+          - generic [ref=f3e227]:
+            - generic [ref=f3e228]: Bot global activo
+            - button "Pausar bot" [ref=f3e231] [cursor=pointer]
+            - button [ref=f3e233] [cursor=pointer]
+        - generic [ref=f3e235]:
+          - generic [ref=f3e237]:
+            - textbox "Buscar por nombre, teléfono o mensaje" [ref=f3e239]
+            - generic [ref=f3e240]:
+              - button "Todas" [ref=f3e241] [cursor=pointer]
+              - button "Mías" [ref=f3e242] [cursor=pointer]
+              - button "No leídas" [ref=f3e243] [cursor=pointer]
+              - button "Canal" [ref=f3e245] [cursor=pointer]
+              - button "Filtros avanzados" [ref=f3e248] [cursor=pointer]
+            - generic [ref=f3e250]:
+              - generic [ref=f3e251] [cursor=pointer]:
+                - generic [ref=f3e252]: +
+                - generic [ref=f3e255]:
+                  - generic [ref=f3e256]:
+                    - heading "+5191907512" [level=4] [ref=f3e257]
+                    - generic [ref=f3e258]: 08:58
+                  - paragraph [ref=f3e259]: Hola, ¿podría indicarme el origen y destino de la mudanza, así como qué objetos desea trasladar y si
+                  - generic [ref=f3e260]: Bot
+              - generic [ref=f3e262] [cursor=pointer]:
+                - generic [ref=f3e263]: +
+                - generic [ref=f3e266]:
+                  - generic [ref=f3e267]:
+                    - heading "+5191579256" [level=4] [ref=f3e268]
+                    - generic [ref=f3e269]: 08:48
+                  - paragraph [ref=f3e270]: "Advisor response: ECHO-1787579297"
+                  - generic [ref=f3e271]:
+                    - generic [ref=f3e272]: Asesor
+                    - generic [ref=f3e273]: "1"
+          - generic [ref=f3e276]:
+            - heading "Selecciona una conversación" [level=3] [ref=f3e278]
+            - paragraph [ref=f3e279]: Elige una conversación de la lista para revisar mensajes y responder
+    - contentinfo [ref=f3e280]
+```

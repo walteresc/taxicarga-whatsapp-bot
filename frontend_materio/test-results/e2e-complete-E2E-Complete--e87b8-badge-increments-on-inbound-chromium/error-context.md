@@ -1,0 +1,281 @@
+# Instructions
+
+- Following Playwright test failed.
+- Explain why, be concise, respect Playwright best practices.
+- Provide a snippet of code with the fix, if possible.
+
+# Test info
+
+- Name: e2e-complete.spec.js >> E2E Complete: WhatsApp SSE Streaming >> 7. Message counts: unread badge increments on inbound
+- Location: src\__tests__\e2e-complete.spec.js:172:3
+
+# Error details
+
+```
+Test timeout of 90000ms exceeded.
+```
+
+```
+Error: apiRequestContext.post: Test timeout of 90000ms exceeded.
+```
+
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - generic [ref=e5]:
+    - complementary [ref=e6]:
+      - generic [ref=e7]:
+        - button "Contraer menú" [ref=e8] [cursor=pointer]
+        - link [ref=e10] [cursor=pointer]:
+          - /url: /
+          - heading "Materio" [level=1] [ref=e23]
+      - list [ref=e24]:
+        - listitem [ref=e25]:
+          - generic [ref=e26] [cursor=pointer]: Dashboard
+        - listitem [ref=e30]:
+          - generic [ref=e31]: ATENCIÓN
+        - listitem [ref=e33]:
+          - generic [ref=e34] [cursor=pointer]: Bandeja de entrada
+        - listitem [ref=e38]:
+          - generic [ref=e39] [cursor=pointer]: Leads
+        - listitem [ref=e43]:
+          - generic [ref=e44]: COMERCIAL
+        - listitem [ref=e46]:
+          - generic [ref=e47] [cursor=pointer]: Por Cotizar
+          - generic:
+            - list:
+              - listitem [ref=e52]:
+                - generic [ref=e53] [cursor=pointer]: Lista
+        - listitem [ref=e57]:
+          - generic [ref=e58] [cursor=pointer]: Cotizaciones
+          - generic:
+            - list:
+              - listitem [ref=e63]:
+                - generic [ref=e64] [cursor=pointer]: Historial
+        - listitem [ref=e68]:
+          - generic [ref=e69] [cursor=pointer]: Clientes
+        - listitem [ref=e73]:
+          - generic [ref=e74] [cursor=pointer]: Reservas
+        - listitem [ref=e78]:
+          - generic [ref=e79]: OPERACIONES
+        - listitem [ref=e81]:
+          - generic [ref=e82] [cursor=pointer]: Pizarra
+          - generic:
+            - list:
+              - listitem [ref=e87]:
+                - generic [ref=e88] [cursor=pointer]: Programación Visual
+        - listitem [ref=e92]:
+          - generic [ref=e93] [cursor=pointer]: Programación
+        - listitem [ref=e97]:
+          - generic [ref=e98] [cursor=pointer]: Servicios
+        - listitem [ref=e102]:
+          - generic [ref=e103]: PERSONAL DE CAMPO
+        - listitem [ref=e105]:
+          - generic [ref=e106] [cursor=pointer]: Personal
+          - generic:
+            - list:
+              - listitem [ref=e111]:
+                - generic [ref=e112] [cursor=pointer]: Conductores
+              - listitem [ref=e116]:
+                - generic [ref=e117] [cursor=pointer]: Ayudantes
+        - listitem [ref=e121]:
+          - generic [ref=e122] [cursor=pointer]: Equipos
+        - listitem [ref=e126]:
+          - generic [ref=e127]: FLOTA
+        - listitem [ref=e129]:
+          - generic [ref=e130] [cursor=pointer]: Vehículos
+          - generic:
+            - list:
+              - listitem [ref=e135]:
+                - generic [ref=e136] [cursor=pointer]: Inventario
+        - listitem [ref=e140]:
+          - generic [ref=e141] [cursor=pointer]: Mantenimientos
+        - listitem [ref=e145]:
+          - generic [ref=e146]: AUTOMATIZACIÓN
+        - listitem [ref=e148]:
+          - generic [ref=e149] [cursor=pointer]: Bot WhatsApp
+          - generic:
+            - list:
+              - listitem [ref=e154]:
+                - generic [ref=e155] [cursor=pointer]: Bots
+              - listitem [ref=e159]:
+                - generic [ref=e160] [cursor=pointer]: Flujos
+              - listitem [ref=e164]:
+                - generic [ref=e165] [cursor=pointer]: Respuestas
+              - listitem [ref=e169]:
+                - generic [ref=e170] [cursor=pointer]: Canales
+        - listitem [ref=e174]:
+          - generic [ref=e175]: ANALÍTICA
+        - listitem [ref=e177]:
+          - generic [ref=e178] [cursor=pointer]: Reportes
+          - generic:
+            - list:
+              - listitem [ref=e183]:
+                - generic [ref=e184] [cursor=pointer]: Reportes
+              - listitem [ref=e188]:
+                - generic [ref=e189] [cursor=pointer]: Rendimiento
+        - listitem [ref=e193]:
+          - generic [ref=e194]: SISTEMA
+        - listitem [ref=e196]:
+          - generic [ref=e197] [cursor=pointer]: Administración
+          - generic:
+            - list:
+              - listitem [ref=e202]:
+                - generic [ref=e203] [cursor=pointer]: Usuarios
+              - listitem [ref=e207]:
+                - generic [ref=e208] [cursor=pointer]: Integraciones
+              - listitem [ref=e212]:
+                - generic [ref=e213] [cursor=pointer]: Configuración
+    - generic [ref=e219]:
+      - banner [ref=e220]:
+        - generic [ref=e222]:
+          - generic [ref=e223] [cursor=pointer]:
+            - button [ref=e224]
+            - generic [ref=e227]:
+              - generic [ref=e228]: Search
+              - generic [ref=e229]: ⌘K
+          - link [ref=e230] [cursor=pointer]:
+            - /url: https://github.com/themeselection/materio-vuetify-vuejs-admin-template-free
+          - button [ref=e233] [cursor=pointer]
+          - button [ref=e236] [cursor=pointer]
+          - generic [ref=e240]:
+            - generic [ref=e241] [cursor=pointer]
+            - status "Badge" [ref=e244]
+      - main [ref=e245]:
+        - generic [ref=e247]:
+          - heading "Dashboard" [level=1] [ref=e248]
+          - paragraph [ref=e249]: Página principal del CRM TaxiCarga
+      - contentinfo [ref=e250]:
+        - generic [ref=e252]:
+          - generic [ref=e253]:
+            - text: © 2026 Made With By
+            - link "ThemeSelection" [ref=e255] [cursor=pointer]:
+              - /url: https://themeselection.com
+          - generic [ref=e256]:
+            - link "License" [ref=e257] [cursor=pointer]:
+              - /url: https://themeselection.com/license/
+            - link "More Themes" [ref=e258] [cursor=pointer]:
+              - /url: https://themeselection.com/
+            - link "Documentation" [ref=e259] [cursor=pointer]:
+              - /url: https://demos.themeselection.com/materio-vuetify-vuejs-admin-template/documentation/
+            - link "Support" [ref=e260] [cursor=pointer]:
+              - /url: https://themeselection.com/support/
+  - generic:
+    - tooltip
+```
+
+# Test source
+
+```ts
+  91  | 
+  92  |     await page1.goto(VITE_URL)
+  93  |     await page2.goto(VITE_URL)
+  94  |     await page1.waitForLoadState('networkidle')
+  95  |     await page2.waitForLoadState('networkidle')
+  96  | 
+  97  |     const testPhone = `+5191${Date.now().toString().slice(-6)}`
+  98  |     const testId = `TWO-TAB-${Date.now()}`
+  99  | 
+  100 |     const payload = {
+  101 |       from: testPhone,
+  102 |       to: '51967619238',
+  103 |       wamid: `wamid_${testId}`,
+  104 |       text: `Test ${testId}`,
+  105 |       timestamp: Math.floor(Date.now() / 1000).toString(),
+  106 |       type: 'text',
+  107 |     }
+  108 | 
+  109 |     // Send webhook once
+  110 |     await page1.context().request.post(WEBHOOK_URL, { data: payload })
+  111 |     await page1.waitForTimeout(2000)
+  112 |     await page2.waitForTimeout(2000)
+  113 | 
+  114 |     // Both pages should see the message
+  115 |     const text1 = await page1.locator('body').textContent()
+  116 |     const text2 = await page2.locator('body').textContent()
+  117 | 
+  118 |     expect(text1.includes(testId)).toBe(true)
+  119 |     expect(text2.includes(testId)).toBe(true)
+  120 | 
+  121 |     // Close
+  122 |     await page1.close()
+  123 |     await page2.close()
+  124 |     await context1.close()
+  125 |     await context2.close()
+  126 |   })
+  127 | 
+  128 |   test('4. Idempotency: same event_id never duplicates', async ({ page, context }) => {
+  129 |     const testPhone = `+5191${Date.now().toString().slice(-6)}`
+  130 |     const wamid = `wamid_idempotent_${Date.now()}`
+  131 | 
+  132 |     const payload = {
+  133 |       from: testPhone,
+  134 |       to: '51967619238',
+  135 |       wamid: wamid,
+  136 |       text: 'Idempotent test message',
+  137 |       timestamp: Math.floor(Date.now() / 1000).toString(),
+  138 |       type: 'text',
+  139 |     }
+  140 | 
+  141 |     // Send same event 3 times
+  142 |     for (let i = 0; i < 3; i++) {
+  143 |       await context.request.post(WEBHOOK_URL, { data: payload })
+  144 |       await page.waitForTimeout(500)
+  145 |     }
+  146 | 
+  147 |     const bodyText = await page.locator('body').textContent()
+  148 |     const count = (bodyText.match(/Idempotent test message/g) || []).length
+  149 | 
+  150 |     // Should appear exactly once (or similar de deduplication)
+  151 |     expect(count).toBeLessThanOrEqual(1)
+  152 |   })
+  153 | 
+  154 |   test('5. Fallback polling: SSE blockage → polling recovers', async ({ page, context }) => {
+  155 |     // This test needs network interception to work properly
+  156 |     // For now, just verify polling endpoint exists
+  157 |     const pollRes = await context.request.get(`${DJANGO_API}/api/events/polling/`)
+  158 |     expect(pollRes.status()).toBeLessThan(500)
+  159 |   })
+  160 | 
+  161 |   test('6. Logout: EventSource closed, no cursor leak', async ({ page, context }) => {
+  162 |     // Verify auth API
+  163 |     const authRes = await context.request.get(`${DJANGO_API}/api/whoami/`)
+  164 |     const isAuth = authRes.status() !== 401
+  165 | 
+  166 |     if (isAuth) {
+  167 |       // Would need actual logout endpoint to test
+  168 |       console.log('Logout test requires authenticated user + logout endpoint')
+  169 |     }
+  170 |   })
+  171 | 
+  172 |   test('7. Message counts: unread badge increments on inbound', async ({ page, context }) => {
+  173 |     const testPhone = `+5191${Date.now().toString().slice(-6)}`
+  174 |     const payload = {
+  175 |       from: testPhone,
+  176 |       to: '51967619238',
+  177 |       wamid: `wamid_badge_${Date.now()}`,
+  178 |       text: 'Unread test',
+  179 |       timestamp: Math.floor(Date.now() / 1000).toString(),
+  180 |       type: 'text',
+  181 |     }
+  182 | 
+  183 |     // Get initial badge count (if visible)
+  184 |     let initialBadge = null
+  185 |     try {
+  186 |       initialBadge = await page.locator('[data-testid="unread-count"]').first().textContent()
+  187 |     } catch (e) {
+  188 |       // Badge might not be visible initially
+  189 |     }
+  190 | 
+> 191 |     await context.request.post(WEBHOOK_URL, { data: payload })
+      |                           ^ Error: apiRequestContext.post: Test timeout of 90000ms exceeded.
+  192 |     await page.waitForTimeout(2000)
+  193 | 
+  194 |     // Check if message appeared
+  195 |     const bodyText = await page.locator('body').textContent()
+  196 |     expect(bodyText.includes('Unread test')).toBe(true)
+  197 |   })
+  198 | })
+  199 | 
+```
