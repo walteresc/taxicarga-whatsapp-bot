@@ -164,7 +164,8 @@ class YCloudProcessingTests(TestCase):
 
         # First create a conversation with inbound message
         event_inbound = {
-            "from": "+51999888777",
+            "from": "+51999888777",  # Customer phone
+            "to": "",  # No 'to' in inbound
             "wamid": "ycloud_msg_001",
             "text": "Customer message",
             "timestamp": str(int(ts.timestamp())),
@@ -181,10 +182,12 @@ class YCloudProcessingTests(TestCase):
         self.assertEqual(conv.bot_pausado, False)
         self.assertEqual(conv.estado_atencion, ConversacionWhatsApp.ATENCION_BOT)
 
-        # Now send echo from WhatsApp Web (advisor intervention)
+        # Now send REAL echo from WhatsApp Web (advisor intervention)
+        # In YCloud echo: from=business, to=customer
         ts2 = timezone.make_aware(datetime(2026, 8, 21, 10, 5, 0))
         event_echo = {
-            "from": "+51999888777",
+            "from": "51999999999",  # Business number (Lima Express channel)
+            "to": "+51999888777",  # Customer phone (MUST be 'to' in echo)
             "wamid": "ycloud_echo_001",
             "text": "Advisor reply from Web",
             "timestamp": str(int(ts2.timestamp())),
@@ -196,10 +199,24 @@ class YCloudProcessingTests(TestCase):
             self.channel,
         )
 
-        self.assertTrue(result2["human_intervention"])
+        self.assertTrue(result2["human_intervention"], "Echo should set human_intervention=True")
+
+        # Verify message created with correct classification
+        message = result2.get("message")
+        self.assertIsNotNone(message)
+        self.assertEqual(message.sender_type, MensajeWhatsApp.SENDER_ADVISOR)
+        self.assertEqual(message.direccion, MensajeWhatsApp.SALIENTE)
+        self.assertEqual(message.source, MensajeWhatsApp.SOURCE_WHATSAPP_BUSINESS_APP)
+
+        # Verify conversation state changed
         conv.refresh_from_db()
-        self.assertTrue(conv.bot_pausado)
+        self.assertTrue(conv.bot_pausado, "Echo should set bot_pausado=True")
         self.assertEqual(conv.estado_atencion, ConversacionWhatsApp.ATENCION_ASESOR)
+
+        # Verify no unread increment (echo is outbound)
+        # Assuming unread only increments for inbound
+        messages = conv.mensajes.all()
+        self.assertEqual(messages.count(), 2)  # One inbound, one echo
 
     def test_idempotent_by_wamid(self):
         """Same wamid should not create duplicate messages."""
