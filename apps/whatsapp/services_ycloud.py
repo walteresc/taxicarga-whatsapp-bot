@@ -160,14 +160,20 @@ class YCloudMessageProcessor:
                         result["error"] = "No phone number in event"
                         return result
 
-                # Normalize phone to E.164 format (+country code + number)
-                if phone and not phone.startswith('+'):
-                    phone = f'+{phone}'
+                # Normalize phone BEFORE lookup to ensure consistent get_or_create matching
+                # Apply the same normalization that Cliente.save() does
+                from apps.clientes.phone_normalizer import normalize_phone
+                norm_result = normalize_phone(phone)
+                if norm_result["is_valid"]:
+                    phone_for_lookup = norm_result["normalized_e164"]
+                else:
+                    # Fallback: minimal normalization (just add + if missing)
+                    phone_for_lookup = f'+{phone}' if phone and not phone.startswith('+') else phone
 
                 # Use from_name if provided (YCloud contact name), else phone
                 default_name = event_data.get("from_name") or phone
                 cliente, created = Cliente.objects.get_or_create(
-                    telefono=phone,
+                    telefono=phone_for_lookup,
                     defaults={"nombre": default_name}
                 )
                 # Update name if it was default phone and now we have from_name
