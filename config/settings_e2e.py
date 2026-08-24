@@ -34,3 +34,8 @@ CSRF_COOKIE_SECURE = False     # Allow HTTP for E2E
 # YCloud E2E Configuration
 YCLOUD_WEBHOOK_SECRET = 'test_secret_e2e'
 YCLOUD_ENABLED = True
+
+# Serve Vue build from static_build/
+STATICFILES_DIRS = [
+    BASE_DIR / 'static_build',
+]

@@ -4,6 +4,9 @@ from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 @csrf_exempt
@@ -18,8 +21,11 @@ def api_login(request):
         if not username or not password:
             return JsonResponse({'error': 'Username and password required'}, status=400)
 
+        logger.warning(f"[AUTH_API] Login attempt: username={username}")
         user = authenticate(request, username=username, password=password)
+        logger.warning(f"[AUTH_API] authenticate() returned: {user}")
         if user is None:
+            logger.warning(f"[AUTH_API] Login FAILED for {username}")
             return JsonResponse({'error': 'Invalid credentials'}, status=401)
 
         # Log the user in
