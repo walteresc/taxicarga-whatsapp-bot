@@ -42,8 +42,10 @@ export const useEventStore = defineStore('events', () => {
 
       eventSource.value = new EventSource(url, { withCredentials: true })
 
-      // SSE event: message.created, conversation.updated, etc.
-      eventSource.value.addEventListener('message', handleSSEEvent)
+      // SSE event types from backend
+      eventSource.value.addEventListener('message.created', handleSSEEvent)
+      eventSource.value.addEventListener('conversation.created', handleSSEEvent)
+      eventSource.value.addEventListener('conversation.updated', handleSSEEvent)
 
       // SSE event: resync.required
       eventSource.value.addEventListener('resync.required', handleResyncRequired)

@@ -117,10 +117,13 @@ def publish_message_created_event(sender, instance, created, **kwargs):
                 }
             }
 
-            publish_event('message.created', event_data)
+            logger.warning(f"[CP-12] SIGNAL_EXECUTED: message.created signal fired for msg_id={instance.id}")
+            event = publish_event('message.created', event_data)
+            logger.warning(f"[CP-13] REDIS_EVENT_PUBLISHED: event_id={event.id if event else 'failed'}, type=message.created")
         except Exception as e:
             logger.error(f"Failed to publish message event: {e}")
 
+    logger.warning(f"[CP-11.5] ON_COMMIT_REGISTERED: registering publish for msg_id={instance.id}")
     transaction.on_commit(publish_in_committed_transaction)
 
 

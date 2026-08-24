@@ -220,17 +220,34 @@ def ycloud_webhook(request):
     4. Retornar HTTP 200 inmediatamente (no bloquear por bot processing)
     5. Disparar bot processing en background (si aplica)
     """
+    from .event_trace_middleware import EventTrace
+
     logger.warning(f"[YCloud] WEBHOOK HANDLER EXECUTED - RECEIVED AT {timezone.now()}")
+
+    # Initialize tracing
+    payload_dict = {}
+    try:
+        payload_dict = json.loads(request.body)
+    except:
+        pass
+    event_id = payload_dict.get('id', 'unknown')
+    wamid = payload_dict.get('whatsappInboundMessage', {}).get('id') or payload_dict.get('whatsappMessage', {}).get('id') or 'unknown'
+    trace = EventTrace(event_id, wamid)
+    trace.log(1, "WEBHOOK_RECEIVED", f"event_id={event_id}, wamid={wamid}")
 
     # 1. VALIDAR FIRMA
     if not verify_ycloud_signature(request):
+        trace.log(2, "HMAC_VALIDATION_FAILED", "401 returned")
         logger.error("[YCloud] Invalid YCloud signature - REJECTING")
         return JsonResponse({'error': 'Invalid signature'}, status=401)
+    trace.log(2, "HMAC_VALIDATION_PASSED", "Format 2 (timestamp.body)")
 
     # 2. PARSEAR JSON
     try:
         payload = json.loads(request.body)
-    except json.JSONDecodeError:
+        trace.log(3, "JSON_PARSED", f"{len(json.dumps(payload))} bytes")
+    except json.JSONDecodeError as e:
+        trace.log(3, "JSON_PARSE_ERROR", str(e))
         logger.error("[YCloud] Invalid JSON in YCloud webhook")
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
@@ -239,6 +256,7 @@ def ycloud_webhook(request):
     # 3. EXTRAER METADATOS
     event_type = payload.get('type') or payload.get('event')
     if not event_type:
+        trace.log(4, "EVENT_TYPE_MISSING", "400 returned")
         logger.warning("[YCloud] Missing event type")
         return JsonResponse({'error': 'Missing event type'}, status=400)
 
@@ -247,15 +265,19 @@ def ycloud_webhook(request):
         import uuid
         event_id = str(uuid.uuid4())
 
+    trace.log(4, "EVENT_TYPE_EXTRACTED", f"type={event_type}, id={event_id}")
     logger.warning(f"[YCloud] Event type={event_type}, event_id={event_id}")
 
     # 4. IDEMPOTENCIA: No procesar dos veces
-    if WebhookEvent.objects.filter(
+    existing = WebhookEvent.objects.filter(
         source='ycloud',
         external_message_id=event_id
-    ).exists():
+    ).first()
+    if existing:
+        trace.log(5, "IDEMPOTENCE_CHECK", f"duplicate detected, skipped (PK={existing.id})")
         logger.info(f"[YCloud] Duplicate event {event_id}, skipping")
         return JsonResponse({'status': 'skipped'})
+    trace.log(5, "IDEMPOTENCE_CHECK", "unique event")
 
     # 5. REGISTRAR EVENTO
     try:
@@ -264,16 +286,20 @@ def ycloud_webhook(request):
             external_message_id=event_id,
             event_type=event_type
         )
+        trace.log(6, "WEBHOOK_EVENT_CREATED", f"PK={webhook_evt.id}")
         logger.warning(f"[YCloud] WebhookEvent created: ID={webhook_evt.id}")
     except Exception as e:
+        trace.log(6, "WEBHOOK_EVENT_ERROR", str(e))
         logger.error(f"[YCloud] Error creating WebhookEvent: {e}", exc_info=True)
 
     # 6. TRANSFORMAR PAYLOAD A FORMATO CANÓNICO
     # YCloud structure → canonical format for processor
     canonical_payload = _normalize_ycloud_payload(event_type, payload)
     if not canonical_payload:
+        trace.log(7, "PAYLOAD_NORMALIZATION_FAILED", "returning 200")
         logger.warning("[YCloud] Failed to normalize payload")
         return JsonResponse({'status': 'ok'})
+    trace.log(7, "PAYLOAD_NORMALIZED", f"from={canonical_payload.get('from')}, wamid={canonical_payload.get('wamid')}")
 
     # 7. DELEGAR PERSISTENCIA AL PROCESADOR CANÓNICO
     try:
@@ -281,8 +307,10 @@ def ycloud_webhook(request):
         # Resolve channel from payload (business number)
         channel = _resolve_channel_from_payload(event_type, canonical_payload, payload)
         if not channel:
+            trace.log(8, "CHANNEL_RESOLUTION_FAILED", "no active channel found")
             logger.error(f"[YCloud] Channel resolution FAILED for event {event_type} - SKIPPING")
             return JsonResponse({'status': 'ok'})  # HTTP 200 but no processing
+        trace.log(8, "CHANNEL_RESOLVED", f"ch_id={channel.id}, name={channel.nombre}")
         logger.warning(f"[YCloud] Channel resolved: ID={channel.id} ({channel.nombre})")
 
         # Importar procesador
@@ -291,9 +319,19 @@ def ycloud_webhook(request):
         # Procesar evento (persistencia atómica: cliente, conversación, mensaje)
         result = process_ycloud_event(event_type, canonical_payload, channel)
 
+        if result.get("message"):
+            msg_id = result["message"].id
+            conv_id = result["conversation"].id
+            trace.log(9, "MESSAGE_PERSISTED", f"msg_pk={msg_id}, conv_pk={conv_id}, wamid={result['message'].meta_message_id}")
+        else:
+            trace.log(9, "MESSAGE_PERSISTENCE_FAILED", str(result.get("error")))
+
         logger.info(f"[YCloud] Persistence result: {result}")
 
-        # 7. PROCESAR BOT EN BACKGROUND (no bloquear HTTP 200)
+        # TRANSACTION.ON_COMMIT: Redis publish handled by signal
+        trace.log(10, "REDIS_PUBLISH_QUEUED", "via on_commit signal (async)")
+
+        # 8. PROCESAR BOT EN BACKGROUND (no bloquear HTTP 200)
         if result.get("message") and result.get("conversation"):
             try:
                 # Disparar bot processing sin esperar (puede ser async en el futuro)
@@ -303,10 +341,13 @@ def ycloud_webhook(request):
                 # NO retornar error — mensaje ya fue persistido
 
     except Exception as e:
+        trace.log(9, "PROCESSING_ERROR", str(e)[:100])
         logger.error(f"[YCloud] Error processing event: {e}", exc_info=True)
         # HTTP 200 igual — idempotencia registrada, no intentar de nuevo
 
-    # 8. RETORNAR HTTP 200 (mensaje ya persistido)
+    # RETORNAR HTTP 200 (mensaje ya persistido o en queue)
+    trace.log(11, "HTTP_200_RETURNED", "processing queued or complete")
+    trace.summary()
     return JsonResponse({'status': 'ok'})
 
 
