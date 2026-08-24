@@ -34,7 +34,11 @@ export const useEventStore = defineStore('events', () => {
     }
 
     try {
-      const url = `/dashboard/whatsapp/api/events/stream/`
+      // For dev/E2E: Django at 8001, Vite at 5177 - need absolute URL
+      const apiBase = typeof window !== 'undefined' && window.location.hostname === 'localhost'
+        ? 'http://localhost:8001'
+        : ''
+      const url = `${apiBase}/dashboard/whatsapp/api/events/stream/`
 
       eventSource.value = new EventSource(url, { withCredentials: true })
 

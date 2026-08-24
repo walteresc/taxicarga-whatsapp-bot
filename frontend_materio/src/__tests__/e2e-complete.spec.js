@@ -2,7 +2,9 @@ import { test, expect } from '@playwright/test'
 
 const VITE_URL = 'http://localhost:5177'
 const DJANGO_API = 'http://localhost:8001'
-const WEBHOOK_URL = `${DJANGO_API}/webhooks/ycloud/v1/`
+const WEBHOOK_URL = `${DJANGO_API}/webhook/whatsapp/`
+const STREAM_URL = `${DJANGO_API}/whatsapp/api/events/stream/`
+const POLL_URL = `${DJANGO_API}/whatsapp/api/events/poll/`
 
 /**
  * E2E Complete Suite for FASE 5B
