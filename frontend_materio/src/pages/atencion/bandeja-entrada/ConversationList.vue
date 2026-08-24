@@ -134,7 +134,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch, triggerRef } from 'vue'
+import { ref, shallowRef, computed, onMounted, onUnmounted, watch, triggerRef, watchEffect, getCurrentInstance } from 'vue'
 import { conversationService } from '@/services/conversationService'
 import ChannelDropdown from './components/ChannelDropdown.vue'
 
@@ -152,8 +152,9 @@ const error = ref(false)
 const searchPhone = ref('')
 const activeFilters = ref(['Todas'])
 const activeChannels = ref(['Todos'])
-const conversations = ref([])
+const conversations = shallowRef([])  // Use shallowRef to detect array reference changes
 const showFilterMenu = ref(false)
+const updateTrigger = ref(0)  // Explicit update trigger
 
 const filterTabs = ['Todas', 'Mías', 'No leídas']
 const advancedFilterTags = ['Sin asignar', 'Bot atendiendo', 'Asesor atendiendo', 'Cerradas']
@@ -172,12 +173,12 @@ const hasActiveFilters = computed(() => {
     !activeChannels.value.includes('Todos')
 })
 
-const selectedHiddenChannels = computed(() => {
-  return hiddenChannels.filter(channel => activeChannels.value.includes(channel))
-})
-
 const filteredConversations = computed(() => {
+  // Include updateTrigger in dependencies to force re-computation
+  const _ = updateTrigger.value
+
   let filtered = conversations.value
+  console.log('[COMPUTED] filteredConversations called, input length:', filtered.length, 'trigger:', _)
 
   // Apply search filter
   if (searchPhone.value) {
@@ -211,6 +212,16 @@ const filteredConversations = computed(() => {
 
   return filtered
 })
+
+// Reactive audit - watch conversations length and force render
+watch(
+  () => conversations.value.length,
+  (newLen) => {
+    console.log('[WATCH] conversations.length changed to:', newLen)
+    console.log('[WATCH] filteredConversations.value.length:', filteredConversations.value.length)
+  },
+  { immediate: false }
+)
 
 const toggleFilterMenu = () => {
   showFilterMenu.value = !showFilterMenu.value
@@ -352,6 +363,7 @@ let pollingInterval = null
 let lastDataHash = null
 
 const loadConversationsWithChangeDetection = async () => {
+  console.log('[LOAD-FUNC] Starting, current loading=', loading.value, 'conversations.length=', conversations.value.length)
   loading.value = true
   error.value = false
   try {
@@ -364,20 +376,36 @@ const loadConversationsWithChangeDetection = async () => {
       else if (activeFilters.value.includes('Sin asignar')) filters.state = 'unassigned'
     }
 
+    console.log('[LOAD] Before await')
     const data = await conversationService.getActiveConversations(filters)
+    console.log('[LOAD] After await, API response:', { hasData: !!data, convCount: data?.conversations?.length })
 
     // Hash the data to detect real changes
     const newHash = JSON.stringify(data.conversations).slice(0, 100)
+    console.log('[LOAD] Hash check: newHash exists=', !!newHash, ', lastDataHash=', lastDataHash, ', match=', newHash === lastDataHash)
+
     if (newHash !== lastDataHash) {
-      conversations.value = data.conversations || []
-      triggerRef(conversations)
+      const newConvs = data.conversations || []
+      console.log('[LOAD] Creating new array reference, length:', newConvs.length)
+
+      // Force new array reference
+      conversations.value = [...newConvs]
+      console.log('[LOAD] After new array assign:', conversations.value.length)
+
+      // Trigger computed re-evaluation explicitly
+      updateTrigger.value++
+      console.log('[LOAD] updateTrigger incremented to:', updateTrigger.value)
+
       lastDataHash = newHash
+    } else {
+      console.log('[LOAD] Hash unchanged, skipping')
     }
   } catch (err) {
     console.error('Error loading conversations:', err)
     error.value = true
   } finally {
     loading.value = false
+    console.log('[LOAD-FUNC] Finished, loading=', loading.value, 'conversations.length=', conversations.value.length)
   }
 }
 
@@ -398,8 +426,22 @@ const handleConversationUpdated = (event) => {
   }
 }
 
-onMounted(() => {
-  loadConversationsWithChangeDetection()
+onMounted(async () => {
+  console.log('[MOUNT] ConversationList mounted, calling loadConversationsWithChangeDetection')
+  try {
+    await loadConversationsWithChangeDetection()
+    console.log('[MOUNT] After loadConversationsWithChangeDetection, conversations.length=', conversations.value.length)
+    console.log('[MOUNT] filteredConversations.value.length=', filteredConversations.value.length)
+
+    // Force component re-render by accessing the instance and triggering update
+    const instance = getCurrentInstance()
+    if (instance) {
+      instance.proxy?.$forceUpdate()
+      console.log('[MOUNT] $forceUpdate called')
+    }
+  } catch (err) {
+    console.error('[MOUNT] Error in loadConversationsWithChangeDetection:', err)
+  }
 
   // Realtime updates via global event store (eventStore.js + eventStream)
   // SSE is managed by eventStore + useWhatsAppRealtime
