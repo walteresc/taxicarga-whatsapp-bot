@@ -315,6 +315,6 @@ class YCloudMessageProcessor:
 _processor = YCloudMessageProcessor()
 
 
-def process_ycloud_event(event_type, event_data, channel):
+def process_ycloud_event(event_type, event_data, channel, cliente=None):
     """Public API for processing YCloud events."""
-    return _processor.process_ycloud_event(event_type, event_data, channel)
+    return _processor.process_ycloud_event(event_type, event_data, channel, cliente=cliente)
