@@ -12,10 +12,59 @@
 # Error details
 
 ```
-Error: page.goto: Page crashed
-Call log:
-  - navigating to "http://localhost:5177/atencion/bandeja-entrada", waiting until "load"
+Test timeout of 120000ms exceeded while running "beforeEach" hook.
+```
 
+```
+Error: page.goto: Target page, context or browser has been closed
+```
+
+# Page snapshot
+
+```yaml
+- generic [active] [ref=f1e1]:
+  - generic [ref=f1e2]:
+    - heading "Prohibido (403)" [level=1] [ref=f1e3]
+    - paragraph [ref=f1e4]: La verificación CSRF ha fallado. Solicitud abortada.
+  - generic [ref=f1e5]:
+    - heading "Help" [level=2] [ref=f1e6]
+    - paragraph [ref=f1e7]: "Reason given for failure:"
+    - generic [ref=f1e8]: Origin checking failed - http://localhost:5177 does not match any trusted origins.
+    - paragraph [ref=f1e9]:
+      - text: In general, this can occur when there is a genuine Cross Site Request Forgery, or when
+      - link "Django’s CSRF mechanism" [ref=f1e10] [cursor=pointer]:
+        - /url: https://docs.djangoproject.com/en/6.0/ref/csrf/
+      - text: "has not been used correctly. For POST forms, you need to ensure:"
+    - list [ref=f1e11]:
+      - listitem [ref=f1e12]: Your browser is accepting cookies.
+      - listitem [ref=f1e13]:
+        - text: The view function passes a
+        - code [ref=f1e14]: request
+        - text: to the template’s
+        - link [ref=f1e15] [cursor=pointer]:
+          - /url: https://docs.djangoproject.com/en/6.0/topics/templates/#django.template.backends.base.Template.render
+          - code [ref=f1e16]: render
+        - text: method.
+      - listitem [ref=f1e17]:
+        - text: In the template, there is a
+        - code [ref=f1e18]: "{% csrf_token %}"
+        - text: template tag inside each POST form that targets an internal URL.
+      - listitem [ref=f1e19]:
+        - text: If you are not using
+        - code [ref=f1e20]: CsrfViewMiddleware
+        - text: ", then you must use"
+        - code [ref=f1e21]: csrf_protect
+        - text: on any views that use the
+        - code [ref=f1e22]: csrf_token
+        - text: template tag, as well as those that accept the POST data.
+      - listitem [ref=f1e23]: The form has a valid CSRF token. After logging in in another browser tab or hitting the back button after a login, you may need to reload the page with the form, because the token is rotated after a login.
+    - paragraph [ref=f1e24]:
+      - text: You’re seeing the help section of this page because you have
+      - code [ref=f1e25]: DEBUG = True
+      - text: in your Django settings file. Change that to
+      - code [ref=f1e26]: "False"
+      - text: ", and only the initial error message will be displayed."
+    - paragraph [ref=f1e27]: You can customize this page using the CSRF_FAILURE_VIEW setting.
 ```
 
 # Test source
@@ -59,7 +108,7 @@ Call log:
   36  | 
   37  |     // Load bandeja-entrada
 > 38  |     await page.goto(`${VITE_URL}/atencion/bandeja-entrada`)
-      |                ^ Error: page.goto: Page crashed
+      |                ^ Error: page.goto: Target page, context or browser has been closed
   39  |     await page.waitForLoadState('networkidle')
   40  |     console.log(`[PAGE] Loaded bandeja-entrada`)
   41  |   })
