@@ -17,48 +17,43 @@ export default async function globalAuthSetup() {
   const page = await context.newPage()
 
   try {
-    // Step 1: Obtener CSRF token del formulario de login
+    // Step 1: Cargar página de login
     console.log('[AUTH] Step 1: Cargar página de login...')
     await page.goto(`${VITE_URL}/dashboard/login/`, { waitUntil: 'networkidle' })
 
-    // CSRF token puede estar en meta o en la forma
-    let csrfToken = await page.evaluate(() => {
-      // Buscar en meta tag
-      const meta = document.querySelector('[name="csrf-token"]')
-      if (meta) return meta.content
+    // Step 2: Login vía UI (rellenar formulario + submit)
+    console.log('[AUTH] Step 2: Realizar login vía UI...')
 
-      // Buscar en input oculto
-      const input = document.querySelector('input[name="csrfmiddlewaretoken"]')
-      if (input) return input.value
+    // Buscar inputs de username y password
+    const usernameInput = page.locator('input[name="username"], input[placeholder*="username" i], input[type="text"]').first()
+    const passwordInput = page.locator('input[name="password"], input[type="password"]').first()
+    const submitButton = page.locator('button[type="submit"], input[type="submit"]').first()
 
-      return null
-    })
-    console.log(`[AUTH] CSRF token: ${csrfToken ? csrfToken.substring(0, 20) + '...' : 'NOT FOUND'}`)
+    // Rellenar formulario
+    await usernameInput.fill('e2e_test')
+    console.log('[AUTH] Username entered')
 
-    // Step 2: Login vía API REST
-    console.log('[AUTH] Step 2: Realizar POST a /dashboard/api/auth/login/...')
-    const loginResponse = await page.context().request.post(`${DJANGO_URL}/dashboard/api/auth/login/`, {
-      data: {
-        username: 'e2e_test',
-        password: 'e2e_test_pass',
-      },
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest',
-        ...(csrfToken && { 'X-CSRFToken': csrfToken }),
-      },
+    await passwordInput.fill('e2e_test_pass')
+    console.log('[AUTH] Password entered')
+
+    // Hacer click en submit
+    await submitButton.click()
+    console.log('[AUTH] Form submitted')
+
+    // Esperar redirección o confirmación de sesión
+    await page.waitForNavigation({ timeout: 5000 }).catch(() => {
+      console.log('[AUTH] No navigation detected (may already be logged in)')
     })
 
-    const status = loginResponse.status()
-    console.log(`[AUTH] Login response: ${status}`)
+    // Verificar que estamos en página autenticada
+    const authCheck = await page.evaluate(() => {
+      // Buscar evidencia de sesión activa
+      const hasLogoutBtn = !!document.querySelector('a[href*="logout"], button[href*="logout"]')
+      const isOnLoginPage = window.location.pathname.includes('login')
+      return { hasLogoutBtn, isOnLoginPage }
+    })
 
-    if (status === 200) {
-      const responseData = await loginResponse.json()
-      console.log(`[AUTH] Login OK: ${responseData.user.username}`)
-    } else {
-      const errorText = await loginResponse.text()
-      console.log(`[AUTH] Login FAILED: ${errorText.substring(0, 100)}`)
-    }
+    console.log(`[AUTH] Logged in: ${authCheck.hasLogoutBtn ? 'YES' : 'UNCLEAR'}`)
 
     // Step 3: Verificar cookies
     const cookies = await context.cookies()
