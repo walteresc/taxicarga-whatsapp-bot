@@ -60,7 +60,12 @@ print(f"USER_ID={user.id}")
     // Escribir script en archivo temporal
     fs.writeFileSync('.e2e_auth_setup.py', pythonScript)
 
-    const output = execSync(`cd ../.. && DJANGO_SETTINGS_MODULE=config.settings_test python frontend_materio/.e2e_auth_setup.py`, { encoding: 'utf-8' })
+    // Windows: use set para env vars, cmd /c para ejecutar
+    const cmd = process.platform === 'win32'
+      ? `cd ../.. && set DJANGO_SETTINGS_MODULE=config.settings_test && python frontend_materio/.e2e_auth_setup.py`
+      : `cd ../.. && DJANGO_SETTINGS_MODULE=config.settings_test python frontend_materio/.e2e_auth_setup.py`
+
+    const output = execSync(cmd, { encoding: 'utf-8', shell: true })
 
     console.log(output)
 
