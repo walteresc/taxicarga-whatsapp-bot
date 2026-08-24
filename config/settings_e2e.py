@@ -36,6 +36,9 @@ YCLOUD_WEBHOOK_SECRET = 'test_secret_e2e'
 YCLOUD_ENABLED = True
 
 # Serve Vue build from static_build/
+# Note: static_build/static/ contains the actual CSS/JS
+# But we also need static_build root for favicon, loader.css, etc.
 STATICFILES_DIRS = [
-    BASE_DIR / 'static_build',
+    BASE_DIR / 'static_build' / 'static',  # CSS, JS, images from Vue build
+    BASE_DIR / 'static_build',             # Root files: favicon, loader.css, logo.png
 ]
