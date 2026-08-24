@@ -23,8 +23,12 @@ import os
 import sys
 import django
 
+# Añadir directorio del proyecto a sys.path
+project_dir = r'D:\\DESARROLLO_IA\\Proyecto_taxi_carga\\Taxi_carga_bot\\taxicarga_whatsapp_bot'
+sys.path.insert(0, project_dir)
+os.chdir(project_dir)
+
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings_test')
-sys.path.insert(0, '.')
 django.setup()
 
 from django.contrib.auth.models import User
