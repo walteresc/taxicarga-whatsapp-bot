@@ -16,7 +16,14 @@ class EventStreamingIntegrationTest(TestCase):
     @classmethod
     def setUpTestData(cls):
         """Create test user and data."""
+        from django.contrib.auth.models import Group
         cls.user = User.objects.create_user('testuser', 'test@test.com', 'pass123')
+        # Grant staff status for API access
+        cls.user.is_staff = True
+        cls.user.save()
+        # Add to Administrador group for WhatsApp access
+        admin_group, _ = Group.objects.get_or_create(name='Administrador')
+        cls.user.groups.add(admin_group)
 
     def setUp(self):
         """Reset event bus and authenticate."""
@@ -41,7 +48,7 @@ class EventStreamingIntegrationTest(TestCase):
 
         # Poll API (cursor=0 means all events)
         response = self.client.get(
-            reverse('api-events-stream'),
+            reverse('api-events-poll'),
             {'cursor': 0}
         )
 
@@ -103,7 +110,7 @@ class EventStreamingIntegrationTest(TestCase):
 
         # Poll with cursor (should only get new events)
         response2 = self.client.get(
-            reverse('api-events-stream'),
+            reverse('api-events-poll'),
             {'cursor': cursor}
         )
         data2 = response2.json()
