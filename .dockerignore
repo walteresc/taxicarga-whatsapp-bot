@@ -34,9 +34,9 @@ ngrok_*.log
 staticfiles
 media
 *.md
-Dockerfile
+# Build files are needed during build phase, do not ignore them
+# Dockerfile - needed
+# docker-entrypoint.sh - needed
+# requirements*.txt - needed
+# docker-compose.yml - only for compose, OK to ignore
 docker-compose.yml
-nginx.conf
-gunicorn.conf.py
-docker-entrypoint.sh
-requirements*.txt
