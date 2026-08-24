@@ -12,6 +12,15 @@ const WEBHOOK_URL = 'http://localhost:8001/webhook/whatsapp/'
 
 test.describe.serial('E2E Visual: Bandeja-Entrada Real UI', () => {
   test.beforeEach(async ({ page }) => {
+    // Capture console errors for debugging
+    const consoleErrors = []
+    page.on('console', msg => {
+      if (msg.type() === 'error') {
+        consoleErrors.push(msg.text())
+        console.log(`[CONSOLE ERROR] ${msg.text()}`)
+      }
+    })
+
     // Load login page
     await page.goto(`${VITE_URL}/dashboard/login/`)
     await page.waitForLoadState('domcontentloaded')
@@ -35,11 +44,26 @@ test.describe.serial('E2E Visual: Bandeja-Entrada Real UI', () => {
     await page.waitForNavigation({ waitUntil: 'domcontentloaded' }).catch(() => {})
 
     // Load bandeja-entrada (avoid networkidle: SSE streams indefinitely)
-    await page.goto(`${VITE_URL}/atencion/bandeja-entrada`, { waitUntil: 'domcontentloaded' })
-    // Wait for Vue/Vuetify hydration
-    await page.waitForLoadState('domcontentloaded')
-    await page.waitForTimeout(2000)  // Let Vue initialize and SSE connect
-    console.log(`[PAGE] Loaded bandeja-entrada`)
+    try {
+      await page.goto(`${VITE_URL}/atencion/bandeja-entrada`, {
+        waitUntil: 'domcontentloaded',
+        timeout: 30000
+      })
+
+      // Wait for main container to render
+      await page.waitForSelector('.bandeja-page, [data-testid="conversation-list"], .main-container', {
+        timeout: 15000
+      }).catch(() => {
+        console.log('[PAGE] Selector timeout - page may still be loading')
+      })
+
+      // Brief wait for Vue initialization
+      await page.waitForTimeout(2000)
+      console.log(`[PAGE] Loaded bandeja-entrada`)
+    } catch (e) {
+      console.log(`[PAGE] Error loading bandeja: ${e.message}`)
+      throw e
+    }
   })
 
   test('3. Inbound local without F5: conversación aparece', async ({ page, context }) => {

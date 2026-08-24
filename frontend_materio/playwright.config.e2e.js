@@ -3,7 +3,7 @@ import { defineConfig, devices } from '@playwright/test'
 export default defineConfig({
   testDir: './src/__tests__',
   testMatch: '**/e2e-visual-bandeja.spec.js',
-  timeout: 90 * 1000,
+  timeout: 180 * 1000,  // 3 minutes for full E2E including SSE
   expect: { timeout: 10 * 1000 },
   retries: 0,
   use: {

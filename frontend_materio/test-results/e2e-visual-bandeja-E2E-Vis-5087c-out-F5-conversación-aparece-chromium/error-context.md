@@ -7,12 +7,12 @@
 # Test info
 
 - Name: e2e-visual-bandeja.spec.js >> E2E Visual: Bandeja-Entrada Real UI >> 3. Inbound local without F5: conversación aparece
-- Location: src\__tests__\e2e-visual-bandeja.spec.js:45:3
+- Location: src\__tests__\e2e-visual-bandeja.spec.js:69:3
 
 # Error details
 
 ```
-Test timeout of 90000ms exceeded while running "beforeEach" hook.
+Test timeout of 180000ms exceeded while running "beforeEach" hook.
 ```
 
 ```
@@ -80,129 +80,139 @@ Error: page.goto: Target page, context or browser has been closed
   12  | 
   13  | test.describe.serial('E2E Visual: Bandeja-Entrada Real UI', () => {
   14  |   test.beforeEach(async ({ page }) => {
-  15  |     // Load login page
-  16  |     await page.goto(`${VITE_URL}/dashboard/login/`)
-  17  |     await page.waitForLoadState('domcontentloaded')
-  18  | 
-  19  |     // Fill username
-  20  |     await page.fill('input[name="username"]', 'e2e_test').catch(() => {
-  21  |       console.log('[AUTH] Username field not found - may already be logged in')
+  15  |     // Capture console errors for debugging
+  16  |     const consoleErrors = []
+  17  |     page.on('console', msg => {
+  18  |       if (msg.type() === 'error') {
+  19  |         consoleErrors.push(msg.text())
+  20  |         console.log(`[CONSOLE ERROR] ${msg.text()}`)
+  21  |       }
   22  |     })
   23  | 
-  24  |     // Fill password
-  25  |     await page.fill('input[name="password"]', 'e2e_test_pass').catch(() => {
-  26  |       console.log('[AUTH] Password field not found - may already be logged in')
-  27  |     })
-  28  | 
-  29  |     // Submit form
-  30  |     await page.click('button[type="submit"]').catch(() => {
-  31  |       console.log('[AUTH] Submit button not found - skipping')
-  32  |     })
-  33  | 
-  34  |     // Wait for redirect
-  35  |     await page.waitForNavigation({ waitUntil: 'domcontentloaded' }).catch(() => {})
-  36  | 
-  37  |     // Load bandeja-entrada (avoid networkidle: SSE streams indefinitely)
-> 38  |     await page.goto(`${VITE_URL}/atencion/bandeja-entrada`, { waitUntil: 'domcontentloaded' })
-      |                ^ Error: page.goto: Target page, context or browser has been closed
-  39  |     // Wait for Vue/Vuetify hydration
-  40  |     await page.waitForLoadState('domcontentloaded')
-  41  |     await page.waitForTimeout(2000)  // Let Vue initialize and SSE connect
-  42  |     console.log(`[PAGE] Loaded bandeja-entrada`)
-  43  |   })
-  44  | 
-  45  |   test('3. Inbound local without F5: conversación aparece', async ({ page, context }) => {
-  46  |     const testPhone = `+5191${Date.now().toString().slice(-6)}`
-  47  |     const testId = `INBOUND-${Date.now()}`
-  48  | 
-  49  |     // Capture initial conversation count
-  50  |     const convsBefore = await page.locator('[class*="conversation"], [class*="bandeja"], [class*="item"]').count()
-  51  |     console.log(`[VISUAL] Conversaciones iniciales: ${convsBefore}`)
+  24  |     // Load login page
+  25  |     await page.goto(`${VITE_URL}/dashboard/login/`)
+  26  |     await page.waitForLoadState('domcontentloaded')
+  27  | 
+  28  |     // Fill username
+  29  |     await page.fill('input[name="username"]', 'e2e_test').catch(() => {
+  30  |       console.log('[AUTH] Username field not found - may already be logged in')
+  31  |     })
+  32  | 
+  33  |     // Fill password
+  34  |     await page.fill('input[name="password"]', 'e2e_test_pass').catch(() => {
+  35  |       console.log('[AUTH] Password field not found - may already be logged in')
+  36  |     })
+  37  | 
+  38  |     // Submit form
+  39  |     await page.click('button[type="submit"]').catch(() => {
+  40  |       console.log('[AUTH] Submit button not found - skipping')
+  41  |     })
+  42  | 
+  43  |     // Wait for redirect
+  44  |     await page.waitForNavigation({ waitUntil: 'domcontentloaded' }).catch(() => {})
+  45  | 
+  46  |     // Load bandeja-entrada (avoid networkidle: SSE streams indefinitely)
+  47  |     try {
+> 48  |       await page.goto(`${VITE_URL}/atencion/bandeja-entrada`, {
+      |                  ^ Error: page.goto: Target page, context or browser has been closed
+  49  |         waitUntil: 'domcontentloaded',
+  50  |         timeout: 30000
+  51  |       })
   52  | 
-  53  |     // Send webhook
-  54  |     const payload = {
-  55  |       object: 'whatsapp_business_account',
-  56  |       entry: [{
-  57  |         changes: [{
-  58  |           value: {
-  59  |             messaging_product: 'whatsapp',
-  60  |             metadata: {
-  61  |               phone_number_id: 'webhook-test',
-  62  |               display_phone_number: '51967619238',
-  63  |             },
-  64  |             messages: [{
-  65  |               from: testPhone,
-  66  |               id: `wamid_${testId}`,
-  67  |               timestamp: Math.floor(Date.now() / 1000).toString(),
-  68  |               type: 'text',
-  69  |               text: { body: `Test: ${testId}` },
-  70  |             }],
-  71  |           },
-  72  |         }],
-  73  |       }],
-  74  |     }
-  75  | 
-  76  |     const res = await context.request.post(WEBHOOK_URL, { data: payload })
-  77  |     console.log(`[WEBHOOK] Inbound POST -> ${res.status()}`)
-  78  |     expect(res.status()).toBe(200)
-  79  | 
-  80  |     // Wait max 10s for UI update via SSE or polling
-  81  |     const appeared = await page.locator('body').locator(`text="${testId}"`).first().waitFor({ timeout: 10000 }).catch(() => null)
-  82  | 
-  83  |     if (!appeared) {
-  84  |       // Try broader search
-  85  |       const bodyText = await page.locator('body').textContent()
-  86  |       const found = bodyText.includes(testId)
-  87  |       console.log(`[VISUAL] Message found in DOM: ${found}`)
-  88  | 
-  89  |       if (!found) {
-  90  |         // Screenshot for debugging
-  91  |         await page.screenshot({ path: 'test-results/inbound-visual-fail.png' })
-  92  |         console.log(`[SCREENSHOT] Saved to test-results/inbound-visual-fail.png`)
-  93  |       }
-  94  |       expect(found).toBe(true)
-  95  |     } else {
-  96  |       console.log(`[VISUAL] Conversación aparecio sin F5`)
-  97  |     }
-  98  | 
-  99  |     // Verify no reload
-  100 |     const reloadCount = await page.evaluate(() => window.performance.navigation.type === 1 ? 1 : 0)
-  101 |     expect(reloadCount).toBe(0)
-  102 | 
-  103 |     // Verify exactly one instance
-  104 |     const instances = (await page.locator('body').textContent()).split(testId).length - 1
-  105 |     console.log(`[DEDUP] Instancias del mensaje: ${instances}`)
-  106 |     expect(instances).toBeLessThanOrEqual(2)  // Allow 1 or 2 (once per textContent, once in DOM)
-  107 |   })
-  108 | 
-  109 |   test('4. Echo local without F5: takeover visible', async ({ page, context }) => {
-  110 |     const testPhone = `+5191${Date.now().toString().slice(-6)}`
-  111 |     const testIdInbound = `ECHO_IN_${Date.now()}`
-  112 |     const testIdEcho = `ECHO_ADVISOR_${Date.now()}`
-  113 | 
-  114 |     // Inbound first
-  115 |     const inbound = {
-  116 |       object: 'whatsapp_business_account',
-  117 |       entry: [{
-  118 |         changes: [{
-  119 |           value: {
-  120 |             messaging_product: 'whatsapp',
-  121 |             metadata: {
-  122 |               phone_number_id: 'webhook-test',
-  123 |               display_phone_number: '51967619238',
-  124 |             },
-  125 |             messages: [{
-  126 |               from: testPhone,
-  127 |               id: `wamid_in_${Date.now()}`,
-  128 |               timestamp: Math.floor(Date.now() / 1000).toString(),
-  129 |               type: 'text',
-  130 |               text: { body: `Inbound: ${testIdInbound}` },
-  131 |             }],
-  132 |           },
-  133 |         }],
-  134 |       }],
-  135 |     }
-  136 | 
-  137 |     let res = await context.request.post(WEBHOOK_URL, { data: inbound })
-  138 |     expect(res.status()).toBe(200)
+  53  |       // Wait for main container to render
+  54  |       await page.waitForSelector('.bandeja-page, [data-testid="conversation-list"], .main-container', {
+  55  |         timeout: 15000
+  56  |       }).catch(() => {
+  57  |         console.log('[PAGE] Selector timeout - page may still be loading')
+  58  |       })
+  59  | 
+  60  |       // Brief wait for Vue initialization
+  61  |       await page.waitForTimeout(2000)
+  62  |       console.log(`[PAGE] Loaded bandeja-entrada`)
+  63  |     } catch (e) {
+  64  |       console.log(`[PAGE] Error loading bandeja: ${e.message}`)
+  65  |       throw e
+  66  |     }
+  67  |   })
+  68  | 
+  69  |   test('3. Inbound local without F5: conversación aparece', async ({ page, context }) => {
+  70  |     const testPhone = `+5191${Date.now().toString().slice(-6)}`
+  71  |     const testId = `INBOUND-${Date.now()}`
+  72  | 
+  73  |     // Capture initial conversation count
+  74  |     const convsBefore = await page.locator('[class*="conversation"], [class*="bandeja"], [class*="item"]').count()
+  75  |     console.log(`[VISUAL] Conversaciones iniciales: ${convsBefore}`)
+  76  | 
+  77  |     // Send webhook
+  78  |     const payload = {
+  79  |       object: 'whatsapp_business_account',
+  80  |       entry: [{
+  81  |         changes: [{
+  82  |           value: {
+  83  |             messaging_product: 'whatsapp',
+  84  |             metadata: {
+  85  |               phone_number_id: 'webhook-test',
+  86  |               display_phone_number: '51967619238',
+  87  |             },
+  88  |             messages: [{
+  89  |               from: testPhone,
+  90  |               id: `wamid_${testId}`,
+  91  |               timestamp: Math.floor(Date.now() / 1000).toString(),
+  92  |               type: 'text',
+  93  |               text: { body: `Test: ${testId}` },
+  94  |             }],
+  95  |           },
+  96  |         }],
+  97  |       }],
+  98  |     }
+  99  | 
+  100 |     const res = await context.request.post(WEBHOOK_URL, { data: payload })
+  101 |     console.log(`[WEBHOOK] Inbound POST -> ${res.status()}`)
+  102 |     expect(res.status()).toBe(200)
+  103 | 
+  104 |     // Wait max 10s for UI update via SSE or polling
+  105 |     const appeared = await page.locator('body').locator(`text="${testId}"`).first().waitFor({ timeout: 10000 }).catch(() => null)
+  106 | 
+  107 |     if (!appeared) {
+  108 |       // Try broader search
+  109 |       const bodyText = await page.locator('body').textContent()
+  110 |       const found = bodyText.includes(testId)
+  111 |       console.log(`[VISUAL] Message found in DOM: ${found}`)
+  112 | 
+  113 |       if (!found) {
+  114 |         // Screenshot for debugging
+  115 |         await page.screenshot({ path: 'test-results/inbound-visual-fail.png' })
+  116 |         console.log(`[SCREENSHOT] Saved to test-results/inbound-visual-fail.png`)
+  117 |       }
+  118 |       expect(found).toBe(true)
+  119 |     } else {
+  120 |       console.log(`[VISUAL] Conversación aparecio sin F5`)
+  121 |     }
+  122 | 
+  123 |     // Verify no reload
+  124 |     const reloadCount = await page.evaluate(() => window.performance.navigation.type === 1 ? 1 : 0)
+  125 |     expect(reloadCount).toBe(0)
+  126 | 
+  127 |     // Verify exactly one instance
+  128 |     const instances = (await page.locator('body').textContent()).split(testId).length - 1
+  129 |     console.log(`[DEDUP] Instancias del mensaje: ${instances}`)
+  130 |     expect(instances).toBeLessThanOrEqual(2)  // Allow 1 or 2 (once per textContent, once in DOM)
+  131 |   })
+  132 | 
+  133 |   test('4. Echo local without F5: takeover visible', async ({ page, context }) => {
+  134 |     const testPhone = `+5191${Date.now().toString().slice(-6)}`
+  135 |     const testIdInbound = `ECHO_IN_${Date.now()}`
+  136 |     const testIdEcho = `ECHO_ADVISOR_${Date.now()}`
+  137 | 
+  138 |     // Inbound first
+  139 |     const inbound = {
+  140 |       object: 'whatsapp_business_account',
+  141 |       entry: [{
+  142 |         changes: [{
+  143 |           value: {
+  144 |             messaging_product: 'whatsapp',
+  145 |             metadata: {
+  146 |               phone_number_id: 'webhook-test',
+  147 |               display_phone_number: '51967619238',
+  148 |             },
 ```
