@@ -32,11 +32,13 @@ test.describe.serial('E2E Visual: Bandeja-Entrada Real UI', () => {
     })
 
     // Wait for redirect
-    await page.waitForNavigation({ waitUntil: 'networkidle' }).catch(() => {})
+    await page.waitForNavigation({ waitUntil: 'domcontentloaded' }).catch(() => {})
 
-    // Load bandeja-entrada
-    await page.goto(`${VITE_URL}/atencion/bandeja-entrada`)
-    await page.waitForLoadState('networkidle')
+    // Load bandeja-entrada (avoid networkidle: SSE streams indefinitely)
+    await page.goto(`${VITE_URL}/atencion/bandeja-entrada`, { waitUntil: 'domcontentloaded' })
+    // Wait for Vue/Vuetify hydration
+    await page.waitForLoadState('domcontentloaded')
+    await page.waitForTimeout(2000)  // Let Vue initialize and SSE connect
     console.log(`[PAGE] Loaded bandeja-entrada`)
   })
 

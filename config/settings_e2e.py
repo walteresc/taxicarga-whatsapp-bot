@@ -19,5 +19,11 @@ DATABASES = {
     }
 }
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1']
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0']
 DEBUG = True
+CSRF_TRUSTED_ORIGINS = [
+    'http://localhost:5177',
+    'http://127.0.0.1:5177',
+]
+SESSION_COOKIE_SECURE = False  # Allow HTTP for E2E
+CSRF_COOKIE_SECURE = False     # Allow HTTP for E2E
