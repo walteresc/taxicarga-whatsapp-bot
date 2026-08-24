@@ -400,33 +400,9 @@ const handleConversationUpdated = (event) => {
 onMounted(() => {
   loadConversationsWithChangeDetection()
 
-  // Start polling every 10 seconds and only update on real changes (change detection prevents unnecessary re-renders)
-  pollingInterval = setInterval(() => {
-    loadConversationsWithChangeDetection()
-  }, 10000)
-
-  // Connect to global SSE for real-time updates
-  const sseUrl = '/dashboard/whatsapp/sse/'
-  const eventSource = new EventSource(sseUrl)
-
-  eventSource.addEventListener('message.created', (event) => {
-    const data = JSON.parse(event.data)
-    console.log('[SSE] New message:', data)
-    // Reload conversations immediately when new message arrives
-    loadConversationsWithChangeDetection()
-  })
-
-  eventSource.addEventListener('conversation.updated', (event) => {
-    const data = JSON.parse(event.data)
-    console.log('[SSE] Conversation updated:', data)
-    // Reload conversations when state changes
-    loadConversationsWithChangeDetection()
-  })
-
-  eventSource.onerror = (error) => {
-    console.error('[SSE] Connection error:', error)
-    eventSource.close()
-  }
+  // Realtime updates via global event store (eventStore.js + eventStream)
+  // SSE is managed by eventStore + useWhatsAppRealtime
+  // Do NOT open EventSource here - it causes duplicate connections
 
   // Listen for realtime events from server
   document.addEventListener('message.created', handleMessageCreated)

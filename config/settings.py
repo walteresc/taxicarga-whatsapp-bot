@@ -1,9 +1,13 @@
 from pathlib import Path
+from dotenv import load_dotenv
 
 import dj_database_url
 from decouple import config
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Load .env file before any config reads
+load_dotenv(BASE_DIR / ".env", override=False)
 
 
 def env_bool(name, default=False):
@@ -22,7 +26,7 @@ def env_value(name, default="", required=False):
 SECRET_KEY = env_value("DJANGO_SECRET_KEY", default=config("SECRET_KEY", default="django-insecure-dev-only-change-me"))
 DEBUG = env_bool("DJANGO_DEBUG", default=True)
 STRICT_ADMIN_OPERATIONS = env_bool("STRICT_ADMIN_OPERATIONS", default=False)
-ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="localhost,127.0.0.1,testserver,.ngrok-free.app").split(",")
+ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="localhost,127.0.0.1,testserver,.ngrok-free.app,.ngrok-free.dev,host.docker.internal").split(",")
 
 # CSRF and CORS for development
 CSRF_TRUSTED_ORIGINS = [
@@ -95,11 +99,17 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "config.wsgi.application"
 
-DATABASES = {
-    "default": dj_database_url.config(
-        default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
-        conn_max_age=600,
+# Database: Always require DATABASE_URL to be set (no silent SQLite fallback)
+import os
+if not os.environ.get("DATABASE_URL"):
+    from django.core.exceptions import ImproperlyConfigured
+    raise ImproperlyConfigured(
+        "DATABASE_URL environment variable not found. "
+        "Check if .env is loaded. For testing, set DATABASE_URL explicitly."
     )
+
+DATABASES = {
+    "default": dj_database_url.config(conn_max_age=600)
 }
 
 # FASE 5B: Redis for event streaming

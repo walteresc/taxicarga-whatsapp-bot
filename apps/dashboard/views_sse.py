@@ -11,12 +11,28 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.http import StreamingHttpResponse
 from django.views.decorators.http import require_http_methods
+from django.views.decorators.cache import cache_control
 from django.utils import timezone
 
 from apps.whatsapp.redis_events import get_event_bus, get_events
 from apps.dashboard.permissions import can_manage_whatsapp
 
 logger = logging.getLogger(__name__)
+
+
+class SSEStreamingHttpResponse(StreamingHttpResponse):
+    """Custom StreamingHttpResponse that's middleware-safe.
+
+    Some middlewares (clickjacking, etc) try to use response.get() on headers.
+    Since StreamingHttpResponse returns a generator, this fails.
+    This class implements dict-like access to headers for compatibility.
+    """
+    def get(self, key, default=None):
+        """Dict-like access to headers for middleware compatibility."""
+        try:
+            return self.__getitem__(key)
+        except KeyError:
+            return default
 
 
 @login_required
@@ -44,79 +60,121 @@ def sse_events_stream(request):
 
         ```
     """
+    logger.info(f"[SSE] View entry: user={request.user.username}, remote_addr={request.META.get('REMOTE_ADDR')}")
+
     # Check authorization
     if not can_manage_whatsapp(request.user):
-        logger.warning(f"Unauthorized SSE access from {request.user.username}")
+        logger.warning(f"[SSE] Unauthorized access from {request.user.username}")
         raise PermissionDenied("No tienes permisos para acceder a eventos de WhatsApp")
+
+    logger.info(f"[SSE] Authorization passed for user={request.user.username}")
 
     # Get Last-Event-ID from request header (standard SSE) or query param
     last_event_id = request.headers.get('Last-Event-ID', '0')
     if not last_event_id:
         last_event_id = request.GET.get('cursor', '0')
 
-    bus = get_event_bus()
+    logger.info(f"[SSE] Last-Event-ID={last_event_id}")
+
+    try:
+        bus = get_event_bus()
+        logger.info(f"[SSE] Event bus created: {type(bus).__name__}")
+    except Exception as e:
+        logger.exception(f"[SSE] Failed to get event bus")
+        return SSEStreamingHttpResponse(
+            _error_stream(f"event_bus_error: {str(e)}"),
+            content_type='text/event-stream',
+            status=500
+        )
 
     # Check if Redis is available
     if not bus.is_available():
-        logger.warning("Redis unavailable for SSE")
-        return StreamingHttpResponse(
+        logger.warning("[SSE] Redis unavailable")
+        return SSEStreamingHttpResponse(
             _error_stream("service_unavailable"),
             content_type='text/event-stream',
             status=503
         )
 
-    # Check if cursor is too old (beyond retention)
-    if last_event_id != '0' and not bus.check_cursor_valid(last_event_id):
-        # Cursor too old - need full resync
-        logger.info(f"Cursor {last_event_id} too old, requesting resync")
+    logger.info("[SSE] Redis available")
+
+    # Check if cursor is valid and pass to generator
+    cursor_too_old = (last_event_id != '0' and not bus.check_cursor_valid(last_event_id))
+    if cursor_too_old:
+        logger.info(f"[SSE] Cursor {last_event_id} too old, requesting resync")
+
+    # Stream events
+    try:
+        logger.info("[SSE] Creating StreamingHttpResponse with generator")
+        response = SSEStreamingHttpResponse(
+            _event_generator(request, bus, last_event_id, cursor_too_old),
+            content_type='text/event-stream'
+        )
+
+        logger.info(f"[SSE] Response created: type={type(response).__name__}")
+
+        # SSE headers
+        response['Cache-Control'] = 'no-cache'
+        response['X-Accel-Buffering'] = 'no'
+
+        logger.info("[SSE] Headers set, returning response")
+        return response
+    except Exception as e:
+        logger.exception(f"[SSE] *** EXCEPTION IN VIEW BODY ***")
+        import traceback
+        logger.error(f"[SSE] Full traceback:\n{traceback.format_exc()}")
+        return SSEStreamingHttpResponse(
+            _error_stream(f"view_error: {str(e)}"),
+            content_type='text/event-stream',
+            status=500
+        )
+
+
+def _event_generator(request, bus, last_event_id, cursor_too_old=False):
+    """Generator for streaming events from Redis to client.
+
+    Filters events by:
+    - Channel must be active
+    - Channel must be authorized for user (for now: all active channels if has WhatsApp permission)
+
+    Args:
+        cursor_too_old: If True, send resync.required event first
+    """
+    import time
+    from collections import deque
+    from apps.whatsapp.models import WhatsAppChannel
+
+    logger.info(f"[GEN] Generator started for user={request.user.username}")
+
+    # SSE initial handshake
+    try:
+        logger.info("[GEN] Sending initial handshake")
+        yield ': connected\n\n'
+    except Exception as e:
+        logger.exception(f"[GEN] Error on first yield (handshake)")
+        return
+
+    # If cursor was too old, request resync
+    if cursor_too_old:
+        logger.info("[GEN] Sending resync.required")
         yield _format_event(
             event_id='0',
             event_type='resync.required',
             data={'message': 'Cursor too old, use REST to resync'}
         )
 
-    # Stream events
-    try:
-        response = StreamingHttpResponse(
-            _event_generator(request, bus, last_event_id),
-            content_type='text/event-stream'
-        )
-
-        # SSE headers
-        response['Cache-Control'] = 'no-cache'
-        response['X-Accel-Buffering'] = 'no'
-        response['Connection'] = 'keep-alive'
-
-        return response
-    except Exception as e:
-        logger.error(f"SSE stream error: {e}")
-        return StreamingHttpResponse(
-            _error_stream(str(e)),
-            content_type='text/event-stream',
-            status=500
-        )
-
-
-def _event_generator(request, bus, last_event_id):
-    """Generator for streaming events from Redis to client.
-
-    Filters events by:
-    - Channel must be active
-    - Channel must be authorized for user (for now: all active channels if has WhatsApp permission)
-    """
-    import time
-    from collections import deque
-    from apps.whatsapp.models import WhatsAppChannel
-
-    # SSE initial handshake
-    yield ': SSE connected\n\n'
-
     # Get authorized channel IDs for this user
     # Current policy: all active channels if user has WhatsApp permission
     # Future: filter by channel.asesor = request.user for non-admin users
-    authorized_channels = set(
-        WhatsAppChannel.objects.filter(activo=True).values_list('id', flat=True)
-    )
+    try:
+        logger.info("[GEN] Loading authorized channels")
+        authorized_channels = set(
+            WhatsAppChannel.objects.filter(activo=True).values_list('id', flat=True)
+        )
+        logger.info(f"[GEN] Authorized channels: {authorized_channels}")
+    except Exception as e:
+        logger.exception(f"[GEN] Error loading authorized channels")
+        return
 
     def is_event_authorized(event):
         """Check if event should be sent to this user."""
@@ -131,11 +189,19 @@ def _event_generator(request, bus, last_event_id):
     last_yielded_id = last_event_id
 
     # Initial load (filtered)
-    events = get_events(cursor=last_event_id)
-    for event in events:
-        if is_event_authorized(event):
-            pending.append(event)
-            last_yielded_id = event.id
+    try:
+        logger.info(f"[GEN] Loading initial events from cursor={last_event_id}")
+        events = get_events(cursor=last_event_id)
+        logger.info(f"[GEN] Loaded {len(list(events))} events")
+        events = get_events(cursor=last_event_id)  # Re-fetch since generator was consumed
+        for event in events:
+            if is_event_authorized(event):
+                pending.append(event)
+                last_yielded_id = event.id
+        logger.info(f"[GEN] Queued {len(pending)} authorized events")
+    except Exception as e:
+        logger.exception(f"[GEN] Error loading initial events")
+        return
 
     # Heartbeat counter
     heartbeat_count = 0
@@ -153,7 +219,7 @@ def _event_generator(request, bus, last_event_id):
                         data=event.data
                     )
                 except Exception as e:
-                    logger.error(f"Error formatting event {event.id}: {e}")
+                    logger.error(f"[GEN] Error formatting event {event.id}: {e}")
 
             # Poll for new events (blocking for up to 5 seconds)
             time.sleep(1)
@@ -164,7 +230,7 @@ def _event_generator(request, bus, last_event_id):
                         pending.append(event)
                         last_yielded_id = event.id
             except Exception as e:
-                logger.error(f"Error polling events: {e}")
+                logger.error(f"[GEN] Error polling events: {e}")
 
             # Heartbeat every 30 seconds
             heartbeat_count += 1
@@ -173,9 +239,9 @@ def _event_generator(request, bus, last_event_id):
                 heartbeat_count = 0
 
     except GeneratorExit:
-        logger.debug(f"Client {request.META.get('REMOTE_ADDR')} disconnected")
+        logger.debug(f"[GEN] Client {request.META.get('REMOTE_ADDR')} disconnected")
     except Exception as e:
-        logger.error(f"Stream error: {e}")
+        logger.exception(f"[GEN] Stream error")
         yield _format_event(
             event_id='error',
             event_type='error',

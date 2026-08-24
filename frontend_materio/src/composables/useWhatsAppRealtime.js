@@ -45,12 +45,21 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
 
   /**
    * Load initial bandeja and timeline from REST.
+   * CRITICALLY: obtener snapshot_cursor para SSE coherencia.
    */
   const loadInitialState = async (conversationsStore, messagesStore) => {
     try {
       // PRIORIDAD 7: Bandeja update from REST
       const response = await fetch('/dashboard/whatsapp/conversaciones/api/active/')
       const data = await response.json()
+
+      // FASE 5B: Snapshot cursor para SSE (evita repetir historial)
+      if (data.snapshot_cursor) {
+        eventStore.setSnapshotCursor(data.snapshot_cursor)
+        console.log('[realtime] Snapshot cursor established:', data.snapshot_cursor)
+      } else {
+        console.warn('[realtime] No snapshot_cursor in response - SSE may repeat histor')
+      }
 
       if (data.conversations) {
         data.conversations.forEach(conv => {

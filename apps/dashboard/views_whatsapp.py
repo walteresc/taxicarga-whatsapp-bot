@@ -219,8 +219,17 @@ def _asesores_activos():
 
 @csrf_exempt
 def api_active_conversations(request):
-    """API endpoint: traer conversaciones activas con filtros para Materio"""
+    """API endpoint: traer conversaciones activas con filtros para Materio
+
+    Incluye snapshot_cursor para SSE coherente: eventos posteriores a este
+    cursor se cargarán mediante SSE, evitando repetición del historial.
+    """
     from apps.whatsapp_bot_v4.models import ConversationOwnership
+    from apps.whatsapp.redis_events import get_latest_cursor
+
+    # Obtener cursor de Redis ANTES de cargar conversaciones
+    # Esto asegura que el frontend no reciba eventos ya presentes en el snapshot
+    snapshot_cursor = get_latest_cursor()
 
     # Pagination
     page = int(request.GET.get("page", 1))
@@ -300,7 +309,7 @@ def api_active_conversations(request):
             } if lead else None,
         })
 
-    # Response with pagination metadata and no-cache headers
+    # Response with pagination metadata and snapshot cursor for SSE coherence
     response = JsonResponse({
         'conversations': data,
         'pagination': {
@@ -310,7 +319,8 @@ def api_active_conversations(request):
             'pages': (total_count + page_size - 1) // page_size,
             'has_next': (page * page_size) < total_count,
             'has_prev': page > 1,
-        }
+        },
+        'snapshot_cursor': snapshot_cursor,  # SSE inicia desde aquí
     })
 
     # Disable caching to ensure fresh data
