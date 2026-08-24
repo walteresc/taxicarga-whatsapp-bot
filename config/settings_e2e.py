@@ -16,6 +16,9 @@ DATABASES = {
         'PASSWORD': os.environ.get('E2E_DB_PASSWORD', ''),
         'HOST': os.environ.get('E2E_DB_HOST', 'localhost'),
         'PORT': os.environ.get('E2E_DB_PORT', '5432'),
+        'TEST': {
+            'NAME': os.environ.get('E2E_DB_NAME', 'taxicarga_pg_e2e'),
+        },
     }
 }
 
