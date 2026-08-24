@@ -1,3 +1,19 @@
+"""
+Static files serving for development/testing only.
+
+PRODUCTION NOTE: This module is for local development and E2E testing.
+In production, serve static files using:
+  - WhiteNoise (lightweight, no external dependencies)
+  - Django's collectstatic with Nginx/Apache reverse proxy
+  - CloudFront/CDN with S3 backend
+
+Do NOT use this view in production. It lacks:
+  - Compression
+  - Caching headers
+  - Versioning by hash
+  - Security hardening for high-traffic
+  - DDoS protection
+"""
 from django.http import FileResponse, Http404
 from django.views.decorators.http import condition
 from pathlib import Path
@@ -14,8 +30,19 @@ STATIC_DIRS = [
 
 def serve_static(request, filepath):
     """
-    Serve static files from STATIC_DIRS.
-    Busca en static_build/ y staticfiles/ en ese orden.
+    Serve static files from STATIC_DIRS (DEVELOPMENT ONLY).
+
+    Security features:
+      - Path traversal protection (.., absolute paths)
+      - MIME type detection
+      - File existence validation
+
+    Args:
+        request: Django request object
+        filepath: Relative path (e.g., 'static/css/index.css')
+
+    Returns:
+        FileResponse with correct Content-Type or Http404
     """
     # Seguridad: no permitir path traversal
     if '..' in filepath or filepath.startswith('/'):
