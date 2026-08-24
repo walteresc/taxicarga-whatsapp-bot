@@ -5,7 +5,6 @@ from django.shortcuts import redirect
 from django.conf import settings
 from django.views.decorators.cache import never_cache
 from apps.dashboard.views_spa import spa_fallback
-from apps.dashboard.views_static import serve_static
 from .health import live, ready
 
 def root_redirect(request, *args, **kwargs):
@@ -34,12 +33,9 @@ urlpatterns = [
     path("webhooks/chatwoot/", include("apps.integrations.urls")),
     path("webhooks/", include("apps.whatsapp_bot_v4.urls")),
 
-    # Serve static files explicitly (before SPA fallback)
-    re_path(r"^(?P<filepath>static/.*)$", serve_static),
-    re_path(r"^(?P<filepath>favicon\.ico|logo\.png|loader\.css)$", serve_static),
-
     # SPA fallback: serve index.html for all other routes (but not API/admin/static/media)
-    # StaticFilesHandler (in dev mode) handles /static/ and /media/ before this
+    # In production (Docker): Nginx handles /static/ and /media/
+    # In development: StaticFilesHandler handles /static/ and /media/
     # Must be LAST because it's a catch-all
     re_path(r"^(?!admin/|api/|webhooks/|webhook/|dashboard/whatsapp/api/|dashboard/api/auth/|static/|media/|health/).+$", never_cache(spa_fallback)),
 ]

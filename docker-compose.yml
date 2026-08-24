@@ -1,23 +1,109 @@
-version: '3.8'
+version: '3.9'
 
 services:
-  redis:
-    image: redis:7-alpine
-    container_name: taxicarga_redis_dev
-    ports:
-      - "127.0.0.1:6379:6379"
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: taxicarga-postgres
     environment:
-      # No password for local development
-      REDIS_COMMAND: "redis-server --appendonly no"
+      POSTGRES_DB: ${DB_NAME:-taxicarga_pg_test}
+      POSTGRES_USER: ${DB_USER:-taxicarga}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"  # For local tools only (not exposed via Nginx)
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
+      test: ["CMD-SHELL", "pg_isready -U $POSTGRES_USER -d $POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
       retries: 5
     networks:
-      - taxicarga_dev
-    command: redis-server --appendonly no --maxmemory 256mb --maxmemory-policy allkeys-lru
+      - app-network
+    restart: unless-stopped
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    container_name: taxicarga-redis
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"  # For local tools only (not exposed via Nginx)
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # Django/Gunicorn Application
+  django:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: taxicarga-api
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings_e2e
+      DEBUG: "False"
+      ALLOWED_HOSTS: "localhost,127.0.0.1,nginx"
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
+      DATABASE_URL: postgresql://${DB_USER:-taxicarga}:${DB_PASSWORD:-}@postgres:5432/${DB_NAME:-taxicarga_pg_test}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      DB_HOST: postgres
+      DB_USER: ${DB_USER:-taxicarga}
+      DB_NAME: ${DB_NAME:-taxicarga_pg_test}
+      YCLOUD_WEBHOOK_SECRET: ${YCLOUD_WEBHOOK_SECRET:-test_secret_e2e}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./:/app
+      - /app/.venv  # Exclude venv from volume mount if it exists
+    expose:
+      - "8000"
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Nginx Reverse Proxy + Static Files
+  nginx:
+    image: nginx:alpine
+    container_name: taxicarga-nginx
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./staticfiles:/app/staticfiles:ro
+    depends_on:
+      - django
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8001/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 networks:
-  taxicarga_dev:
+  app-network:
     driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
