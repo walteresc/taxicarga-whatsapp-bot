@@ -57,15 +57,17 @@ print(f"USER_ID={user.id}")
 `
 
   try {
-    // Escribir script en archivo temporal
-    fs.writeFileSync('.e2e_auth_setup.py', pythonScript)
+    // Escribir script en archivo temporal en directorio raíz
+    const scriptPath = '../../.e2e_auth_setup.py'
+    fs.writeFileSync(scriptPath, pythonScript)
+    console.log(`[AUTH] Script written to ${scriptPath}`)
 
     // Windows: use set para env vars, cmd /c para ejecutar
     const cmd = process.platform === 'win32'
-      ? `cd ../.. && set DJANGO_SETTINGS_MODULE=config.settings_test && python frontend_materio/.e2e_auth_setup.py`
-      : `cd ../.. && DJANGO_SETTINGS_MODULE=config.settings_test python frontend_materio/.e2e_auth_setup.py`
+      ? `set DJANGO_SETTINGS_MODULE=config.settings_test && python .e2e_auth_setup.py`
+      : `DJANGO_SETTINGS_MODULE=config.settings_test python .e2e_auth_setup.py`
 
-    const output = execSync(cmd, { encoding: 'utf-8', shell: true })
+    const output = execSync(cmd, { encoding: 'utf-8', shell: true, cwd: '../..' })
 
     console.log(output)
 
