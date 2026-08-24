@@ -19,7 +19,7 @@ DATABASES = {
     }
 }
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0']
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0', 'testserver']
 DEBUG = True
 CSRF_TRUSTED_ORIGINS = [
     'http://localhost:5177',
@@ -27,3 +27,7 @@ CSRF_TRUSTED_ORIGINS = [
 ]
 SESSION_COOKIE_SECURE = False  # Allow HTTP for E2E
 CSRF_COOKIE_SECURE = False     # Allow HTTP for E2E
+
+# YCloud E2E Configuration
+YCLOUD_WEBHOOK_SECRET = 'test_secret_e2e'
+YCLOUD_ENABLED = True
