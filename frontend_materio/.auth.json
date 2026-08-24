@@ -2,15 +2,15 @@
   "cookies": [
     {
       "name": "csrftoken",
-      "value": "cXh9PIYUkRF8PmBozsI1KEhuvo2IBJ8r",
+      "value": "PjFIw8arsErvttukLfVuDUsKgT1agfIJ",
       "domain": "localhost",
       "path": "/",
-      "expires": 1818990172.342945,
+      "expires": 1818990461.166432,
       "httpOnly": false,
       "secure": false,
       "sameSite": "Lax"
     }
   ],
-  "timestamp": "2026-08-24T03:02:54.778Z",
+  "timestamp": "2026-08-24T03:07:42.937Z",
   "user": "e2e_test"
 }
