@@ -34,13 +34,13 @@ export const useEventStore = defineStore('events', () => {
     }
 
     try {
-      // For dev/E2E: Django at 8001, Vite at 5177 - need absolute URL
-      const apiBase = typeof window !== 'undefined' && window.location.hostname === 'localhost'
-        ? 'http://localhost:8001'
-        : ''
-      const url = `${apiBase}/dashboard/whatsapp/api/events/stream/`
+      // Use relative URL so Vite proxy handles as same-origin in dev
+      // Production: Vite build outputs static files, nginx proxy handles /dashboard → backend
+      const url = '/dashboard/whatsapp/api/events/stream/'
 
+      console.log(`[SSE] Opening connection to ${url}`)
       eventSource.value = new EventSource(url, { withCredentials: true })
+      console.log(`[SSE] EventSource opened, readyState=${eventSource.value.readyState}`)
 
       // SSE event types from backend
       eventSource.value.addEventListener('message.created', handleSSEEvent)
