@@ -21,39 +21,39 @@ export default async function globalAuthSetup() {
     console.log('[AUTH] Step 1: Cargar página de login...')
     await page.goto(`${VITE_URL}/dashboard/login/`, { waitUntil: 'networkidle' })
 
-    // Step 2: Login vía UI (rellenar formulario + submit)
-    console.log('[AUTH] Step 2: Realizar login vía UI...')
+    // Step 2: Esperar Vue/Vuetify hidratación (inputs Vuetify renderizados)
+    console.log('[AUTH] Step 2: Esperar Vue/Vuetify hidratación...')
+    await page.waitForSelector('input[name="username"]', { timeout: 5000 }).catch(() => {
+      console.log('[AUTH] WARNING: username input not found after 5s')
+    })
 
-    // Buscar inputs de username y password
-    const usernameInput = page.locator('input[name="username"], input[placeholder*="username" i], input[type="text"]').first()
-    const passwordInput = page.locator('input[name="password"], input[type="password"]').first()
-    const submitButton = page.locator('button[type="submit"], input[type="submit"]').first()
+    // Step 3: Rellenar formulario (directo en el input)
+    console.log('[AUTH] Step 3: Rellenar credenciales...')
+    await page.fill('input[name="username"]', 'e2e_test')
+    console.log('[AUTH] Username filled')
 
-    // Rellenar formulario
-    await usernameInput.fill('e2e_test')
-    console.log('[AUTH] Username entered')
+    await page.fill('input[name="password"]', 'e2e_test_pass')
+    console.log('[AUTH] Password filled')
 
-    await passwordInput.fill('e2e_test_pass')
-    console.log('[AUTH] Password entered')
-
-    // Hacer click en submit
-    await submitButton.click()
+    // Step 4: Enviar formulario (usar submit() del form, no click button)
+    console.log('[AUTH] Step 4: Enviar formulario...')
+    await page.evaluate(() => {
+      const form = document.querySelector('form')
+      if (form) form.submit()
+    })
     console.log('[AUTH] Form submitted')
 
-    // Esperar redirección o confirmación de sesión
+    // Step 5: Esperar redirección
+    console.log('[AUTH] Step 5: Esperando redirección...')
     await page.waitForNavigation({ timeout: 5000 }).catch(() => {
-      console.log('[AUTH] No navigation detected (may already be logged in)')
+      console.log('[AUTH] No navigation (retry check)')
     })
 
-    // Verificar que estamos en página autenticada
-    const authCheck = await page.evaluate(() => {
-      // Buscar evidencia de sesión activa
-      const hasLogoutBtn = !!document.querySelector('a[href*="logout"], button[href*="logout"]')
-      const isOnLoginPage = window.location.pathname.includes('login')
-      return { hasLogoutBtn, isOnLoginPage }
+    // Verificar sesión
+    const isLoggedIn = await page.evaluate(() => {
+      return !window.location.pathname.includes('login')
     })
-
-    console.log(`[AUTH] Logged in: ${authCheck.hasLogoutBtn ? 'YES' : 'UNCLEAR'}`)
+    console.log(`[AUTH] Page after submit: ${isLoggedIn ? 'redirected from login' : 'still on login page'}`)
 
     // Step 3: Verificar cookies
     const cookies = await context.cookies()
