@@ -17,6 +17,7 @@ from apps.whatsapp.models import MensajeWhatsappProcesado
 from apps.whatsapp.models import BotSchedule, ConfiguracionBot, WhatsAppChannel
 from apps.whatsapp.services import download_whatsapp_image
 from apps.whatsapp.utils import should_bot_reply, should_bot_handle_lead, evaluar_mixto_inteligente
+from apps.whatsapp.test_factories import get_unique_phone
 
 
 class ShouldBotReplyTests(TestCase):
@@ -496,8 +497,9 @@ class WhatsappWebhookTests(TestCase):
         analyze_mock,
     ):
         send_mock.return_value = {"messages": [{"id": "wamid.reply"}]}
+        test_phone = get_unique_phone("test_recibe_imagen_detecta_objetos_y_continua_flujo")
         evidence = EvidenciaWhatsapp.objects.create(
-            cliente=Cliente.objects.create(telefono="51955551111"),
+            cliente=Cliente.objects.create(telefono=test_phone),
             media_id="media-test-evidence",
             archivo="whatsapp/test.jpg",
             mime_type="image/jpeg",
@@ -517,7 +519,7 @@ class WhatsappWebhookTests(TestCase):
                                 "metadata": {"phone_number_id": self.channel.phone_number_id},
                                 "messages": [
                                     {
-                                        "from": "51955551111",
+                                        "from": test_phone,
                                         "id": "wamid.image-1",
                                         "type": "image",
                                         "image": {
@@ -545,7 +547,7 @@ class WhatsappWebhookTests(TestCase):
         self.assertEqual(Conversacion.objects.count(), 1)
         self.assertIn("Foto recibida", Conversacion.objects.first().mensaje_entrada)
         self.assertIn("escritorio", Conversacion.objects.first().mensaje_salida)
-        lead = Cliente.objects.get(telefono="51955551111").leads.first()
+        lead = Cliente.objects.get(telefono=test_phone).leads.first()
         self.assertIn("escritorio", lead.lista_objetos)
         send_mock.assert_called_once()
 

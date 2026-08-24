@@ -25,16 +25,14 @@ from apps.whatsapp.serializers import (
     MensajeWhatsAppSerializer,
     MensajeAdjuntoSerializer,
 )
+from apps.whatsapp.test_factories import create_test_cliente, create_test_channel
 
 
 class MensajeWhatsAppModelTest(TestCase):
     """Test MensajeWhatsApp model with multimedia fields."""
 
     def setUp(self):
-        self.cliente = Cliente.objects.create(
-            telefono="51987654321",
-            nombre="Test Client",
-        )
+        self.cliente = create_test_cliente('MensajeWhatsAppModelTest')
         self.lead = Lead.objects.create(
             cliente=self.cliente,
             estado=Lead.NUEVO,
@@ -68,7 +66,7 @@ class MensajeWhatsAppModelTest(TestCase):
             direccion=MensajeWhatsApp.ENTRANTE,
             origen=MensajeWhatsApp.ORIGEN_CLIENTE,
             sender_type=MensajeWhatsApp.SENDER_CUSTOMER,
-            source=MensajeWhatsApp.SOURCE_WEBHOOK,
+            source=MensajeWhatsApp.SOURCE_WHATSAPP_CUSTOMER,
         )
 
         self.assertEqual(msg.tipo, "imagen")
@@ -111,10 +109,7 @@ class MensajeAdjuntoModelTest(TestCase):
     """Test MensajeAdjunto model for file attachment tracking."""
 
     def setUp(self):
-        self.cliente = Cliente.objects.create(
-            telefono="51987654321",
-            nombre="Test Client",
-        )
+        self.cliente = create_test_cliente('MensajeAdjuntoModelTest')
         self.lead = Lead.objects.create(
             cliente=self.cliente,
             estado=Lead.NUEVO,

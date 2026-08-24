@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test'
 
 test('Inbound canónico: webhook local → aparece en UI sin F5', async ({ page, context }) => {
   const VITE_URL = 'http://localhost:5177'
-  const WEBHOOK_URL = 'http://localhost:8001/webhook/whatsapp/'
+  const WEBHOOK_URL = 'http://localhost:8001/webhooks/ycloud/v1/'
   const TIMESTAMP = new Date().toISOString().replace(/[:.]/g, '')
 
   const testId = `INBOUND-${TIMESTAMP}`
@@ -19,34 +19,14 @@ test('Inbound canónico: webhook local → aparece en UI sin F5', async ({ page,
   const convCountBefore = await page.locator('[data-test="conversation-item"]').count()
   console.log(`[UI] Conversaciones antes: ${convCountBefore}`)
 
-  // 2. Enviar webhook inbound
+  // 2. Enviar webhook inbound YCloud
   const webhookPayload = {
-    entry: [
-      {
-        changes: [
-          {
-            value: {
-              messaging_product: 'whatsapp',
-              metadata: {
-                phone_number_id: '380000000000001', // Canal ID 2 Lima Express
-                display_phone_number: '+51967619238',
-              },
-              messages: [
-                {
-                  from: testPhone,
-                  id: `wamid_${testId}`,
-                  timestamp: Math.floor(Date.now() / 1000).toString(),
-                  type: 'text',
-                  text: {
-                    body: `Test ${testId}`,
-                  },
-                },
-              ],
-            },
-          },
-        ],
-      },
-    ],
+    from: testPhone,
+    to: '51967619238', // Lima Express channel
+    wamid: `wamid_${testId}`,
+    text: `Test ${testId}`,
+    timestamp: Math.floor(Date.now() / 1000).toString(),
+    type: 'text',
   }
 
   console.log(`[WEBHOOK] Enviando inbound desde ${testPhone}`)
