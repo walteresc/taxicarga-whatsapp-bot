@@ -27,10 +27,34 @@ from apps.whatsapp.services import send_whatsapp_message
 from apps.dashboard.permissions import whatsapp_config_required, whatsapp_required
 
 
+import logging
+logger = logging.getLogger(__name__)
+
+
 class DashboardLoginView(LoginView):
     template_name = "dashboard/login.html"
     authentication_form = AuthenticationForm
     # redirect_authenticated_user = True
+
+    def post(self, request, *args, **kwargs):
+        username = request.POST.get('username', '')
+        logger.info(f"[LOGIN] POST received for username={username}")
+
+        # Log DB check
+        from django.contrib.auth.models import User
+        user_exists = User.objects.filter(username=username).exists()
+        logger.info(f"[LOGIN] User '{username}' exists in DB: {user_exists}")
+
+        # Log auth attempt
+        from django.contrib.auth import authenticate
+        auth_result = authenticate(request, username=username, password=request.POST.get('password', ''))
+        logger.info(f"[LOGIN] authenticate() returned: {auth_result}")
+
+        # Call parent
+        response = super().post(request, *args, **kwargs)
+
+        logger.info(f"[LOGIN] Response status: {response.status_code}")
+        return response
 
 
 login_view = DashboardLoginView.as_view()
