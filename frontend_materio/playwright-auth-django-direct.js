@@ -57,10 +57,10 @@ print(f"USER_ID={user.id}")
 `
 
   try {
-    const output = execSync(`cd ../.. && DJANGO_SETTINGS_MODULE=config.settings_test python << 'PYEOF'
-${pythonScript}
-PYEOF
-`, { encoding: 'utf-8' })
+    // Escribir script en archivo temporal
+    fs.writeFileSync('.e2e_auth_setup.py', pythonScript)
+
+    const output = execSync(`cd ../.. && DJANGO_SETTINGS_MODULE=config.settings_test python frontend_materio/.e2e_auth_setup.py`, { encoding: 'utf-8' })
 
     console.log(output)
 
