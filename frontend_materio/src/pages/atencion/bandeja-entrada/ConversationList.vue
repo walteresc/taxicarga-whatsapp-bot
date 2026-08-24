@@ -134,7 +134,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, triggerRef } from 'vue'
 import { conversationService } from '@/services/conversationService'
 import ChannelDropdown from './components/ChannelDropdown.vue'
 
@@ -370,6 +370,7 @@ const loadConversationsWithChangeDetection = async () => {
     const newHash = JSON.stringify(data.conversations).slice(0, 100)
     if (newHash !== lastDataHash) {
       conversations.value = data.conversations || []
+      triggerRef(conversations)
       lastDataHash = newHash
     }
   } catch (err) {
