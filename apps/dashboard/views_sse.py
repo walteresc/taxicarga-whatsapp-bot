@@ -117,6 +117,15 @@ def sse_events_stream(request):
         response['Cache-Control'] = 'no-cache'
         response['X-Accel-Buffering'] = 'no'
 
+        # CORS headers for EventSource with credentials
+        origin = request.META.get('HTTP_ORIGIN', '')
+        if origin:
+            response['Access-Control-Allow-Origin'] = origin
+            response['Access-Control-Allow-Credentials'] = 'true'
+            response['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+            response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+            logger.info(f"[SSE] CORS headers set for origin={origin}")
+
         logger.info("[SSE] Headers set, returning response")
         return response
     except Exception as e:
