@@ -100,7 +100,7 @@ class YCloudMessageProcessor:
         return timezone.now()
 
     @transaction.atomic()
-    def process_ycloud_event(self, event_type, event_data, channel):
+    def process_ycloud_event(self, event_type, event_data, channel, cliente=None):
         """
         Process single YCloud event atomically.
 
@@ -111,6 +111,7 @@ class YCloudMessageProcessor:
             event_type: str — EVENT_INBOUND | EVENT_ECHO | EVENT_STATUS
             event_data: dict — Full event payload from YCloud
             channel: WhatsAppChannel instance
+            cliente: Cliente instance (optional). If provided, use it instead of resolving.
 
         Returns:
             {
@@ -141,35 +142,49 @@ class YCloudMessageProcessor:
                 result["error"] = "Status update only — handled separately"
                 return result
 
-            # 2. Resolve client identity (CRITICAL: use 'to' for echo, 'from' for inbound)
-            if event_type == self.EVENT_ECHO:
-                # Echo: 'to' is the customer, 'from' is the business
-                phone = event_data.get("to")
-                if not phone:
-                    result["error"] = "Echo event missing 'to' field (customer phone)"
-                    return result
+            # 2. Resolve client identity (use provided cliente OR extract from event)
+            # NOTE: CRITICAL FIX — Avoid duplicate resolution with views.py
+            # If cliente provided by views.py, use it; otherwise resolve from event
+            if not cliente:
+                # Fallback: Extract phone based on event type (for backward compatibility)
+                if event_type == self.EVENT_ECHO:
+                    # Echo: 'to' is the customer, 'from' is the business
+                    phone = event_data.get("to")
+                    if not phone:
+                        result["error"] = "Echo event missing 'to' field (customer phone)"
+                        return result
+                else:
+                    # Inbound: 'from' is the customer
+                    phone = event_data.get("from") or event_data.get("phone")
+                    if not phone:
+                        result["error"] = "No phone number in event"
+                        return result
+
+                # Normalize phone to E.164 format (+country code + number)
+                if phone and not phone.startswith('+'):
+                    phone = f'+{phone}'
+
+                # Use from_name if provided (YCloud contact name), else phone
+                default_name = event_data.get("from_name") or phone
+                cliente, created = Cliente.objects.get_or_create(
+                    telefono=phone,
+                    defaults={"nombre": default_name}
+                )
+                # Update name if it was default phone and now we have from_name
+                if created and event_data.get("from_name") and cliente.nombre == phone:
+                    cliente.nombre = event_data.get("from_name")
             else:
-                # Inbound: 'from' is the customer
-                phone = event_data.get("from") or event_data.get("phone")
-                if not phone:
-                    result["error"] = "No phone number in event"
-                    return result
+                # Cliente already resolved by views.py — just update last interaction
+                created = False
 
-            # Normalize phone to E.164 format (+country code + number)
-            if phone and not phone.startswith('+'):
-                phone = f'+{phone}'
-
-            # Use from_name if provided (YCloud contact name), else phone
-            default_name = event_data.get("from_name") or phone
-            cliente, created = Cliente.objects.get_or_create(
-                telefono=phone,
-                defaults={"nombre": default_name}
-            )
-            # Update name if it was default phone and now we have from_name
-            if created and event_data.get("from_name") and cliente.nombre == phone:
-                cliente.nombre = event_data.get("from_name")
+            # Update last interaction timestamp (always)
             cliente.ultima_interaccion = timezone.now()
-            cliente.save(update_fields=["ultima_interaccion"] + (["nombre"] if event_data.get("from_name") else []))
+            update_fields = ["ultima_interaccion"]
+            if event_data.get("from_name") and (not hasattr(cliente, '_from_name_checked') or not cliente._from_name_checked):
+                if cliente.nombre != event_data.get("from_name"):
+                    cliente.nombre = event_data.get("from_name")
+                    update_fields.append("nombre")
+            cliente.save(update_fields=update_fields)
 
             # 3. Resolve or create conversation (using central service)
             from apps.whatsapp.services_conversation_resolver import resolve_or_create_active_conversation

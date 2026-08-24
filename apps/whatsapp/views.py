@@ -149,10 +149,12 @@ def _receive_message(request):
 
         if ycloud_event_type == "echo":
             # Outbound echo from WhatsApp Web/mobile — advisor intervention
+            # NOTE: For echo, process_ycloud_event will resolve cliente from 'to' field, not from our resolution
             ycloud_result = process_ycloud_event(
                 event_type="whatsapp.smb.message.echoes",
                 event_data=event,
                 channel=channel,
+                cliente=None,  # Echo resolves customer differently; let process_ycloud_event handle it
             )
             canonical_message = ycloud_result.get("message")
             canonical_conversation = ycloud_result.get("conversation")
@@ -173,10 +175,12 @@ def _receive_message(request):
 
         else:
             # Inbound message from customer
+            # CRITICAL FIX: Pass already-resolved cliente to avoid duplicate resolution
             ycloud_result = process_ycloud_event(
                 event_type="whatsapp.inbound_message.received",
                 event_data=event,
                 channel=channel,
+                cliente=cliente,  # Already resolved in line 106
             )
             canonical_message = ycloud_result.get("message")
             canonical_conversation = ycloud_result.get("conversation")
