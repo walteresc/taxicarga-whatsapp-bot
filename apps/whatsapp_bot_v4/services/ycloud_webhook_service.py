@@ -172,6 +172,17 @@ def verify_ycloud_signature(request):
 
     body = request.body
 
+    # Log raw body for diagnosis
+    body_hash = hashlib.sha256(body).hexdigest()
+    logger.warning(f"[YCloud] Raw body hash: {body_hash}")
+    logger.warning(f"[YCloud] Raw body length: {len(body)} bytes")
+    if len(body) < 500:
+        logger.warning(f"[YCloud] Raw body content: {body[:200]}")
+
+    # Log secret being used
+    secret = settings.YCLOUD_WEBHOOK_SECRET
+    logger.warning(f"[YCloud] Secret length: {len(secret)}, first 4 chars: {secret[:4] if secret else 'NOT SET'}")
+
     # Intentar dos formatos de firma:
     # 1. Solo body
     expected1 = hmac.new(
