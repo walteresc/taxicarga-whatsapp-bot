@@ -59,14 +59,17 @@ class RedisEventBus:
         """Lazy initialize connection pool on first use."""
         if self._pool is None:
             try:
+                import threading
+                logger.info(f"[REDIS] Initializing pool from thread: {threading.current_thread().name}")
                 self._pool = redis.ConnectionPool.from_url(
                     self.url,
                     decode_responses=True,
                     socket_connect_timeout=5,
                     socket_keepalive=True,
-                    socket_keepalive_options={1: 3, 2: 3, 3: 3} if hasattr(redis, 'ConnectionPool') else {}
+                    max_connections=10,
+                    retry_on_timeout=True
                 )
-                logger.info(f"[REDIS] ConnectionPool initialized for {self.url}")
+                logger.info(f"[REDIS] ConnectionPool initialized for {self.url} (thread={threading.current_thread().name})")
             except Exception as e:
                 logger.error(f"[REDIS] Failed to initialize pool: {e}", exc_info=True)
                 raise
