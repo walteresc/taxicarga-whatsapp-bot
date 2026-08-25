@@ -307,17 +307,25 @@ export const useEventStore = defineStore('events', () => {
 
   /**
    * Startup: try SSE, fallback to polling
-   * Expects caller to set lastCursor from API snapshot_cursor first
+   * PASO 3: Validación estricta del cursor
+   * Requiere que caller establezca lastCursor válido antes de llamar connect()
    */
   const connect = () => {
     console.log('[eventStore.connect] Called. lastCursor=' + lastCursor.value)
-    // Only open SSE if cursor has been set (from snapshot)
-    if (lastCursor.value === '0') {
-      console.warn('[eventStore] Cannot connect: lastCursor not set from snapshot')
+
+    // Guard: cursor=0 no permitido
+    if (lastCursor.value === '0' || lastCursor.value === '') {
+      console.error('[eventStore.connect] REJECTED: cursor is invalid:', lastCursor.value)
       return
     }
 
-    console.log('[eventStore.connect] Opening SSE...')
+    // Guard: cursor debe tener formato válido
+    if (!/^\d+-\d+$/.test(lastCursor.value)) {
+      console.error('[eventStore.connect] REJECTED: cursor format invalid:', lastCursor.value)
+      return
+    }
+
+    console.log('[eventStore.connect] Opening SSE with cursor=' + lastCursor.value + '...')
     openSSE()
 
     // Also start polling as fallback (will stop when SSE connects)

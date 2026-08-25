@@ -151,6 +151,13 @@ def sse_events_stream(request):
     last_event_id = request.headers.get('Last-Event-ID')
     if not last_event_id:
         last_event_id = request.GET.get('cursor')
+
+    # PASO 4: Defensa — rechazar cursor=0 explícitamente
+    # cursor=0 significa "replay completo" y NO debe usarse en operación normal
+    if last_event_id == '0' or last_event_id == '':
+        logger.info(f"[SSE] Received cursor={repr(last_event_id)}, using latest instead")
+        last_event_id = get_latest_cursor()
+
     if not last_event_id:
         # NEW CONNECTION: Start from latest event, not from beginning
         last_event_id = get_latest_cursor()

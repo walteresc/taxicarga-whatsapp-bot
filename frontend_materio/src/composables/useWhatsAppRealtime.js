@@ -11,103 +11,133 @@
 import { onMounted, onUnmounted, ref, computed, watch } from 'vue'
 import { useEventStore } from '@/stores/eventStore'
 
+function isValidRedisCursor(cursor) {
+  if (!cursor || typeof cursor !== 'string') return false
+  if (cursor === '' || cursor === '0') return false
+  // Valid Redis Stream ID format: "timestamp-sequence"
+  // Examples: "1234567890-0", "1-0" (synthetic), "1234-5"
+  return /^\d+-\d+$/.test(cursor)
+}
+
 export function useWhatsAppRealtime(conversationsStore, messagesStore) {
   const eventStore = useEventStore()
   const isInitialized = ref(false)
   const syncInProgress = ref(false)
+  let initializationPromise = null
 
   /**
-   * Initialize real-time connection and load initial state.
-   * Called once per session in authenticated layout.
-   * FASE 5B: 11 checkpoints for diagnostic tracing.
+   * PASO 2: Orden obligatorio de inicialización
+   * 1. REST snapshot
+   * 2. Validar cursor
+   * 3. Establecer cursor
+   * 4. Registrar listeners
+   * 5. Connect SSE (con cursor válido)
    */
   const initialize = async () => {
     console.log('[REALTIME CP1] initialize entered')
 
-    const isInitializedBefore = isInitialized.value
-    console.log('[REALTIME CP2] isInitialized value before:', isInitializedBefore)
-
+    // Idempotent: si ya se inicializó o está en progreso, retornar
     if (isInitialized.value) {
-      console.log('[REALTIME CP2B] Already initialized, returning early')
+      console.log('[REALTIME CP2] Already initialized, return')
       return
     }
 
-    syncInProgress.value = true
+    if (initializationPromise) {
+      console.log('[REALTIME CP2B] Initialization in progress, await existing promise')
+      return await initializationPromise
+    }
 
-    try {
-      console.log('[REALTIME CP3] loadInitialState start')
-      const fetchUrl = '/dashboard/whatsapp/conversaciones/api/active/'
-      console.log('[REALTIME CP3A] fetch URL:', fetchUrl)
+    // Crear promesa de inicialización única
+    initializationPromise = (async () => {
+      syncInProgress.value = true
 
-      const fetchResponse = await fetch(fetchUrl)
-      console.log('[REALTIME CP4] loadInitialState response status:', fetchResponse.status)
-      console.log('[REALTIME CP4A] response headers content-type:', fetchResponse.headers.get('content-type'))
+      try {
+        console.log('[REALTIME CP3] REST snapshot: GET /dashboard/whatsapp/conversaciones/api/active/')
+        const fetchUrl = '/dashboard/whatsapp/conversaciones/api/active/'
+        const fetchResponse = await fetch(fetchUrl)
 
-      if (!fetchResponse.ok) {
-        const errorBody = await fetchResponse.text()
-        console.error('[REALTIME CP4B] fetch failed:', {
-          status: fetchResponse.status,
-          statusText: fetchResponse.statusText,
-          body: errorBody.substring(0, 200)
-        })
-        throw new Error(`HTTP ${fetchResponse.status}: ${fetchResponse.statusText}`)
-      }
+        if (!fetchResponse.ok) {
+          const errorBody = await fetchResponse.text()
+          throw new Error(`HTTP ${fetchResponse.status}: ${errorBody.substring(0, 200)}`)
+        }
 
-      const parsedData = await fetchResponse.json()
-      console.log('[REALTIME CP5] loadInitialState parsed payload:', {
-        conversations_count: parsedData.conversations?.length || 0,
-        has_snapshot_cursor: 'snapshot_cursor' in parsedData,
-        snapshot_cursor_value: parsedData.snapshot_cursor || 'MISSING',
-        has_pagination: 'pagination' in parsedData
-      })
+        const parsedData = await fetchResponse.json()
+        console.log('[REALTIME CP4] Response received. Keys:', Object.keys(parsedData))
 
-      if (!parsedData.snapshot_cursor) {
-        console.error('[REALTIME CP5A] CRITICAL: snapshot_cursor missing or falsy')
-        console.error('[REALTIME CP5A] full response keys:', Object.keys(parsedData))
-      }
+        // PASO 3: Validar cursor ANTES de usar
+        let cursor = parsedData.snapshot_cursor
+        console.log('[REALTIME CP5] snapshot_cursor from API:', cursor, 'valid:', isValidRedisCursor(cursor))
 
-      // Now update stores from REST data
-      if (parsedData.conversations) {
-        parsedData.conversations.forEach(conv => {
-          conversationsStore.upsertConversation({
-            id: conv.id,
-            cliente_id: conv.cliente_id,
-            channel_id: conv.channel_id,
-            preview: conv.preview,
-            ultima_actividad: conv.ultima_actividad,
-            unread_count: conv.unread_count || 0,
-            estado_atencion: conv.estado,
+        if (!isValidRedisCursor(cursor)) {
+          console.warn('[REALTIME CP5A] Invalid snapshot_cursor, applying workaround')
+          // Workaround: si cursor es 0 o inválido, usar latest desde now
+          // Backend debería garantizar cursor válido, pero defenderse aquí
+          cursor = await _fetchLatestCursorFromPoll()
+          console.log('[REALTIME CP5B] Fallback cursor from polling:', cursor)
+        }
+
+        if (!isValidRedisCursor(cursor)) {
+          throw new Error(`Cannot obtain valid cursor: ${cursor}`)
+        }
+
+        // Cargar conversaciones ANTES de conectar SSE
+        if (parsedData.conversations) {
+          console.log('[REALTIME CP6] Upsert ' + parsedData.conversations.length + ' conversations')
+          parsedData.conversations.forEach(conv => {
+            conversationsStore.upsertConversation({
+              id: conv.id,
+              cliente_id: conv.cliente_id,
+              channel_id: conv.channel_id,
+              preview: conv.preview,
+              ultima_actividad: conv.ultima_actividad,
+              unread_count: conv.unread_count || 0,
+              estado_atencion: conv.estado,
+            })
           })
-        })
+        }
+
+        // PASO 2A: Set cursor en store
+        console.log('[REALTIME CP7] setSnapshotCursor(' + cursor + ')')
+        eventStore.setSnapshotCursor(cursor)
+        console.log('[REALTIME CP7A] lastCursor now:', eventStore.lastCursor)
+
+        // PASO 2B: Registrar listeners ANTES de conectar SSE
+        console.log('[REALTIME CP8] Register event listeners')
+        subscribeToEvents()
+
+        // PASO 2C: Connect SSE SOLO si cursor válido
+        console.log('[REALTIME CP9] connect() with cursor:', eventStore.lastCursor)
+        eventStore.connect()
+
+        isInitialized.value = true
+        console.log('[REALTIME CP10] initialize COMPLETED')
+
+      } catch (error) {
+        console.error('[REALTIME ERROR]', error.message)
+        console.error('[REALTIME STACK]', error.stack)
+        isInitialized.value = false
+        throw error
+      } finally {
+        syncInProgress.value = false
+        initializationPromise = null
       }
+    })()
 
-      console.log('[REALTIME CP6] snapshot cursor assigned')
-      const cursorBeforeSet = eventStore.lastCursor || '0'
-      eventStore.setSnapshotCursor(parsedData.snapshot_cursor)
-      console.log('[REALTIME CP6A] cursor before:', cursorBeforeSet)
-      console.log('[REALTIME CP6B] cursor after:', eventStore.lastCursor || 'NOT SET')
+    return await initializationPromise
+  }
 
-      console.log('[REALTIME CP7] subscriptions registered')
-      // Subscribe to events
-      subscribeToEvents()
-
-      console.log('[REALTIME CP8] eventStore.connect called')
-      // PRIORIDAD 8: Start SSE + fallback polling
-      eventStore.connect()
-      console.log('[REALTIME CP8A] eventStore.connect returned')
-
-      isInitialized.value = true
-      console.log('[REALTIME CP11] initialize completed successfully')
-    } catch (error) {
-      console.error('[REALTIME ERROR] initialize failed:', {
-        name: error?.name || 'unknown',
-        message: error?.message || 'no message',
-        stack: error?.stack?.split('\n').slice(0, 3).join('\n') || 'no stack',
-        isInitializedBefore,
-        isInitializedAfter: isInitialized.value
-      })
-    } finally {
-      syncInProgress.value = false
+  /**
+   * Fallback: si API retorna cursor=0, usar REST polling para obtener latest
+   */
+  const _fetchLatestCursorFromPoll = async () => {
+    try {
+      const response = await fetch('/dashboard/whatsapp/api/events/poll/?cursor=0&limit=1')
+      if (!response.ok) throw new Error('Poll failed')
+      const data = await response.json()
+      return data.latest_cursor || '0'
+    } catch (err) {
+      console.warn('Fallback poll failed:', err.message)
+      return '0'
     }
   }
 

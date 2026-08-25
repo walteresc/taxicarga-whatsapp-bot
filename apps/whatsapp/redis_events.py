@@ -264,9 +264,23 @@ def get_events(cursor: str = '0') -> List[Event]:
 
 
 def get_latest_cursor() -> str:
-    """Get latest event ID."""
+    """Get latest event ID. PASO 5: Garantizar cursor válido.
+
+    Retorna:
+    - Event ID válido si existen eventos (ej: "1234567890-0")
+    - Cursor sintético "1-0" si Redis está vacío (never '0')
+    - '0' solo como fallback de excepción
+    """
     try:
         bus = get_event_bus()
-        return bus.get_latest_id() or '0'
-    except Exception:
-        return '0'
+        latest = bus.get_latest_id()
+        if latest and latest != '0':
+            return latest
+        # Redis vacío: retornar cursor sintético válido
+        # "1-0" es un cursor válido que se interpreta como
+        # "desde el inicio, pero permítenos inicializar"
+        return '1-0'
+    except Exception as e:
+        logger.error(f"get_latest_cursor exception: {e}")
+        # Fallback solo en excepción crítica
+        return '1-0'
