@@ -317,10 +317,14 @@ def _event_generator(request, bus, last_event_id, cursor_too_old=False):
 
             try:
                 new_events = list(get_events(cursor=last_yielded_id))
-                for event in new_events:
-                    if is_event_authorized(event):
-                        pending.append(event)
-                        last_yielded_id = event.id
+                if new_events:
+                    logger.info(f"[SSE GEN IT#{iteration_count}] Polled {len(new_events)} events from cursor={last_yielded_id}")
+                    for event in new_events:
+                        logger.info(f"[SSE GEN] Event {event.id}: type={event.type}, authorized={is_event_authorized(event)}")
+                        if is_event_authorized(event):
+                            pending.append(event)
+                            last_yielded_id = event.id
+                            logger.info(f"[SSE GEN] ✓ Enqueued event {event.id}")
             except Exception as e:
                 logger.error(f"[SSE GEN] Error polling events: {e}", exc_info=True)
 
