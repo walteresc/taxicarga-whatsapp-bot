@@ -111,7 +111,7 @@ def publish_message_created_event(sender, instance, created, **kwargs):
                 'conversation': {
                     'summary': conv.resumen,
                     'last_activity': conv.ultima_actividad.isoformat() if conv.ultima_actividad else timezone.now().isoformat(),
-                    'unread_count': unread_delta,
+                    'unread_delta': unread_delta,
                     'attention_state': conv.estado_atencion,
                     'bot_paused': conv.bot_pausado,
                 }

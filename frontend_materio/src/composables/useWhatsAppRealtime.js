@@ -142,11 +142,17 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
 
     // Update conversation in bandeja
     if (conversation && conversationsStore && conversationsStore.upsertConversation) {
+      // IMPORTANT: conversation.unread_delta is INCREMENTAL, not absolute
+      // Sum it to the existing counter, not replace it
+      const existingConv = conversationsStore.getConversation(conversation_id)
+      const currentUnread = existingConv?.unread_count || 0
+      const newUnread = Math.max(0, currentUnread + (conversation.unread_delta || 0))
+
       conversationsStore.upsertConversation({
         id: conversation_id,
         preview,
         ultima_actividad: conversation.last_activity,
-        unread_count: conversation.unread_count,
+        unread_count: newUnread,
         estado_atencion: conversation.attention_state,
         bot_pausado: conversation.bot_paused,
       })
