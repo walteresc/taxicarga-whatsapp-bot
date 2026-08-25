@@ -48,19 +48,32 @@ export const useEventStore = defineStore('events', () => {
   }
 
   /**
-   * Open SSE connection
+   * Open SSE connection (FASE A2: with guards)
    */
   const openSSE = () => {
-    if (sseOpen.value || eventSource.value) {
+    // FASE A2: Guard against duplicate connections
+    if (eventSource.value) {
+      const readyState = eventSource.value.readyState
+      if (readyState === EventSource.CONNECTING || readyState === EventSource.OPEN) {
+        logConnection('openSSE', 'guard_prevented_duplicate', { readyState })
+        console.warn(`[SSE] Guard: EventSource exists in state ${readyState}`)
+        return
+      }
+    }
+
+    if (sseOpen.value) {
+      logConnection('openSSE', 'guard_sseOpen_true')
       return
     }
 
     try {
       // Use relative URL so Vite proxy handles as same-origin in dev
       // Production: Vite build outputs static files, nginx proxy handles /dashboard → backend
-      const url = '/dashboard/whatsapp/api/events/stream/'
+      const cursor = lastCursor.value || '0'
+      const url = `/dashboard/whatsapp/api/events/stream/?cursor=${cursor}`
 
-      console.log(`[SSE] Opening connection to ${url}`)
+      logConnection('openSSE', 'creating_new', { cursor })
+      console.log(`[SSE] Creating EventSource: cursor=${cursor}, url=${url}`)
       eventSource.value = new EventSource(url, { withCredentials: true })
       console.log(`[SSE] EventSource opened, readyState=${eventSource.value.readyState}`)
 
