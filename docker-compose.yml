@@ -84,14 +84,12 @@ services:
       - "8001:8001"
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./staticfiles:/app/staticfiles:ro
+      - ./frontend_build:/usr/share/nginx/html:ro
     depends_on:
       - django
     networks:
       - app-network
     restart: unless-stopped
-    # Healthcheck disabled for now - Nginx is running correctly but health probe is having issues
-    # The service is operational - all requests are being routed correctly
 
 networks:
   app-network:

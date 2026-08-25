@@ -207,36 +207,67 @@ class YCloudMessageProcessor:
             message_text = event_data.get("text") or event_data.get("body") or ""
             message_type = self._get_message_type(event_data)
             message_timestamp = self.extract_timestamp(event_data)
+            is_edit = event_data.get("is_edit", False)
 
-            # 6. Get or create message (idempotent by wamid)
-            if wamid:
-                message, created = MensajeWhatsApp.objects.get_or_create(
-                    meta_message_id=wamid,
-                    conversacion=conversation,
-                    defaults={
-                        "direccion": classification["direction"],
-                        "origen": self._map_to_origen(classification["sender_type"]),
-                        "tipo": message_type,
-                        "contenido": message_text[:500],
-                        "estado": "recibido",
-                        "sender_type": classification["sender_type"],
-                        "source": classification["source"],
-                        "fecha_mensaje": message_timestamp,
-                    }
-                )
+            # 6. Handle message edits vs. new messages
+            if is_edit:
+                # This is an edited message — update existing message
+                if wamid:
+                    try:
+                        message = MensajeWhatsApp.objects.get(meta_message_id=wamid, conversacion=conversation)
+                        message.contenido = message_text[:500]
+                        message.save(update_fields=["contenido"])
+                        created = False
+                        logger.info(f"[YCloud] Message {wamid} edited: {message_text[:50]}")
+                    except MensajeWhatsApp.DoesNotExist:
+                        logger.warning(f"[YCloud] Edit event but original message {wamid} not found, creating new")
+                        created = True
+                        message = MensajeWhatsApp.objects.create(
+                            conversacion=conversation,
+                            meta_message_id=wamid,
+                            direccion=classification["direction"],
+                            origen=self._map_to_origen(classification["sender_type"]),
+                            tipo=message_type,
+                            contenido=message_text[:500],
+                            estado="recibido",
+                            sender_type=classification["sender_type"],
+                            source=classification["source"],
+                            fecha_mensaje=message_timestamp,
+                        )
+                else:
+                    logger.error("[YCloud] Edit event but no wamid found")
+                    result["error"] = "Edit event missing wamid"
+                    return result
             else:
-                created = True
-                message = MensajeWhatsApp.objects.create(
-                    conversacion=conversation,
-                    direccion=classification["direction"],
-                    origen=self._map_to_origen(classification["sender_type"]),
-                    tipo=message_type,
-                    contenido=message_text[:500],
-                    estado="recibido",
-                    sender_type=classification["sender_type"],
-                    source=classification["source"],
-                    fecha_mensaje=message_timestamp,
-                )
+                # Normal new message — get or create
+                if wamid:
+                    message, created = MensajeWhatsApp.objects.get_or_create(
+                        meta_message_id=wamid,
+                        conversacion=conversation,
+                        defaults={
+                            "direccion": classification["direction"],
+                            "origen": self._map_to_origen(classification["sender_type"]),
+                            "tipo": message_type,
+                            "contenido": message_text[:500],
+                            "estado": "recibido",
+                            "sender_type": classification["sender_type"],
+                            "source": classification["source"],
+                            "fecha_mensaje": message_timestamp,
+                        }
+                    )
+                else:
+                    created = True
+                    message = MensajeWhatsApp.objects.create(
+                        conversacion=conversation,
+                        direccion=classification["direction"],
+                        origen=self._map_to_origen(classification["sender_type"]),
+                        tipo=message_type,
+                        contenido=message_text[:500],
+                        estado="recibido",
+                        sender_type=classification["sender_type"],
+                        source=classification["source"],
+                        fecha_mensaje=message_timestamp,
+                    )
 
             result["created"] = created
             result["message"] = message

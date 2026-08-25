@@ -8,7 +8,7 @@
  * PRIORIDADES 8-9: SSE/fallback + multi-tab
  */
 
-import { onMounted, onUnmounted, ref, computed } from 'vue'
+import { onMounted, onUnmounted, ref, computed, watch } from 'vue'
 import { useEventStore } from '@/stores/eventStore'
 
 export function useWhatsAppRealtime(conversationsStore, messagesStore) {
@@ -19,37 +19,93 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
   /**
    * Initialize real-time connection and load initial state.
    * Called once per session in authenticated layout.
+   * FASE 5B: 11 checkpoints for diagnostic tracing.
    */
   const initialize = async () => {
-    console.log('[REALTIME] initialize() called')
+    console.log('[REALTIME CP1] initialize entered')
+
+    const isInitializedBefore = isInitialized.value
+    console.log('[REALTIME CP2] isInitialized value before:', isInitializedBefore)
+
     if (isInitialized.value) {
-      console.log('[REALTIME] Already initialized, returning early')
+      console.log('[REALTIME CP2B] Already initialized, returning early')
       return
     }
 
     syncInProgress.value = true
 
     try {
-      console.log('[REALTIME] Loading initial state...')
-      // PRIORIDAD 6: Load initial REST state
-      await loadInitialState(conversationsStore, messagesStore)
-      console.log('[REALTIME] Initial state loaded')
+      console.log('[REALTIME CP3] loadInitialState start')
+      const fetchUrl = '/dashboard/whatsapp/conversaciones/api/active/'
+      console.log('[REALTIME CP3A] fetch URL:', fetchUrl)
 
-      console.log('[REALTIME] Calling eventStore.connect()...')
-      // PRIORIDAD 8: Start SSE + fallback polling
-      eventStore.connect()
-      console.log('[REALTIME] eventStore.connect() called')
+      const fetchResponse = await fetch(fetchUrl)
+      console.log('[REALTIME CP4] loadInitialState response status:', fetchResponse.status)
+      console.log('[REALTIME CP4A] response headers content-type:', fetchResponse.headers.get('content-type'))
 
-      console.log('[REALTIME] Subscribing to events...')
+      if (!fetchResponse.ok) {
+        const errorBody = await fetchResponse.text()
+        console.error('[REALTIME CP4B] fetch failed:', {
+          status: fetchResponse.status,
+          statusText: fetchResponse.statusText,
+          body: errorBody.substring(0, 200)
+        })
+        throw new Error(`HTTP ${fetchResponse.status}: ${fetchResponse.statusText}`)
+      }
+
+      const parsedData = await fetchResponse.json()
+      console.log('[REALTIME CP5] loadInitialState parsed payload:', {
+        conversations_count: parsedData.conversations?.length || 0,
+        has_snapshot_cursor: 'snapshot_cursor' in parsedData,
+        snapshot_cursor_value: parsedData.snapshot_cursor || 'MISSING',
+        has_pagination: 'pagination' in parsedData
+      })
+
+      if (!parsedData.snapshot_cursor) {
+        console.error('[REALTIME CP5A] CRITICAL: snapshot_cursor missing or falsy')
+        console.error('[REALTIME CP5A] full response keys:', Object.keys(parsedData))
+      }
+
+      // Now update stores from REST data
+      if (parsedData.conversations) {
+        parsedData.conversations.forEach(conv => {
+          conversationsStore.upsertConversation({
+            id: conv.id,
+            cliente_id: conv.cliente_id,
+            channel_id: conv.channel_id,
+            preview: conv.preview,
+            ultima_actividad: conv.ultima_actividad,
+            unread_count: conv.unread_count || 0,
+            estado_atencion: conv.estado,
+          })
+        })
+      }
+
+      console.log('[REALTIME CP6] snapshot cursor assigned')
+      const cursorBeforeSet = eventStore.lastCursor || '0'
+      eventStore.setSnapshotCursor(parsedData.snapshot_cursor)
+      console.log('[REALTIME CP6A] cursor before:', cursorBeforeSet)
+      console.log('[REALTIME CP6B] cursor after:', eventStore.lastCursor || 'NOT SET')
+
+      console.log('[REALTIME CP7] subscriptions registered')
       // Subscribe to events
       subscribeToEvents()
-      console.log('[REALTIME] Subscribed to events')
+
+      console.log('[REALTIME CP8] eventStore.connect called')
+      // PRIORIDAD 8: Start SSE + fallback polling
+      eventStore.connect()
+      console.log('[REALTIME CP8A] eventStore.connect returned')
 
       isInitialized.value = true
-      console.log('[REALTIME] Initialization complete')
+      console.log('[REALTIME CP11] initialize completed successfully')
     } catch (error) {
-      console.error('[REALTIME] Failed to initialize real-time:', error)
-      console.error('[REALTIME] Error details:', error.message, error.stack)
+      console.error('[REALTIME ERROR] initialize failed:', {
+        name: error?.name || 'unknown',
+        message: error?.message || 'no message',
+        stack: error?.stack?.split('\n').slice(0, 3).join('\n') || 'no stack',
+        isInitializedBefore,
+        isInitializedAfter: isInitialized.value
+      })
     } finally {
       syncInProgress.value = false
     }
@@ -99,6 +155,7 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
   const subscribeToEvents = () => {
     // Watch for new events
     const processEvent = (event) => {
+      console.log('[REALTIME processEvent] type=' + event.type + ', conv_id=' + event.conversation_id)
       // PRIORIDAD 7: Update bandeja/timeline based on event type
       switch (event.type) {
         case 'message.created':
@@ -119,8 +176,19 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
     // Process existing pending events
     eventStore.events.forEach(processEvent)
 
-    // Watch for new events (in real implementation, use watch API)
-    // This is simplified - actual impl would use Pinia watch
+    // CRITICAL FIX: Watch for new events from SSE/polling
+    watch(
+      () => eventStore.events,
+      (newEvents, oldEvents) => {
+        // Only process NEW events (those added since last watch)
+        const oldIds = new Set(oldEvents?.map(e => e.id) || [])
+        const newOnlyEvents = newEvents.filter(e => !oldIds.has(e.id))
+
+        console.log('[REALTIME watch] ' + newOnlyEvents.length + ' new events')
+        newOnlyEvents.forEach(processEvent)
+      },
+      { deep: true }
+    )
   }
 
   /**

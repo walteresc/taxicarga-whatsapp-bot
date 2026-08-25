@@ -11,7 +11,7 @@ echo "[entrypoint] Running migrations..."
 python manage.py migrate --noinput
 
 echo "[entrypoint] Collecting static files..."
-python manage.py collectstatic --noinput
+python manage.py collectstatic --noinput || true  # Ignore failures (staticfiles may be mounted read-only or unavailable)
 
 echo "[entrypoint] Starting application..."
 exec "$@"

@@ -100,31 +100,49 @@ def _normalize_ycloud_payload(event_type, payload):
     YCloud format → Canonical format:
     - whatsappInboundMessage → root level fields (from, id, text, etc.)
     - whatsappMessage (echoes) → root level fields (from, to, id, text, etc.)
+    - edit events → original message ID + new text (for updates)
     """
     canonical = dict(payload)
 
     if event_type == "whatsapp.inbound_message.received":
         msg_data = payload.get("whatsappInboundMessage", {})
         if msg_data:
-            # Flatten structure
-            canonical["from"] = msg_data.get("from")
-            canonical["from_name"] = msg_data.get("fromName", "")  # Contact name from YCloud
-            canonical["wamid"] = msg_data.get("id")
-            canonical["text"] = msg_data.get("text", {}).get("body", "")
-            canonical["image"] = msg_data.get("image")
-            canonical["audio"] = msg_data.get("audio")
-            canonical["document"] = msg_data.get("document")
-            canonical["timestamp"] = payload.get("timestamp")
+            # Check if this is an EDIT event
+            if msg_data.get("type") == "edit" and msg_data.get("edit"):
+                edit_data = msg_data.get("edit", {})
+                original_msg_id = edit_data.get("originalMessageId")
+                edited_msg = edit_data.get("message", {})
 
-            # Detect content type based on what's present
-            if msg_data.get("image"):
-                canonical["type"] = "image"
-            elif msg_data.get("audio"):
-                canonical["type"] = "audio"
-            elif msg_data.get("document"):
-                canonical["type"] = "document"
-            else:
+                # Extract original message ID (YCloud wamid format)
+                canonical["is_edit"] = True
+                canonical["original_wamid"] = original_msg_id
+                canonical["from"] = msg_data.get("from")
+                canonical["from_name"] = msg_data.get("fromName", "")
+                canonical["wamid"] = original_msg_id  # Use ORIGINAL wamid for lookup
+                canonical["text"] = edited_msg.get("text", {}).get("body", "")
                 canonical["type"] = "text"
+                canonical["timestamp"] = payload.get("timestamp")
+            else:
+                # Normal inbound message (NOT edited)
+                canonical["is_edit"] = False
+                canonical["from"] = msg_data.get("from")
+                canonical["from_name"] = msg_data.get("fromName", "")  # Contact name from YCloud
+                canonical["wamid"] = msg_data.get("id")
+                canonical["text"] = msg_data.get("text", {}).get("body", "")
+                canonical["image"] = msg_data.get("image")
+                canonical["audio"] = msg_data.get("audio")
+                canonical["document"] = msg_data.get("document")
+                canonical["timestamp"] = payload.get("timestamp")
+
+                # Detect content type based on what's present
+                if msg_data.get("image"):
+                    canonical["type"] = "image"
+                elif msg_data.get("audio"):
+                    canonical["type"] = "audio"
+                elif msg_data.get("document"):
+                    canonical["type"] = "document"
+                else:
+                    canonical["type"] = "text"
 
     elif event_type == "whatsapp.smb.message.echoes":
         msg_data = payload.get("whatsappMessage", {})
