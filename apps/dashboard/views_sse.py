@@ -137,27 +137,26 @@ def sse_events_stream(request):
 
     Returns:
         Server-Sent Events stream with events
-        Format:
-        ```
-        id: <event_id>
-        event: <event_type>
-        data: <json_data>
-
-        ```
     """
-    logger.info(f"[SSE] View entry: user={request.user.username}, remote_addr={request.META.get('REMOTE_ADDR')}")
+    import sys
+    from apps.whatsapp.redis_events import get_latest_cursor
 
     # Check authorization
     if not can_manage_whatsapp(request.user):
         logger.warning(f"[SSE] Unauthorized access from {request.user.username}")
         raise PermissionDenied("No tienes permisos para acceder a eventos de WhatsApp")
 
-    logger.info(f"[SSE] Authorization passed for user={request.user.username}")
-
-    # Get Last-Event-ID from request header (standard SSE) or query param
-    last_event_id = request.headers.get('Last-Event-ID', '0')
+    # Get Last-Event-ID from request header (standard SSE - sent on browser reconnect)
+    # or query param (for explicit cursor reset), or default to latest (new connections)
+    last_event_id = request.headers.get('Last-Event-ID')
     if not last_event_id:
-        last_event_id = request.GET.get('cursor', '0')
+        last_event_id = request.GET.get('cursor')
+    if not last_event_id:
+        # NEW CONNECTION: Start from latest event, not from beginning
+        last_event_id = get_latest_cursor()
+
+    print(f"[SSE-ENTRY] user={request.user.username}, cursor={last_event_id}", file=sys.stderr)
+    sys.stderr.flush()
 
     logger.info(f"[SSE] Last-Event-ID={last_event_id}")
 
@@ -190,13 +189,17 @@ def sse_events_stream(request):
 
     # Stream events
     try:
-        logger.info("[SSE] Creating StreamingHttpResponse with generator")
+        print(f"[SSE] Creating StreamingHttpResponse with generator", file=sys.stderr)
+        sys.stderr.flush()
+
         response = SSEStreamingHttpResponse(
             _event_generator(request, bus, last_event_id, cursor_too_old),
-            content_type='text/event-stream'
+            content_type='text/event-stream',
+            status=200
         )
 
-        logger.info(f"[SSE] Response created: type={type(response).__name__}")
+        print(f"[SSE] Response created: status=200, type={type(response).__name__}", file=sys.stderr)
+        sys.stderr.flush()
 
         # SSE headers
         response['Cache-Control'] = 'no-cache'
