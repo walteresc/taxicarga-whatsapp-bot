@@ -274,17 +274,20 @@ export const useEventStore = defineStore('events', () => {
    * Expects caller to set lastCursor from API snapshot_cursor first
    */
   const connect = () => {
+    console.log('[eventStore.connect] Called. lastCursor=' + lastCursor.value)
     // Only open SSE if cursor has been set (from snapshot)
     if (lastCursor.value === '0') {
       console.warn('[eventStore] Cannot connect: lastCursor not set from snapshot')
       return
     }
 
+    console.log('[eventStore.connect] Opening SSE...')
     openSSE()
 
     // Also start polling as fallback (will stop when SSE connects)
     setTimeout(() => {
       if (!sseOpen.value) {
+        console.log('[eventStore.connect] SSE not open after 5s, starting polling fallback')
         startPolling()
       }
     }, 5000)
@@ -294,8 +297,9 @@ export const useEventStore = defineStore('events', () => {
    * Set cursor from API snapshot (critical for SSE coherence)
    */
   const setSnapshotCursor = (cursor) => {
+    const oldCursor = lastCursor.value
     lastCursor.value = cursor || '0'
-    console.log('[eventStore] Snapshot cursor set:', lastCursor.value)
+    console.log('[eventStore.setSnapshotCursor] Set from "' + oldCursor + '" to "' + lastCursor.value + '"')
   }
 
   /**

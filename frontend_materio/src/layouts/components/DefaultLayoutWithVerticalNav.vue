@@ -25,10 +25,14 @@ const messagesStore = useMessagesStore()
 const { initialize, cleanup } = useWhatsAppRealtime(conversationsStore, messagesStore)
 
 onMounted(async () => {
+  console.log('[LAYOUT] DefaultLayoutWithVerticalNav mounted')
   try {
+    console.log('[LAYOUT] Calling initialize()...')
     await initialize()
+    console.log('[LAYOUT] initialize() completed successfully')
   } catch (error) {
-    console.error('Failed to initialize real-time:', error)
+    console.error('[LAYOUT] Failed to initialize real-time:', error)
+    console.error('[LAYOUT] Error details:', error.message, error.stack)
   }
 })
 

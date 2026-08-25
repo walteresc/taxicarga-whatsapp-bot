@@ -21,23 +21,35 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
    * Called once per session in authenticated layout.
    */
   const initialize = async () => {
-    if (isInitialized.value) return
+    console.log('[REALTIME] initialize() called')
+    if (isInitialized.value) {
+      console.log('[REALTIME] Already initialized, returning early')
+      return
+    }
 
     syncInProgress.value = true
 
     try {
+      console.log('[REALTIME] Loading initial state...')
       // PRIORIDAD 6: Load initial REST state
       await loadInitialState(conversationsStore, messagesStore)
+      console.log('[REALTIME] Initial state loaded')
 
+      console.log('[REALTIME] Calling eventStore.connect()...')
       // PRIORIDAD 8: Start SSE + fallback polling
       eventStore.connect()
+      console.log('[REALTIME] eventStore.connect() called')
 
+      console.log('[REALTIME] Subscribing to events...')
       // Subscribe to events
       subscribeToEvents()
+      console.log('[REALTIME] Subscribed to events')
 
       isInitialized.value = true
+      console.log('[REALTIME] Initialization complete')
     } catch (error) {
-      console.error('Failed to initialize real-time:', error)
+      console.error('[REALTIME] Failed to initialize real-time:', error)
+      console.error('[REALTIME] Error details:', error.message, error.stack)
     } finally {
       syncInProgress.value = false
     }

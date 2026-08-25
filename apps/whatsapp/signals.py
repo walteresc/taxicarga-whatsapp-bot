@@ -90,11 +90,11 @@ def publish_message_created_event(sender, instance, created, **kwargs):
         try:
             conv = instance.conversacion
 
-            # Calculate unread for this conversation at commit time
-            unread_inbound = conv.mensajes.filter(
-                direccion=MensajeWhatsApp.ENTRANTE,
-                leido_en__isnull=True
-            ).count()
+            # Calculate unread CANONICAL: only new messages since last read (at time of event)
+            # This MUST match ConversationReadState calculation for consistency
+            # Don't count all unread inbound - that's stale. Count ONLY new messages after event.
+            # For simplicity: message just arrived = +1 unread for first viewer
+            unread_delta = 1 if instance.direccion == MensajeWhatsApp.ENTRANTE else 0
 
             # Complete event with all data frontend needs for bandeja + timeline
             event_data = {
@@ -111,7 +111,7 @@ def publish_message_created_event(sender, instance, created, **kwargs):
                 'conversation': {
                     'summary': conv.resumen,
                     'last_activity': conv.ultima_actividad.isoformat() if conv.ultima_actividad else timezone.now().isoformat(),
-                    'unread_count': unread_inbound,
+                    'unread_count': unread_delta,
                     'attention_state': conv.estado_atencion,
                     'bot_paused': conv.bot_pausado,
                 }
