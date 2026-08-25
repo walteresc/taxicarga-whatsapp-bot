@@ -147,16 +147,25 @@ def _normalize_ycloud_payload(event_type, payload):
 
 
 def verify_ycloud_signature(request):
-    """Validar firma HMAC de YCloud. Formato: Ycloud-Signature: t=timestamp,s=signature"""
+    """Validar firma HMAC de YCloud según contrato oficial.
 
-    # YCloud envía: Ycloud-Signature: t=1787110642,s=02cafad34935614384b99f99366ef91b264eba3a51127a40c1472d9b32c2930a
+    Formato official:
+    - Header: Ycloud-Signature: t=<timestamp>,s=<hex_digest>
+    - Signed payload: <timestamp>.<raw_request_body_bytes>
+    - Algorithm: HMAC-SHA256(endpoint_signing_secret, signed_payload)
+
+    Contrato: https://docs.ycloud.com/reference/configure-webhooks
+    """
+    from django.conf import settings
+    import os
+
     signature_header = request.headers.get('Ycloud-Signature', '')
 
     if not signature_header:
         logger.error("[YCloud] Missing Ycloud-Signature header")
         return False
 
-    # Extraer timestamp y signature: t=...,s=...
+    # Parse header: t=<ts>,s=<sig>
     parts = {}
     for part in signature_header.split(','):
         if '=' in part:
@@ -166,59 +175,34 @@ def verify_ycloud_signature(request):
     timestamp = parts.get('t', '')
     signature = parts.get('s', '')
 
-    if not signature:
-        logger.error("[YCloud] Missing signature in Ycloud-Signature header")
+    if not timestamp or not signature:
+        logger.error("[YCloud] Malformed Ycloud-Signature header")
         return False
 
     body = request.body
-
-    # Log timestamp for debugging retries
-    logger.warning(f"[YCloud] Timestamp from Ycloud-Signature header: {timestamp}")
-
-    # Log raw body for diagnosis
-    body_hash = hashlib.sha256(body).hexdigest()
-    logger.warning(f"[YCloud] Raw body hash: {body_hash}")
-    logger.warning(f"[YCloud] Raw body length: {len(body)} bytes")
-    if len(body) < 500:
-        logger.warning(f"[YCloud] Raw body content: {body[:200]}")
-
-    # Log secret being used
     secret = settings.YCLOUD_WEBHOOK_SECRET
-    logger.warning(f"[YCloud] Secret length: {len(secret)}, first 4 chars: {secret[:4] if secret else 'NOT SET'}")
 
-    # Intentar dos formatos de firma:
-    # 1. Solo body
-    expected1 = hmac.new(
-        settings.YCLOUD_WEBHOOK_SECRET.encode(),
-        body,
+    # Diagnostic (safe - no secrets, only fingerprints)
+    if os.environ.get('DEBUG'):
+        body_hash_fp = hashlib.sha256(body).hexdigest()[:12]
+        secret_fp = hashlib.sha256(secret.encode()).hexdigest()[:8]
+        logger.warning(f"[YCloud] Diagnostic: body_hash_fp={body_hash_fp}, secret_fp={secret_fp}, timestamp={timestamp}")
+
+    # OFFICIAL FORMAT: timestamp + "." + raw_body_bytes
+    # Use bytes directly to preserve exact payload
+    signed_payload = timestamp.encode('ascii') + b'.' + body
+    expected_digest = hmac.new(
+        secret.encode('utf-8'),
+        signed_payload,
         hashlib.sha256
     ).hexdigest()
 
-    # 2. timestamp.body (formato común)
-    signed_content = f"{timestamp}.{body.decode('utf-8')}" if isinstance(body, bytes) else f"{timestamp}.{body}"
-    expected2 = hmac.new(
-        settings.YCLOUD_WEBHOOK_SECRET.encode(),
-        signed_content.encode() if isinstance(signed_content, str) else signed_content,
-        hashlib.sha256
-    ).hexdigest()
+    match = hmac.compare_digest(signature, expected_digest)
 
-    match1 = hmac.compare_digest(signature, expected1)
-    match2 = hmac.compare_digest(signature, expected2)
+    if not match and os.environ.get('DEBUG'):
+        logger.warning(f"[YCloud] Signature mismatch - expected={expected_digest[:8]}, got={signature[:8]}")
 
-    logger.warning(f"[YCloud] Signature check - body_only={match1}, timestamp.body={match2}, signature={signature}")
-    logger.warning(f"[YCloud] Hashes - expected1={expected1}, expected2={expected2}")
-
-    # Additional debugging for troubleshooting
-    logger.warning(f"[YCloud] Timestamp from header: {timestamp}")
-    logger.warning(f"[YCloud] Secret first 4 chars: {secret[:4]}")
-
-    # Log which headers were received
-    all_headers = dict(request.headers)
-    logger.warning(f"[YCloud] All headers keys: {list(all_headers.keys())}")
-    if 'Ycloud-Signature' in all_headers:
-        logger.warning(f"[YCloud] Ycloud-Signature header present: {all_headers['Ycloud-Signature'][:50]}...")
-
-    return match1 or match2
+    return match
 
 
 @csrf_exempt
