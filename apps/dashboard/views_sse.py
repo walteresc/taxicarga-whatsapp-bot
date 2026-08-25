@@ -9,7 +9,7 @@ import logging
 import json
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
-from django.http import StreamingHttpResponse
+from django.http import StreamingHttpResponse, JsonResponse
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.cache import cache_control
 from django.utils import timezone
@@ -34,6 +34,91 @@ class SSEStreamingHttpResponse(StreamingHttpResponse):
         except KeyError:
             return default
 
+
+@login_required
+@require_http_methods(["GET"])
+def debug_redis(request):
+    """Endpoint de debug para verificar Redis en Gunicorn."""
+    import os
+    import threading
+    import redis
+    import traceback
+
+    result = {
+        "pid": os.getpid(),
+        "thread": threading.current_thread().name,
+        "tests": {}
+    }
+
+    try:
+        # Test 0: DNS resolution from main thread
+        import socket
+        import threading
+
+        def test_dns_main():
+            try:
+                ip = socket.gethostbyname("redis")
+                return f"OK: redis -> {ip}"
+            except Exception as e:
+                return f"FAIL: {type(e).__name__}: {str(e)[:60]}"
+
+        def test_dns_thread():
+            try:
+                ip = socket.gethostbyname("redis")
+                return f"OK: redis -> {ip}"
+            except Exception as e:
+                return f"FAIL: {type(e).__name__}: {str(e)[:60]}"
+
+        result["tests"]["dns_redis_main_thread"] = test_dns_main()
+
+        # Test DNS from new thread
+        t = threading.Thread(target=lambda: result["tests"].update({"dns_redis_new_thread": test_dns_thread()}))
+        t.start()
+        t.join(timeout=2)
+
+        if "dns_redis_new_thread" not in result["tests"]:
+            result["tests"]["dns_redis_new_thread"] = "TIMEOUT"
+
+        # Test 1: Direct Redis connection with IP
+        try:
+            import socket
+            ip = socket.gethostbyname("redis")
+            r = redis.from_url(f"redis://{ip}:6379/0", decode_responses=True, socket_connect_timeout=2)
+            r.ping()
+            result["tests"]["direct_redis_ping_by_ip"] = "OK"
+        except Exception as e:
+            result["tests"]["direct_redis_ping_by_ip"] = f"FAIL: {type(e).__name__}: {str(e)[:60]}"
+
+        # Test 1b: Direct Redis connection with hostname
+        try:
+            r = redis.from_url("redis://redis:6379/0", decode_responses=True, socket_connect_timeout=2)
+            r.ping()
+            result["tests"]["direct_redis_ping_by_hostname"] = "OK"
+        except Exception as e:
+            result["tests"]["direct_redis_ping_by_hostname"] = f"FAIL: {type(e).__name__}: {str(e)[:60]}"
+
+        # Test 2: get_event_bus
+        try:
+            from apps.whatsapp.redis_events import get_event_bus
+            bus = get_event_bus()
+            result["tests"]["get_event_bus"] = "OK"
+        except Exception as e:
+            result["tests"]["get_event_bus"] = f"FAIL: {type(e).__name__}: {str(e)[:50]}"
+            result["tests"]["get_event_bus_traceback"] = traceback.format_exc()
+
+        # Test 3: bus.is_available()
+        try:
+            result["tests"]["bus_is_available"] = bus.is_available()
+        except Exception as e:
+            result["tests"]["bus_is_available"] = f"ERROR: {type(e).__name__}: {str(e)[:50]}"
+
+        return JsonResponse(result)
+    except Exception as e:
+        return JsonResponse({
+            "error": str(e),
+            "type": type(e).__name__,
+            "traceback": traceback.format_exc()
+        }, status=500)
 
 @login_required
 @require_http_methods(["GET"])
@@ -153,93 +238,81 @@ def _event_generator(request, bus, last_event_id, cursor_too_old=False):
     from collections import deque
     from apps.whatsapp.models import WhatsAppChannel
 
-    logger.info(f"[GEN] Generator started for user={request.user.username}")
+    iteration_count = 0
 
-    # SSE initial handshake
     try:
-        logger.info("[GEN] Sending initial handshake")
+        logger.info(f"[SSE GEN] ENTRY: user={request.user.username}, cursor={last_event_id}")
+
+        # SSE initial handshake
         yield ': connected\n\n'
-    except Exception as e:
-        logger.exception(f"[GEN] Error on first yield (handshake)")
-        return
 
-    # If cursor was too old, request resync
-    if cursor_too_old:
-        logger.info("[GEN] Sending resync.required")
-        yield _format_event(
-            event_id='0',
-            event_type='resync.required',
-            data={'message': 'Cursor too old, use REST to resync'}
-        )
+        # If cursor was too old, request resync
+        if cursor_too_old:
+            logger.info("[SSE GEN] Sending resync.required")
+            yield _format_event(
+                event_id='0',
+                event_type='resync.required',
+                data={'message': 'Cursor too old, use REST to resync'}
+            )
 
-    # Get authorized channel IDs for this user
-    # Current policy: all active channels if user has WhatsApp permission
-    # Future: filter by channel.asesor = request.user for non-admin users
-    try:
-        logger.info("[GEN] Loading authorized channels")
+        # Get authorized channel IDs for this user
         authorized_channels = set(
             WhatsAppChannel.objects.filter(activo=True).values_list('id', flat=True)
         )
-        logger.info(f"[GEN] Authorized channels: {authorized_channels}")
-    except Exception as e:
-        logger.exception(f"[GEN] Error loading authorized channels")
-        return
+        logger.info(f"[SSE GEN] Loaded {len(authorized_channels)} authorized channels")
 
-    def is_event_authorized(event):
-        """Check if event should be sent to this user."""
-        channel_id = event.data.get('channel_id')
-        if not channel_id:
-            # Events without channel_id are not transmitted
-            return False
-        return channel_id in authorized_channels
+        def is_event_authorized(event):
+            """Check if event should be sent to this user."""
+            channel_id = event.data.get('channel_id')
+            if not channel_id:
+                return False
+            return channel_id in authorized_channels
 
-    # Buffer for unread events
-    pending = deque()
-    last_yielded_id = last_event_id
+        # Buffer for unread events
+        pending = deque()
+        last_yielded_id = last_event_id
 
-    # Initial load (filtered)
-    try:
-        logger.info(f"[GEN] Loading initial events from cursor={last_event_id}")
-        events = get_events(cursor=last_event_id)
-        logger.info(f"[GEN] Loaded {len(list(events))} events")
-        events = get_events(cursor=last_event_id)  # Re-fetch since generator was consumed
+        # Initial load (filtered) - MATERIALIZE ONCE
+        try:
+            events_gen = get_events(cursor=last_event_id)
+            events = list(events_gen)
+            logger.info(f"[SSE GEN] Initial load: {len(events)} events")
+        except Exception as e:
+            logger.error(f"[SSE GEN] Error loading initial events: {e}", exc_info=True)
+            raise
+
         for event in events:
             if is_event_authorized(event):
                 pending.append(event)
                 last_yielded_id = event.id
-        logger.info(f"[GEN] Queued {len(pending)} authorized events")
-    except Exception as e:
-        logger.exception(f"[GEN] Error loading initial events")
-        return
+        logger.info(f"[SSE GEN] Queued {len(pending)} authorized events")
 
-    # Heartbeat counter
-    heartbeat_count = 0
-    heartbeat_interval = 30  # seconds
-
-    try:
+        # Heartbeat counter
+        heartbeat_count = 0
+        heartbeat_interval = 30  # seconds
         while True:
+            iteration_count += 1
+
             # Yield pending events
             while pending:
                 event = pending.popleft()
-                try:
-                    yield _format_event(
-                        event_id=event.id,
-                        event_type=event.type,
-                        data=event.data
-                    )
-                except Exception as e:
-                    logger.error(f"[GEN] Error formatting event {event.id}: {e}")
+                yield _format_event(
+                    event_id=event.id,
+                    event_type=event.type,
+                    data=event.data
+                )
 
-            # Poll for new events (blocking for up to 5 seconds)
+            # Poll for new events
             time.sleep(1)
+
             try:
-                new_events = get_events(cursor=last_yielded_id)
+                new_events = list(get_events(cursor=last_yielded_id))
                 for event in new_events:
                     if is_event_authorized(event):
                         pending.append(event)
                         last_yielded_id = event.id
             except Exception as e:
-                logger.error(f"[GEN] Error polling events: {e}")
+                logger.error(f"[SSE GEN] Error polling events: {e}", exc_info=True)
 
             # Heartbeat every 30 seconds
             heartbeat_count += 1
@@ -248,14 +321,13 @@ def _event_generator(request, bus, last_event_id, cursor_too_old=False):
                 heartbeat_count = 0
 
     except GeneratorExit:
-        logger.debug(f"[GEN] Client {request.META.get('REMOTE_ADDR')} disconnected")
+        logger.info(f"[SSE GEN] Client disconnected after {iteration_count} iterations")
+        raise
     except Exception as e:
-        logger.exception(f"[GEN] Stream error")
-        yield _format_event(
-            event_id='error',
-            event_type='error',
-            data={'error': str(e)}
-        )
+        logger.exception(f"[SSE GEN] Fatal error in generator")
+        raise
+    finally:
+        logger.info(f"[SSE GEN] Generator closed, iterations={iteration_count}")
 
 
 def _format_event(event_id: str, event_type: str, data: dict) -> str:

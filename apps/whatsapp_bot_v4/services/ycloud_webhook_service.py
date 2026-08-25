@@ -172,6 +172,9 @@ def verify_ycloud_signature(request):
 
     body = request.body
 
+    # Log timestamp for debugging retries
+    logger.warning(f"[YCloud] Timestamp from Ycloud-Signature header: {timestamp}")
+
     # Log raw body for diagnosis
     body_hash = hashlib.sha256(body).hexdigest()
     logger.warning(f"[YCloud] Raw body hash: {body_hash}")
@@ -204,6 +207,16 @@ def verify_ycloud_signature(request):
 
     logger.warning(f"[YCloud] Signature check - body_only={match1}, timestamp.body={match2}, signature={signature}")
     logger.warning(f"[YCloud] Hashes - expected1={expected1}, expected2={expected2}")
+
+    # Additional debugging for troubleshooting
+    logger.warning(f"[YCloud] Timestamp from header: {timestamp}")
+    logger.warning(f"[YCloud] Secret first 4 chars: {secret[:4]}")
+
+    # Log which headers were received
+    all_headers = dict(request.headers)
+    logger.warning(f"[YCloud] All headers keys: {list(all_headers.keys())}")
+    if 'Ycloud-Signature' in all_headers:
+        logger.warning(f"[YCloud] Ycloud-Signature header present: {all_headers['Ycloud-Signature'][:50]}...")
 
     return match1 or match2
 

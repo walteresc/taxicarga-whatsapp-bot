@@ -15,9 +15,15 @@ from django.conf import settings
 logger = logging.getLogger(__name__)
 
 # Redis configuration
-REDIS_URL = settings.REDIS_URL if hasattr(settings, 'REDIS_URL') else 'redis://localhost:6379/0'
-EVENTS_STREAM_KEY = getattr(settings, 'WHATSAPP_EVENTS_STREAM_KEY', 'whatsapp:events')
-EVENTS_MAXLEN = getattr(settings, 'WHATSAPP_EVENTS_MAXLEN', 10000)
+def _get_redis_url():
+    """Get Redis URL from settings."""
+    url = getattr(settings, 'REDIS_URL', 'redis://localhost:6379/0')
+    return url
+
+# Default values - will be overridden in class initialization
+REDIS_URL = 'redis://localhost:6379/0'
+EVENTS_STREAM_KEY = 'whatsapp:events'
+EVENTS_MAXLEN = 10000
 
 
 @dataclass
@@ -33,33 +39,69 @@ class Event:
 
 
 class RedisEventBus:
-    """Redis Streams-based event bus for FASE 5B real-time."""
+    """Redis Streams-based event bus for FASE 5B real-time.
 
-    def __init__(self, url: str = REDIS_URL, stream_key: str = EVENTS_STREAM_KEY):
+    Uses ConnectionPool for safe multi-threaded access and automatic reconnection.
+    Lazy initialization: pool and client created on first use, not in __init__.
+    """
+
+    def __init__(self, url: str = None, stream_key: str = None):
+        if url is None:
+            url = _get_redis_url()
+        if stream_key is None:
+            stream_key = getattr(settings, 'WHATSAPP_EVENTS_STREAM_KEY', 'whatsapp:events')
         self.url = url
         self.stream_key = stream_key
-        self._redis: Optional[redis.Redis] = None
+        self._pool = None
+        self._client = None
+
+    def _init_pool(self) -> None:
+        """Lazy initialize connection pool on first use."""
+        if self._pool is None:
+            try:
+                self._pool = redis.ConnectionPool.from_url(
+                    self.url,
+                    decode_responses=True,
+                    socket_connect_timeout=5,
+                    socket_keepalive=True,
+                    socket_keepalive_options={1: 3, 2: 3, 3: 3} if hasattr(redis, 'ConnectionPool') else {}
+                )
+                logger.info(f"[REDIS] ConnectionPool initialized for {self.url}")
+            except Exception as e:
+                logger.error(f"[REDIS] Failed to initialize pool: {e}", exc_info=True)
+                raise
 
     @property
     def redis(self) -> redis.Redis:
-        """Lazy connection to Redis."""
-        if self._redis is None:
-            try:
-                self._redis = redis.from_url(self.url, decode_responses=True)
-                self._redis.ping()
-            except Exception as e:
-                logger.error(f"Redis connection failed: {e}")
-                raise
-        return self._redis
+        """Get Redis client using connection pool (lazy initialization)."""
+        if self._client is None:
+            self._init_pool()
+            self._client = redis.Redis(connection_pool=self._pool)
+        return self._client
 
     def is_available(self) -> bool:
-        """Check if Redis is available."""
+        """Check if Redis is available via PING."""
         try:
             self.redis.ping()
             return True
-        except Exception as e:
-            logger.warning(f"Redis unavailable: {e}")
+        except (redis.ConnectionError, redis.TimeoutError) as e:
+            logger.warning(f"[REDIS] Connection check failed: {type(e).__name__}")
             return False
+        except Exception as e:
+            logger.error(f"[REDIS] Unexpected error in is_available: {e}", exc_info=True)
+            return False
+
+    def close(self) -> None:
+        """Close connection pool on shutdown."""
+        if self._pool is not None:
+            try:
+                self._pool.disconnect()
+                logger.info("[REDIS] ConnectionPool closed")
+            except Exception as e:
+                logger.warning(f"[REDIS] Error closing pool: {e}")
+            finally:
+                self._pool = None
+                self._client = None
 
     def publish(self, event_type: str, data: dict) -> Event:
         """Publish event to stream.
@@ -83,7 +125,7 @@ class RedisEventBus:
                     'timestamp': timestamp,
                     'data': json.dumps(data),
                 },
-                maxlen=EVENTS_MAXLEN,
+                maxlen=getattr(settings, 'WHATSAPP_EVENTS_MAXLEN', 10000),
                 approximate=False
             )
 
@@ -186,16 +228,14 @@ class RedisEventBus:
             logger.error(f"Failed to clear stream: {e}")
 
 
-# Global singleton
-_event_bus: Optional[RedisEventBus] = None
-
-
 def get_event_bus() -> RedisEventBus:
-    """Get or create Redis event bus singleton."""
-    global _event_bus
-    if _event_bus is None:
-        _event_bus = RedisEventBus()
-    return _event_bus
+    """Get Redis event bus.
+
+    Creates a fresh instance each time to avoid post-fork socket corruption
+    in gunicorn gthread workers. The lazy connection in RedisEventBus ensures
+    socket is created in the correct process context.
+    """
+    return RedisEventBus()
 
 
 def publish_event(event_type: str, data: dict) -> Optional[Event]:

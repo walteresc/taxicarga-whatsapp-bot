@@ -37,5 +37,5 @@ urlpatterns = [
     # In production (Docker): Nginx handles /static/ and /media/
     # In development: StaticFilesHandler handles /static/ and /media/
     # Must be LAST because it's a catch-all
-    re_path(r"^(?!admin/|api/|webhooks/|webhook/|dashboard/whatsapp/api/|dashboard/api/auth/|static/|media/|health/).+$", never_cache(spa_fallback)),
+    re_path(r"^(?!admin/|api/|webhooks/|webhook/|dashboard/|static/|media/|health/).+$", never_cache(spa_fallback)),
 ]

@@ -14,8 +14,10 @@ bind = '0.0.0.0:8000'
 
 # Workers and threads
 workers = max(2, multiprocessing.cpu_count())
-threads = 4  # per worker for gthread
-worker_class = 'gthread'  # supports long-lived connections
+# Note: Using 'sync' instead of 'gthread' to avoid post-fork socket corruption
+# that breaks DNS resolution in gthread's thread pool. SSE connections will use
+# blocking I/O within the worker process, which is fine for our throughput.
+worker_class = 'sync'
 
 # Timeouts and keepalive
 timeout = 120  # seconds

@@ -32,8 +32,16 @@ else:
 # Redis URL
 REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
 
-# Allowed hosts from environment
-ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+# Allowed hosts from environment + ngrok
+allowed_hosts_env = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1')
+ALLOWED_HOSTS = allowed_hosts_env.split(',')
+
+# Add ngrok wildcard for webhook tunnels
+ALLOWED_HOSTS.extend([
+    '*.ngrok.io',
+    '*.ngrok-free.dev',
+    'abrasive-contents-edge.ngrok-free.dev',  # Current ngrok tunnel
+])
 
 # Debug mode controlled by environment (False in Docker prod)
 DEBUG = os.environ.get('DEBUG', 'False').lower() in ['true', '1', 'yes']

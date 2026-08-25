@@ -47,7 +47,7 @@ services:
     container_name: taxicarga-api
     environment:
       DJANGO_SETTINGS_MODULE: config.settings_e2e
-      DEBUG: "False"
+      DEBUG: "True"
       ALLOWED_HOSTS: "localhost,127.0.0.1,nginx"
       SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
       DATABASE_URL: postgresql://${DB_USER:-taxicarga}:${DB_PASSWORD:-}@postgres:5432/${DB_NAME:-taxicarga_pg_test}

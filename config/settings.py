@@ -230,6 +230,11 @@ LOGGING = {
             "level": DJANGO_LOG_LEVEL,
             "propagate": True,
         },
+        "apps.dashboard": {
+            "handlers": ["console", "file"],
+            "level": "WARNING",
+            "propagate": True,
+        },
         "apps.whatsapp": {
             "handlers": ["console", "file"],
             "level": DJANGO_LOG_LEVEL,
