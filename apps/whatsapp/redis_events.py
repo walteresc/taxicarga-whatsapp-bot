@@ -152,8 +152,14 @@ class RedisEventBus:
             List of events
         """
         try:
-            # If cursor is '0', start from beginning
-            start = cursor if cursor != '0' else '-'
+            # If cursor is '0', start from beginning, otherwise start AFTER cursor
+            # XRANGE with min=X returns events with ID >= X
+            # To get events AFTER cursor, use (cursor syntax (exclusive)
+            if cursor == '0':
+                start = '-'
+            else:
+                # Use exclusive range: events with ID > cursor
+                start = f'({cursor}'
 
             # Read events
             events_raw = self.redis.xrange(self.stream_key, min=start, count=1000)
@@ -162,10 +168,6 @@ class RedisEventBus:
             for event_id, event_data in events_raw:
                 try:
                     event_id_str = event_id.decode() if isinstance(event_id, bytes) else event_id
-
-                    # Skip if this is the cursor itself (we want after, not including)
-                    if cursor != '0' and event_id_str == cursor:
-                        continue
 
                     data_dict = {}
                     for key, value in event_data.items():
