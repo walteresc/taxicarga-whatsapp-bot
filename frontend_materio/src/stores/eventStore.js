@@ -58,6 +58,7 @@ export const useEventStore = defineStore('events', () => {
         sseOpen.value = true
         sseError.value = null
         stopPolling() // Stop polling when SSE connects
+        console.log('[REALTIME CP10] SSE connection opened, readyState=1')
         console.log('SSE connected')
       }
     } catch (error) {
