@@ -35,7 +35,6 @@ class SSEStreamingHttpResponse(StreamingHttpResponse):
             return default
 
 
-@login_required
 @require_http_methods(["GET"])
 def debug_redis(request):
     """Endpoint de debug para verificar Redis en Gunicorn."""
@@ -120,7 +119,6 @@ def debug_redis(request):
             "traceback": traceback.format_exc()
         }, status=500)
 
-@login_required
 @require_http_methods(["GET"])
 def sse_events_stream(request):
     """
@@ -132,19 +130,30 @@ def sse_events_stream(request):
     - User must be authenticated
     - User must have WhatsApp access permission (Administrador, Supervisor, Asesor de Ventas)
 
-    Query parameters:
-    - last_event_id: Resume from specific event ID (SSE spec)
-
     Returns:
-        Server-Sent Events stream with events
+        Server-Sent Events stream (text/event-stream) with events
+        OR
+        401 JSON response if not authenticated
+        403 JSON response if forbidden
     """
     import sys
     from apps.whatsapp.redis_events import get_latest_cursor
 
-    # Check authorization
+    # Check authentication (return 401 JSON instead of HTML redirect)
+    if not request.user.is_authenticated:
+        logger.info(f"[SSE] Unauthenticated request from {request.remote_addr}")
+        return JsonResponse(
+            {"detail": "Authentication required"},
+            status=401
+        )
+
+    # Check authorization (return 403 JSON instead of PermissionDenied HTML)
     if not can_manage_whatsapp(request.user):
         logger.warning(f"[SSE] Unauthorized access from {request.user.username}")
-        raise PermissionDenied("No tienes permisos para acceder a eventos de WhatsApp")
+        return JsonResponse(
+            {"detail": "Forbidden: no WhatsApp access"},
+            status=403
+        )
 
     # Get Last-Event-ID from request header (standard SSE - sent on browser reconnect)
     # or query param (for explicit cursor reset), or default to latest (new connections)
@@ -245,13 +254,19 @@ def _event_generator(request, bus, last_event_id, cursor_too_old=False):
         cursor_too_old: If True, send resync.required event first
     """
     import time
+    import os
+    import threading
+    import uuid
     from collections import deque
     from apps.whatsapp.models import WhatsAppChannel
 
     iteration_count = 0
+    connection_id = str(uuid.uuid4())[:8]
+    pid = os.getpid()
+    thread_id = threading.current_thread().ident
 
     try:
-        logger.info(f"[SSE GEN] ENTRY: user={request.user.username}, cursor={last_event_id}")
+        logger.info(f"[SSE GEN] ENTRY: connection_id={connection_id}, user={request.user.username}, cursor={last_event_id}, pid={pid}, thread={thread_id}")
 
         # SSE initial handshake
         yield ': connected\n\n'
@@ -306,32 +321,48 @@ def _event_generator(request, bus, last_event_id, cursor_too_old=False):
             # Yield pending events
             while pending:
                 event = pending.popleft()
-                yield _format_event(
+                frame = _format_event(
                     event_id=event.id,
                     event_type=event.type,
                     data=event.data
                 )
+                logger.info(f"[SSE GEN #{connection_id}] YIELD event {event.id} (type={event.type}, corr_id={event.data.get('correlation_id', 'N/A')[:20]})")
+                yield frame
+                last_yielded_id = event.id
 
             # Poll for new events
             time.sleep(1)
 
             try:
+                cursor_before = last_yielded_id
+                logger.info(f"[SSE GEN #{connection_id} IT#{iteration_count}] POLL starting: cursor={cursor_before}")
+
                 new_events = list(get_events(cursor=last_yielded_id))
+
+                logger.info(f"[SSE GEN #{connection_id} IT#{iteration_count}] POLL result: {len(new_events)} events from cursor={cursor_before}")
+
                 if new_events:
-                    logger.info(f"[SSE GEN IT#{iteration_count}] Polled {len(new_events)} events from cursor={last_yielded_id}")
                     for event in new_events:
-                        logger.info(f"[SSE GEN] Event {event.id}: type={event.type}, authorized={is_event_authorized(event)}")
-                        if is_event_authorized(event):
+                        authorized = is_event_authorized(event)
+                        channel_id = event.data.get('channel_id')
+                        corr_id = event.data.get('correlation_id', 'N/A')[:20]
+                        logger.info(f"[SSE GEN #{connection_id}] Event {event.id}: channel={channel_id}, auth={authorized}, corr={corr_id}")
+
+                        if authorized:
                             pending.append(event)
                             last_yielded_id = event.id
-                            logger.info(f"[SSE GEN] ✓ Enqueued event {event.id}")
+                            logger.info(f"[SSE GEN #{connection_id}] Event {event.id} queued, cursor updated to {last_yielded_id}")
+                        else:
+                            logger.info(f"[SSE GEN #{connection_id}] Event {event.id} FILTERED (channel={channel_id})")
             except Exception as e:
-                logger.error(f"[SSE GEN] Error polling events: {e}", exc_info=True)
+                logger.error(f"[SSE GEN #{connection_id}] POLL error: {e}", exc_info=True)
 
             # Heartbeat every 30 seconds
             heartbeat_count += 1
             if heartbeat_count >= heartbeat_interval:
-                yield f': heartbeat at {timezone.now().isoformat()}\n\n'
+                hb = f': heartbeat at {timezone.now().isoformat()}\n\n'
+                logger.info(f"[SSE GEN #{connection_id}] HEARTBEAT")
+                yield hb
                 heartbeat_count = 0
 
     except GeneratorExit:
