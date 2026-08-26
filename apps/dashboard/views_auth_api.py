@@ -2,7 +2,7 @@ from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
-from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.csrf import csrf_exempt, csrf_protect
 import json
 import logging
 
@@ -67,11 +67,14 @@ def api_user(request):
     })
 
 
+@csrf_exempt
 @require_http_methods(["POST"])
 @login_required
 def api_logout(request):
-    """Logout endpoint"""
+    """Logout endpoint - CSRF exempt for API consistency with login"""
+    logger.warning(f"[AUTH_API] Logout attempt: user={request.user.username}")
     logout(request)
+    logger.warning(f"[AUTH_API] Logout complete, authenticated={request.user.is_authenticated}")
     return JsonResponse({'status': 'ok'})
 
 
