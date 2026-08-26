@@ -25,6 +25,7 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
   const syncInProgress = ref(false)
   let initializationPromise = null
   let unsubscribeEvents = null  // PASO 4: Explicit subscription cleanup
+  let isSubscribed = false  // Track if subscription is active
 
   /**
    * PASO 2: Orden obligatorio de inicialización
@@ -188,16 +189,23 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
 
   /**
    * Subscribe to event store and update local state.
-   * PASO 4: Using explicit subscription instead of watch
+   * IDEMPOTENT: Only register once, cleanup old before re-registering
    */
   const subscribeToEvents = () => {
-    console.log('[REALTIME subscribeToEvents] ENTERED')
+    console.log('[REALTIME subscribeToEvents] ENTERED, isSubscribed=' + isSubscribed)
 
-    // PASO 4: Cleanup old subscription if exists
+    // IDEMPOTENT: If already subscribed, return
+    if (isSubscribed && unsubscribeEvents) {
+      console.log('[REALTIME subscribeToEvents] Already subscribed, skipping')
+      return
+    }
+
+    // Cleanup old subscription if exists (should be rare)
     if (unsubscribeEvents) {
       console.log('[REALTIME subscribeToEvents] Cleaning up old subscription')
       unsubscribeEvents()
       unsubscribeEvents = null
+      isSubscribed = false
     }
 
     // Handler for each event
@@ -227,9 +235,10 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
       }
     }
 
-    // PASO 4: Subscribe to eventStore
+    // Subscribe to eventStore
     console.log('[REALTIME subscribeToEvents] Registering subscription handler')
     unsubscribeEvents = eventStore.subscribe(processEvent)
+    isSubscribed = true
     console.log('[REALTIME subscribeToEvents] Subscription registered')
   }
 
@@ -297,18 +306,36 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
 
   /**
    * Cleanup on unmount or logout.
-   * PRIORIDAD 6: Lifecycle management
+   * CRITICAL: Clear ALL resources to prevent leaks across navigation
    */
   const cleanup = () => {
-    // PASO 4: Cleanup subscription
+    console.log('[REALTIME cleanup] START')
+
+    // Cleanup subscription
     if (unsubscribeEvents) {
       console.log('[REALTIME cleanup] Unsubscribing from events')
-      unsubscribeEvents()
+      try {
+        unsubscribeEvents()
+      } catch (error) {
+        console.error('[REALTIME cleanup] Unsubscribe error:', error)
+      }
       unsubscribeEvents = null
+      isSubscribed = false
     }
 
-    eventStore.disconnect()
+    // Disconnect eventStore (closes SSE, stops polling, resets state)
+    try {
+      eventStore.disconnect()
+    } catch (error) {
+      console.error('[REALTIME cleanup] Disconnect error:', error)
+    }
+
+    // Reset all state
     isInitialized.value = false
+    syncInProgress.value = false
+    initializationPromise = null
+
+    console.log('[REALTIME cleanup] COMPLETE')
   }
 
   onMounted(() => {

@@ -7,16 +7,16 @@
       </div>
       <div class="header-right">
         <div class="status-indicator">
-          <span :class="['dot', botActive ? 'active' : 'inactive']"></span>
-          <span class="status-text">{{ botActive ? 'Bot global activo' : 'Bot pausado' }}</span>
+          <span :class="['dot', botGlobalPaused ? 'inactive' : 'active']"></span>
+          <span class="status-text">{{ botGlobalPaused ? 'Bot global pausado' : 'Bot global activo' }}</span>
         </div>
-        <button v-if="botActive" @click="pauseBot" class="pause-btn">
+        <button v-if="botGlobalPaused" @click="activateBot" class="activate-btn">
+          <i class="ri-play-line"></i>
+          Reanudar bot
+        </button>
+        <button v-else @click="pauseBot" class="pause-btn">
           <i class="ri-pause-line"></i>
           Pausar bot
-        </button>
-        <button v-else @click="activateBot" class="activate-btn">
-          <i class="ri-play-line"></i>
-          Activar bot
         </button>
         <button class="settings-btn">
           <i class="ri-settings-3-line"></i>
@@ -70,7 +70,7 @@ const { mdAndUp } = useDisplay()
 // Estado único para la conversación seleccionada
 const selectedConversationId = ref(null)
 const selectedConversation = ref(null)
-const botActive = ref(true)
+const botGlobalPaused = ref(false)  // true = paused, false = active
 const conversationCount = ref(0)
 
 // Computed
@@ -85,7 +85,8 @@ const selectConversation = (conversation) => {
 const pauseBot = async () => {
   try {
     await conversationService.pauseBot()
-    botActive.value = false
+    botGlobalPaused.value = true
+    console.log('[BandejaPagina] Bot pausado globalmente')
   } catch (error) {
     console.error('Error pausing bot:', error)
   }
@@ -94,9 +95,20 @@ const pauseBot = async () => {
 const activateBot = async () => {
   try {
     await conversationService.activateBot()
-    botActive.value = true
+    botGlobalPaused.value = false
+    console.log('[BandejaPagina] Bot reactivado globalmente')
   } catch (error) {
     console.error('Error activating bot:', error)
+  }
+}
+
+const loadBotStatus = async () => {
+  try {
+    const status = await conversationService.getBotStatus()
+    botGlobalPaused.value = status.is_paused
+    console.log('[BandejaPagina] Estado del bot cargado:', { is_paused: status.is_paused })
+  } catch (error) {
+    console.error('Error getting bot status:', error)
   }
 }
 
@@ -106,13 +118,8 @@ onMounted(async () => {
   const isAuth = await checkAuth()
   if (!isAuth) return
 
-  // TODO: Implementar endpoints en Django para getBotStatus
-  // try {
-  //   const status = await conversationService.getBotStatus()
-  //   botActive.value = status.status === 'ACTIVO'
-  // } catch (error) {
-  //   console.error('Error getting bot status:', error)
-  // }
+  // Cargar estado del bot global
+  await loadBotStatus()
 })
 </script>
 
