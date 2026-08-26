@@ -48,7 +48,7 @@ services:
     environment:
       DJANGO_SETTINGS_MODULE: config.settings
       DEBUG: "True"
-      ALLOWED_HOSTS: "localhost,127.0.0.1,nginx"
+      ALLOWED_HOSTS: "localhost,127.0.0.1,nginx,.ngrok-free.app,.ngrok-free.dev"
       SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
       DATABASE_URL: postgresql://${DB_USER:-taxicarga}:${DB_PASSWORD:-}@postgres:5432/${DB_NAME:-taxicarga_development}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}

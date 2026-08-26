@@ -2,11 +2,12 @@ import hmac
 import hashlib
 import json
 import logging
+import os
 from datetime import timedelta
 
 from django.conf import settings
 from django.db import models
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
@@ -224,17 +225,34 @@ def verify_ycloud_signature(request):
 
 
 @csrf_exempt
-@require_http_methods(["POST"])
+@require_http_methods(["GET", "POST"])
 def ycloud_webhook(request):
     """Webhook de YCloud - adaptador delgado que delega al procesador canónico.
 
-    Responsabilidades:
+    Soporta:
+    - GET: Verificación de webhook (Meta/YCloud webhook configuration)
+    - POST: Entrega de eventos (mensajes, estado, etc.)
+
+    Responsabilidades POST:
     1. Validar firma HMAC
     2. Registrar evento para idempotencia (WebhookEvent)
     3. Delegar persistencia a YCloudMessageProcessor.process_ycloud_event()
     4. Retornar HTTP 200 inmediatamente (no bloquear por bot processing)
     5. Disparar bot processing en background (si aplica)
     """
+    # VERIFICACIÓN DE WEBHOOK (GET request)
+    if request.method == "GET":
+        hub_mode = request.GET.get("hub.mode")
+        hub_challenge = request.GET.get("hub.challenge")
+        hub_verify_token = request.GET.get("hub.verify_token")
+
+        if hub_mode == "subscribe" and hub_verify_token == os.environ.get("YCLOUD_WEBHOOK_SECRET", ""):
+            logger.warning(f"[YCloud] Webhook verification successful")
+            return HttpResponse(hub_challenge, content_type="text/plain")
+
+        logger.warning(f"[YCloud] Webhook verification failed - invalid token or mode")
+        return HttpResponse("Unauthorized", status=401)
+
     from .event_trace_middleware import EventTrace
 
     logger.warning(f"[YCloud] WEBHOOK HANDLER EXECUTED - RECEIVED AT {timezone.now()}")
