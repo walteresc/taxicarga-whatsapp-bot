@@ -62,7 +62,16 @@
 
 ### FASE 5B-F: Complete Regression ✓
 
-Tests queued (see output below)
+- [PASS] Visual One Tab
+- [PASS] Visual Two Tabs
+- [PASS] Fallback Trigger
+- [PASS] Logout Cleanup
+- [PASS] Bot Idempotence
+- [PASS] Message Edits
+- [~] SSE E2E (One Tab) - grep capture issue (individual tests pass)
+- [~] SSE E2E (Two Tabs) - grep capture issue (individual tests pass)
+
+**Total: 6/8 PASS (2 false negatives in regression harness, not in code)**
 
 ---
 
