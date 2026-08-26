@@ -144,17 +144,49 @@ export const useEventStore = defineStore('events', () => {
   }
 
   /**
+   * Subscriber management (PASO 3: explicit subscription instead of watch)
+   */
+  const subscribers = new Set()
+
+  const subscribe = (handler) => {
+    subscribers.add(handler)
+    console.log(`[eventStore.subscribe] Added handler, total subscribers: ${subscribers.size}`)
+
+    // Return unsubscribe function
+    return () => {
+      subscribers.delete(handler)
+      console.log(`[eventStore.subscribe] Removed handler, total subscribers: ${subscribers.size}`)
+    }
+  }
+
+  const notifySubscribers = (event) => {
+    console.log(`[eventStore.notifySubscribers] Event ${event.type} to ${subscribers.size} subscribers`)
+    for (const handler of subscribers) {
+      try {
+        handler(event)
+      } catch (error) {
+        console.error('[eventStore.notifySubscribers] Handler failed:', error.message)
+      }
+    }
+  }
+
+  /**
    * Add event (deduped by ID)
    */
   const addEvent = (event) => {
     // Check if event already exists
     const exists = events.value.some(e => e.id === event.id)
     if (exists) {
+      console.log(`[eventStore.addEvent] Duplicate event ${event.id}, skipping`)
       return
     }
 
+    console.log(`[eventStore.addEvent] Adding event ${event.id} type=${event.type}`)
     events.value.push(event)
     lastCursor.value = event.id
+
+    // PASO 3: Notify subscribers AFTER dedup check and array update
+    notifySubscribers(event)
   }
 
   /**
@@ -419,6 +451,10 @@ export const useEventStore = defineStore('events', () => {
     getEventsByType,
     getConversationEvents,
     clear,
-    setSnapshotCursor,  // NUEVA: establecer cursor desde snapshot API
+    setSnapshotCursor,
+
+    // PASO 3: Explicit subscription
+    subscribe,
+    notifySubscribers,
   }
 })

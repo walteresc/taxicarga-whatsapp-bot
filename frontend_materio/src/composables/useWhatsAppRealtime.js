@@ -24,6 +24,7 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
   const isInitialized = ref(false)
   const syncInProgress = ref(false)
   let initializationPromise = null
+  let unsubscribeEvents = null  // PASO 4: Explicit subscription cleanup
 
   /**
    * PASO 2: Orden obligatorio de inicialización
@@ -103,7 +104,14 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
 
         // PASO 2B: Registrar listeners ANTES de conectar SSE
         console.log('[REALTIME CP8] Register event listeners')
-        subscribeToEvents()
+        console.log('[DEBUG] subscribeToEvents function:', typeof subscribeToEvents)
+        try {
+          subscribeToEvents()
+          console.log('[DEBUG] subscribeToEvents executed successfully')
+        } catch (e) {
+          console.error('[DEBUG] subscribeToEvents failed:', e.message)
+          throw e
+        }
 
         // PASO 2C: Connect SSE SOLO si cursor válido
         console.log('[REALTIME CP9] connect() with cursor:', eventStore.lastCursor)
@@ -180,45 +188,49 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
 
   /**
    * Subscribe to event store and update local state.
-   * Deduplication by event.id handles REST + SSE overlap.
+   * PASO 4: Using explicit subscription instead of watch
    */
   const subscribeToEvents = () => {
-    // Watch for new events
+    console.log('[REALTIME subscribeToEvents] ENTERED')
+
+    // PASO 4: Cleanup old subscription if exists
+    if (unsubscribeEvents) {
+      console.log('[REALTIME subscribeToEvents] Cleaning up old subscription')
+      unsubscribeEvents()
+      unsubscribeEvents = null
+    }
+
+    // Handler for each event
     const processEvent = (event) => {
-      console.log('[REALTIME processEvent] type=' + event.type + ', conv_id=' + event.conversation_id)
+      console.log('[REALTIME processEvent] type=' + event.type + ', conv_id=' + (event.conversation_id || event.data?.conversation_id) + ', correlation_id=' + (event.correlation_id || event.data?.correlation_id))
+
+      // Normalize event structure
+      const eventData = event.data || event
+
       // PRIORIDAD 7: Update bandeja/timeline based on event type
       switch (event.type) {
         case 'message.created':
-          handleMessageCreated(event, messagesStore, conversationsStore)
+          handleMessageCreated({ ...event, data: eventData }, messagesStore, conversationsStore)
           break
 
         case 'conversation.created':
         case 'conversation.updated':
-          handleConversationUpdated(event, conversationsStore)
+          handleConversationUpdated({ ...event, data: eventData }, conversationsStore)
           break
 
         case 'resync.required':
           handleResyncRequired(conversationsStore, messagesStore)
           break
+
+        default:
+          console.warn('[REALTIME] Unknown event type:', event.type)
       }
     }
 
-    // Process existing pending events
-    eventStore.events.forEach(processEvent)
-
-    // CRITICAL FIX: Watch for new events from SSE/polling
-    watch(
-      () => eventStore.events,
-      (newEvents, oldEvents) => {
-        // Only process NEW events (those added since last watch)
-        const oldIds = new Set(oldEvents?.map(e => e.id) || [])
-        const newOnlyEvents = newEvents.filter(e => !oldIds.has(e.id))
-
-        console.log('[REALTIME watch] ' + newOnlyEvents.length + ' new events')
-        newOnlyEvents.forEach(processEvent)
-      },
-      { deep: true }
-    )
+    // PASO 4: Subscribe to eventStore
+    console.log('[REALTIME subscribeToEvents] Registering subscription handler')
+    unsubscribeEvents = eventStore.subscribe(processEvent)
+    console.log('[REALTIME subscribeToEvents] Subscription registered')
   }
 
   /**
@@ -288,6 +300,13 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
    * PRIORIDAD 6: Lifecycle management
    */
   const cleanup = () => {
+    // PASO 4: Cleanup subscription
+    if (unsubscribeEvents) {
+      console.log('[REALTIME cleanup] Unsubscribing from events')
+      unsubscribeEvents()
+      unsubscribeEvents = null
+    }
+
     eventStore.disconnect()
     isInitialized.value = false
   }
