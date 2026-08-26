@@ -178,6 +178,7 @@ def verify_ycloud_signature(request):
     from django.conf import settings
     import os
 
+    body = request.body
     signature_header = request.headers.get('Ycloud-Signature', '')
 
     if not signature_header:
@@ -201,11 +202,13 @@ def verify_ycloud_signature(request):
     body = request.body
     secret = settings.YCLOUD_WEBHOOK_SECRET
 
-    # Diagnostic (safe - no secrets, only fingerprints)
+    # Diagnostic (SAFE - no payload, no secrets, only hashes and metadata)
     if os.environ.get('DEBUG'):
         body_hash_fp = hashlib.sha256(body).hexdigest()[:12]
         secret_fp = hashlib.sha256(secret.encode()).hexdigest()[:8]
-        logger.warning(f"[YCloud] Diagnostic: body_hash_fp={body_hash_fp}, secret_fp={secret_fp}, timestamp={timestamp}")
+        body_len = len(body)
+        content_type = request.headers.get('Content-Type', 'unknown')[:50]
+        logger.warning(f"[YCloud] HMAC_CHECK: body_len={body_len}, body_hash={body_hash_fp}, secret_hash={secret_fp}, ts={timestamp}, ct={content_type}")
 
     # OFFICIAL FORMAT: timestamp + "." + raw_body_bytes
     # Use bytes directly to preserve exact payload
@@ -219,7 +222,8 @@ def verify_ycloud_signature(request):
     match = hmac.compare_digest(signature, expected_digest)
 
     if not match and os.environ.get('DEBUG'):
-        logger.warning(f"[YCloud] Signature mismatch - expected={expected_digest[:8]}, got={signature[:8]}")
+        # SAFE: Only log signature comparison, not payload
+        logger.warning(f"[YCloud] HMAC_MISMATCH: expected={expected_digest[:8]}, got={signature[:8]}")
 
     return match
 
@@ -283,8 +287,6 @@ def ycloud_webhook(request):
         trace.log(3, "JSON_PARSE_ERROR", str(e))
         logger.error("[YCloud] Invalid JSON in YCloud webhook")
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
-
-    logger.warning(f"[YCloud] FULL PAYLOAD:\n{json.dumps(payload, indent=2)}")
 
     # 3. EXTRAER METADATOS
     event_type = payload.get('type') or payload.get('event')
@@ -510,7 +512,6 @@ def handle_inbound_message(data):
 
 def handle_advisor_message(data):
     """Asesor escribió desde WhatsApp Web (YCloud detectó)"""
-    logger.warning(f"[YCloud] handle_advisor_message PAYLOAD: {json.dumps(data)}")
 
     # Estructura: data['whatsappMessage']['to'] es el CLIENTE (not 'from' que es el bot)
     msg_data = data.get('whatsappMessage', {})
@@ -688,7 +689,6 @@ def send_via_ycloud(phone_number, message_text):
     }
 
     logger.info(f"[YCloud] Sending to {recipient}: {message_text[:50]}")
-    logger.warning(f"[YCloud] PAYLOAD: {json.dumps(payload)}")
 
     try:
         response = requests.post(url, json=payload, headers=headers, timeout=10)
