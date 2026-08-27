@@ -56,6 +56,7 @@ export const useMessagesStore = defineStore('messages', () => {
 
   /**
    * Load initial messages for a conversation from REST.
+   * Mutates existing array (or creates new one) to ensure reactivity in computed properties.
    */
   const loadConversationMessages = async (conversationId) => {
     try {
@@ -75,19 +76,27 @@ export const useMessagesStore = defineStore('messages', () => {
       const data = await response.json()
       console.log('[messagesStore] Response JSON received, type:', typeof data, 'isArray:', Array.isArray(data))
 
+      // Ensure array exists
+      if (!messages.value[conversationId]) {
+        messages.value[conversationId] = []
+      }
+
+      let loaded = []
       if (Array.isArray(data)) {
-        messages.value[conversationId] = data.map(normalizeMessage)
+        loaded = data.map(normalizeMessage)
         console.log('[messagesStore] Loaded array: count=' + data.length)
       } else if (data.messages) {
-        messages.value[conversationId] = data.messages.map(normalizeMessage)
+        loaded = data.messages.map(normalizeMessage)
         console.log('[messagesStore] Loaded from data.messages: count=' + data.messages.length)
       } else {
-        messages.value[conversationId] = []
         console.log('[messagesStore] No messages found in response, data keys:', Object.keys(data))
       }
 
+      // Mutate the array instead of replacing it (for reactivity)
+      messages.value[conversationId].splice(0, Infinity, ...loaded)
+
       // Sort by timestamp
-      if (messages.value[conversationId] && messages.value[conversationId].length > 0) {
+      if (messages.value[conversationId].length > 0) {
         messages.value[conversationId].sort((a, b) => {
           const aTime = new Date(a.timestamp || a.fecha_mensaje || 0).getTime()
           const bTime = new Date(b.timestamp || b.fecha_mensaje || 0).getTime()
@@ -97,7 +106,12 @@ export const useMessagesStore = defineStore('messages', () => {
       }
     } catch (error) {
       console.error(`[messagesStore] Failed to load messages for conversation ${conversationId}:`, error.message)
-      messages.value[conversationId] = []
+      // Clear on error (mutate instead of replace)
+      if (!messages.value[conversationId]) {
+        messages.value[conversationId] = []
+      } else {
+        messages.value[conversationId].splice(0, Infinity)
+      }
     }
   }
 
@@ -105,14 +119,19 @@ export const useMessagesStore = defineStore('messages', () => {
    * Clear messages for a conversation.
    */
   const clearConversation = (conversationId) => {
-    messages.value[conversationId] = []
+    if (messages.value[conversationId]) {
+      messages.value[conversationId].splice(0, Infinity)
+    }
   }
 
   /**
    * Clear all messages (for logout).
+   * Delete all keys without replacing the object (preserves references to computed properties).
    */
   const clear = () => {
-    messages.value = {}
+    Object.keys(messages.value).forEach(key => {
+      delete messages.value[key]
+    })
   }
 
   return {

@@ -138,6 +138,8 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { conversationService } from '@/services/conversationService'
 import ChannelDropdown from './components/ChannelDropdown.vue'
 
+import { useConversationsStore } from '@/stores/conversationsStore'
+
 const props = defineProps({
   selectedConversationId: {
     type: Number,
@@ -147,18 +149,18 @@ const props = defineProps({
 
 const emit = defineEmits(['conversation-selected', 'update-count'])
 
+const conversationsStore = useConversationsStore()
 const loading = ref(false)
 const error = ref(false)
 const searchPhone = ref('')
 const activeFilters = ref(['Todas'])
 const activeChannels = ref(['Todos'])
-const conversations = ref([])
 const showFilterMenu = ref(false)
 
 const filterTabs = ['Todas', 'Mías', 'No leídas']
 const advancedFilterTags = ['Sin asignar', 'Bot atendiendo', 'Asesor atendiendo', 'Cerradas']
 
-const totalCount = computed(() => conversations.value.length)
+const totalCount = computed(() => conversationsStore.conversations.length)
 
 const activeFiltersCount = computed(() => {
   const count = activeFilters.value.filter(f => f !== 'Todas').length +
@@ -173,7 +175,7 @@ const hasActiveFilters = computed(() => {
 })
 
 const filteredConversations = computed(() => {
-  let filtered = conversations.value
+  let filtered = conversationsStore.conversations
 
   if (searchPhone.value) {
     const query = searchPhone.value.toLowerCase()
@@ -341,31 +343,11 @@ const formatPhone = phone => {
   return phone
 }
 
-// Auto-refresh polling
-let pollingInterval = null
-let lastDataHash = null
-
-const loadConversationsWithChangeDetection = async () => {
+const loadConversations = async () => {
   loading.value = true
   error.value = false
   try {
-    const filters = {}
-    if (searchPhone.value) filters.q = searchPhone.value
-
-    if (!activeFilters.value.includes('Todos')) {
-      if (activeFilters.value.includes('No leídas')) filters.state = 'unread'
-      else if (activeFilters.value.includes('Mías')) filters.state = 'assigned'
-      else if (activeFilters.value.includes('Sin asignar')) filters.state = 'unassigned'
-    }
-
-    const data = await conversationService.getActiveConversations(filters)
-    const newHash = JSON.stringify(data.conversations).slice(0, 100)
-
-    if (newHash !== lastDataHash) {
-      const newConvs = data.conversations || []
-      conversations.value = [...newConvs]
-      lastDataHash = newHash
-    }
+    await conversationsStore.loadInitial()
   } catch (err) {
     console.error('Error loading conversations:', err)
     error.value = true
@@ -374,38 +356,14 @@ const loadConversationsWithChangeDetection = async () => {
   }
 }
 
-const loadConversations = loadConversationsWithChangeDetection
-
-// Handle realtime message events from server
-const handleMessageCreated = (event) => {
-  if (event.detail && event.detail.conversation_id) {
-    // Reload conversations when new message arrives to reorder them
-    loadConversationsWithChangeDetection()
-  }
-}
-
-const handleConversationUpdated = (event) => {
-  if (event.detail && event.detail.conversation_id) {
-    // Reload when conversation state changes (takeover, etc)
-    loadConversationsWithChangeDetection()
-  }
-}
-
 onMounted(async () => {
-  await loadConversationsWithChangeDetection()
-
-  document.addEventListener('message.created', handleMessageCreated)
-  document.addEventListener('conversation.updated', handleConversationUpdated)
+  // Load initial conversations from store
+  // useWhatsAppRealtime already handles SSE updates to conversationsStore
+  await loadConversations()
 })
 
 onUnmounted(() => {
-  // Clean up polling on component unmount
-  if (pollingInterval) {
-    clearInterval(pollingInterval)
-  }
-  // Clean up event listeners
-  document.removeEventListener('message.created', handleMessageCreated)
-  document.removeEventListener('conversation.updated', handleConversationUpdated)
+  // Cleanup: store handles its own lifecycle
 })
 
 // Emit count update whenever filtered results change

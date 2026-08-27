@@ -54,17 +54,22 @@ export const useConversationsStore = defineStore('conversations', () => {
 
   /**
    * Load initial state from REST.
+   * Mutates existing array to ensure reactivity in computed properties.
    */
   const loadInitial = async () => {
     try {
       const response = await fetch('/dashboard/whatsapp/conversaciones/api/active/')
       const data = await response.json()
 
+      let loaded = []
       if (Array.isArray(data)) {
-        conversations.value = data
+        loaded = data
       } else if (data.conversations) {
-        conversations.value = data.conversations
+        loaded = data.conversations
       }
+
+      // Mutate the array instead of replacing it (for reactivity)
+      conversations.value.splice(0, Infinity, ...loaded)
 
       reorderConversations()
     } catch (error) {
@@ -74,9 +79,10 @@ export const useConversationsStore = defineStore('conversations', () => {
 
   /**
    * Clear store (for logout).
+   * Mutate the array instead of replacing it.
    */
   const clear = () => {
-    conversations.value = []
+    conversations.value.splice(0, Infinity)
   }
 
   return {
