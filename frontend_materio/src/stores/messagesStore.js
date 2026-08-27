@@ -7,36 +7,10 @@
 
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { normalizeMessage } from '@/utils/messageNormalizer'
 
 export const useMessagesStore = defineStore('messages', () => {
   const messages = ref({})
-
-  /**
-   * Normalize sender value: customer→client, advisor→advisor, bot→bot
-   * Ensures all components use canonical sender values
-   */
-  const normalizeSender = (senderValue) => {
-    const normalized = {
-      'customer': 'client',
-      'cliente': 'client',
-      'entrante': 'client',
-      'whatsapp_customer': 'client',
-      'advisor': 'advisor',
-      'asesor': 'advisor',
-      'bot': 'bot',
-    }
-    return normalized[senderValue] || 'client'
-  }
-
-  /**
-   * Normalize message before storing
-   */
-  const normalizeMessage = (msg) => {
-    return {
-      ...msg,
-      sender: normalizeSender(msg.sender),
-    }
-  }
 
   /**
    * Insert or update message in conversation.
@@ -45,22 +19,23 @@ export const useMessagesStore = defineStore('messages', () => {
    */
   const upsertMessage = (msg) => {
     const normalizedMsg = normalizeMessage(msg)
-    const { conversation_id, id } = normalizedMsg
+    const conversationId = normalizedMsg.conversationId
+    const id = normalizedMsg.id
 
-    if (!messages.value[conversation_id]) {
-      messages.value[conversation_id] = []
+    if (!messages.value[conversationId]) {
+      messages.value[conversationId] = []
     }
 
-    const existing = messages.value[conversation_id].findIndex(m => m.id === id)
+    const existing = messages.value[conversationId].findIndex(m => m.id === id)
 
     if (existing >= 0) {
-      messages.value[conversation_id][existing] = { ...messages.value[conversation_id][existing], ...normalizedMsg }
+      messages.value[conversationId][existing] = { ...messages.value[conversationId][existing], ...normalizedMsg }
     } else {
-      messages.value[conversation_id].push(normalizedMsg)
+      messages.value[conversationId].push(normalizedMsg)
     }
 
     // Sort by timestamp ASC
-    messages.value[conversation_id].sort((a, b) => {
+    messages.value[conversationId].sort((a, b) => {
       const aTime = new Date(a.timestamp || 0).getTime()
       const bTime = new Date(b.timestamp || 0).getTime()
       return aTime - bTime

@@ -15,7 +15,7 @@ const REAL_API_RESPONSE = {
   messages: [
     {
       id: 1,
-      sender: 'client',
+      senderType: 'customer',
       senderName: 'Walter',
       source: 'whatsapp_customer',
       badge: null,

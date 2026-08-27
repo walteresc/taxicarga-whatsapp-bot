@@ -8,14 +8,14 @@ import { mount } from '@vue/test-utils'
 import MessageBubble from './MessageBubble.vue'
 
 describe('MessageBubble', () => {
-  it('should render client message with correct styling', () => {
+  it('should render customer message with correct styling and BEM classes', () => {
     const wrapper = mount(MessageBubble, {
       props: {
         message: {
           id: 1,
-          sender: 'client',
+          senderType: 'customer',
           senderName: 'Walter',
-          type: 'text',
+          contentType: 'text',
           text: 'Hola, ¿cómo están?',
           timestamp: '2026-08-26T20:00:00+00:00',
           status: 'recibido',
@@ -23,13 +23,14 @@ describe('MessageBubble', () => {
       },
     })
 
-    const container = wrapper.find('[data-sender="client"]')
+    const container = wrapper.find('[data-sender="customer"]')
     expect(container.exists()).toBe(true)
     expect(container.classes()).toContain('message-container')
-    expect(container.classes()).toContain('client')
+    expect(container.classes()).toContain('message-container--customer')
 
-    const bubble = wrapper.find('.message-bubble.client')
+    const bubble = wrapper.find('.message-bubble--customer')
     expect(bubble.exists()).toBe(true)
+    expect(bubble.classes()).toContain('message-bubble')
 
     const text = wrapper.text()
     expect(text).toContain('Hola, ¿cómo están?')
@@ -40,9 +41,9 @@ describe('MessageBubble', () => {
       props: {
         message: {
           id: 2,
-          sender: 'bot',
+          senderType: 'bot',
           senderName: 'Bot Taxi',
-          type: 'text',
+          contentType: 'text',
           text: 'Buenos días, ¿en qué puedo ayudarte?',
           timestamp: '2026-08-26T20:01:00+00:00',
           status: 'sent',
@@ -51,9 +52,9 @@ describe('MessageBubble', () => {
     })
 
     const container = wrapper.find('[data-sender="bot"]')
-    expect(container.classes()).toContain('bot')
+    expect(container.classes()).toContain('message-container--bot')
 
-    const bubble = wrapper.find('.message-bubble.bot')
+    const bubble = wrapper.find('.message-bubble--bot')
     expect(bubble.exists()).toBe(true)
 
     const text = wrapper.text()
@@ -65,9 +66,9 @@ describe('MessageBubble', () => {
       props: {
         message: {
           id: 3,
-          sender: 'advisor',
+          senderType: 'advisor',
           senderName: 'Juan Pérez',
-          type: 'text',
+          contentType: 'text',
           text: 'Entiendo tu solicitud',
           timestamp: '2026-08-26T20:02:00+00:00',
           status: 'delivered',
@@ -76,9 +77,9 @@ describe('MessageBubble', () => {
     })
 
     const container = wrapper.find('[data-sender="advisor"]')
-    expect(container.classes()).toContain('advisor')
+    expect(container.classes()).toContain('message-container--advisor')
 
-    const bubble = wrapper.find('.message-bubble.advisor')
+    const bubble = wrapper.find('.message-bubble--advisor')
     expect(bubble.exists()).toBe(true)
 
     const senderName = wrapper.find('.sender-name')
@@ -92,7 +93,7 @@ describe('MessageBubble', () => {
       props: {
         message: {
           id: 1,
-          sender: 'client',
+          senderType: 'customer',
           senderName: 'Walter',
           type: 'text',
           text: 'Test',
@@ -108,9 +109,9 @@ describe('MessageBubble', () => {
       props: {
         message: {
           id: 2,
-          sender: 'bot',
+          senderType: 'bot',
           senderName: 'Bot Taxi',
-          type: 'text',
+          contentType: 'text',
           text: 'Test',
           timestamp: '2026-08-26T20:01:00+00:00',
         },
@@ -126,7 +127,7 @@ describe('MessageBubble', () => {
       props: {
         message: {
           id: 1,
-          sender: 'client',
+          senderType: 'customer',
           senderName: 'Walter',
           type: 'text',
           text: 'Hola',
@@ -152,9 +153,9 @@ describe('MessageBubble', () => {
       props: {
         message: {
           id: 1,
-          sender: 'client',
+          senderType: 'customer',
           senderName: 'Walter',
-          type: 'text',
+          contentType: 'text',
           text: longText,
           timestamp: '2026-08-26T20:00:00+00:00',
         },
@@ -165,10 +166,10 @@ describe('MessageBubble', () => {
     expect(messageText.exists()).toBe(true)
     expect(messageText.text()).toBe(longText)
 
-    // Verify component has CSS classes for wrapping (actual CSS rendering may vary in tests)
+    // Verify component has BEM modifier class for customer
     const bubble = wrapper.find('.message-bubble')
     expect(bubble.exists()).toBe(true)
-    expect(bubble.classes()).toContain('client')
+    expect(bubble.classes()).toContain('message-bubble--customer')
   })
 
   it('should include data-testid for Playwright', () => {
@@ -176,9 +177,9 @@ describe('MessageBubble', () => {
       props: {
         message: {
           id: 145,
-          sender: 'client',
+          senderType: 'customer',
           senderName: 'Walter',
-          type: 'text',
+          contentType: 'text',
           text: 'REAL-0010',
           timestamp: '2026-08-26T22:34:15+00:00',
         },
@@ -187,7 +188,7 @@ describe('MessageBubble', () => {
 
     expect(wrapper.attributes('data-testid')).toBe('message-row-145')
     expect(wrapper.find('[data-testid="message-bubble-145"]').exists()).toBe(true)
-    expect(wrapper.attributes('data-sender')).toBe('client')
+    expect(wrapper.attributes('data-sender')).toBe('customer')
   })
 
   it('should support all required fields: text, time, status', () => {
@@ -195,7 +196,7 @@ describe('MessageBubble', () => {
       props: {
         message: {
           id: 1,
-          sender: 'client',
+          senderType: 'customer',
           senderName: 'Walter',
           type: 'text',
           text: 'Mensaje de prueba',

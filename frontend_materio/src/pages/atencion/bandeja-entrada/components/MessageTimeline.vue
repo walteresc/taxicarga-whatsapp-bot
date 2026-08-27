@@ -33,10 +33,10 @@
           :key="message.id"
           :data-testid="`message-bubble-${message.id}`"
         >
-          <!-- Use MensajeMedia for WhatsApp multimedia messages, MessageBubble for legacy text -->
-          <MensajeMedia v-if="message.tipo && message.tipo !== 'internal-note'" :message="message" />
-          <MessageBubble v-else-if="message.type !== 'internal-note'" :message="message" :data-testid="`bubble-${message.id}`" />
-          <InternalNote v-else :note="message" />
+          <!-- Canonical contentType determines rendering -->
+          <MensajeMedia v-if="isMultimedia(message.contentType)" :message="message" />
+          <InternalNote v-else-if="message.contentType === 'internal-note'" :note="message" />
+          <MessageBubble v-else :message="message" :data-testid="`bubble-${message.id}`" />
         </div>
       </div>
     </div>
@@ -57,6 +57,11 @@ const props = defineProps({
   },
   loading: Boolean,
 })
+
+// Check if contentType is multimedia (not text or internal-note)
+const isMultimedia = (contentType) => {
+  return ['image', 'audio', 'video', 'document', 'location'].includes(contentType)
+}
 
 const messageGroups = computed(() => {
   return groupMessagesByDate(props.messages)
