@@ -41,6 +41,7 @@
           :conversation-id="selectedConversationId"
           :conversation="selectedConversation"
           :bot-global-paused="botGlobalPaused"
+          :effective-bot-paused="effectiveBotPaused"
         />
       </div>
 
@@ -76,6 +77,13 @@ const conversationCount = ref(0)
 
 // Computed
 const isDesktop = computed(() => mdAndUp.value)
+
+// CORRECCIÓN 1: Estado efectivo del bot = global OR conversación individual
+const effectiveBotPaused = computed(() => {
+  const globalPaused = botGlobalPaused.value
+  const conversationPaused = selectedConversation.value?.bot_paused ?? false
+  return globalPaused || conversationPaused
+})
 
 // Métodos
 const selectConversation = (conversation) => {

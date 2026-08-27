@@ -1,1 +1,0 @@
-import{_ as n,o as r,c as o,a}from"./index-BvEQIMvD.js";const l={};function s(t,e){return r(),o("div",null,[...e[0]||(e[0]=[a("h1",null,"Dashboard",-1),a("p",null,"Página principal del CRM TaxiCarga",-1)])])}const i=n(l,[["render",s]]);export{i as default};

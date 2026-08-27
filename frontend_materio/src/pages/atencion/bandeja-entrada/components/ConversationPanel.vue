@@ -6,7 +6,7 @@
     <!-- Chat -->
     <div v-else class="chat-content" data-testid="chat-content">
       <!-- Header -->
-      <ConversationHeader :conversation="conversation" :bot-global-paused="botGlobalPaused" class="conversation-header" data-testid="conversation-header" />
+      <ConversationHeader :conversation="conversation" :bot-global-paused="botGlobalPaused" :effective-bot-paused="effectiveBotPaused" class="conversation-header" data-testid="conversation-header" />
 
       <!-- Messages -->
       <MessageTimeline :messages="messages" :loading="loadingMessages" class="message-timeline" data-testid="message-timeline-wrapper" />
@@ -16,6 +16,7 @@
         class="chat-composer"
         :attention-mode="conversation?.attentionMode || 'unassigned'"
         :advisor-name="conversation?.responsable?.nombre || 'Walter Escobar'"
+        :effective-bot-paused="effectiveBotPaused"
         @send-message="handleSendMessage"
         @take-control="handleTakeControl"
         @assign-me="handleAssignMe"
@@ -45,6 +46,10 @@ const props = defineProps({
     default: null,
   },
   botGlobalPaused: {
+    type: Boolean,
+    default: false,
+  },
+  effectiveBotPaused: {
     type: Boolean,
     default: false,
   },

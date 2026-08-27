@@ -14,8 +14,10 @@ import UserProfile from '@/layouts/components/UserProfile.vue'
 import { useWhatsAppRealtime } from '@/composables/useWhatsAppRealtime'
 import { useConversationsStore } from '@/stores/conversationsStore'
 import { useMessagesStore } from '@/stores/messagesStore'
+import { useAuthGuard } from '@/composables/useAuthGuard'
 
 const route = useRoute()
+const { checkAuth } = useAuthGuard()
 const hideFooter = route.meta?.hideFooter ?? false
 const isInboxRoute = computed(() => route.path.includes('bandeja-entrada'))
 
@@ -27,7 +29,14 @@ const { initialize, cleanup } = useWhatsAppRealtime(conversationsStore, messages
 onMounted(async () => {
   console.log('[LAYOUT] DefaultLayoutWithVerticalNav mounted')
   try {
-    console.log('[LAYOUT] Calling initialize()...')
+    // CORRECCIÓN 2: Verify authentication before initializing SSE
+    console.log('[LAYOUT] Checking authentication...')
+    const isAuthenticated = await checkAuth()
+    if (!isAuthenticated) {
+      console.warn('[LAYOUT] Not authenticated, skipping real-time initialization')
+      return
+    }
+    console.log('[LAYOUT] Authentication verified, calling initialize()...')
     await initialize()
     console.log('[LAYOUT] initialize() completed successfully')
   } catch (error) {

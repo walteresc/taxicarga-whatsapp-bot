@@ -1,1 +1,0 @@
-import{_ as n,o,c as t,a as s}from"./index-BvEQIMvD.js";const r={};function a(c,e){return o(),t("div",null,[...e[0]||(e[0]=[s("h1",null,"Leads",-1),s("p",null,"Gesti�n de leads y prospectos",-1)])])}const d=n(r,[["render",a]]);export{d as default};
