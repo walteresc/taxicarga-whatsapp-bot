@@ -27,12 +27,17 @@ export const useMessagesStore = defineStore('messages', () => {
     }
 
     const existing = messages.value[conversationId].findIndex(m => m.id === id)
+    let upsertResult = 'inserted'
 
     if (existing >= 0) {
       messages.value[conversationId][existing] = { ...messages.value[conversationId][existing], ...normalizedMsg }
+      upsertResult = 'updated'
     } else {
       messages.value[conversationId].push(normalizedMsg)
     }
+
+    // TRABAJO A: Log upsert
+    console.log(`[messagesStore.upsertMessage] ${upsertResult} message_id=${id} in conv_id=${conversationId}`)
 
     // Sort by timestamp ASC
     messages.value[conversationId].sort((a, b) => {

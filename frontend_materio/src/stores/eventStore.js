@@ -38,6 +38,25 @@ export const useEventStore = defineStore('events', () => {
   const instanceId = Math.random().toString(36).substring(7)
   const connectionLog = ref([])
 
+  // TRABAJO A: Real-time event diagnostics
+  const diagnostics = {
+    instanceId,
+    connectionState: 'initial',
+    lastCursor: '0',
+    receivedEvents: [],      // All events received from SSE
+    dispatchedEvents: [],    // Events dispatched to subscribers
+    subscriberCount: 0,
+    sseConnectionCount: 0
+  }
+
+  // Expose diagnostics globally
+  if (typeof window !== 'undefined') {
+    if (!window.__WHATSAPP_REALTIME_DIAGNOSTICS__) {
+      window.__WHATSAPP_REALTIME_DIAGNOSTICS__ = {}
+    }
+    window.__WHATSAPP_REALTIME_DIAGNOSTICS__[instanceId] = diagnostics
+  }
+
   const logConnection = (action, reason, details = {}) => {
     const timestamp = new Date().toISOString()
     const stack = new Error().stack?.split('\n').slice(2, 5).join(' | ') || ''
@@ -223,17 +242,30 @@ export const useEventStore = defineStore('events', () => {
 
   const subscribe = (handler) => {
     subscribers.add(handler)
+    diagnostics.subscriberCount = subscribers.size
     console.log(`[eventStore.subscribe] Added handler, total subscribers: ${subscribers.size}`)
 
     // Return unsubscribe function
     return () => {
       subscribers.delete(handler)
+      diagnostics.subscriberCount = subscribers.size
       console.log(`[eventStore.subscribe] Removed handler, total subscribers: ${subscribers.size}`)
     }
   }
 
   const notifySubscribers = (event) => {
-    console.log(`[eventStore.notifySubscribers] Event ${event.type} to ${subscribers.size} subscribers`)
+    console.log(`[eventStore.notifySubscribers] Event ${event.type} (id=${event.id}) to ${subscribers.size} subscribers`)
+
+    // TRABAJO A: Record dispatch
+    diagnostics.dispatchedEvents.push({
+      id: event.id,
+      type: event.type,
+      message_id: event.message_id,
+      conversation_id: event.conversation_id,
+      replay_of: event.replay_of,
+      timestamp: new Date().toISOString()
+    })
+
     for (const handler of subscribers) {
       try {
         handler(event)
@@ -247,6 +279,16 @@ export const useEventStore = defineStore('events', () => {
    * Add event (deduped by ID)
    */
   const addEvent = (event) => {
+    // TRABAJO A: Record received event
+    diagnostics.receivedEvents.push({
+      id: event.id,
+      type: event.type,
+      message_id: event.message_id,
+      conversation_id: event.conversation_id,
+      replay_of: event.replay_of,
+      timestamp: new Date().toISOString()
+    })
+
     // Check if event already exists
     const exists = events.value.some(e => e.id === event.id)
     if (exists) {
@@ -254,9 +296,10 @@ export const useEventStore = defineStore('events', () => {
       return
     }
 
-    console.log(`[eventStore.addEvent] Adding event ${event.id} type=${event.type}`)
+    console.log(`[eventStore.addEvent] Adding event ${event.id} type=${event.type} message_id=${event.message_id} replay_of=${event.replay_of || 'N/A'}`)
     events.value.push(event)
     lastCursor.value = event.id
+    diagnostics.lastCursor = event.id
 
     // PASO 3: Notify subscribers AFTER dedup check and array update
     notifySubscribers(event)

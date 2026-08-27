@@ -248,9 +248,27 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
    */
   const handleMessageCreated = (event, messagesStore, conversationsStore) => {
     const eventData = event.data || event
-    const { message_id, conversation_id, content, direction, origen, tipo, timestamp, from } = eventData
+    const { message_id, conversation_id, content, direction, origen, tipo, timestamp, from, id, replay_of } = eventData
 
-    console.log('[handleMessageCreated] message_id=' + message_id + ', conversation_id=' + conversation_id + ', content=' + (content ? content.substring(0, 30) : 'null'))
+    console.log('[handleMessageCreated] EXEC: message_id=' + message_id + ', conversation_id=' + conversation_id + ', event_id=' + id + ', replay_of=' + (replay_of || 'N/A'))
+
+    // TRABAJO A: Record handler execution
+    if (typeof window !== 'undefined' && window.__WHATSAPP_REALTIME_DIAGNOSTICS__) {
+      const diagnostics = Object.values(window.__WHATSAPP_REALTIME_DIAGNOSTICS__)[0]
+      if (diagnostics && !diagnostics.handledEvents) {
+        diagnostics.handledEvents = []
+      }
+      if (diagnostics) {
+        diagnostics.handledEvents.push({
+          id: id,
+          type: 'message.created',
+          message_id: message_id,
+          conversation_id: conversation_id,
+          replay_of: replay_of,
+          timestamp: new Date().toISOString()
+        })
+      }
+    }
 
     // Update or create message in timeline
     if (messagesStore && messagesStore.upsertMessage) {
