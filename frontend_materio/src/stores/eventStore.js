@@ -97,9 +97,26 @@ export const useEventStore = defineStore('events', () => {
       console.log(`[SSE] EventSource created, readyState=${eventSource.value.readyState}`)
 
       // SSE event types from backend
-      eventSource.value.addEventListener('message.created', handleSSEEvent)
-      eventSource.value.addEventListener('conversation.created', handleSSEEvent)
-      eventSource.value.addEventListener('conversation.updated', handleSSEEvent)
+      // CP16 FIX: Create typed handlers to preserve event.type in data
+      const createEventHandler = (eventType) => {
+        return (event) => {
+          try {
+            const data = JSON.parse(event.data)
+            // CP16: Add event type to data so subscribers know which event it is
+            data.type = eventType
+            data.id = event.lastEventId || '0'  // Preserve SSE id
+            console.log(`[CP16-Handler] ${eventType} received, id=${data.id}`)
+            addEvent(data)
+            lastEventTime.value = new Date()
+          } catch (error) {
+            console.error(`[CP16-Handler] Error parsing ${eventType}:`, error)
+          }
+        }
+      }
+
+      eventSource.value.addEventListener('message.created', createEventHandler('message.created'))
+      eventSource.value.addEventListener('conversation.created', createEventHandler('conversation.created'))
+      eventSource.value.addEventListener('conversation.updated', createEventHandler('conversation.updated'))
 
       // SSE event: resync.required
       eventSource.value.addEventListener('resync.required', handleResyncRequired)
@@ -130,19 +147,6 @@ export const useEventStore = defineStore('events', () => {
       sseError.value = error.message
       logConnection('openSSE', 'exception_caught', { error: error.message })
       startPolling() // Fall back to polling
-    }
-  }
-
-  /**
-   * Handle SSE event
-   */
-  const handleSSEEvent = (event) => {
-    try {
-      const data = JSON.parse(event.data)
-      addEvent(data)
-      lastEventTime.value = new Date()
-    } catch (error) {
-      console.error('Error parsing SSE event:', error)
     }
   }
 
