@@ -8,6 +8,7 @@ from apps.integrations.enums import OwnerState
 from apps.integrations.models import ConversationControl
 from apps.whatsapp.identity import AmbiguousWhatsAppIdentity, resolve_whatsapp_identity
 from apps.whatsapp.models import ConversacionWhatsApp, WhatsAppChannel
+from apps.whatsapp.test_factories import get_unique_phone
 
 
 class WhatsAppPhoneIdentityTests(TestCase):
@@ -48,10 +49,13 @@ class WhatsAppPhoneIdentityTests(TestCase):
         self.assertEqual({conversation.id for _, _, conversation in results}, {results[0][2].id})
 
     def test_historical_duplicate_identity_raises_controlled_error(self):
-        Cliente.objects.create(telefono="+51999999999")
-        Cliente.objects.create(telefono="51-999-999-999")
+        test_phone = get_unique_phone("test_historical_duplicate_identity_raises_controlled_error")
+        # Remove + prefix for variant
+        phone_variant = test_phone.lstrip('+') if test_phone.startswith('+') else test_phone
+        Cliente.objects.create(telefono=test_phone)
+        Cliente.objects.create(telefono=phone_variant)
         with self.assertRaises(AmbiguousWhatsAppIdentity):
-            resolve_whatsapp_identity("51999999999", self.channel)
+            resolve_whatsapp_identity(phone_variant, self.channel)
 
     def test_same_phone_different_channels_share_client_not_conversation(self):
         other = WhatsAppChannel.objects.create(

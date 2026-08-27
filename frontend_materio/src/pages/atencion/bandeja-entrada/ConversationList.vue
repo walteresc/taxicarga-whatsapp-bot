@@ -172,14 +172,9 @@ const hasActiveFilters = computed(() => {
     !activeChannels.value.includes('Todos')
 })
 
-const selectedHiddenChannels = computed(() => {
-  return hiddenChannels.filter(channel => activeChannels.value.includes(channel))
-})
-
 const filteredConversations = computed(() => {
   let filtered = conversations.value
 
-  // Apply search filter
   if (searchPhone.value) {
     const query = searchPhone.value.toLowerCase()
     filtered = filtered.filter(
@@ -191,7 +186,6 @@ const filteredConversations = computed(() => {
     )
   }
 
-  // Apply state filters
   if (!activeFilters.value.includes('Todas')) {
     filtered = filtered.filter(conv => {
       if (activeFilters.value.includes('Mías') && (!conv.responsable || !conv.responsable.id)) return false
@@ -204,13 +198,13 @@ const filteredConversations = computed(() => {
     })
   }
 
-  // Apply channel filters
   if (!activeChannels.value.includes('Todos')) {
     filtered = filtered.filter(conv => activeChannels.value.includes(conv.channel))
   }
 
   return filtered
 })
+
 
 const toggleFilterMenu = () => {
   showFilterMenu.value = !showFilterMenu.value
@@ -365,11 +359,11 @@ const loadConversationsWithChangeDetection = async () => {
     }
 
     const data = await conversationService.getActiveConversations(filters)
-
-    // Hash the data to detect real changes
     const newHash = JSON.stringify(data.conversations).slice(0, 100)
+
     if (newHash !== lastDataHash) {
-      conversations.value = data.conversations || []
+      const newConvs = data.conversations || []
+      conversations.value = [...newConvs]
       lastDataHash = newHash
     }
   } catch (err) {
@@ -397,38 +391,9 @@ const handleConversationUpdated = (event) => {
   }
 }
 
-onMounted(() => {
-  loadConversationsWithChangeDetection()
+onMounted(async () => {
+  await loadConversationsWithChangeDetection()
 
-  // Start polling every 10 seconds and only update on real changes (change detection prevents unnecessary re-renders)
-  pollingInterval = setInterval(() => {
-    loadConversationsWithChangeDetection()
-  }, 10000)
-
-  // Connect to global SSE for real-time updates
-  const sseUrl = '/dashboard/whatsapp/sse/'
-  const eventSource = new EventSource(sseUrl)
-
-  eventSource.addEventListener('message.created', (event) => {
-    const data = JSON.parse(event.data)
-    console.log('[SSE] New message:', data)
-    // Reload conversations immediately when new message arrives
-    loadConversationsWithChangeDetection()
-  })
-
-  eventSource.addEventListener('conversation.updated', (event) => {
-    const data = JSON.parse(event.data)
-    console.log('[SSE] Conversation updated:', data)
-    // Reload conversations when state changes
-    loadConversationsWithChangeDetection()
-  })
-
-  eventSource.onerror = (error) => {
-    console.error('[SSE] Connection error:', error)
-    eventSource.close()
-  }
-
-  // Listen for realtime events from server
   document.addEventListener('message.created', handleMessageCreated)
   document.addEventListener('conversation.updated', handleConversationUpdated)
 })

@@ -1,0 +1,28 @@
+[DIAG] Navigating to localhost:3000/dashboard/bandeja-entrada/...
+[DIAG] Waiting for initialize() completion (5 seconds)...
+
+================================================================================
+DIAGNOSTIC RESULTS
+================================================================================
+
+[CHECKPOINTS] Found 0 checkpoint logs:
+Traceback (most recent call last):
+  File "C:\Users\user\AppData\Local\Temp\claude\d--DESARROLLO-IA-Proyecto-taxi_carga\7287622d-68ce-4eb1-9c02-aa0f258288a8\scratchpad\diagnostic_initialize.py", line 176, in <module>
+    asyncio.run(run())
+    ~~~~~~~~~~~^^^^^^^
+  File "C:\Users\user\AppData\Local\Programs\Python\Python314\Lib\asyncio\runners.py", line 204, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "C:\Users\user\AppData\Local\Programs\Python\Python314\Lib\asyncio\runners.py", line 127, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\user\AppData\Local\Programs\Python\Python314\Lib\asyncio\base_events.py", line 719, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+  File "C:\Users\user\AppData\Local\Temp\claude\d--DESARROLLO-IA-Proyecto-taxi_carga\7287622d-68ce-4eb1-9c02-aa0f258288a8\scratchpad\diagnostic_initialize.py", line 95, in run
+    print("  \u26a0\ufe0f  NO CHECKPOINTS FOUND - initialize() may not have been called")
+    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\user\AppData\Local\Programs\Python\Python314\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode characters in position 2-3: character maps to <undefined>

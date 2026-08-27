@@ -1,8 +1,16 @@
 from django.shortcuts import redirect
 from django.urls import include, path
 
-from apps.campo.views import pizarra
-from .views_whatsapp import whatsapp_conversacion_accion, whatsapp_conversaciones, conversation_messages, pause_bot, resume_bot, api_active_conversations, api_unread_counts
+# Lazy import to avoid AppRegistryNotReady during URL loading
+from django.views.decorators.http import require_http_methods
+
+def get_pizarra():
+    """Lazy load pizarra view to avoid app registry issues."""
+    from apps.campo.views import pizarra
+    return pizarra
+
+from .views_whatsapp import whatsapp_conversacion_accion, whatsapp_conversaciones, conversation_messages, pause_bot, resume_bot, api_active_conversations, api_unread_counts, api_events_stream
+from .views_sse import sse_events_stream, debug_redis
 from .views_auth_api import api_login, api_logout, api_user, api_check_auth
 from apps.whatsapp.views_realtime import sse_conversation_updates
 from apps.whatsapp.views_sse_global import sse_global_updates
@@ -46,7 +54,7 @@ urlpatterns = [
     path("api/auth/check/", api_check_auth, name="api-check-auth"),
     path("servicios/", include("apps.servicios.urls")),
     path("clientes/", include("apps.clientes.urls_dashboard")),
-    path("pizarra/", pizarra, name="dashboard-pizarra"),
+    path("pizarra/", get_pizarra(), name="dashboard-pizarra"),
     path("campo/", include("apps.campo.urls")),
     path("flota/", include("apps.flota.urls")),
     path("exportar/leads.csv", export_leads_csv, name="dashboard-leads-export"),
@@ -55,6 +63,9 @@ urlpatterns = [
     path("whatsapp/conversaciones/", whatsapp_conversaciones, name="dashboard-whatsapp-conversaciones"),
     path("whatsapp/conversaciones/api/active/", api_active_conversations, name="api-active-conversations"),
     path("whatsapp/conversaciones/api/unread-counts/", api_unread_counts, name="api-unread-counts"),
+    path("whatsapp/api/events/stream/", sse_events_stream, name="sse-events-stream"),
+    path("whatsapp/api/debug-redis/", debug_redis, name="debug-redis"),
+    path("whatsapp/api/events/poll/", api_events_stream, name="api-events-poll"),  # Fallback REST polling
     path("whatsapp/conversaciones/<int:conversation_id>/accion/", whatsapp_conversacion_accion, name="dashboard-whatsapp-conversacion-accion"),
     path("whatsapp/conversaciones/<int:conversation_id>/mensajes/", conversation_messages, name="conversation-messages"),
     path("whatsapp/conversaciones/<int:conversation_id>/pause-bot/", pause_bot, name="pause-bot"),

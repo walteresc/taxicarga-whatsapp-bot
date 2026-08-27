@@ -1,0 +1,16 @@
+# Frontend build stage (Dockerfile.frontend)
+FROM node:20-alpine AS frontend-builder
+
+WORKDIR /frontend
+
+# Copy entire frontend directory
+COPY frontend_materio/ ./
+
+# Install dependencies using lockfile if available
+RUN npm ci || npm install
+
+# Build
+RUN npm run build
+
+# Output: /frontend/dist ready for Nginx
+# Built output will be mounted to SPA volume via docker-compose

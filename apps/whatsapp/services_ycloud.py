@@ -118,7 +118,7 @@ class YCloudMessageProcessor:
         return timezone.now()
 
     @transaction.atomic()
-    def process_ycloud_event(self, event_type, event_data, channel, event_id=None):
+    def process_ycloud_event(self, event_type, event_data, channel, event_id=None, cliente=None):
         """
         Process single YCloud event atomically.
 
@@ -130,6 +130,7 @@ class YCloudMessageProcessor:
             event_data: dict — Full event payload from YCloud
             channel: WhatsAppChannel instance
             event_id: str — external_message_id for WebhookEvent discard tracking
+            cliente: Cliente instance (optional). If provided, use it instead of resolving.
 
         Returns:
             {
@@ -162,28 +163,79 @@ class YCloudMessageProcessor:
                 _mark_event_discarded(event_id, "Status update (no message)", event_data)
                 return result
 
-            # 2. Resolve client identity (CRITICAL: use 'to' for echo, 'from' for inbound)
-            if event_type == self.EVENT_ECHO:
-                # Echo: 'to' is the customer, 'from' is the business
-                phone = event_data.get("to")
-                if not phone:
-                    result["error"] = "Echo event missing 'to' field (customer phone)"
-                    _mark_event_discarded(event_id, "Echo missing 'to' (customer phone)", event_data)
-                    return result
-            else:
-                # Inbound: 'from' is the customer
-                phone = event_data.get("from") or event_data.get("phone")
-                if not phone:
-                    result["error"] = "No phone number in event"
-                    _mark_event_discarded(event_id, "Inbound missing 'from' and 'phone'", event_data)
-                    return result
+            # 2. Resolve client identity (use provided cliente OR extract from event)
+            # If cliente provided by views.py, use it; otherwise resolve from event and mark discards
+            if not cliente:
+                # Fallback: Extract phone based on event type (for backward compatibility)
+                if event_type == self.EVENT_ECHO:
+                    # Echo: 'to' is the customer, 'from' is the business
+                    phone = event_data.get("to")
+                    if not phone:
+                        result["error"] = "Echo event missing 'to' field (customer phone)"
+                        _mark_event_discarded(event_id, "Echo missing 'to' (customer phone)", event_data)
+                        return result
+                else:
+                    # Inbound: 'from' is the customer
+                    phone = event_data.get("from") or event_data.get("phone")
+                    if not phone:
+                        result["error"] = "No phone number in event"
+                        _mark_event_discarded(event_id, "Inbound missing 'from' and 'phone'", event_data)
+                        return result
 
-            cliente, _ = Cliente.objects.get_or_create(
-                telefono=phone,
-                defaults={"nombre": phone}
-            )
+                # Normalize phone BEFORE lookup to ensure consistent get_or_create matching
+                # Apply the same normalization that Cliente.save() does
+                from apps.clientes.phone_normalizer import normalize_phone
+                norm_result = normalize_phone(phone)
+                if norm_result["is_valid"]:
+                    phone_for_lookup = norm_result["normalized_e164"]
+                else:
+                    # Fallback: minimal normalization (just add + if missing)
+                    phone_for_lookup = f'+{phone}' if phone and not phone.startswith('+') else phone
+
+                # Use from_name if provided (YCloud contact name), else phone
+                default_name = event_data.get("from_name") or phone
+                cliente, created = Cliente.objects.get_or_create(
+                    telefono=phone_for_lookup,
+                    defaults={"nombre": default_name}
+                )
+                # Update name if it was default phone and now we have from_name
+                if created and event_data.get("from_name") and cliente.nombre == phone:
+                    cliente.nombre = event_data.get("from_name")
+            else:
+                # Cliente already resolved by views.py — just update last interaction
+                created = False
+
+                # Normalize phone BEFORE lookup to ensure consistent get_or_create matching
+                # Apply the same normalization that Cliente.save() does
+                from apps.clientes.phone_normalizer import normalize_phone
+                norm_result = normalize_phone(phone)
+                if norm_result["is_valid"]:
+                    phone_for_lookup = norm_result["normalized_e164"]
+                else:
+                    # Fallback: minimal normalization (just add + if missing)
+                    phone_for_lookup = f'+{phone}' if phone and not phone.startswith('+') else phone
+
+                # Use from_name if provided (YCloud contact name), else phone
+                default_name = event_data.get("from_name") or phone
+                cliente, created = Cliente.objects.get_or_create(
+                    telefono=phone_for_lookup,
+                    defaults={"nombre": default_name}
+                )
+                # Update name if it was default phone and now we have from_name
+                if created and event_data.get("from_name") and cliente.nombre == phone:
+                    cliente.nombre = event_data.get("from_name")
+            else:
+                # Cliente already resolved by views.py — just update last interaction
+                created = False
+
+            # Update last interaction timestamp (always)
             cliente.ultima_interaccion = timezone.now()
-            cliente.save(update_fields=["ultima_interaccion"])
+            update_fields = ["ultima_interaccion"]
+            if event_data.get("from_name") and (not hasattr(cliente, '_from_name_checked') or not cliente._from_name_checked):
+                if cliente.nombre != event_data.get("from_name"):
+                    cliente.nombre = event_data.get("from_name")
+                    update_fields.append("nombre")
+            cliente.save(update_fields=update_fields)
 
             # 3. Resolve or create conversation (using central service)
             from apps.whatsapp.services_conversation_resolver import resolve_or_create_active_conversation
@@ -200,36 +252,67 @@ class YCloudMessageProcessor:
             message_text = event_data.get("text") or event_data.get("body") or ""
             message_type = self._get_message_type(event_data)
             message_timestamp = self.extract_timestamp(event_data)
+            is_edit = event_data.get("is_edit", False)
 
-            # 6. Get or create message (idempotent by wamid)
-            if wamid:
-                message, created = MensajeWhatsApp.objects.get_or_create(
-                    meta_message_id=wamid,
-                    conversacion=conversation,
-                    defaults={
-                        "direccion": classification["direction"],
-                        "origen": self._map_to_origen(classification["sender_type"]),
-                        "tipo": message_type,
-                        "contenido": message_text[:500],
-                        "estado": "recibido",
-                        "sender_type": classification["sender_type"],
-                        "source": classification["source"],
-                        "fecha_mensaje": message_timestamp,
-                    }
-                )
+            # 6. Handle message edits vs. new messages
+            if is_edit:
+                # This is an edited message — update existing message
+                if wamid:
+                    try:
+                        message = MensajeWhatsApp.objects.get(meta_message_id=wamid, conversacion=conversation)
+                        message.contenido = message_text[:500]
+                        message.save(update_fields=["contenido"])
+                        created = False
+                        logger.info(f"[YCloud] Message {wamid} edited: {message_text[:50]}")
+                    except MensajeWhatsApp.DoesNotExist:
+                        logger.warning(f"[YCloud] Edit event but original message {wamid} not found, creating new")
+                        created = True
+                        message = MensajeWhatsApp.objects.create(
+                            conversacion=conversation,
+                            meta_message_id=wamid,
+                            direccion=classification["direction"],
+                            origen=self._map_to_origen(classification["sender_type"]),
+                            tipo=message_type,
+                            contenido=message_text[:500],
+                            estado="recibido",
+                            sender_type=classification["sender_type"],
+                            source=classification["source"],
+                            fecha_mensaje=message_timestamp,
+                        )
+                else:
+                    logger.error("[YCloud] Edit event but no wamid found")
+                    result["error"] = "Edit event missing wamid"
+                    return result
             else:
-                created = True
-                message = MensajeWhatsApp.objects.create(
-                    conversacion=conversation,
-                    direccion=classification["direction"],
-                    origen=self._map_to_origen(classification["sender_type"]),
-                    tipo=message_type,
-                    contenido=message_text[:500],
-                    estado="recibido",
-                    sender_type=classification["sender_type"],
-                    source=classification["source"],
-                    fecha_mensaje=message_timestamp,
-                )
+                # Normal new message — get or create
+                if wamid:
+                    message, created = MensajeWhatsApp.objects.get_or_create(
+                        meta_message_id=wamid,
+                        conversacion=conversation,
+                        defaults={
+                            "direccion": classification["direction"],
+                            "origen": self._map_to_origen(classification["sender_type"]),
+                            "tipo": message_type,
+                            "contenido": message_text[:500],
+                            "estado": "recibido",
+                            "sender_type": classification["sender_type"],
+                            "source": classification["source"],
+                            "fecha_mensaje": message_timestamp,
+                        }
+                    )
+                else:
+                    created = True
+                    message = MensajeWhatsApp.objects.create(
+                        conversacion=conversation,
+                        direccion=classification["direction"],
+                        origen=self._map_to_origen(classification["sender_type"]),
+                        tipo=message_type,
+                        contenido=message_text[:500],
+                        estado="recibido",
+                        sender_type=classification["sender_type"],
+                        source=classification["source"],
+                        fecha_mensaje=message_timestamp,
+                    )
 
             result["created"] = created
             result["message"] = message
@@ -314,6 +397,6 @@ class YCloudMessageProcessor:
 _processor = YCloudMessageProcessor()
 
 
-def process_ycloud_event(event_type, event_data, channel, event_id=None):
+def process_ycloud_event(event_type, event_data, channel, event_id=None, cliente=None):
     """Public API for processing YCloud events."""
-    return _processor.process_ycloud_event(event_type, event_data, channel, event_id=event_id)
+    return _processor.process_ycloud_event(event_type, event_data, channel, event_id=event_id, cliente=cliente)

@@ -109,11 +109,14 @@ class YCloudWebhookIntegrationTests(TestCase):
 
     def test_3_invalid_json(self):
         """3. Reject invalid JSON."""
+        invalid_body = b"not valid json"
+        signature = self._sign_payload(invalid_body)
+
         resp = self.client.post(
             self.webhook_url,
-            data="not valid json",
+            data=invalid_body,
             content_type='application/json',
-            HTTP_YCLOUD_SIGNATURE="t=123456,s=sig"
+            HTTP_YCLOUD_SIGNATURE=signature
         )
 
         self.assertEqual(resp.status_code, 400)
@@ -169,7 +172,7 @@ class YCloudWebhookIntegrationTests(TestCase):
 
     def test_5_conversation_updates_on_new_message(self):
         """5. ultima_actividad and resumen update when new message arrives."""
-        cliente = Cliente.objects.create(telefono="+51995403320", nombre="Test")
+        cliente = Cliente.objects.create(telefono="+51995403328", nombre="Test")
         conv = ConversacionWhatsApp.objects.create(cliente=cliente, channel=self.channel)
 
         old_ua = timezone.now() - timezone.timedelta(hours=1)
@@ -182,7 +185,7 @@ class YCloudWebhookIntegrationTests(TestCase):
             "type": "whatsapp.inbound_message.received",
             "whatsappInboundMessage": {
                 "id": "wamid_ua_001",
-                "from": "51995403320",
+                "from": "51995403328",
                 "text": {"body": "NEW MESSAGE FOR UPDATE"}
             },
             "timestamp": int(timezone.now().timestamp())
@@ -249,9 +252,13 @@ class YCloudWebhookIntegrationTests(TestCase):
         )
         self.assertEqual(active_convs.count(), 1)
 
-        # Should have 2 messages in same conversation
-        msgs = MensajeWhatsApp.objects.filter(conversacion=active_convs.first())
-        self.assertEqual(msgs.count(), 2)
+        # Should have 2 inbound messages (client messages) in same conversation
+        # Note: bot responses will also be in the conversation
+        client_msgs = MensajeWhatsApp.objects.filter(
+            conversacion=active_convs.first(),
+            direccion=MensajeWhatsApp.ENTRANTE
+        )
+        self.assertEqual(client_msgs.count(), 2)
 
     def test_7_webhook_event_idempotence(self):
         """7. Same event_id never processes twice (WebhookEvent)."""

@@ -2,10 +2,12 @@ import hmac
 import hashlib
 import json
 import logging
+import os
 from datetime import timedelta
 
 from django.conf import settings
-from django.http import JsonResponse
+from django.db import models
+from django.http import JsonResponse, HttpResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
@@ -19,27 +21,129 @@ from .bot_control_service import can_bot_respond
 logger = logging.getLogger(__name__)
 
 
+def _normalize_phone_number(phone):
+    """Normalize phone to E.164 format without +.
+
+    Examples:
+      +51 967 619 238 → 51967619238
+      51967619238 → 51967619238
+      +51967619238 → 51967619238
+    """
+    if not phone:
+        return None
+    # Remove all non-digit characters
+    normalized = ''.join(filter(str.isdigit, str(phone)))
+    return normalized if normalized else None
+
+
+def _resolve_channel_from_payload(event_type, canonical_payload, payload):
+    """Resolve WhatsAppChannel from payload business number.
+
+    For inbound (whatsapp.inbound_message.received):
+      - Business number is in 'to' field (customer sends TO business)
+      - Lookup from whatsappInboundMessage.to
+
+    For echo (whatsapp.smb.message.echoes):
+      - Business number is in 'from' field (business sends FROM here)
+      - Lookup from whatsappMessage.from
+
+    Returns WhatsAppChannel or None if not found.
+    """
+    from apps.whatsapp.models import WhatsAppChannel
+
+    business_number = None
+
+    # Extract business number based on event type
+    if event_type == "whatsapp.inbound_message.received":
+        # Try canonical first, then raw payload
+        business_number = canonical_payload.get("to") or \
+                         payload.get("whatsappInboundMessage", {}).get("to")
+    elif event_type == "whatsapp.smb.message.echoes":
+        # Try canonical first, then raw payload
+        business_number = canonical_payload.get("from") or \
+                         payload.get("whatsappMessage", {}).get("from")
+
+    if not business_number:
+        logger.error(f"[YCloud] Cannot extract business number from event {event_type}")
+        return None
+
+    # Normalize to E.164 without +
+    normalized = _normalize_phone_number(business_number)
+    if not normalized:
+        logger.error(f"[YCloud] Failed to normalize business number: {business_number}")
+        return None
+
+    logger.info(f"[YCloud] Resolving channel for normalized number: {normalized}")
+
+    # Lookup by numero_visible (normalized) or phone_number_id
+    channel = WhatsAppChannel.objects.filter(
+        activo=True
+    ).filter(
+        # Match numero_visible (with or without +)
+        models.Q(numero_visible=normalized) |
+        models.Q(numero_visible=f"+{normalized}") |
+        # Also check phone_number_id for backward compatibility
+        models.Q(phone_number_id=normalized) |
+        models.Q(phone_number_id=f"+{normalized}")
+    ).first()
+
+    if channel:
+        logger.info(f"[YCloud] Resolved channel {channel.id} ({channel.nombre}) for number {normalized}")
+    else:
+        logger.error(f"[YCloud] No active channel found for business number {normalized}")
+
+    return channel
+
+
 def _normalize_ycloud_payload(event_type, payload):
     """Transform YCloud payload format to canonical format expected by YCloudMessageProcessor.
 
     YCloud format → Canonical format:
     - whatsappInboundMessage → root level fields (from, id, text, etc.)
     - whatsappMessage (echoes) → root level fields (from, to, id, text, etc.)
+    - edit events → original message ID + new text (for updates)
     """
     canonical = dict(payload)
 
     if event_type == "whatsapp.inbound_message.received":
         msg_data = payload.get("whatsappInboundMessage", {})
         if msg_data:
-            # Flatten structure
-            canonical["from"] = msg_data.get("from")
-            canonical["wamid"] = msg_data.get("id")
-            canonical["text"] = msg_data.get("text", {}).get("body", "")
-            canonical["type"] = payload.get("type")
-            canonical["image"] = msg_data.get("image")
-            canonical["audio"] = msg_data.get("audio")
-            canonical["document"] = msg_data.get("document")
-            canonical["timestamp"] = payload.get("timestamp")
+            # Check if this is an EDIT event
+            if msg_data.get("type") == "edit" and msg_data.get("edit"):
+                edit_data = msg_data.get("edit", {})
+                original_msg_id = edit_data.get("originalMessageId")
+                edited_msg = edit_data.get("message", {})
+
+                # Extract original message ID (YCloud wamid format)
+                canonical["is_edit"] = True
+                canonical["original_wamid"] = original_msg_id
+                canonical["from"] = msg_data.get("from")
+                canonical["from_name"] = msg_data.get("fromName", "")
+                canonical["wamid"] = original_msg_id  # Use ORIGINAL wamid for lookup
+                canonical["text"] = edited_msg.get("text", {}).get("body", "")
+                canonical["type"] = "text"
+                canonical["timestamp"] = payload.get("timestamp")
+            else:
+                # Normal inbound message (NOT edited)
+                canonical["is_edit"] = False
+                canonical["from"] = msg_data.get("from")
+                canonical["from_name"] = msg_data.get("fromName", "")  # Contact name from YCloud
+                canonical["wamid"] = msg_data.get("id")
+                canonical["text"] = msg_data.get("text", {}).get("body", "")
+                canonical["image"] = msg_data.get("image")
+                canonical["audio"] = msg_data.get("audio")
+                canonical["document"] = msg_data.get("document")
+                canonical["timestamp"] = payload.get("timestamp")
+
+                # Detect content type based on what's present
+                if msg_data.get("image"):
+                    canonical["type"] = "image"
+                elif msg_data.get("audio"):
+                    canonical["type"] = "audio"
+                elif msg_data.get("document"):
+                    canonical["type"] = "document"
+                else:
+                    canonical["type"] = "text"
 
     elif event_type == "whatsapp.smb.message.echoes":
         msg_data = payload.get("whatsappMessage", {})
@@ -62,16 +166,26 @@ def _normalize_ycloud_payload(event_type, payload):
 
 
 def verify_ycloud_signature(request):
-    """Validar firma HMAC de YCloud. Formato: Ycloud-Signature: t=timestamp,s=signature"""
+    """Validar firma HMAC de YCloud según contrato oficial.
 
-    # YCloud envía: Ycloud-Signature: t=1787110642,s=02cafad34935614384b99f99366ef91b264eba3a51127a40c1472d9b32c2930a
+    Formato official:
+    - Header: Ycloud-Signature: t=<timestamp>,s=<hex_digest>
+    - Signed payload: <timestamp>.<raw_request_body_bytes>
+    - Algorithm: HMAC-SHA256(endpoint_signing_secret, signed_payload)
+
+    Contrato: https://docs.ycloud.com/reference/configure-webhooks
+    """
+    from django.conf import settings
+    import os
+
+    body = request.body
     signature_header = request.headers.get('Ycloud-Signature', '')
 
     if not signature_header:
         logger.error("[YCloud] Missing Ycloud-Signature header")
         return False
 
-    # Extraer timestamp y signature: t=...,s=...
+    # Parse header: t=<ts>,s=<sig>
     parts = {}
     for part in signature_header.split(','):
         if '=' in part:
@@ -81,68 +195,103 @@ def verify_ycloud_signature(request):
     timestamp = parts.get('t', '')
     signature = parts.get('s', '')
 
-    if not signature:
-        logger.error("[YCloud] Missing signature in Ycloud-Signature header")
+    if not timestamp or not signature:
+        logger.error("[YCloud] Malformed Ycloud-Signature header")
         return False
 
     body = request.body
+    secret = settings.YCLOUD_WEBHOOK_SECRET
 
-    # Intentar dos formatos de firma:
-    # 1. Solo body
-    expected1 = hmac.new(
-        settings.YCLOUD_WEBHOOK_SECRET.encode(),
-        body,
+    # Diagnostic (SAFE - no payload, no secrets, only hashes and metadata)
+    if os.environ.get('DEBUG'):
+        body_hash_fp = hashlib.sha256(body).hexdigest()[:12]
+        secret_fp = hashlib.sha256(secret.encode()).hexdigest()[:8]
+        body_len = len(body)
+        content_type = request.headers.get('Content-Type', 'unknown')[:50]
+        logger.warning(f"[YCloud] HMAC_CHECK: body_len={body_len}, body_hash={body_hash_fp}, secret_hash={secret_fp}, ts={timestamp}, ct={content_type}")
+
+    # OFFICIAL FORMAT: timestamp + "." + raw_body_bytes
+    # Use bytes directly to preserve exact payload
+    signed_payload = timestamp.encode('ascii') + b'.' + body
+    expected_digest = hmac.new(
+        secret.encode('utf-8'),
+        signed_payload,
         hashlib.sha256
     ).hexdigest()
 
-    # 2. timestamp.body (formato común)
-    signed_content = f"{timestamp}.{body.decode('utf-8')}" if isinstance(body, bytes) else f"{timestamp}.{body}"
-    expected2 = hmac.new(
-        settings.YCLOUD_WEBHOOK_SECRET.encode(),
-        signed_content.encode() if isinstance(signed_content, str) else signed_content,
-        hashlib.sha256
-    ).hexdigest()
+    match = hmac.compare_digest(signature, expected_digest)
 
-    match1 = hmac.compare_digest(signature, expected1)
-    match2 = hmac.compare_digest(signature, expected2)
+    if not match and os.environ.get('DEBUG'):
+        # SAFE: Only log signature comparison, not payload
+        logger.warning(f"[YCloud] HMAC_MISMATCH: expected={expected_digest[:8]}, got={signature[:8]}")
 
-    logger.warning(f"[YCloud] Signature check - body_only={match1}, timestamp.body={match2}, signature={signature}")
-    logger.warning(f"[YCloud] Hashes - expected1={expected1}, expected2={expected2}")
-
-    return match1 or match2
+    return match
 
 
 @csrf_exempt
-@require_http_methods(["POST"])
+@require_http_methods(["GET", "POST"])
 def ycloud_webhook(request):
     """Webhook de YCloud - adaptador delgado que delega al procesador canónico.
 
-    Responsabilidades:
+    Soporta:
+    - GET: Verificación de webhook (Meta/YCloud webhook configuration)
+    - POST: Entrega de eventos (mensajes, estado, etc.)
+
+    Responsabilidades POST:
     1. Validar firma HMAC
     2. Registrar evento para idempotencia (WebhookEvent)
     3. Delegar persistencia a YCloudMessageProcessor.process_ycloud_event()
     4. Retornar HTTP 200 inmediatamente (no bloquear por bot processing)
     5. Disparar bot processing en background (si aplica)
     """
-    logger.warning(f"[YCloud] WEBHOOK RECEIVED AT {timezone.now()}")
+    # VERIFICACIÓN DE WEBHOOK (GET request)
+    if request.method == "GET":
+        hub_mode = request.GET.get("hub.mode")
+        hub_challenge = request.GET.get("hub.challenge")
+        hub_verify_token = request.GET.get("hub.verify_token")
+
+        if hub_mode == "subscribe" and hub_verify_token == os.environ.get("YCLOUD_WEBHOOK_SECRET", ""):
+            logger.warning(f"[YCloud] Webhook verification successful")
+            return HttpResponse(hub_challenge, content_type="text/plain")
+
+        logger.warning(f"[YCloud] Webhook verification failed - invalid token or mode")
+        return HttpResponse("Unauthorized", status=401)
+
+    from .event_trace_middleware import EventTrace
+
+    logger.warning(f"[YCloud] WEBHOOK HANDLER EXECUTED - RECEIVED AT {timezone.now()}")
+
+    # Initialize tracing
+    payload_dict = {}
+    try:
+        payload_dict = json.loads(request.body)
+    except:
+        pass
+    event_id = payload_dict.get('id', 'unknown')
+    wamid = payload_dict.get('whatsappInboundMessage', {}).get('id') or payload_dict.get('whatsappMessage', {}).get('id') or 'unknown'
+    trace = EventTrace(event_id, wamid)
+    trace.log(1, "WEBHOOK_RECEIVED", f"event_id={event_id}, wamid={wamid}")
 
     # 1. VALIDAR FIRMA
     if not verify_ycloud_signature(request):
-        logger.warning("[YCloud] Invalid YCloud signature")
+        trace.log(2, "HMAC_VALIDATION_FAILED", "401 returned")
+        logger.error("[YCloud] Invalid YCloud signature - REJECTING")
         return JsonResponse({'error': 'Invalid signature'}, status=401)
+    trace.log(2, "HMAC_VALIDATION_PASSED", "Format 2 (timestamp.body)")
 
     # 2. PARSEAR JSON
     try:
         payload = json.loads(request.body)
-    except json.JSONDecodeError:
+        trace.log(3, "JSON_PARSED", f"{len(json.dumps(payload))} bytes")
+    except json.JSONDecodeError as e:
+        trace.log(3, "JSON_PARSE_ERROR", str(e))
         logger.error("[YCloud] Invalid JSON in YCloud webhook")
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
-
-    logger.warning(f"[YCloud] FULL PAYLOAD:\n{json.dumps(payload, indent=2)}")
 
     # 3. EXTRAER METADATOS
     event_type = payload.get('type') or payload.get('event')
     if not event_type:
+        trace.log(4, "EVENT_TYPE_MISSING", "400 returned")
         logger.warning("[YCloud] Missing event type")
         return JsonResponse({'error': 'Missing event type'}, status=400)
 
@@ -151,41 +300,53 @@ def ycloud_webhook(request):
         import uuid
         event_id = str(uuid.uuid4())
 
+    trace.log(4, "EVENT_TYPE_EXTRACTED", f"type={event_type}, id={event_id}")
     logger.warning(f"[YCloud] Event type={event_type}, event_id={event_id}")
 
     # 4. IDEMPOTENCIA: No procesar dos veces
-    if WebhookEvent.objects.filter(
+    existing = WebhookEvent.objects.filter(
         source='ycloud',
         external_message_id=event_id
-    ).exists():
+    ).first()
+    if existing:
+        trace.log(5, "IDEMPOTENCE_CHECK", f"duplicate detected, skipped (PK={existing.id})")
         logger.info(f"[YCloud] Duplicate event {event_id}, skipping")
         return JsonResponse({'status': 'skipped'})
+    trace.log(5, "IDEMPOTENCE_CHECK", "unique event")
 
     # 5. REGISTRAR EVENTO
     try:
-        WebhookEvent.objects.create(
+        webhook_evt = WebhookEvent.objects.create(
             source='ycloud',
             external_message_id=event_id,
             event_type=event_type
         )
+        trace.log(6, "WEBHOOK_EVENT_CREATED", f"PK={webhook_evt.id}")
+        logger.warning(f"[YCloud] WebhookEvent created: ID={webhook_evt.id}")
     except Exception as e:
+        trace.log(6, "WEBHOOK_EVENT_ERROR", str(e))
         logger.error(f"[YCloud] Error creating WebhookEvent: {e}", exc_info=True)
 
     # 6. TRANSFORMAR PAYLOAD A FORMATO CANÓNICO
     # YCloud structure → canonical format for processor
     canonical_payload = _normalize_ycloud_payload(event_type, payload)
     if not canonical_payload:
+        trace.log(7, "PAYLOAD_NORMALIZATION_FAILED", "returning 200")
         logger.warning("[YCloud] Failed to normalize payload")
         return JsonResponse({'status': 'ok'})
+    trace.log(7, "PAYLOAD_NORMALIZED", f"from={canonical_payload.get('from')}, wamid={canonical_payload.get('wamid')}")
 
     # 7. DELEGAR PERSISTENCIA AL PROCESADOR CANÓNICO
     try:
-        # Determinar channel (ahora es requerido)
-        from apps.whatsapp.models import WhatsAppChannel
-        channel = WhatsAppChannel.objects.filter(activo=True).first()
+        logger.warning(f"[YCloud] Resolving channel for event {event_type}")
+        # Resolve channel from payload (business number)
+        channel = _resolve_channel_from_payload(event_type, canonical_payload, payload)
         if not channel:
-            logger.error("[YCloud] No active WhatsApp channel configured")
+            trace.log(8, "CHANNEL_RESOLUTION_FAILED", "no active channel found")
+            logger.error(f"[YCloud] Channel resolution FAILED for event {event_type} - SKIPPING")
             return JsonResponse({'status': 'ok'})  # HTTP 200 but no processing
+        trace.log(8, "CHANNEL_RESOLVED", f"ch_id={channel.id}, name={channel.nombre}")
+        logger.warning(f"[YCloud] Channel resolved: ID={channel.id} ({channel.nombre})")
 
         # Importar procesador
         from apps.whatsapp.services_ycloud import process_ycloud_event
@@ -193,9 +354,19 @@ def ycloud_webhook(request):
         # Procesar evento (persistencia atómica: cliente, conversación, mensaje)
         result = process_ycloud_event(event_type, canonical_payload, channel, event_id=event_id)
 
+        if result.get("message"):
+            msg_id = result["message"].id
+            conv_id = result["conversation"].id
+            trace.log(9, "MESSAGE_PERSISTED", f"msg_pk={msg_id}, conv_pk={conv_id}, wamid={result['message'].meta_message_id}")
+        else:
+            trace.log(9, "MESSAGE_PERSISTENCE_FAILED", str(result.get("error")))
+
         logger.info(f"[YCloud] Persistence result: {result}")
 
-        # 7. PROCESAR BOT EN BACKGROUND (no bloquear HTTP 200)
+        # TRANSACTION.ON_COMMIT: Redis publish handled by signal
+        trace.log(10, "REDIS_PUBLISH_QUEUED", "via on_commit signal (async)")
+
+        # 8. PROCESAR BOT EN BACKGROUND (no bloquear HTTP 200)
         if result.get("message") and result.get("conversation"):
             try:
                 # Disparar bot processing sin esperar (puede ser async en el futuro)
@@ -205,10 +376,13 @@ def ycloud_webhook(request):
                 # NO retornar error — mensaje ya fue persistido
 
     except Exception as e:
+        trace.log(9, "PROCESSING_ERROR", str(e)[:100])
         logger.error(f"[YCloud] Error processing event: {e}", exc_info=True)
         # HTTP 200 igual — idempotencia registrada, no intentar de nuevo
 
-    # 8. RETORNAR HTTP 200 (mensaje ya persistido)
+    # RETORNAR HTTP 200 (mensaje ya persistido o en queue)
+    trace.log(11, "HTTP_200_RETURNED", "processing queued or complete")
+    trace.summary()
     return JsonResponse({'status': 'ok'})
 
 
@@ -338,7 +512,6 @@ def handle_inbound_message(data):
 
 def handle_advisor_message(data):
     """Asesor escribió desde WhatsApp Web (YCloud detectó)"""
-    logger.warning(f"[YCloud] handle_advisor_message PAYLOAD: {json.dumps(data)}")
 
     # Estructura: data['whatsappMessage']['to'] es el CLIENTE (not 'from' que es el bot)
     msg_data = data.get('whatsappMessage', {})
@@ -516,7 +689,6 @@ def send_via_ycloud(phone_number, message_text):
     }
 
     logger.info(f"[YCloud] Sending to {recipient}: {message_text[:50]}")
-    logger.warning(f"[YCloud] PAYLOAD: {json.dumps(payload)}")
 
     try:
         response = requests.post(url, json=payload, headers=headers, timeout=10)

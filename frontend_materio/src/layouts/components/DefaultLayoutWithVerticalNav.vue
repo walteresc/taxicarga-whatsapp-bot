@@ -1,6 +1,6 @@
 <script setup>
 import { useRoute } from 'vue-router'
-import { computed } from 'vue'
+import { computed, onMounted, onUnmounted } from 'vue'
 import NavItems from '@/layouts/components/NavItems.vue'
 import logo from '@images/logo.svg?raw'
 import VerticalNavLayout from '@layouts/components/VerticalNavLayout.vue'
@@ -10,9 +10,44 @@ import Footer from '@/layouts/components/Footer.vue'
 import NavbarThemeSwitcher from '@/layouts/components/NavbarThemeSwitcher.vue'
 import UserProfile from '@/layouts/components/UserProfile.vue'
 
+// FASE 5B: Real-time event streaming
+import { useWhatsAppRealtime } from '@/composables/useWhatsAppRealtime'
+import { useConversationsStore } from '@/stores/conversationsStore'
+import { useMessagesStore } from '@/stores/messagesStore'
+import { useAuthGuard } from '@/composables/useAuthGuard'
+
 const route = useRoute()
+const { checkAuth } = useAuthGuard()
 const hideFooter = route.meta?.hideFooter ?? false
 const isInboxRoute = computed(() => route.path.includes('bandeja-entrada'))
+
+// Initialize real-time streaming
+const conversationsStore = useConversationsStore()
+const messagesStore = useMessagesStore()
+const { initialize, cleanup } = useWhatsAppRealtime(conversationsStore, messagesStore)
+
+onMounted(async () => {
+  console.log('[LAYOUT] DefaultLayoutWithVerticalNav mounted')
+  try {
+    // CORRECCIÓN 2: Verify authentication before initializing SSE
+    console.log('[LAYOUT] Checking authentication...')
+    const isAuthenticated = await checkAuth()
+    if (!isAuthenticated) {
+      console.warn('[LAYOUT] Not authenticated, skipping real-time initialization')
+      return
+    }
+    console.log('[LAYOUT] Authentication verified, calling initialize()...')
+    await initialize()
+    console.log('[LAYOUT] initialize() completed successfully')
+  } catch (error) {
+    console.error('[LAYOUT] Failed to initialize real-time:', error)
+    console.error('[LAYOUT] Error details:', error.message, error.stack)
+  }
+})
+
+onUnmounted(() => {
+  cleanup()
+})
 </script>
 
 <template>

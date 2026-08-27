@@ -1,10 +1,17 @@
 from django.contrib import admin
-from django.urls import include, path
+from django.urls import include, path, re_path
 from apps.whatsapp.views import bot_schedules, bot_schedule_detail, bot_settings, whatsapp_channels, whatsapp_channel_detail, whatsapp_channel_asesores
 from django.shortcuts import redirect
+from django.conf import settings
+from django.views.decorators.cache import never_cache
+from apps.dashboard.views_spa import spa_fallback
 from .health import live, ready
 
 def root_redirect(request, *args, **kwargs):
+    # Si no está autenticado, redirigir a login
+    if not request.user.is_authenticated:
+        return redirect("dashboard-login")
+    # Si está autenticado, ir a bandeja
     return redirect("dashboard-home")
 
 urlpatterns = [
@@ -25,4 +32,10 @@ urlpatterns = [
     path("webhook/whatsapp/", include("apps.whatsapp.urls")),
     path("webhooks/chatwoot/", include("apps.integrations.urls")),
     path("webhooks/", include("apps.whatsapp_bot_v4.urls")),
+
+    # SPA fallback: serve index.html for all other routes (but not API/admin/static/media)
+    # In production (Docker): Nginx handles /static/ and /media/
+    # In development: StaticFilesHandler handles /static/ and /media/
+    # Must be LAST because it's a catch-all
+    re_path(r"^(?!admin/|api/|webhooks/|webhook/|dashboard/|static/|media/|health/).+$", never_cache(spa_fallback)),
 ]

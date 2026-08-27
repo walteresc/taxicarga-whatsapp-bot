@@ -11,8 +11,9 @@ These tests validate the contracts for:
 from datetime import datetime, timedelta
 from django.test import TestCase, Client
 from django.utils import timezone
-from django.contrib.auth.models import User
+from django.contrib.auth.models import User, Group
 import json
+import uuid
 
 from apps.clientes.models import Cliente
 from apps.whatsapp.models import ConversacionWhatsApp, MensajeWhatsApp, WhatsAppChannel
@@ -24,6 +25,10 @@ class BandejaAPITests(TestCase):
     def setUp(self):
         self.client = Client()
         self.user = User.objects.create_user("testuser", "test@test.com", "testpass")
+        # Assign user to Asesor de Ventas group for API access
+        from django.contrib.auth.models import Group
+        asesor_group, _ = Group.objects.get_or_create(name="Asesor de Ventas")
+        self.user.groups.add(asesor_group)
         self.channel = WhatsAppChannel.objects.create(
             nombre="Test Channel",
             phone_number_id="123456789",
@@ -31,9 +36,9 @@ class BandejaAPITests(TestCase):
             asesor=self.user,
             activo=True,
         )
-        # Create test cliente
+        # Create test cliente (use neutral name, not TEST which is excluded by filter)
         self.cliente = Cliente.objects.create(
-            nombre="Test Customer",
+            nombre="Cliente Demo WhatsApp",
             telefono="+51988888888"
         )
         # Login
@@ -201,6 +206,10 @@ class TimelineAPITests(TestCase):
     def setUp(self):
         self.client = Client()
         self.user = User.objects.create_user("testuser", "test@test.com", "testpass")
+        # Assign user to Asesor de Ventas group for API access
+        from django.contrib.auth.models import Group
+        asesor_group, _ = Group.objects.get_or_create(name="Asesor de Ventas")
+        self.user.groups.add(asesor_group)
         self.channel = WhatsAppChannel.objects.create(
             nombre="Test Channel",
             phone_number_id="123456789",
@@ -209,7 +218,7 @@ class TimelineAPITests(TestCase):
             activo=True,
         )
         self.cliente = Cliente.objects.create(
-            nombre="Test Customer",
+            nombre="Cliente Demo WhatsApp",
             telefono="+51988888888"
         )
         self.conv = ConversacionWhatsApp.objects.create(
@@ -340,6 +349,10 @@ class UnreadTests(TestCase):
     def setUp(self):
         self.client = Client()
         self.user = User.objects.create_user("testuser", "test@test.com", "testpass")
+        # Assign user to Asesor de Ventas group for API access
+        from django.contrib.auth.models import Group
+        asesor_group, _ = Group.objects.get_or_create(name="Asesor de Ventas")
+        self.user.groups.add(asesor_group)
         self.channel = WhatsAppChannel.objects.create(
             nombre="Test Channel",
             phone_number_id="123456789",
@@ -348,7 +361,7 @@ class UnreadTests(TestCase):
             activo=True,
         )
         self.cliente = Cliente.objects.create(
-            nombre="Test Customer",
+            nombre="Cliente Demo WhatsApp",
             telefono="+51988888888"
         )
         self.conv = ConversacionWhatsApp.objects.create(
@@ -448,3 +461,86 @@ class UnreadTests(TestCase):
         ).count()
 
         self.assertEqual(unread_inbound, 0)
+
+
+class AuthorizationTests(TestCase):
+    """Test authorization for protected endpoints"""
+
+    def test_unauthorized_user_gets_403(self):
+        """Test: Unauthorized user (no whatsapp group) gets 403"""
+        # Create authenticated user WITHOUT Asesor de Ventas group
+        unauthorized_user = User.objects.create_user("unauthorized", "unauth@test.com", "testpass")
+
+        # Create channel and conversation
+        channel = WhatsAppChannel.objects.create(
+            phone_number_id=str(uuid.uuid4())[:20],
+            nombre="Test Channel Auth",
+            numero_visible="+51987654321",
+            activo=True,
+        )
+        cliente = Cliente.objects.create(
+            nombre="Cliente Auth Test",
+            telefono=f"+5199{uuid.uuid4().hex[:8]}",
+        )
+        conv = ConversacionWhatsApp.objects.create(
+            cliente=cliente,
+            channel=channel,
+        )
+        # Create message so timeline has content
+        MensajeWhatsApp.objects.create(
+            conversacion=conv,
+            meta_message_id=str(uuid.uuid4()),
+            direccion=MensajeWhatsApp.ENTRANTE,
+            sender_type=MensajeWhatsApp.SENDER_CUSTOMER,
+            contenido="Test",
+            fecha_mensaje=timezone.now(),
+        )
+
+        # Login as unauthorized user
+        client = Client()
+        client.login(username="unauthorized", password="testpass")
+
+        # Try to access timeline — should get 403
+        resp = client.get(f"/dashboard/whatsapp/conversaciones/{conv.id}/mensajes/")
+        self.assertEqual(resp.status_code, 403, "Unauthorized user must get 403 Forbidden")
+
+        # Verify no content is returned
+        self.assertNotContains(resp, "Test", status_code=403)
+
+        # Create authorized user and verify they get 200
+        auth_user = User.objects.create_user("authorized", "auth@test.com", "testpass")
+        asesor_group, _ = Group.objects.get_or_create(name="Asesor de Ventas")
+        auth_user.groups.add(asesor_group)
+
+        auth_client = Client()
+        auth_client.login(username="authorized", password="testpass")
+
+        # Authorized user should get 200
+        resp_auth = auth_client.get(f"/dashboard/whatsapp/conversaciones/{conv.id}/mensajes/")
+        self.assertEqual(resp_auth.status_code, 200, "Authorized user must get 200 OK")
+        data = resp_auth.json()
+        self.assertIn("messages", data)
+
+    def test_unauthenticated_user_gets_redirect(self):
+        """Test: Unauthenticated user gets redirect to login"""
+        channel = WhatsAppChannel.objects.create(
+            phone_number_id=str(uuid.uuid4())[:20],
+            nombre="Test Channel No Auth",
+            numero_visible="+51987654321",
+            activo=True,
+        )
+        cliente = Cliente.objects.create(
+            nombre="Cliente No Auth",
+            telefono=f"+5199{uuid.uuid4().hex[:8]}",
+        )
+        conv = ConversacionWhatsApp.objects.create(
+            cliente=cliente,
+            channel=channel,
+        )
+
+        # No login — unauthenticated
+        client = Client()
+
+        # Should redirect to login
+        resp = client.get(f"/dashboard/whatsapp/conversaciones/{conv.id}/mensajes/")
+        self.assertIn(resp.status_code, [302, 401, 403], "Unauthenticated should be rejected")

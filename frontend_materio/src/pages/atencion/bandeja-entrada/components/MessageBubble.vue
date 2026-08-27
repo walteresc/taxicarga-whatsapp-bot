@@ -1,10 +1,10 @@
 <template>
-  <div :class="['message-container', senderType]">
+  <div :class="['message-container', `message-container--${message.senderType}`]" :data-testid="`message-row-${message.id}`" :data-sender="message.senderType">
     <!-- Mostrar nombre del asesor/bot encima del mensaje -->
     <div v-if="showSenderName" class="sender-name">{{ message.senderName }}</div>
 
     <!-- Burbuja del mensaje -->
-    <div :class="['message-bubble', senderType]">
+    <div :class="['message-bubble', `message-bubble--${message.senderType}`]" :data-testid="`message-bubble-${message.id}`">
       <p class="message-text">{{ message.text }}</p>
 
       <div class="message-footer">
@@ -38,16 +38,13 @@ const props = defineProps({
 
 const emit = defineEmits(['retry'])
 
-const senderType = computed(() => {
-  return props.message.sender || 'client'
-})
-
+// Message must come pre-normalized with canonical senderType
 const showSenderName = computed(() => {
-  return ['bot', 'advisor'].includes(senderType.value) && props.message.senderName
+  return ['bot', 'advisor'].includes(props.message.senderType) && props.message.senderName
 })
 
 const showStatus = computed(() => {
-  return senderType.value === 'advisor' && props.message.status
+  return props.message.senderType === 'advisor' && props.message.status
 })
 
 const formatTime = (timestamp) => {
@@ -78,17 +75,21 @@ const retryMessage = () => {
   animation: slideIn 0.2s ease-out;
 }
 
-.message-container.client {
+.message-container--customer {
   align-items: flex-start;
 }
 
-.message-container.bot,
-.message-container.advisor {
+.message-container--bot,
+.message-container--advisor {
   align-items: flex-end;
 }
 
-.message-container.system {
+.message-container--system {
   align-items: center;
+}
+
+.message-container--unknown {
+  align-items: flex-start;
 }
 
 @keyframes slideIn {
@@ -110,41 +111,55 @@ const retryMessage = () => {
   padding: 0 12px;
 }
 
-/* Burbuja del mensaje */
+/* Burbuja del mensaje - Base */
 .message-bubble {
   max-width: 70%;
   padding: 8px 12px;
   border-radius: 8px;
   word-wrap: break-word;
   overflow-wrap: break-word;
+  background: #e0e0e0;
+  color: #333;
 }
 
-.message-bubble.client {
+/* Customer (inbound) - left aligned, light background */
+.message-bubble--customer {
   background: #f0f0f0;
   color: #333;
   border-bottom-left-radius: 2px;
 }
 
-.message-bubble.bot {
+/* Bot - right aligned, brand color */
+.message-bubble--bot {
   background: #fff3e0;
   color: #333;
   border-bottom-right-radius: 2px;
   border: 1px solid #ffe0b2;
 }
 
-.message-bubble.advisor {
+/* Advisor - right aligned, distinct from bot */
+.message-bubble--advisor {
   background: #ff9800;
   color: #fff;
   border-bottom-right-radius: 2px;
 }
 
-.message-bubble.system {
+/* System - centered, transparent */
+.message-bubble--system {
   background: transparent;
   color: #999;
   font-size: 12px;
   text-align: center;
   width: 100%;
   max-width: 100%;
+}
+
+/* Unknown sender - neutral visible style (never transparent) */
+.message-bubble--unknown {
+  background: #e8e8e8;
+  color: #666;
+  border: 1px dashed #999;
+  border-bottom-left-radius: 2px;
 }
 
 .message-text {

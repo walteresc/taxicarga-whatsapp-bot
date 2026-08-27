@@ -1,9 +1,13 @@
 from pathlib import Path
+from dotenv import load_dotenv
 
 import dj_database_url
 from decouple import config
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Load .env file before any config reads
+load_dotenv(BASE_DIR / ".env", override=False)
 
 
 def env_bool(name, default=False):
@@ -22,7 +26,24 @@ def env_value(name, default="", required=False):
 SECRET_KEY = env_value("DJANGO_SECRET_KEY", default=config("SECRET_KEY", default="django-insecure-dev-only-change-me"))
 DEBUG = env_bool("DJANGO_DEBUG", default=True)
 STRICT_ADMIN_OPERATIONS = env_bool("STRICT_ADMIN_OPERATIONS", default=False)
-ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="localhost,127.0.0.1,testserver").split(",")
+ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="localhost,127.0.0.1,testserver,.ngrok-free.app,.ngrok-free.dev,host.docker.internal").split(",")
+
+# CSRF and CORS for development
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:5173",
+    "http://localhost:5174",
+    "http://localhost:5175",
+    "http://localhost:5177",  # E2E Vite
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:5174",
+    "http://127.0.0.1:5175",
+    "http://127.0.0.1:5177",  # E2E Vite
+    "http://localhost:8001",
+    "http://127.0.0.1:8001",
+]
+SESSION_COOKIE_SAMESITE = "Lax"
+SESSION_COOKIE_SECURE = False
+CSRF_COOKIE_SAMESITE = "Lax"
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -80,12 +101,23 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "config.wsgi.application"
 
-DATABASES = {
-    "default": dj_database_url.config(
-        default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
-        conn_max_age=600,
+# Database: Always require DATABASE_URL to be set (no silent SQLite fallback)
+import os
+if not os.environ.get("DATABASE_URL"):
+    from django.core.exceptions import ImproperlyConfigured
+    raise ImproperlyConfigured(
+        "DATABASE_URL environment variable not found. "
+        "Check if .env is loaded. For testing, set DATABASE_URL explicitly."
     )
+
+DATABASES = {
+    "default": dj_database_url.config(conn_max_age=600)
 }
+
+# FASE 5B: Redis for event streaming
+REDIS_URL = config("REDIS_URL", default="redis://localhost:6379/0")
+WHATSAPP_EVENTS_STREAM_KEY = "whatsapp:events"
+WHATSAPP_EVENTS_MAXLEN = 10000
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
@@ -196,6 +228,11 @@ LOGGING = {
         "django": {
             "handlers": ["console", "file"],
             "level": DJANGO_LOG_LEVEL,
+            "propagate": True,
+        },
+        "apps.dashboard": {
+            "handlers": ["console", "file"],
+            "level": "WARNING",
             "propagate": True,
         },
         "apps.whatsapp": {

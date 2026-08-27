@@ -196,7 +196,7 @@ export const conversationService = {
   // Obtener estado global del bot
   async getBotStatus() {
     try {
-      const response = await fetch(`${DASHBOARD_BASE}/bot-status/`, {
+      const response = await fetch('/webhooks/api/control/bot-status/', {
         headers: {
           'Content-Type': 'application/json',
           'X-Requested-With': 'XMLHttpRequest',
@@ -206,8 +206,8 @@ export const conversationService = {
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
       const data = await response.json()
       return {
-        status: data.is_paused ? 'PAUSADO' : 'ACTIVO',
-        is_paused: data.is_paused,
+        is_paused: data.is_paused,  // true = paused, false = active
+        paused_at: data.paused_at,
       }
     } catch (error) {
       console.error('Error fetching bot status:', error)
@@ -218,7 +218,7 @@ export const conversationService = {
   // Pausar bot globalmente
   async pauseBot() {
     try {
-      const response = await fetch(`${DASHBOARD_BASE}/pause-global/`, {
+      const response = await fetch('/webhooks/api/control/pause-global/', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -226,7 +226,8 @@ export const conversationService = {
         },
         credentials: 'include',
       })
-      return response.ok
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      return response.json()
     } catch (error) {
       console.error('Error pausing bot:', error)
       throw error
@@ -236,7 +237,7 @@ export const conversationService = {
   // Activar bot globalmente
   async activateBot() {
     try {
-      const response = await fetch(`${DASHBOARD_BASE}/activate-global/`, {
+      const response = await fetch('/webhooks/api/control/activate-global/', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -244,7 +245,8 @@ export const conversationService = {
         },
         credentials: 'include',
       })
-      return response.ok
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      return response.json()
     } catch (error) {
       console.error('Error activating bot:', error)
       throw error

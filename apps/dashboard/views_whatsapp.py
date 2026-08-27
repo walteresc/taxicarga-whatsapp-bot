@@ -1,5 +1,6 @@
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.core.exceptions import PermissionDenied
 from django.db.models import Q, Prefetch
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -118,6 +119,10 @@ def _filtrar_conversaciones(queryset, request):
         cliente__nombre__icontains="Stage"
     )
 
+    # FASE 5B: Filter only active channels for operational bandeja
+    # Seed/inactive channels excluded from normal interface
+    queryset = queryset.filter(channel__activo=True)
+
     if search:
         queryset = queryset.filter(
             Q(cliente__nombre__icontains=search)
@@ -214,106 +219,125 @@ def _asesores_activos():
 
 @csrf_exempt
 def api_active_conversations(request):
-    """API endpoint: traer conversaciones activas con filtros para Materio"""
-    from apps.whatsapp_bot_v4.models import ConversationOwnership
+    """API endpoint: traer conversaciones activas con filtros para Materio
 
-    # Pagination
-    page = int(request.GET.get("page", 1))
-    page_size = int(request.GET.get("limit", 25))
+    Incluye snapshot_cursor para SSE coherente: eventos posteriores a este
+    cursor se cargarán mediante SSE, evitando repetición del historial.
+    """
+    try:
+        from apps.whatsapp_bot_v4.models import ConversationOwnership
+        from apps.whatsapp.redis_events import get_latest_cursor
 
-    if page < 1:
-        page = 1
-    if page_size > 100:
-        page_size = 100
-    if page_size < 5:
-        page_size = 5
+        # Obtener cursor de Redis ANTES de cargar conversaciones
+        snapshot_cursor = get_latest_cursor()
 
-    # Filtrar (mismo código que whatsapp_conversaciones)
-    conversaciones = ConversacionWhatsApp.objects.select_related(
-        "cliente", "lead", "channel", "responsable"
-    )
-    conversaciones = _filtrar_conversaciones(conversaciones, request)
+        # Pagination
+        page = int(request.GET.get("page", 1))
+        page_size = int(request.GET.get("limit", 25))
 
-    # Total count
-    total_count = conversaciones.count()
+        if page < 1:
+            page = 1
+        if page_size > 100:
+            page_size = 100
+        if page_size < 5:
+            page_size = 5
 
-    # Apply pagination
-    start_idx = (page - 1) * page_size
-    end_idx = start_idx + page_size
-    conversaciones_page = conversaciones[start_idx:end_idx]
+        # Filtrar (mismo código que whatsapp_conversaciones)
+        conversaciones = ConversacionWhatsApp.objects.select_related(
+            "cliente", "lead", "channel", "responsable"
+        )
+        conversaciones = _filtrar_conversaciones(conversaciones, request)
 
-    data = []
-    for conv in conversaciones_page:
-        # Obtener último mensaje eficientemente
-        ultimo_mensaje = conv.mensajes.order_by('-fecha_mensaje').first()
+        # Total count
+        total_count = conversaciones.count()
 
-        # Contar mensajes no leídos para este usuario
-        from apps.whatsapp.services_read_state import get_unread_count
-        unread_count = get_unread_count(conv, request.user)
+        # Apply pagination
+        start_idx = (page - 1) * page_size
+        end_idx = start_idx + page_size
+        conversaciones_page = conversaciones[start_idx:end_idx]
 
-        # Generar preview del último mensaje
-        preview = _get_message_preview(ultimo_mensaje)
+        data = []
+        for conv in conversaciones_page:
+            # Obtener último mensaje eficientemente
+            ultimo_mensaje = conv.mensajes.order_by('-fecha_mensaje').first()
 
-        # Obtener información del lead para resumen
-        lead = conv.lead
+            # Contar mensajes no leídos para este usuario
+            from apps.whatsapp.services_read_state import get_unread_count
+            unread_count = get_unread_count(conv, request.user) if request.user.is_authenticated else 0
 
-        # Get display name (prefer display_name, then nombre, then phone)
-        cliente_name = 'Sin nombre'
-        if conv.cliente:
-            cliente_name = (
-                conv.cliente.display_name or
-                conv.cliente.nombre or
-                conv.cliente.telefono or
-                'Sin nombre'
-            )
+            # Generar preview del último mensaje
+            preview = _get_message_preview(ultimo_mensaje)
 
-        data.append({
-            'id': conv.id,
-            'name': cliente_name,
-            'phone': conv.cliente.telefono if conv.cliente else 'N/A',
-            'avatar': None,  # Se genera con iniciales en el front
-            'channel': {
-                'id': conv.channel.id if conv.channel else None,
-                'name': conv.channel.nombre if conv.channel else 'Desconocido',
-                'icon': _get_channel_icon(conv.channel.nombre if conv.channel else None),
+            # Obtener información del lead para resumen
+            lead = conv.lead
+
+            # Get display name (prefer display_name, then nombre, then phone)
+            cliente_name = 'Sin nombre'
+            if conv.cliente:
+                cliente_name = (
+                    conv.cliente.display_name or
+                    conv.cliente.nombre or
+                    conv.cliente.telefono or
+                    'Sin nombre'
+                )
+
+            data.append({
+                'id': conv.id,
+                'name': cliente_name,
+                'phone': conv.cliente.telefono if conv.cliente else 'N/A',
+                'avatar': None,  # Se genera con iniciales en el front
+                'channel': {
+                    'id': conv.channel.id if conv.channel else None,
+                    'name': conv.channel.nombre if conv.channel else 'Desconocido',
+                    'icon': _get_channel_icon(conv.channel.nombre if conv.channel else None),
+                },
+                'estado_atencion': conv.estado_atencion,
+                'estado_cotizacion': conv.estado_cotizacion,
+                'preview': preview,
+                'unread_count': unread_count,
+                'last_activity': conv.ultima_actividad.isoformat() if conv.ultima_actividad else conv.actualizada_en.isoformat(),
+                'lead_id': conv.lead.id if conv.lead else None,
+                'responsable': {
+                    'id': conv.responsable.id if conv.responsable else None,
+                    'nombre': conv.responsable.get_full_name() or conv.responsable.username if conv.responsable else None,
+                },
+                'service_data': {
+                    'origin': lead.distrito_origen if lead and lead.distrito_origen else None,
+                    'destination': lead.distrito_destino if lead and lead.distrito_destino else None,
+                    'status': _get_cotizacion_status(conv.estado_cotizacion),
+                    'price': lead.precio_recomendado if lead and lead.precio_recomendado else None,
+                } if lead else None,
+            })
+
+        # Response with pagination metadata and snapshot cursor for SSE coherence
+        response = JsonResponse({
+            'conversations': data,
+            'pagination': {
+                'page': page,
+                'limit': page_size,
+                'total': total_count,
+                'pages': (total_count + page_size - 1) // page_size,
+                'has_next': (page * page_size) < total_count,
+                'has_prev': page > 1,
             },
-            'estado_atencion': conv.estado_atencion,
-            'estado_cotizacion': conv.estado_cotizacion,
-            'preview': preview,
-            'unread_count': unread_count,
-            'last_activity': conv.ultima_actividad.isoformat() if conv.ultima_actividad else conv.actualizada_en.isoformat(),
-            'lead_id': conv.lead.id if conv.lead else None,
-            'responsable': {
-                'id': conv.responsable.id if conv.responsable else None,
-                'nombre': conv.responsable.get_full_name() or conv.responsable.username if conv.responsable else None,
-            },
-            'service_data': {
-                'origin': lead.distrito_origen if lead and lead.distrito_origen else None,
-                'destination': lead.distrito_destino if lead and lead.distrito_destino else None,
-                'status': _get_cotizacion_status(conv.estado_cotizacion),
-                'price': lead.precio_recomendado if lead and lead.precio_recomendado else None,
-            } if lead else None,
+            'snapshot_cursor': snapshot_cursor,  # SSE inicia desde aquí
         })
 
-    # Response with pagination metadata and no-cache headers
-    response = JsonResponse({
-        'conversations': data,
-        'pagination': {
-            'page': page,
-            'limit': page_size,
-            'total': total_count,
-            'pages': (total_count + page_size - 1) // page_size,
-            'has_next': (page * page_size) < total_count,
-            'has_prev': page > 1,
-        }
-    })
+        # Disable caching to ensure fresh data
+        response['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response['Pragma'] = 'no-cache'
+        response['Expires'] = '0'
 
-    # Disable caching to ensure fresh data
-    response['Cache-Control'] = 'no-cache, no-store, must-revalidate'
-    response['Pragma'] = 'no-cache'
-    response['Expires'] = '0'
-
-    return response
+        return response
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JsonResponse({
+            'error': str(e),
+            'type': type(e).__name__,
+            'conversations': [],
+            'pagination': {'page': 1, 'limit': 0, 'total': 0, 'pages': 0},
+        }, status=400)
 
 
 def _enviar_respuesta(conversacion, actor, contenido):
@@ -528,3 +552,56 @@ def resume_bot(request, conversation_id):
     ownership.save()
     logger.info(f"Bot reactivated for conversation {conversation_id}")
     return JsonResponse({'status': 'active'})
+
+
+@login_required
+def api_events_stream(request):
+    """FASE 5B: Fallback REST polling endpoint for events.
+
+    Used when SSE is not available or as reconciliation source.
+    Cursor-based pagination using Redis Stream IDs.
+    Same authorization as SSE: filtered by active channels.
+
+    Query params:
+        - cursor: Last event ID seen (default=0, means all events)
+
+    Response:
+        {
+            "events": [
+                {"id": "...", "type": "message.created", "timestamp": "2026-08-21T...", "data": {...}},
+                ...
+            ],
+            "latest_cursor": "..."
+        }
+    """
+    from apps.dashboard.permissions import can_manage_whatsapp
+    from apps.whatsapp.redis_events import get_events, get_latest_cursor
+    from apps.whatsapp.models import WhatsAppChannel
+
+    # Check authorization (same as SSE)
+    if not can_manage_whatsapp(request.user):
+        raise PermissionDenied("No tienes permisos para acceder a eventos de WhatsApp")
+
+    # Get authorized channels
+    authorized_channels = set(
+        WhatsAppChannel.objects.filter(activo=True).values_list('id', flat=True)
+    )
+
+    cursor = request.GET.get('cursor', '0')
+
+    # Get events from Redis Stream
+    all_events = get_events(cursor=cursor)
+
+    # Filter by authorized channels
+    filtered_events = [
+        e for e in all_events
+        if e.data.get('channel_id') in authorized_channels
+    ]
+
+    latest_cursor = get_latest_cursor()
+
+    return JsonResponse({
+        'events': [e.to_dict() for e in filtered_events],
+        'latest_cursor': latest_cursor,
+        'timestamp': timezone.now().isoformat()
+    })

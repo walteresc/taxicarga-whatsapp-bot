@@ -1,8 +1,12 @@
 <script setup>
 import { useRoute } from 'vue-router'
 import { watch } from 'vue'
+import { useEventStore } from '@/stores/eventStore'
 
 const route = useRoute()
+
+// TRABAJO A: Initialize eventStore early to ensure diagnostics object is created
+useEventStore()
 
 // Aplicar clase 'inbox-route' solo en bandeja-entrada
 watch(() => route.path, (newPath) => {

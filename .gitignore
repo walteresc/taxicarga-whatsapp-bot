@@ -43,6 +43,11 @@ htmlcov/
 # Logs
 *.log
 
+# Local backups and fixtures
+backups/
+*.sql
+dump_*.json
+
 # OS
 Thumbs.db
 Desktop.ini

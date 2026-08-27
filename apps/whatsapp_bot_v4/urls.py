@@ -2,6 +2,7 @@ from django.urls import path
 
 from .views import meta_webhook_v4
 from .services.ycloud_webhook_service import ycloud_webhook
+from .webhook_diagnostic import ycloud_webhook_diagnostic
 from . import api_conversation_control
 from .views_bot_control import bot_control_panel
 
@@ -9,6 +10,7 @@ from .views_bot_control import bot_control_panel
 urlpatterns = [
     path("", meta_webhook_v4, name="meta-webhook-v4"),
     path("ycloud/v1/", ycloud_webhook, name="ycloud-webhook-v1"),
+    path("ycloud/v1/diagnostic/", ycloud_webhook_diagnostic, name="ycloud-webhook-diagnostic"),
     # Panel de control
     path("control-panel/", bot_control_panel, name="bot-control-panel"),
     # Conversation control API

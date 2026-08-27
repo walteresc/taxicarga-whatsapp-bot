@@ -1,5 +1,57 @@
 <script setup>
+import { ref } from 'vue'
+import { useRouter } from 'vue-router'
 import avatar1 from '@images/avatars/avatar-1.png'
+
+const router = useRouter()
+const isLoggingOut = ref(false)
+
+const handleLogout = async () => {
+  if (isLoggingOut.value) return
+
+  try {
+    isLoggingOut.value = true
+
+    // Call logout endpoint to clean session
+    const response = await fetch('/dashboard/api/auth/logout/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCsrfToken(),
+      },
+      credentials: 'include',
+    })
+
+    if (!response.ok) {
+      console.error('Logout failed:', response.status)
+    }
+
+    // Navigate to login
+    await router.replace('/dashboard/login/')
+  } catch (error) {
+    console.error('Logout error:', error)
+    // Still try to navigate to login on error
+    await router.replace('/dashboard/login/')
+  } finally {
+    isLoggingOut.value = false
+  }
+}
+
+function getCsrfToken() {
+  const name = 'csrftoken'
+  let cookieValue = null
+  if (document.cookie && document.cookie !== '') {
+    const cookies = document.cookie.split(';')
+    for (let i = 0; i < cookies.length; i++) {
+      const cookie = cookies[i].trim()
+      if (cookie.substring(0, name.length + 1) === (name + '=')) {
+        cookieValue = decodeURIComponent(cookie.substring(name.length + 1))
+        break
+      }
+    }
+  }
+  return cookieValue
+}
 </script>
 
 <template>
@@ -110,7 +162,7 @@ import avatar1 from '@images/avatars/avatar-1.png'
           <VDivider class="my-2" />
 
           <!-- 👉 Logout -->
-          <VListItem to="/login">
+          <VListItem @click="handleLogout" :disabled="isLoggingOut">
             <template #prepend>
               <VIcon
                 class="me-2"
@@ -119,7 +171,7 @@ import avatar1 from '@images/avatars/avatar-1.png'
               />
             </template>
 
-            <VListItemTitle>Logout</VListItemTitle>
+            <VListItemTitle>{{ isLoggingOut ? 'Saliendo...' : 'Salir' }}</VListItemTitle>
           </VListItem>
         </VList>
       </VMenu>

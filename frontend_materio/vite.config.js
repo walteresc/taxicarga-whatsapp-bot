@@ -57,6 +57,8 @@ export default defineConfig({
     },
   },
   server: {
+    host: '0.0.0.0',
+    port: 5177,
     proxy: {
       '/dashboard': {
         target: 'http://localhost:8001',
@@ -69,7 +71,17 @@ export default defineConfig({
     },
   },
   build: {
+    outDir: 'dist',
+    assetsDir: 'static/js',
+    base: '/',
     chunkSizeWarningLimit: 5000,
+    rollupOptions: {
+      output: {
+        entryFileNames: 'static/js/[name]-[hash].js',
+        chunkFileNames: 'static/js/[name]-[hash].js',
+        assetFileNames: 'static/[ext]/[name]-[hash].[ext]',
+      },
+    },
   },
   optimizeDeps: {
     exclude: ['vuetify'],

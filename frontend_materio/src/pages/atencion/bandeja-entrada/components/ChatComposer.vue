@@ -1,7 +1,15 @@
 <template>
   <div class="chat-composer">
+    <!-- Estado bot pausado (no mostrar "atendiendo" si pausado) -->
+    <div v-if="attentionMode === 'bot' && effectiveBotPaused" class="bot-paused-state">
+      <div class="bot-message paused">
+        <i class="ri-robot-line"></i>
+        <span>El bot está pausado</span>
+      </div>
+    </div>
+
     <!-- Estado bot atendiendo -->
-    <div v-if="attentionMode === 'bot'" class="bot-attending">
+    <div v-else-if="attentionMode === 'bot'" class="bot-attending">
       <div class="bot-message">
         <i class="ri-robot-line"></i>
         <span>El bot está atendiendo esta conversación</span>
@@ -185,6 +193,10 @@ defineProps({
     type: String,
     default: 'Walter Escobar',
   },
+  effectiveBotPaused: {
+    type: Boolean,
+    default: false,
+  },
 })
 
 const emit = defineEmits(['send-message', 'clear-reply', 'take-control', 'assign-me', 'reopen'])
@@ -299,6 +311,7 @@ const insertEmoji = (emoji) => {
 }
 
 .bot-attending,
+.bot-paused-state,
 .window-closed,
 .unassigned-state,
 .closed-state {
@@ -311,6 +324,11 @@ const insertEmoji = (emoji) => {
 
 .bot-attending {
   background: #fff3cd;
+  border-top: 1px solid #e0e0e0;
+}
+
+.bot-paused-state {
+  background: #f5f5f5;
   border-top: 1px solid #e0e0e0;
 }
 
@@ -338,6 +356,10 @@ const insertEmoji = (emoji) => {
 .bot-message,
 .window-message {
   color: #664d03;
+}
+
+.bot-message.paused {
+  color: #666;
 }
 
 .unassigned-message {

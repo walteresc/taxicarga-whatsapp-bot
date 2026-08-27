@@ -149,10 +149,12 @@ def _receive_message(request):
 
         if ycloud_event_type == "echo":
             # Outbound echo from WhatsApp Web/mobile — advisor intervention
+            # NOTE: For echo, process_ycloud_event will resolve cliente from 'to' field, not from our resolution
             ycloud_result = process_ycloud_event(
                 event_type="whatsapp.smb.message.echoes",
                 event_data=event,
                 channel=channel,
+                cliente=None,  # Echo resolves customer differently; let process_ycloud_event handle it
             )
             canonical_message = ycloud_result.get("message")
             canonical_conversation = ycloud_result.get("conversation")
@@ -173,10 +175,12 @@ def _receive_message(request):
 
         else:
             # Inbound message from customer
+            # CRITICAL FIX: Pass already-resolved cliente to avoid duplicate resolution
             ycloud_result = process_ycloud_event(
                 event_type="whatsapp.inbound_message.received",
                 event_data=event,
                 channel=channel,
+                cliente=cliente,  # Already resolved in line 106
             )
             canonical_message = ycloud_result.get("message")
             canonical_conversation = ycloud_result.get("conversation")
@@ -1069,6 +1073,15 @@ def _create_mensaje_multimedia(
             # For now, use default
             pass
 
+        # Map origen to source
+        source_mapping = {
+            "cliente": MensajeWhatsApp.SOURCE_WHATSAPP_CUSTOMER,
+            "bot": MensajeWhatsApp.SOURCE_BOT,
+            "asesor": MensajeWhatsApp.SOURCE_WHATSAPP_BUSINESS_APP,
+            "sistema": MensajeWhatsApp.SOURCE_SYSTEM,
+        }
+        source = source_mapping.get(origen, MensajeWhatsApp.SOURCE_WHATSAPP_CUSTOMER)
+
         # Create message with pending download status
         mensaje = MensajeWhatsApp(
             conversacion=conversacion,
@@ -1080,7 +1093,7 @@ def _create_mensaje_multimedia(
             mime_type=mime_type_client,  # Will be validated during download
             media_status=MensajeWhatsApp.MEDIA_PENDING,
             sender_type=_map_origen_to_sender_type(origen),
-            source=MensajeWhatsApp.SOURCE_WEBHOOK,
+            source=source,
             retention_policy=retention_policy,
             meta_message_id=event.get("message_id", ""),
         )

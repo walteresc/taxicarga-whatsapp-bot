@@ -1,0 +1,872 @@
+[
+  {
+    "cycle": 1,
+    "start": "2026-08-26T12:03:37.073277",
+    "steps": {
+      "navigate_login": "success",
+      "login_submit": "starting"
+    },
+    "errors": [
+      "Page.fill: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"input[name=\\\"username\\\"]\")\n"
+    ],
+    "requests": [
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/dashboard/login/",
+        "timestamp": "2026-08-26T12:03:37.081895"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/loader.css",
+        "timestamp": "2026-08-26T12:03:37.093338"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/index-BYh5fHk3.js",
+        "timestamp": "2026-08-26T12:03:37.093525"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/css/index-DkLlhIPv.css",
+        "timestamp": "2026-08-26T12:03:37.093641"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/webfontloader-C3uTKfJo.js",
+        "timestamp": "2026-08-26T12:03:37.181227"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/blank-CTjDOLOQ.js",
+        "timestamp": "2026-08-26T12:03:37.181708"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/css/blank-CExWZhJD.css",
+        "timestamp": "2026-08-26T12:03:37.181981"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/_...error_-CPbjPHAd.js",
+        "timestamp": "2026-08-26T12:03:37.182252"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/VImg-aUQJLk9t.js",
+        "timestamp": "2026-08-26T12:03:37.182551"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/css/VImg-DPhT_SK2.css",
+        "timestamp": "2026-08-26T12:03:37.183168"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/css/_..-D12iSKdb.css",
+        "timestamp": "2026-08-26T12:03:37.183536"
+      },
+      {
+        "method": "GET",
+        "url": "https://fonts.googleapis.com/css2",
+        "timestamp": "2026-08-26T12:03:37.196586"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/png/404-KybqypYR.png",
+        "timestamp": "2026-08-26T12:03:37.231681"
+      },
+      {
+        "method": "GET",
+        "url": "https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2",
+        "timestamp": "2026-08-26T12:03:37.362178"
+      }
+    ],
+    "console_logs": [],
+    "end": "2026-08-26T12:04:07.362398",
+    "status": "FAIL"
+  },
+  {
+    "cycle": 2,
+    "start": "2026-08-26T12:04:07.405732",
+    "steps": {
+      "navigate_login": "success",
+      "login_submit": "starting"
+    },
+    "errors": [
+      "Page.fill: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"input[name=\\\"username\\\"]\")\n"
+    ],
+    "requests": [
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/dashboard/login/",
+        "timestamp": "2026-08-26T12:04:07.409236"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/loader.css",
+        "timestamp": "2026-08-26T12:04:07.417128"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/index-BYh5fHk3.js",
+        "timestamp": "2026-08-26T12:04:07.417559"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/css/index-DkLlhIPv.css",
+        "timestamp": "2026-08-26T12:04:07.419748"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/webfontloader-C3uTKfJo.js",
+        "timestamp": "2026-08-26T12:04:07.468818"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/blank-CTjDOLOQ.js",
+        "timestamp": "2026-08-26T12:04:07.469190"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/css/blank-CExWZhJD.css",
+        "timestamp": "2026-08-26T12:04:07.469530"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/_...error_-CPbjPHAd.js",
+        "timestamp": "2026-08-26T12:04:07.469820"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/VImg-aUQJLk9t.js",
+        "timestamp": "2026-08-26T12:04:07.470091"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/css/VImg-DPhT_SK2.css",
+        "timestamp": "2026-08-26T12:04:07.470309"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/css/_..-D12iSKdb.css",
+        "timestamp": "2026-08-26T12:04:07.470483"
+      },
+      {
+        "method": "GET",
+        "url": "https://fonts.googleapis.com/css2",
+        "timestamp": "2026-08-26T12:04:07.476603"
+      },
+      {
+        "method": "GET",
+        "url": "https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2",
+        "timestamp": "2026-08-26T12:04:07.509925"
+      },
+      {
+        "method": "GET",
+        "url": "https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2",
+        "timestamp": "2026-08-26T12:04:07.510172"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/png/404-KybqypYR.png",
+        "timestamp": "2026-08-26T12:04:07.514255"
+      }
+    ],
+    "console_logs": [],
+    "end": "2026-08-26T12:04:37.486848",
+    "status": "FAIL"
+  },
+  {
+    "cycle": 3,
+    "start": "2026-08-26T12:04:37.529778",
+    "steps": {
+      "navigate_login": "success",
+      "login_submit": "starting"
+    },
+    "errors": [
+      "Page.fill: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"input[name=\\\"username\\\"]\")\n"
+    ],
+    "requests": [
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/dashboard/login/",
+        "timestamp": "2026-08-26T12:04:37.532248"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/loader.css",
+        "timestamp": "2026-08-26T12:04:37.540167"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/index-BYh5fHk3.js",
+        "timestamp": "2026-08-26T12:04:37.540468"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/css/index-DkLlhIPv.css",
+        "timestamp": "2026-08-26T12:04:37.540678"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/webfontloader-C3uTKfJo.js",
+        "timestamp": "2026-08-26T12:04:37.583588"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/blank-CTjDOLOQ.js",
+        "timestamp": "2026-08-26T12:04:37.583792"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/css/blank-CExWZhJD.css",
+        "timestamp": "2026-08-26T12:04:37.584019"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/_...error_-CPbjPHAd.js",
+        "timestamp": "2026-08-26T12:04:37.584244"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/VImg-aUQJLk9t.js",
+        "timestamp": "2026-08-26T12:04:37.584388"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/css/VImg-DPhT_SK2.css",
+        "timestamp": "2026-08-26T12:04:37.584524"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/css/_..-D12iSKdb.css",
+        "timestamp": "2026-08-26T12:04:37.584674"
+      },
+      {
+        "method": "GET",
+        "url": "https://fonts.googleapis.com/css2",
+        "timestamp": "2026-08-26T12:04:37.585714"
+      },
+      {
+        "method": "GET",
+        "url": "https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2",
+        "timestamp": "2026-08-26T12:04:37.588727"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/png/404-KybqypYR.png",
+        "timestamp": "2026-08-26T12:04:37.620316"
+      }
+    ],
+    "console_logs": [],
+    "end": "2026-08-26T12:05:07.589221",
+    "status": "FAIL"
+  },
+  {
+    "cycle": 4,
+    "start": "2026-08-26T12:05:07.626450",
+    "steps": {
+      "navigate_login": "success",
+      "login_submit": "starting"
+    },
+    "errors": [
+      "Page.fill: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"input[name=\\\"username\\\"]\")\n"
+    ],
+    "requests": [
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/dashboard/login/",
+        "timestamp": "2026-08-26T12:05:07.629533"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/loader.css",
+        "timestamp": "2026-08-26T12:05:07.636072"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/index-BYh5fHk3.js",
+        "timestamp": "2026-08-26T12:05:07.636300"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/css/index-DkLlhIPv.css",
+        "timestamp": "2026-08-26T12:05:07.636429"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/webfontloader-C3uTKfJo.js",
+        "timestamp": "2026-08-26T12:05:07.679473"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/blank-CTjDOLOQ.js",
+        "timestamp": "2026-08-26T12:05:07.679658"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/css/blank-CExWZhJD.css",
+        "timestamp": "2026-08-26T12:05:07.679831"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/_...error_-CPbjPHAd.js",
+        "timestamp": "2026-08-26T12:05:07.679951"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/VImg-aUQJLk9t.js",
+        "timestamp": "2026-08-26T12:05:07.680045"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/css/VImg-DPhT_SK2.css",
+        "timestamp": "2026-08-26T12:05:07.680150"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/css/_..-D12iSKdb.css",
+        "timestamp": "2026-08-26T12:05:07.680271"
+      },
+      {
+        "method": "GET",
+        "url": "https://fonts.googleapis.com/css2",
+        "timestamp": "2026-08-26T12:05:07.681505"
+      },
+      {
+        "method": "GET",
+        "url": "https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2",
+        "timestamp": "2026-08-26T12:05:07.685782"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/png/404-KybqypYR.png",
+        "timestamp": "2026-08-26T12:05:07.716877"
+      }
+    ],
+    "console_logs": [],
+    "end": "2026-08-26T12:05:37.686218",
+    "status": "FAIL"
+  },
+  {
+    "cycle": 5,
+    "start": "2026-08-26T12:05:37.724739",
+    "steps": {
+      "navigate_login": "success",
+      "login_submit": "starting"
+    },
+    "errors": [
+      "Page.fill: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"input[name=\\\"username\\\"]\")\n"
+    ],
+    "requests": [
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/dashboard/login/",
+        "timestamp": "2026-08-26T12:05:37.727296"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/loader.css",
+        "timestamp": "2026-08-26T12:05:37.733748"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/index-BYh5fHk3.js",
+        "timestamp": "2026-08-26T12:05:37.733922"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/css/index-DkLlhIPv.css",
+        "timestamp": "2026-08-26T12:05:37.734050"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/webfontloader-C3uTKfJo.js",
+        "timestamp": "2026-08-26T12:05:37.773671"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/blank-CTjDOLOQ.js",
+        "timestamp": "2026-08-26T12:05:37.774490"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/css/blank-CExWZhJD.css",
+        "timestamp": "2026-08-26T12:05:37.774747"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/_...error_-CPbjPHAd.js",
+        "timestamp": "2026-08-26T12:05:37.774879"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/VImg-aUQJLk9t.js",
+        "timestamp": "2026-08-26T12:05:37.774995"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/css/VImg-DPhT_SK2.css",
+        "timestamp": "2026-08-26T12:05:37.775102"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/css/_..-D12iSKdb.css",
+        "timestamp": "2026-08-26T12:05:37.775197"
+      },
+      {
+        "method": "GET",
+        "url": "https://fonts.googleapis.com/css2",
+        "timestamp": "2026-08-26T12:05:37.776116"
+      },
+      {
+        "method": "GET",
+        "url": "https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2",
+        "timestamp": "2026-08-26T12:05:37.796810"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/png/404-KybqypYR.png",
+        "timestamp": "2026-08-26T12:05:37.799556"
+      }
+    ],
+    "console_logs": [],
+    "end": "2026-08-26T12:06:07.809711",
+    "status": "FAIL"
+  },
+  {
+    "cycle": 6,
+    "start": "2026-08-26T12:06:07.847315",
+    "steps": {
+      "navigate_login": "success",
+      "login_submit": "starting"
+    },
+    "errors": [
+      "Page.fill: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"input[name=\\\"username\\\"]\")\n"
+    ],
+    "requests": [
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/dashboard/login/",
+        "timestamp": "2026-08-26T12:06:07.849548"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/loader.css",
+        "timestamp": "2026-08-26T12:06:07.856043"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/index-BYh5fHk3.js",
+        "timestamp": "2026-08-26T12:06:07.856269"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/css/index-DkLlhIPv.css",
+        "timestamp": "2026-08-26T12:06:07.856400"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/webfontloader-C3uTKfJo.js",
+        "timestamp": "2026-08-26T12:06:07.893420"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/blank-CTjDOLOQ.js",
+        "timestamp": "2026-08-26T12:06:07.893601"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/css/blank-CExWZhJD.css",
+        "timestamp": "2026-08-26T12:06:07.893728"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/_...error_-CPbjPHAd.js",
+        "timestamp": "2026-08-26T12:06:07.893824"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/VImg-aUQJLk9t.js",
+        "timestamp": "2026-08-26T12:06:07.893932"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/css/VImg-DPhT_SK2.css",
+        "timestamp": "2026-08-26T12:06:07.894047"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/css/_..-D12iSKdb.css",
+        "timestamp": "2026-08-26T12:06:07.894152"
+      },
+      {
+        "method": "GET",
+        "url": "https://fonts.googleapis.com/css2",
+        "timestamp": "2026-08-26T12:06:07.898213"
+      },
+      {
+        "method": "GET",
+        "url": "https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2",
+        "timestamp": "2026-08-26T12:06:07.917020"
+      },
+      {
+        "method": "GET",
+        "url": "https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2",
+        "timestamp": "2026-08-26T12:06:07.917138"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/png/404-KybqypYR.png",
+        "timestamp": "2026-08-26T12:06:07.924871"
+      }
+    ],
+    "console_logs": [],
+    "end": "2026-08-26T12:06:37.900781",
+    "status": "FAIL"
+  },
+  {
+    "cycle": 7,
+    "start": "2026-08-26T12:06:37.937117",
+    "steps": {
+      "navigate_login": "success",
+      "login_submit": "starting"
+    },
+    "errors": [
+      "Page.fill: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"input[name=\\\"username\\\"]\")\n"
+    ],
+    "requests": [
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/dashboard/login/",
+        "timestamp": "2026-08-26T12:06:37.939382"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/loader.css",
+        "timestamp": "2026-08-26T12:06:37.945268"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/index-BYh5fHk3.js",
+        "timestamp": "2026-08-26T12:06:37.945462"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/css/index-DkLlhIPv.css",
+        "timestamp": "2026-08-26T12:06:37.945610"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/webfontloader-C3uTKfJo.js",
+        "timestamp": "2026-08-26T12:06:37.984502"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/blank-CTjDOLOQ.js",
+        "timestamp": "2026-08-26T12:06:37.984686"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/css/blank-CExWZhJD.css",
+        "timestamp": "2026-08-26T12:06:37.984821"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/_...error_-CPbjPHAd.js",
+        "timestamp": "2026-08-26T12:06:37.984943"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/VImg-aUQJLk9t.js",
+        "timestamp": "2026-08-26T12:06:37.985050"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/css/VImg-DPhT_SK2.css",
+        "timestamp": "2026-08-26T12:06:37.985144"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/css/_..-D12iSKdb.css",
+        "timestamp": "2026-08-26T12:06:37.985246"
+      },
+      {
+        "method": "GET",
+        "url": "https://fonts.googleapis.com/css2",
+        "timestamp": "2026-08-26T12:06:37.987167"
+      },
+      {
+        "method": "GET",
+        "url": "https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2",
+        "timestamp": "2026-08-26T12:06:38.007772"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/png/404-KybqypYR.png",
+        "timestamp": "2026-08-26T12:06:38.017822"
+      }
+    ],
+    "console_logs": [],
+    "end": "2026-08-26T12:07:08.015717",
+    "status": "FAIL"
+  },
+  {
+    "cycle": 8,
+    "start": "2026-08-26T12:07:08.050931",
+    "steps": {
+      "navigate_login": "success",
+      "login_submit": "starting"
+    },
+    "errors": [
+      "Page.fill: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"input[name=\\\"username\\\"]\")\n"
+    ],
+    "requests": [
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/dashboard/login/",
+        "timestamp": "2026-08-26T12:07:08.053343"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/loader.css",
+        "timestamp": "2026-08-26T12:07:08.059783"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/index-BYh5fHk3.js",
+        "timestamp": "2026-08-26T12:07:08.059946"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/css/index-DkLlhIPv.css",
+        "timestamp": "2026-08-26T12:07:08.060042"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/webfontloader-C3uTKfJo.js",
+        "timestamp": "2026-08-26T12:07:08.095787"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/blank-CTjDOLOQ.js",
+        "timestamp": "2026-08-26T12:07:08.095951"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/css/blank-CExWZhJD.css",
+        "timestamp": "2026-08-26T12:07:08.096140"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/_...error_-CPbjPHAd.js",
+        "timestamp": "2026-08-26T12:07:08.096237"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/VImg-aUQJLk9t.js",
+        "timestamp": "2026-08-26T12:07:08.096324"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/css/VImg-DPhT_SK2.css",
+        "timestamp": "2026-08-26T12:07:08.096422"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/css/_..-D12iSKdb.css",
+        "timestamp": "2026-08-26T12:07:08.097563"
+      },
+      {
+        "method": "GET",
+        "url": "https://fonts.googleapis.com/css2",
+        "timestamp": "2026-08-26T12:07:08.098178"
+      },
+      {
+        "method": "GET",
+        "url": "https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2",
+        "timestamp": "2026-08-26T12:07:08.117945"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/png/404-KybqypYR.png",
+        "timestamp": "2026-08-26T12:07:08.126659"
+      }
+    ],
+    "console_logs": [],
+    "end": "2026-08-26T12:07:38.113734",
+    "status": "FAIL"
+  },
+  {
+    "cycle": 9,
+    "start": "2026-08-26T12:07:38.150761",
+    "steps": {
+      "navigate_login": "success",
+      "login_submit": "starting"
+    },
+    "errors": [
+      "Page.fill: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"input[name=\\\"username\\\"]\")\n"
+    ],
+    "requests": [
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/dashboard/login/",
+        "timestamp": "2026-08-26T12:07:38.153693"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/loader.css",
+        "timestamp": "2026-08-26T12:07:38.159963"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/index-BYh5fHk3.js",
+        "timestamp": "2026-08-26T12:07:38.160195"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/css/index-DkLlhIPv.css",
+        "timestamp": "2026-08-26T12:07:38.160313"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/webfontloader-C3uTKfJo.js",
+        "timestamp": "2026-08-26T12:07:38.199714"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/blank-CTjDOLOQ.js",
+        "timestamp": "2026-08-26T12:07:38.199999"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/css/blank-CExWZhJD.css",
+        "timestamp": "2026-08-26T12:07:38.200220"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/_...error_-CPbjPHAd.js",
+        "timestamp": "2026-08-26T12:07:38.200328"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/VImg-aUQJLk9t.js",
+        "timestamp": "2026-08-26T12:07:38.200482"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/css/VImg-DPhT_SK2.css",
+        "timestamp": "2026-08-26T12:07:38.200623"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/css/_..-D12iSKdb.css",
+        "timestamp": "2026-08-26T12:07:38.200769"
+      },
+      {
+        "method": "GET",
+        "url": "https://fonts.googleapis.com/css2",
+        "timestamp": "2026-08-26T12:07:38.202493"
+      },
+      {
+        "method": "GET",
+        "url": "https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2",
+        "timestamp": "2026-08-26T12:07:38.207204"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/png/404-KybqypYR.png",
+        "timestamp": "2026-08-26T12:07:38.235085"
+      }
+    ],
+    "console_logs": [],
+    "end": "2026-08-26T12:08:08.222503",
+    "status": "FAIL"
+  },
+  {
+    "cycle": 10,
+    "start": "2026-08-26T12:08:08.260025",
+    "steps": {
+      "navigate_login": "success",
+      "login_submit": "starting"
+    },
+    "errors": [
+      "Page.fill: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"input[name=\\\"username\\\"]\")\n"
+    ],
+    "requests": [
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/dashboard/login/",
+        "timestamp": "2026-08-26T12:08:08.265021"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/loader.css",
+        "timestamp": "2026-08-26T12:08:08.270799"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/index-BYh5fHk3.js",
+        "timestamp": "2026-08-26T12:08:08.270979"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/css/index-DkLlhIPv.css",
+        "timestamp": "2026-08-26T12:08:08.271086"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/webfontloader-C3uTKfJo.js",
+        "timestamp": "2026-08-26T12:08:08.309560"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/blank-CTjDOLOQ.js",
+        "timestamp": "2026-08-26T12:08:08.309717"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/css/blank-CExWZhJD.css",
+        "timestamp": "2026-08-26T12:08:08.309852"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/_...error_-CPbjPHAd.js",
+        "timestamp": "2026-08-26T12:08:08.309981"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/js/VImg-aUQJLk9t.js",
+        "timestamp": "2026-08-26T12:08:08.310075"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/css/VImg-DPhT_SK2.css",
+        "timestamp": "2026-08-26T12:08:08.310165"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/css/_..-D12iSKdb.css",
+        "timestamp": "2026-08-26T12:08:08.310260"
+      },
+      {
+        "method": "GET",
+        "url": "https://fonts.googleapis.com/css2",
+        "timestamp": "2026-08-26T12:08:08.311806"
+      },
+      {
+        "method": "GET",
+        "url": "https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7.woff2",
+        "timestamp": "2026-08-26T12:08:08.331587"
+      },
+      {
+        "method": "GET",
+        "url": "http://localhost:8001/static/png/404-KybqypYR.png",
+        "timestamp": "2026-08-26T12:08:08.344757"
+      }
+    ],
+    "console_logs": [],
+    "end": "2026-08-26T12:08:38.327332",
+    "status": "FAIL"
+  }
+]

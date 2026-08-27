@@ -1,0 +1,748 @@
+{
+  "closed_at": "2026-08-21 20:24:37.363857+00:00",
+  "changes": [
+    {
+      "conv_id": 72,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-14 23:55:12.013466+00:00",
+      "last_activity": "2026-08-14 23:55:12.013237+00:00"
+    },
+    {
+      "conv_id": 73,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-14 23:55:52.609459+00:00",
+      "last_activity": "2026-08-14 23:55:52.609250+00:00"
+    },
+    {
+      "conv_id": 74,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-14 23:56:28.793724+00:00",
+      "last_activity": "2026-08-14 23:56:28.793529+00:00"
+    },
+    {
+      "conv_id": 75,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-15 00:00:56.866157+00:00",
+      "last_activity": "2026-08-15 00:00:56.865857+00:00"
+    },
+    {
+      "conv_id": 76,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-15 00:04:05.371033+00:00",
+      "last_activity": "2026-08-15 00:04:05.370843+00:00"
+    },
+    {
+      "conv_id": 77,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-15 00:05:32.593519+00:00",
+      "last_activity": "2026-08-15 00:05:32.593310+00:00"
+    },
+    {
+      "conv_id": 78,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-15 00:06:36.520227+00:00",
+      "last_activity": "2026-08-15 00:06:36.520032+00:00"
+    },
+    {
+      "conv_id": 79,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-15 00:07:29.777116+00:00",
+      "last_activity": "2026-08-15 00:07:29.776887+00:00"
+    },
+    {
+      "conv_id": 80,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-15 00:10:29.734610+00:00",
+      "last_activity": "2026-08-15 00:10:29.734410+00:00"
+    },
+    {
+      "conv_id": 81,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-15 00:13:27.834466+00:00",
+      "last_activity": "2026-08-15 00:13:27.834285+00:00"
+    },
+    {
+      "conv_id": 82,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-15 00:24:33.975955+00:00",
+      "last_activity": "2026-08-15 00:24:33.975776+00:00"
+    },
+    {
+      "conv_id": 83,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-15 00:25:43.315634+00:00",
+      "last_activity": "2026-08-15 00:25:43.315411+00:00"
+    },
+    {
+      "conv_id": 84,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-15 00:26:38.800583+00:00",
+      "last_activity": "2026-08-15 00:26:38.800388+00:00"
+    },
+    {
+      "conv_id": 85,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-15 00:27:27.593914+00:00",
+      "last_activity": "2026-08-15 00:27:27.593693+00:00"
+    },
+    {
+      "conv_id": 86,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-15 00:28:38.148816+00:00",
+      "last_activity": "2026-08-15 00:28:38.148625+00:00"
+    },
+    {
+      "conv_id": 87,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-15 00:33:04.542147+00:00",
+      "last_activity": "2026-08-15 00:33:04.541956+00:00"
+    },
+    {
+      "conv_id": 88,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-15 00:34:10.192720+00:00",
+      "last_activity": "2026-08-15 00:34:10.192526+00:00"
+    },
+    {
+      "conv_id": 89,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-15 00:38:32.800445+00:00",
+      "last_activity": "2026-08-15 00:38:32.800219+00:00"
+    },
+    {
+      "conv_id": 90,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-15 01:04:17.351760+00:00",
+      "last_activity": "2026-08-15 01:04:17.351563+00:00"
+    },
+    {
+      "conv_id": 91,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-15 14:55:45.679902+00:00",
+      "last_activity": "2026-08-15 14:55:45.679682+00:00"
+    },
+    {
+      "conv_id": 92,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-16 02:03:43.304343+00:00",
+      "last_activity": "2026-08-16 02:03:43.304132+00:00"
+    },
+    {
+      "conv_id": 93,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-16 02:04:06.253974+00:00",
+      "last_activity": "2026-08-16 02:04:06.253719+00:00"
+    },
+    {
+      "conv_id": 94,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-16 02:09:04.167653+00:00",
+      "last_activity": "2026-08-16 02:09:04.167445+00:00"
+    },
+    {
+      "conv_id": 95,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-16 02:10:45.851854+00:00",
+      "last_activity": "2026-08-16 02:10:45.851652+00:00"
+    },
+    {
+      "conv_id": 96,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-16 02:14:19.290189+00:00",
+      "last_activity": "2026-08-16 02:14:19.289986+00:00"
+    },
+    {
+      "conv_id": 97,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-16 02:14:41.553852+00:00",
+      "last_activity": "2026-08-16 02:14:41.553654+00:00"
+    },
+    {
+      "conv_id": 98,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-16 02:15:03.285271+00:00",
+      "last_activity": "2026-08-16 02:15:03.285080+00:00"
+    },
+    {
+      "conv_id": 99,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-16 02:15:37.459814+00:00",
+      "last_activity": "2026-08-16 02:15:37.459619+00:00"
+    },
+    {
+      "conv_id": 100,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-16 02:15:59.294079+00:00",
+      "last_activity": "2026-08-16 02:15:59.293852+00:00"
+    },
+    {
+      "conv_id": 101,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-16 02:16:21.224908+00:00",
+      "last_activity": "2026-08-16 02:16:21.224708+00:00"
+    },
+    {
+      "conv_id": 102,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-16 02:16:41.381091+00:00",
+      "last_activity": "2026-08-16 02:16:41.380879+00:00"
+    },
+    {
+      "conv_id": 103,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-16 02:16:59.613972+00:00",
+      "last_activity": "2026-08-16 02:16:59.613762+00:00"
+    },
+    {
+      "conv_id": 104,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-16 02:17:18.015176+00:00",
+      "last_activity": "2026-08-16 02:17:18.014981+00:00"
+    },
+    {
+      "conv_id": 105,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-16 02:17:39.143139+00:00",
+      "last_activity": "2026-08-16 02:17:39.142931+00:00"
+    },
+    {
+      "conv_id": 106,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-16 02:18:07.124446+00:00",
+      "last_activity": "2026-08-16 02:18:07.124253+00:00"
+    },
+    {
+      "conv_id": 107,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-16 02:18:24.834496+00:00",
+      "last_activity": "2026-08-16 02:18:24.834298+00:00"
+    },
+    {
+      "conv_id": 108,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-16 02:22:12.468054+00:00",
+      "last_activity": "2026-08-16 02:22:12.467836+00:00"
+    },
+    {
+      "conv_id": 109,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-16 02:23:15.219639+00:00",
+      "last_activity": "2026-08-16 02:23:15.219444+00:00"
+    },
+    {
+      "conv_id": 110,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-16 02:23:36.059368+00:00",
+      "last_activity": "2026-08-16 02:23:36.059166+00:00"
+    },
+    {
+      "conv_id": 111,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-16 02:23:53.190200+00:00",
+      "last_activity": "2026-08-16 02:23:53.189949+00:00"
+    },
+    {
+      "conv_id": 112,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-16 02:24:12.854499+00:00",
+      "last_activity": "2026-08-16 02:24:12.854283+00:00"
+    },
+    {
+      "conv_id": 113,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-16 02:24:31.611110+00:00",
+      "last_activity": "2026-08-16 02:24:31.610906+00:00"
+    },
+    {
+      "conv_id": 114,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-16 02:32:05.482857+00:00",
+      "last_activity": "2026-08-16 02:32:05.482622+00:00"
+    },
+    {
+      "conv_id": 115,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-16 02:32:26.552200+00:00",
+      "last_activity": "2026-08-16 02:32:26.551987+00:00"
+    },
+    {
+      "conv_id": 116,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-16 02:32:47.833019+00:00",
+      "last_activity": "2026-08-16 02:32:47.832805+00:00"
+    },
+    {
+      "conv_id": 117,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-16 02:33:09.623695+00:00",
+      "last_activity": "2026-08-16 02:33:09.623474+00:00"
+    },
+    {
+      "conv_id": 118,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-16 02:33:31.330583+00:00",
+      "last_activity": "2026-08-16 02:33:31.330286+00:00"
+    },
+    {
+      "conv_id": 119,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-16 02:36:57.951587+00:00",
+      "last_activity": "2026-08-16 02:36:57.951376+00:00"
+    },
+    {
+      "conv_id": 120,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-16 02:37:18.583050+00:00",
+      "last_activity": "2026-08-16 02:37:18.582850+00:00"
+    },
+    {
+      "conv_id": 121,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-16 02:37:41.506557+00:00",
+      "last_activity": "2026-08-16 02:37:41.506378+00:00"
+    },
+    {
+      "conv_id": 122,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-16 02:38:04.335251+00:00",
+      "last_activity": "2026-08-16 02:38:04.335052+00:00"
+    },
+    {
+      "conv_id": 123,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-16 02:38:25.703865+00:00",
+      "last_activity": "2026-08-16 02:38:25.703635+00:00"
+    },
+    {
+      "conv_id": 124,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-16 05:24:38.091170+00:00",
+      "last_activity": "2026-08-16 05:24:38.090964+00:00"
+    },
+    {
+      "conv_id": 125,
+      "client_id": 112,
+      "channel_id": null,
+      "created": "2026-08-16 05:24:59.675897+00:00",
+      "last_activity": "2026-08-16 05:24:59.675532+00:00"
+    },
+    {
+      "conv_id": 127,
+      "client_id": 113,
+      "channel_id": null,
+      "created": "2026-08-18 01:45:42.819216+00:00",
+      "last_activity": "2026-08-18 01:45:42.818928+00:00"
+    },
+    {
+      "conv_id": 128,
+      "client_id": 113,
+      "channel_id": null,
+      "created": "2026-08-18 01:45:42.851987+00:00",
+      "last_activity": "2026-08-18 01:45:42.851785+00:00"
+    },
+    {
+      "conv_id": 129,
+      "client_id": 113,
+      "channel_id": null,
+      "created": "2026-08-18 01:46:06.224374+00:00",
+      "last_activity": "2026-08-18 01:46:06.224105+00:00"
+    },
+    {
+      "conv_id": 130,
+      "client_id": 113,
+      "channel_id": null,
+      "created": "2026-08-18 01:46:06.251899+00:00",
+      "last_activity": "2026-08-18 01:46:06.251707+00:00"
+    },
+    {
+      "conv_id": 131,
+      "client_id": 113,
+      "channel_id": null,
+      "created": "2026-08-18 01:46:25.960781+00:00",
+      "last_activity": "2026-08-18 01:46:25.960506+00:00"
+    },
+    {
+      "conv_id": 132,
+      "client_id": 113,
+      "channel_id": null,
+      "created": "2026-08-18 01:46:26.006541+00:00",
+      "last_activity": "2026-08-18 01:46:26.006279+00:00"
+    },
+    {
+      "conv_id": 133,
+      "client_id": 113,
+      "channel_id": null,
+      "created": "2026-08-18 01:46:52.236241+00:00",
+      "last_activity": "2026-08-18 01:46:52.236032+00:00"
+    },
+    {
+      "conv_id": 134,
+      "client_id": 113,
+      "channel_id": null,
+      "created": "2026-08-18 01:46:52.279744+00:00",
+      "last_activity": "2026-08-18 01:46:52.279577+00:00"
+    },
+    {
+      "conv_id": 135,
+      "client_id": 113,
+      "channel_id": null,
+      "created": "2026-08-18 01:46:52.322218+00:00",
+      "last_activity": "2026-08-18 01:46:52.321995+00:00"
+    },
+    {
+      "conv_id": 136,
+      "client_id": 113,
+      "channel_id": null,
+      "created": "2026-08-18 01:47:02.061748+00:00",
+      "last_activity": "2026-08-18 01:47:02.061521+00:00"
+    },
+    {
+      "conv_id": 137,
+      "client_id": 113,
+      "channel_id": null,
+      "created": "2026-08-18 01:47:02.111881+00:00",
+      "last_activity": "2026-08-18 01:47:02.111690+00:00"
+    },
+    {
+      "conv_id": 138,
+      "client_id": 113,
+      "channel_id": null,
+      "created": "2026-08-18 01:47:02.158805+00:00",
+      "last_activity": "2026-08-18 01:47:02.158643+00:00"
+    },
+    {
+      "conv_id": 139,
+      "client_id": 113,
+      "channel_id": null,
+      "created": "2026-08-18 01:47:06.363797+00:00",
+      "last_activity": "2026-08-18 01:47:06.363528+00:00"
+    },
+    {
+      "conv_id": 140,
+      "client_id": 113,
+      "channel_id": null,
+      "created": "2026-08-18 01:47:06.410327+00:00",
+      "last_activity": "2026-08-18 01:47:06.410144+00:00"
+    },
+    {
+      "conv_id": 146,
+      "client_id": 116,
+      "channel_id": null,
+      "created": "2026-08-18 01:59:58.121418+00:00",
+      "last_activity": "2026-08-18 01:59:58.121221+00:00"
+    },
+    {
+      "conv_id": 147,
+      "client_id": 116,
+      "channel_id": null,
+      "created": "2026-08-18 02:00:01.414946+00:00",
+      "last_activity": "2026-08-18 02:00:01.414776+00:00"
+    },
+    {
+      "conv_id": 148,
+      "client_id": 116,
+      "channel_id": null,
+      "created": "2026-08-18 02:00:09.398991+00:00",
+      "last_activity": "2026-08-18 02:00:09.398771+00:00"
+    },
+    {
+      "conv_id": 149,
+      "client_id": 116,
+      "channel_id": null,
+      "created": "2026-08-18 02:00:16.856237+00:00",
+      "last_activity": "2026-08-18 02:00:16.856012+00:00"
+    },
+    {
+      "conv_id": 150,
+      "client_id": 116,
+      "channel_id": null,
+      "created": "2026-08-18 02:00:47.582934+00:00",
+      "last_activity": "2026-08-18 02:00:47.582722+00:00"
+    },
+    {
+      "conv_id": 151,
+      "client_id": 116,
+      "channel_id": null,
+      "created": "2026-08-18 02:03:55.583724+00:00",
+      "last_activity": "2026-08-18 02:03:55.583455+00:00"
+    },
+    {
+      "conv_id": 152,
+      "client_id": 116,
+      "channel_id": null,
+      "created": "2026-08-18 02:04:21.812586+00:00",
+      "last_activity": "2026-08-18 02:04:21.812347+00:00"
+    },
+    {
+      "conv_id": 153,
+      "client_id": 116,
+      "channel_id": null,
+      "created": "2026-08-18 02:04:31.090024+00:00",
+      "last_activity": "2026-08-18 02:04:31.089819+00:00"
+    },
+    {
+      "conv_id": 154,
+      "client_id": 116,
+      "channel_id": null,
+      "created": "2026-08-18 02:05:21.640710+00:00",
+      "last_activity": "2026-08-18 02:05:21.640327+00:00"
+    },
+    {
+      "conv_id": 155,
+      "client_id": 116,
+      "channel_id": null,
+      "created": "2026-08-18 02:06:08.176693+00:00",
+      "last_activity": "2026-08-18 02:06:08.176370+00:00"
+    },
+    {
+      "conv_id": 156,
+      "client_id": 116,
+      "channel_id": null,
+      "created": "2026-08-18 02:06:30.572863+00:00",
+      "last_activity": "2026-08-18 02:06:30.572632+00:00"
+    },
+    {
+      "conv_id": 142,
+      "client_id": 114,
+      "channel_id": null,
+      "created": "2026-08-18 01:52:54.171184+00:00",
+      "last_activity": "2026-08-18 01:52:54.170977+00:00"
+    },
+    {
+      "conv_id": 143,
+      "client_id": 114,
+      "channel_id": null,
+      "created": "2026-08-18 01:53:00.958184+00:00",
+      "last_activity": "2026-08-18 01:53:00.957999+00:00"
+    },
+    {
+      "conv_id": 160,
+      "client_id": 114,
+      "channel_id": null,
+      "created": "2026-08-18 02:13:27.225332+00:00",
+      "last_activity": "2026-08-18 02:13:27.225075+00:00"
+    },
+    {
+      "conv_id": 161,
+      "client_id": 114,
+      "channel_id": null,
+      "created": "2026-08-18 02:13:27.949574+00:00",
+      "last_activity": "2026-08-18 02:13:27.949404+00:00"
+    },
+    {
+      "conv_id": 162,
+      "client_id": 114,
+      "channel_id": null,
+      "created": "2026-08-18 02:14:07.762344+00:00",
+      "last_activity": "2026-08-18 02:14:07.762118+00:00"
+    },
+    {
+      "conv_id": 163,
+      "client_id": 114,
+      "channel_id": null,
+      "created": "2026-08-18 02:14:12.303985+00:00",
+      "last_activity": "2026-08-18 02:14:12.303765+00:00"
+    },
+    {
+      "conv_id": 164,
+      "client_id": 114,
+      "channel_id": null,
+      "created": "2026-08-18 02:14:12.589406+00:00",
+      "last_activity": "2026-08-18 02:14:12.589128+00:00"
+    },
+    {
+      "conv_id": 165,
+      "client_id": 114,
+      "channel_id": null,
+      "created": "2026-08-18 02:26:28.408731+00:00",
+      "last_activity": "2026-08-18 02:26:28.408487+00:00"
+    },
+    {
+      "conv_id": 52,
+      "client_id": 96,
+      "channel_id": 9,
+      "created": "2026-08-12 22:27:43.420656+00:00",
+      "last_activity": "2026-08-12 22:27:43.420433+00:00"
+    },
+    {
+      "conv_id": 53,
+      "client_id": 96,
+      "channel_id": 9,
+      "created": "2026-08-12 22:27:43.432101+00:00",
+      "last_activity": "2026-08-12 22:27:43.431845+00:00"
+    },
+    {
+      "conv_id": 54,
+      "client_id": 96,
+      "channel_id": 9,
+      "created": "2026-08-12 22:27:43.443028+00:00",
+      "last_activity": "2026-08-12 22:27:43.442787+00:00"
+    },
+    {
+      "conv_id": 55,
+      "client_id": 96,
+      "channel_id": 9,
+      "created": "2026-08-12 22:28:12.873949+00:00",
+      "last_activity": "2026-08-12 22:28:12.873502+00:00"
+    },
+    {
+      "conv_id": 56,
+      "client_id": 96,
+      "channel_id": 9,
+      "created": "2026-08-12 22:28:12.999907+00:00",
+      "last_activity": "2026-08-12 22:28:12.999672+00:00"
+    },
+    {
+      "conv_id": 168,
+      "client_id": 118,
+      "channel_id": 7,
+      "created": "2026-08-18 03:32:42.077487+00:00",
+      "last_activity": "2026-08-18 03:32:42.077265+00:00"
+    },
+    {
+      "conv_id": 170,
+      "client_id": 118,
+      "channel_id": 7,
+      "created": "2026-08-18 03:33:03.795399+00:00",
+      "last_activity": "2026-08-18 03:33:03.795183+00:00"
+    },
+    {
+      "conv_id": 172,
+      "client_id": 118,
+      "channel_id": 7,
+      "created": "2026-08-18 03:33:22.956737+00:00",
+      "last_activity": "2026-08-18 03:33:22.956391+00:00"
+    },
+    {
+      "conv_id": 174,
+      "client_id": 118,
+      "channel_id": 7,
+      "created": "2026-08-18 03:33:45.997002+00:00",
+      "last_activity": "2026-08-18 03:33:45.996790+00:00"
+    },
+    {
+      "conv_id": 169,
+      "client_id": 119,
+      "channel_id": 7,
+      "created": "2026-08-18 03:32:42.104447+00:00",
+      "last_activity": "2026-08-18 03:32:42.104284+00:00"
+    },
+    {
+      "conv_id": 171,
+      "client_id": 119,
+      "channel_id": 7,
+      "created": "2026-08-18 03:33:03.815932+00:00",
+      "last_activity": "2026-08-18 03:33:03.815760+00:00"
+    },
+    {
+      "conv_id": 173,
+      "client_id": 119,
+      "channel_id": 7,
+      "created": "2026-08-18 03:33:22.977355+00:00",
+      "last_activity": "2026-08-18 03:33:23.075172+00:00"
+    },
+    {
+      "conv_id": 175,
+      "client_id": 119,
+      "channel_id": 7,
+      "created": "2026-08-18 03:33:46.018613+00:00",
+      "last_activity": "2026-08-18 03:33:46.134161+00:00"
+    },
+    {
+      "conv_id": 144,
+      "client_id": 115,
+      "channel_id": null,
+      "created": "2026-08-18 01:55:26.332550+00:00",
+      "last_activity": "2026-08-18 01:55:26.332327+00:00"
+    },
+    {
+      "conv_id": 145,
+      "client_id": 115,
+      "channel_id": null,
+      "created": "2026-08-18 01:55:55.755516+00:00",
+      "last_activity": "2026-08-18 01:55:55.755272+00:00"
+    },
+    {
+      "conv_id": 158,
+      "client_id": 115,
+      "channel_id": null,
+      "created": "2026-08-18 02:06:52.526032+00:00",
+      "last_activity": "2026-08-18 02:06:52.525704+00:00"
+    },
+    {
+      "conv_id": 49,
+      "client_id": 95,
+      "channel_id": 8,
+      "created": "2026-08-12 22:17:48.420755+00:00",
+      "last_activity": "2026-08-12 22:17:48.420278+00:00"
+    },
+    {
+      "conv_id": 50,
+      "client_id": 95,
+      "channel_id": 8,
+      "created": "2026-08-12 22:17:48.573475+00:00",
+      "last_activity": "2026-08-12 22:17:48.573255+00:00"
+    },
+    {
+      "conv_id": 28,
+      "client_id": 40,
+      "channel_id": null,
+      "created": "2026-08-07 16:06:53.138125+00:00",
+      "last_activity": "2026-08-07 16:06:53.137638+00:00"
+    }
+  ],
+  "total_closed": 106
+}

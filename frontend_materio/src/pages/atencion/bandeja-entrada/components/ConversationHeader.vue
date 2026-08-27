@@ -12,7 +12,10 @@
           <i :class="`ri-${getChannelIcon(conversation.channel)}`" class="channel-icon"></i>
           <span>{{ conversation.channel }}</span>
           <span class="separator">·</span>
-          <span class="status">{{ getStatus(conversation) }}</span>
+          <span class="status">{{ getStatus(conversation, effectiveBotPaused) }}</span>
+          <span v-if="effectiveBotPaused" class="separator">·</span>
+          <span v-if="effectiveBotPaused && botGlobalPaused" class="status-paused">🤖 Bot pausado globalmente</span>
+          <span v-else-if="effectiveBotPaused" class="status-paused">🤖 Bot pausado en esta conversación</span>
         </div>
       </div>
     </div>
@@ -83,6 +86,14 @@ defineProps({
     type: Object,
     required: true,
   },
+  botGlobalPaused: {
+    type: Boolean,
+    default: false,
+  },
+  effectiveBotPaused: {
+    type: Boolean,
+    default: false,
+  },
 })
 
 defineEmits(['take-conversation', 'return-bot', 'assign-me', 'reopen'])
@@ -109,7 +120,9 @@ const getChannelIcon = channel => {
   return icons[channel] || 'global-line'
 }
 
-const getStatus = conversation => {
+const getStatus = (conversation, effectiveBotPaused) => {
+  // CORRECCIÓN 1: No mostrar "Bot atendiendo" si el bot está pausado (global o conversación)
+  if (conversation.attentionMode === 'bot' && effectiveBotPaused) return 'Bot pausado'
   if (conversation.attentionMode === 'bot') return 'Bot atendiendo'
   if (conversation.attentionMode === 'advisor') return `Atendido por ${conversation.responsable?.nombre || 'Asesor'}`
   if (conversation.attentionMode === 'unassigned') return 'Esperando asignación'
@@ -199,6 +212,11 @@ const getStatus = conversation => {
 
 .status {
   color: #10b981;
+  font-weight: 500;
+}
+
+.status-paused {
+  color: #fbbf24;
   font-weight: 500;
 }
 
