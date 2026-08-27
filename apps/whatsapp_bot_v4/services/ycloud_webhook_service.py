@@ -191,7 +191,7 @@ def ycloud_webhook(request):
         from apps.whatsapp.services_ycloud import process_ycloud_event
 
         # Procesar evento (persistencia atómica: cliente, conversación, mensaje)
-        result = process_ycloud_event(event_type, canonical_payload, channel)
+        result = process_ycloud_event(event_type, canonical_payload, channel, event_id=event_id)
 
         logger.info(f"[YCloud] Persistence result: {result}")
 

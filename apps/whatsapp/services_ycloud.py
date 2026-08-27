@@ -12,8 +12,26 @@ from django.utils import timezone
 from apps.clientes.models import Cliente
 from apps.leads.models import Lead
 from apps.whatsapp.models import ConversacionWhatsApp, MensajeWhatsApp, WhatsAppChannel
+from apps.whatsapp_bot_v4.models import WebhookEvent
 
 logger = logging.getLogger(__name__)
+
+
+def _mark_event_discarded(event_id, reason, payload_full):
+    """Register discarded event with full raw payload."""
+    if not event_id:
+        return
+    try:
+        WebhookEvent.objects.filter(
+            source='ycloud',
+            external_message_id=event_id
+        ).update(
+            discard_reason=reason,
+            discard_payload=payload_full,
+            discarded_at=timezone.now()
+        )
+    except Exception as e:
+        logger.error(f"[YCloud] Error marking event {event_id} discarded: {e}", exc_info=True)
 
 
 class YCloudMessageProcessor:
@@ -100,7 +118,7 @@ class YCloudMessageProcessor:
         return timezone.now()
 
     @transaction.atomic()
-    def process_ycloud_event(self, event_type, event_data, channel):
+    def process_ycloud_event(self, event_type, event_data, channel, event_id=None):
         """
         Process single YCloud event atomically.
 
@@ -111,6 +129,7 @@ class YCloudMessageProcessor:
             event_type: str — EVENT_INBOUND | EVENT_ECHO | EVENT_STATUS
             event_data: dict — Full event payload from YCloud
             channel: WhatsAppChannel instance
+            event_id: str — external_message_id for WebhookEvent discard tracking
 
         Returns:
             {
@@ -134,11 +153,13 @@ class YCloudMessageProcessor:
             classification = self.classify_event(event_type, event_data)
             if not classification:
                 result["error"] = f"Unknown event type: {event_type}"
+                _mark_event_discarded(event_id, f"Unsupported event type: {event_type}", event_data)
                 return result
 
             # Handle status-only updates
             if classification.get("status_update_only"):
                 result["error"] = "Status update only — handled separately"
+                _mark_event_discarded(event_id, "Status update (no message)", event_data)
                 return result
 
             # 2. Resolve client identity (CRITICAL: use 'to' for echo, 'from' for inbound)
@@ -147,12 +168,14 @@ class YCloudMessageProcessor:
                 phone = event_data.get("to")
                 if not phone:
                     result["error"] = "Echo event missing 'to' field (customer phone)"
+                    _mark_event_discarded(event_id, "Echo missing 'to' (customer phone)", event_data)
                     return result
             else:
                 # Inbound: 'from' is the customer
                 phone = event_data.get("from") or event_data.get("phone")
                 if not phone:
                     result["error"] = "No phone number in event"
+                    _mark_event_discarded(event_id, "Inbound missing 'from' and 'phone'", event_data)
                     return result
 
             cliente, _ = Cliente.objects.get_or_create(
@@ -291,6 +314,6 @@ class YCloudMessageProcessor:
 _processor = YCloudMessageProcessor()
 
 
-def process_ycloud_event(event_type, event_data, channel):
+def process_ycloud_event(event_type, event_data, channel, event_id=None):
     """Public API for processing YCloud events."""
-    return _processor.process_ycloud_event(event_type, event_data, channel)
+    return _processor.process_ycloud_event(event_type, event_data, channel, event_id=event_id)

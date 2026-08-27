@@ -140,6 +140,10 @@ class WebhookEvent(models.Model):
     event_type = models.CharField(max_length=100)
     processed_at = models.DateTimeField(auto_now_add=True)
 
+    discard_reason = models.CharField(max_length=100, null=True, blank=True)
+    discard_payload = models.JSONField(null=True, blank=True)
+    discarded_at = models.DateTimeField(null=True, blank=True)
+
     class Meta:
         unique_together = ('source', 'external_message_id')
         ordering = ['-processed_at']
@@ -147,4 +151,5 @@ class WebhookEvent(models.Model):
         verbose_name_plural = 'Webhook Events'
 
     def __str__(self):
-        return f"{self.source}: {self.event_type} ({self.external_message_id})"
+        status = f" [DISCARDED: {self.discard_reason}]" if self.discard_reason else ""
+        return f"{self.source}: {self.event_type} ({self.external_message_id}){status}"
