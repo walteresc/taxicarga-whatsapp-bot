@@ -30,7 +30,8 @@ export const useMessagesStore = defineStore('messages', () => {
     let upsertResult = 'inserted'
 
     if (existing >= 0) {
-      messages.value[conversationId][existing] = { ...messages.value[conversationId][existing], ...normalizedMsg }
+      // CRITICAL: Use splice for Vue 3 reactivity — array[i] = value does NOT trigger updates
+      messages.value[conversationId].splice(existing, 1, { ...messages.value[conversationId][existing], ...normalizedMsg })
       upsertResult = 'updated'
     } else {
       messages.value[conversationId].push(normalizedMsg)
@@ -38,6 +39,14 @@ export const useMessagesStore = defineStore('messages', () => {
 
     // TRABAJO A: Log upsert
     console.log(`[messagesStore.upsertMessage] ${upsertResult} message_id=${id} in conv_id=${conversationId}`)
+
+    // Record upsert in diagnostics
+    if (typeof window !== 'undefined' && window.__WHATSAPP_REALTIME_DIAGNOSTICS__) {
+      const diagnostics = Object.values(window.__WHATSAPP_REALTIME_DIAGNOSTICS__)[0]
+      if (diagnostics) {
+        diagnostics.upsertCount = (diagnostics.upsertCount || 0) + 1
+      }
+    }
 
     // Sort by timestamp ASC
     messages.value[conversationId].sort((a, b) => {

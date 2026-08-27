@@ -24,7 +24,8 @@ export const useConversationsStore = defineStore('conversations', () => {
     const existing = conversations.value.findIndex(c => c.id === conv.id)
 
     if (existing >= 0) {
-      conversations.value[existing] = { ...conversations.value[existing], ...conv }
+      // CRITICAL: Use splice for Vue 3 reactivity — array[i] = value does NOT trigger updates
+      conversations.value.splice(existing, 1, { ...conversations.value[existing], ...conv })
     } else {
       conversations.value.push(conv)
     }
@@ -47,7 +48,8 @@ export const useConversationsStore = defineStore('conversations', () => {
   const updateConversationState = (convId, data) => {
     const existing = conversations.value.findIndex(c => c.id === convId)
     if (existing >= 0) {
-      conversations.value[existing] = { ...conversations.value[existing], ...data }
+      // CRITICAL: Use splice for Vue 3 reactivity — array[i] = value does NOT trigger updates
+      conversations.value.splice(existing, 1, { ...conversations.value[existing], ...data })
     }
   }
 
