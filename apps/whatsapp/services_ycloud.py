@@ -205,29 +205,6 @@ class YCloudMessageProcessor:
                 # Cliente already resolved by views.py — just update last interaction
                 created = False
 
-                # Normalize phone BEFORE lookup to ensure consistent get_or_create matching
-                # Apply the same normalization that Cliente.save() does
-                from apps.clientes.phone_normalizer import normalize_phone
-                norm_result = normalize_phone(phone)
-                if norm_result["is_valid"]:
-                    phone_for_lookup = norm_result["normalized_e164"]
-                else:
-                    # Fallback: minimal normalization (just add + if missing)
-                    phone_for_lookup = f'+{phone}' if phone and not phone.startswith('+') else phone
-
-                # Use from_name if provided (YCloud contact name), else phone
-                default_name = event_data.get("from_name") or phone
-                cliente, created = Cliente.objects.get_or_create(
-                    telefono=phone_for_lookup,
-                    defaults={"nombre": default_name}
-                )
-                # Update name if it was default phone and now we have from_name
-                if created and event_data.get("from_name") and cliente.nombre == phone:
-                    cliente.nombre = event_data.get("from_name")
-            else:
-                # Cliente already resolved by views.py — just update last interaction
-                created = False
-
             # Update last interaction timestamp (always)
             cliente.ultima_interaccion = timezone.now()
             update_fields = ["ultima_interaccion"]
