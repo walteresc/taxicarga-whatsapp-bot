@@ -13,6 +13,8 @@
           <span>{{ conversation.channel }}</span>
           <span class="separator">·</span>
           <span class="status">{{ getStatus(conversation) }}</span>
+          <span v-if="botGlobalPaused" class="separator">·</span>
+          <span v-if="botGlobalPaused" class="status-paused">🤖 Bot pausado globalmente</span>
         </div>
       </div>
     </div>
@@ -82,6 +84,10 @@ defineProps({
   conversation: {
     type: Object,
     required: true,
+  },
+  botGlobalPaused: {
+    type: Boolean,
+    default: false,
   },
 })
 
@@ -199,6 +205,11 @@ const getStatus = conversation => {
 
 .status {
   color: #10b981;
+  font-weight: 500;
+}
+
+.status-paused {
+  color: #fbbf24;
   font-weight: 500;
 }
 

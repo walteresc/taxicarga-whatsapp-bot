@@ -1,7 +1,7 @@
 <template>
-  <div class="message-timeline">
+  <div class="message-timeline" data-testid="message-timeline">
     <!-- Loading state -->
-    <div v-if="loading" class="loading-state">
+    <div v-if="loading" class="loading-state" data-testid="loading-state">
       <div v-for="i in 5" :key="`skeleton-${i}`" class="skeleton-message">
         <div class="skeleton-avatar"></div>
         <div class="skeleton-bubble"></div>
@@ -9,24 +9,33 @@
     </div>
 
     <!-- Empty state -->
-    <div v-else-if="messageGroups.length === 0" class="empty-state">
+    <div v-else-if="messageGroups.length === 0" class="empty-state" data-testid="empty-state">
       <i class="ri-message-2-line"></i>
       <p>Sin mensajes</p>
     </div>
 
     <!-- Messages grouped by date -->
-    <div v-else>
-      <div v-for="group in messageGroups" :key="group.displayDate || 'invalid'" class="message-group">
+    <div v-else data-testid="groups-container">
+      <div
+        v-for="group in messageGroups"
+        :key="group.displayDate || 'invalid'"
+        class="message-group"
+        :data-testid="`message-group-${group.displayDate || 'invalid'}`"
+      >
         <!-- Date separator (only if date is valid) -->
-        <div v-if="group.displayDate" class="date-separator">
+        <div v-if="group.displayDate" class="date-separator" :data-testid="`date-separator-${group.displayDate}`">
           <span>{{ group.displayDate }}</span>
         </div>
 
         <!-- Messages in this group -->
-        <div v-for="message in group.messages" :key="message.id">
+        <div
+          v-for="message in group.messages"
+          :key="message.id"
+          :data-testid="`message-bubble-${message.id}`"
+        >
           <!-- Use MensajeMedia for WhatsApp multimedia messages, MessageBubble for legacy text -->
           <MensajeMedia v-if="message.tipo && message.tipo !== 'internal-note'" :message="message" />
-          <MessageBubble v-else-if="message.type !== 'internal-note'" :message="message" />
+          <MessageBubble v-else-if="message.type !== 'internal-note'" :message="message" :data-testid="`bubble-${message.id}`" />
           <InternalNote v-else :note="message" />
         </div>
       </div>
@@ -65,6 +74,7 @@ const messageGroups = computed(() => {
   overflow-x: hidden;
   min-height: 0;
   overscroll-behavior: contain;
+  flex: 1 1 0;
 }
 
 .loading-state {

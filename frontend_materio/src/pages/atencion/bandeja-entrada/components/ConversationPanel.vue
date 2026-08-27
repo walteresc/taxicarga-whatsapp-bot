@@ -1,15 +1,15 @@
 <template>
-  <div class="conversation-panel">
+  <div class="conversation-panel" data-testid="conversation-panel">
     <!-- Empty state -->
     <EmptyConversationState v-if="!conversationId" />
 
     <!-- Chat -->
-    <div v-else class="chat-content">
+    <div v-else class="chat-content" data-testid="chat-content">
       <!-- Header -->
-      <ConversationHeader :conversation="conversation" class="conversation-header" />
+      <ConversationHeader :conversation="conversation" :bot-global-paused="botGlobalPaused" class="conversation-header" data-testid="conversation-header" />
 
       <!-- Messages -->
-      <MessageTimeline :messages="messages" :loading="loadingMessages" class="message-timeline" />
+      <MessageTimeline :messages="messages" :loading="loadingMessages" class="message-timeline" data-testid="message-timeline-wrapper" />
 
       <!-- Composer -->
       <ChatComposer
@@ -27,12 +27,13 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, onMounted, computed } from 'vue'
 import EmptyConversationState from './EmptyConversationState.vue'
 import ConversationHeader from './ConversationHeader.vue'
 import MessageTimeline from './MessageTimeline.vue'
 import ChatComposer from './ChatComposer.vue'
 import { conversationService } from '@/services/conversationService'
+import { useMessagesStore } from '@/stores/messagesStore'
 
 const props = defineProps({
   conversationId: {
@@ -43,24 +44,55 @@ const props = defineProps({
     type: Object,
     default: null,
   },
+  botGlobalPaused: {
+    type: Boolean,
+    default: false,
+  },
 })
 
-const messages = ref([])
+// Use Pinia store for real-time updates from SSE
+const messagesStore = useMessagesStore()
 const loadingMessages = ref(false)
+
+// Computed: get messages from store, or empty if no conversation selected
+// CRITICAL: Access messagesStore.messages directly to ensure Vue reactivity
+// Do NOT use getMessages() method as it may not trigger computed updates
+const messages = computed(() => {
+  const convId = props.conversationId
+
+  console.log('[ConversationPanel computed] ENTRY: convId=' + convId)
+
+  if (!convId) {
+    console.log('[ConversationPanel computed] No conversationId, return []')
+    return []
+  }
+
+  // Direct access to reactive property (Pinia auto-unwraps refs in components)
+  const result = messagesStore.messages[convId] || []
+
+  console.log('[ConversationPanel computed] RESULT: count=' + result.length)
+  if (result.length > 0) {
+    console.log('[ConversationPanel computed] First message:', result[0])
+    console.log('[ConversationPanel computed] Last message:', result[result.length - 1])
+  }
+
+  return result
+})
 
 const loadMessages = async () => {
   if (!props.conversationId) {
-    messages.value = []
     return
   }
 
+  console.log('[ConversationPanel] loadMessages: conversationId=' + props.conversationId)
+
   loadingMessages.value = true
   try {
-    const data = await conversationService.getConversationMessages(props.conversationId)
-    messages.value = data.messages || []
+    // Load messages into Pinia store (will be reflected in computed messages)
+    await messagesStore.loadConversationMessages(props.conversationId)
+    console.log('[ConversationPanel] Messages loaded, count=' + messages.value.length)
   } catch (error) {
     console.error('Error loading messages:', error)
-    messages.value = []
   } finally {
     loadingMessages.value = false
   }
@@ -92,7 +124,8 @@ const clearReply = () => {
 }
 
 // Watch para cuando cambia el conversationId
-watch(() => props.conversationId, () => {
+watch(() => props.conversationId, (newId, oldId) => {
+  console.log('[ConversationPanel watch] conversationId changed from ' + oldId + ' to ' + newId)
   loadMessages()
 }, { immediate: false })
 
@@ -119,7 +152,7 @@ onMounted(() => {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  overflow: visible;
+  overflow: hidden;
 }
 
 .conversation-header {

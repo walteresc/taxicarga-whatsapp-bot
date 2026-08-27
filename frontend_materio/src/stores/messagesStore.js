@@ -50,25 +50,44 @@ export const useMessagesStore = defineStore('messages', () => {
    */
   const loadConversationMessages = async (conversationId) => {
     try {
-      const response = await fetch(`/dashboard/whatsapp/conversaciones/${conversationId}/messages/`)
+      // FIXED: Use correct Spanish endpoint name "mensajes" not "messages"
+      const url = `/dashboard/whatsapp/conversaciones/${conversationId}/mensajes/`
+      console.log('[messagesStore] loadConversationMessages START: conversationId=' + conversationId + ', url=' + url)
+
+      const response = await fetch(url)
+      console.log('[messagesStore] HTTP response: status=' + response.status)
+
+      // Check for HTTP errors before attempting JSON parse
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(`HTTP ${response.status}: ${errorText.substring(0, 100)}`)
+      }
+
       const data = await response.json()
+      console.log('[messagesStore] Response JSON received, type:', typeof data, 'isArray:', Array.isArray(data))
 
       if (Array.isArray(data)) {
         messages.value[conversationId] = data
+        console.log('[messagesStore] Loaded array: count=' + data.length)
       } else if (data.messages) {
         messages.value[conversationId] = data.messages
+        console.log('[messagesStore] Loaded from data.messages: count=' + data.messages.length)
+      } else {
+        messages.value[conversationId] = []
+        console.log('[messagesStore] No messages found in response, data keys:', Object.keys(data))
       }
 
-      // Sort
-      if (messages.value[conversationId]) {
+      // Sort by timestamp
+      if (messages.value[conversationId] && messages.value[conversationId].length > 0) {
         messages.value[conversationId].sort((a, b) => {
-          const aTime = new Date(a.timestamp || 0).getTime()
-          const bTime = new Date(b.timestamp || 0).getTime()
+          const aTime = new Date(a.timestamp || a.fecha_mensaje || 0).getTime()
+          const bTime = new Date(b.timestamp || b.fecha_mensaje || 0).getTime()
           return aTime - bTime
         })
+        console.log('[messagesStore] After sort: count=' + messages.value[conversationId].length + ', IDs:', messages.value[conversationId].map(m => m.id || m.message_id).join(','))
       }
     } catch (error) {
-      console.error(`Failed to load messages for conversation ${conversationId}:`, error)
+      console.error(`[messagesStore] Failed to load messages for conversation ${conversationId}:`, error.message)
       messages.value[conversationId] = []
     }
   }

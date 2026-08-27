@@ -247,33 +247,42 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
    * PRIORIDADES 5, 7: Update conversation + timeline
    */
   const handleMessageCreated = (event, messagesStore, conversationsStore) => {
-    const { message_id, conversation_id, sender_type, preview, timestamp, conversation } = event.data
+    const eventData = event.data || event
+    const { message_id, conversation_id, content, direction, origen, tipo, timestamp, from } = eventData
+
+    console.log('[handleMessageCreated] message_id=' + message_id + ', conversation_id=' + conversation_id + ', content=' + (content ? content.substring(0, 30) : 'null'))
 
     // Update or create message in timeline
     if (messagesStore && messagesStore.upsertMessage) {
+      console.log('[handleMessageCreated] Calling upsertMessage with:', { message_id, conversation_id, direction, origen, content: content?.substring(0, 20) })
       messagesStore.upsertMessage({
         id: message_id,
+        message_id,
         conversation_id,
-        sender_type,
+        content,
+        direction,
+        origen,
+        tipo,
         timestamp,
+        sender: from,
       })
+      console.log('[handleMessageCreated] upsertMessage called successfully')
+    } else {
+      console.warn('[handleMessageCreated] messagesStore or upsertMessage not available')
     }
 
-    // Update conversation in bandeja
-    if (conversation && conversationsStore && conversationsStore.upsertConversation) {
-      // IMPORTANT: conversation.unread_delta is INCREMENTAL, not absolute
-      // Sum it to the existing counter, not replace it
+    // Update conversation in bandeja (increment unread counter)
+    if (conversationsStore && conversationsStore.upsertConversation) {
       const existingConv = conversationsStore.getConversation(conversation_id)
       const currentUnread = existingConv?.unread_count || 0
-      const newUnread = Math.max(0, currentUnread + (conversation.unread_delta || 0))
+      const newUnread = currentUnread + 1  // Increment by 1 for new message
+
+      console.log('[handleMessageCreated] Updating conversation: unread ' + currentUnread + ' -> ' + newUnread)
 
       conversationsStore.upsertConversation({
         id: conversation_id,
-        preview,
-        ultima_actividad: conversation.last_activity,
+        ultima_actividad: new Date().toISOString(),
         unread_count: newUnread,
-        estado_atencion: conversation.attention_state,
-        bot_pausado: conversation.bot_paused,
       })
     }
 

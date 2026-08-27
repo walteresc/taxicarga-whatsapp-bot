@@ -29,6 +29,11 @@ export const useEventStore = defineStore('events', () => {
   let connectionPromise = null
   let connectionInProgress = false
 
+  // RECONNECTION STATE (MANUAL strategy)
+  let reconnectionTimer = null
+  let reconnectionAttempt = 0
+  let isDisconnecting = false // Flag to distinguish logout/unmount from error
+
   // FASE 1 DIAGNOSTICS: Track all EventSource instances
   const instanceId = Math.random().toString(36).substring(7)
   const connectionLog = ref([])
@@ -106,9 +111,19 @@ export const useEventStore = defineStore('events', () => {
       eventSource.value.onopen = () => {
         sseOpen.value = true
         sseError.value = null
+
+        // Cancel any pending reconnection timer (since we're now connected)
+        if (reconnectionTimer) {
+          clearTimeout(reconnectionTimer)
+          reconnectionTimer = null
+        }
+
+        // Reset reconnection attempt counter on successful connection
+        reconnectionAttempt = 0
+
         stopPolling() // CRITICAL: Stop polling when SSE connects
         logConnection('openSSE', 'onopen_called')
-        console.log('[REALTIME CP10] SSE connection opened, readyState=1, polling stopped')
+        console.log('[REALTIME CP10] SSE connection opened, readyState=1, polling stopped, attempt counter reset')
       }
     } catch (error) {
       console.error('Failed to open SSE:', error)
@@ -141,21 +156,60 @@ export const useEventStore = defineStore('events', () => {
   }
 
   /**
-   * Handle SSE errors
+   * Handle SSE errors (MANUAL RECONNECTION STRATEGY)
    */
   const handleSSEError = (error) => {
-    console.error('SSE error:', error)
+    console.error('[handleSSEError] SSE error:', error)
     sseOpen.value = false
     sseError.value = 'SSE disconnected'
+    logConnection('handleSSEError', 'error_event_fired', { error: error?.message, isDisconnecting })
 
-    // Close connection
+    // If this is a deliberate disconnect (logout/unmount), don't reconnect
+    if (isDisconnecting) {
+      console.log('[handleSSEError] Deliberate disconnect detected, not reconnecting')
+      if (eventSource.value) {
+        eventSource.value.close()
+        eventSource.value = null
+      }
+      return
+    }
+
+    // Close the broken connection
     if (eventSource.value) {
       eventSource.value.close()
       eventSource.value = null
     }
 
-    // Fall back to polling
-    startPolling()
+    // Clear any pending connection promise/in-progress state
+    connectionPromise = null
+    connectionInProgress = false
+
+    // Cancel any pending reconnection timer
+    if (reconnectionTimer) {
+      clearTimeout(reconnectionTimer)
+      reconnectionTimer = null
+    }
+
+    // Schedule reconnection with exponential backoff
+    const backoffMs = Math.min(1000 * Math.pow(2, reconnectionAttempt), 30000)
+    reconnectionAttempt += 1
+
+    console.log(`[handleSSEError] Scheduling reconnection attempt ${reconnectionAttempt} after ${backoffMs}ms`)
+    logConnection('handleSSEError', 'scheduling_reconnect', { attempt: reconnectionAttempt, backoffMs })
+
+    reconnectionTimer = setTimeout(() => {
+      if (!isDisconnecting && !sseOpen.value) {
+        console.log('[handleSSEError] Executing reconnection attempt', { attempt: reconnectionAttempt, cursor: lastCursor.value })
+        logConnection('handleSSEError', 'executing_reconnect', { attempt: reconnectionAttempt })
+
+        connect().catch(err => {
+          console.error('[handleSSEError] Reconnect failed:', err)
+          // Don't start polling yet, let error handler schedule next retry
+          // This will trigger handleSSEError again, which schedules next retry
+        })
+      }
+      reconnectionTimer = null
+    }, backoffMs)
   }
 
   /**
@@ -374,6 +428,9 @@ export const useEventStore = defineStore('events', () => {
   const connect = async () => {
     console.log('[eventStore.connect] Called. lastCursor=' + lastCursor.value)
 
+    // Reset disconnect flag when connecting (allows reconnection after logout/unmount)
+    isDisconnecting = false
+
     // IDEMPOTENT: If connection is in progress, return existing promise
     if (connectionPromise) {
       console.log('[eventStore.connect] Connection in progress, returning existing promise')
@@ -381,10 +438,18 @@ export const useEventStore = defineStore('events', () => {
       return await connectionPromise
     }
 
-    // IDEMPOTENT: If already connected, return immediately
-    if (sseOpen.value || isPolling.value) {
-      console.log('[eventStore.connect] Already connected (SSE open or polling), returning')
-      logConnection('connect', 'idempotent_already_connected')
+    // IDEMPOTENT: If already connected (SSE OPEN), return immediately
+    // Note: isPolling.value alone should NOT block, since polling is fallback
+    if (sseOpen.value) {
+      console.log('[eventStore.connect] Already connected via SSE (readyState=OPEN), returning')
+      logConnection('connect', 'idempotent_already_connected_sse')
+      return Promise.resolve()
+    }
+
+    // Allow reconnection even if polling is active (will stop polling on SSE open)
+    if (isPolling.value && eventSource.value && eventSource.value.readyState !== 2) {
+      console.log('[eventStore.connect] Polling active but EventSource not CLOSED, returning')
+      logConnection('connect', 'idempotent_polling_active')
       return Promise.resolve()
     }
 
@@ -458,13 +523,23 @@ export const useEventStore = defineStore('events', () => {
   }
 
   /**
-   * Shutdown: clean up connections completely
+   * Shutdown: clean up connections completely (logout/unmount)
+   * This is DELIBERATE disconnect, not an error
    */
   const disconnect = () => {
     logConnection('disconnect', 'called')
-    console.log('[eventStore.disconnect] Shutting down all connections')
+    console.log('[eventStore.disconnect] Shutting down all connections (deliberate)')
 
-    // Close SSE
+    // Signal that this is intentional disconnect (not error-triggered)
+    isDisconnecting = true
+
+    // Cancel any pending reconnection timer
+    if (reconnectionTimer) {
+      clearTimeout(reconnectionTimer)
+      reconnectionTimer = null
+    }
+
+    // Close SSE (will NOT trigger handleSSEError due to isDisconnecting flag)
     closeSSE()
 
     // Stop polling
@@ -473,6 +548,7 @@ export const useEventStore = defineStore('events', () => {
     // Reset connection state
     connectionPromise = null
     connectionInProgress = false
+    reconnectionAttempt = 0
 
     console.log('[eventStore.disconnect] All connections closed')
   }

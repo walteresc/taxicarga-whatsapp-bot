@@ -40,6 +40,7 @@
         <ConversationPanelComponent
           :conversation-id="selectedConversationId"
           :conversation="selectedConversation"
+          :bot-global-paused="botGlobalPaused"
         />
       </div>
 

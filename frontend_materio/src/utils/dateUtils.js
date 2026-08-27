@@ -71,16 +71,26 @@ export const formatDateSeparator = (dateValue) => {
  * Agrupar mensajes por fecha
  */
 export const groupMessagesByDate = (messages) => {
+  console.log('[groupMessagesByDate] Input messages count:', messages?.length)
+
+  if (!messages || !Array.isArray(messages)) {
+    console.log('[groupMessagesByDate] ERROR: messages is not array:', messages)
+    return []
+  }
+
   const groups = {}
 
-  messages.forEach(msg => {
+  messages.forEach((msg, idx) => {
     const dateStr = formatDateSeparator(msg.timestamp)
+    console.log(`[groupMessagesByDate] msg[${idx}] id=${msg.id} timestamp=${msg.timestamp} dateStr=${dateStr}`)
+
     if (!dateStr) {
       // Si no hay fecha válida, ponerlo en un grupo especial
       if (!groups['invalid']) {
         groups['invalid'] = { date: null, messages: [], displayDate: null }
       }
       groups['invalid'].messages.push(msg)
+      console.log(`[groupMessagesByDate] Added to invalid group, now ${groups['invalid'].messages.length} msgs`)
     } else {
       if (!groups[dateStr]) {
         groups[dateStr] = {
@@ -88,13 +98,20 @@ export const groupMessagesByDate = (messages) => {
           messages: [],
           displayDate: dateStr,
         }
+        console.log(`[groupMessagesByDate] Created new group: ${dateStr}`)
       }
       groups[dateStr].messages.push(msg)
+      console.log(`[groupMessagesByDate] Added to group ${dateStr}, now ${groups[dateStr].messages.length} msgs`)
     }
   })
 
-  return Object.values(groups).sort((a, b) => {
+  const result = Object.values(groups).sort((a, b) => {
     if (!a.date || !b.date) return 0
     return a.date.getTime() - b.date.getTime()
   })
+
+  console.log('[groupMessagesByDate] Final groups count:', result.length)
+  console.log('[groupMessagesByDate] Groups:', result.map(g => ({ displayDate: g.displayDate, count: g.messages.length })))
+
+  return result
 }

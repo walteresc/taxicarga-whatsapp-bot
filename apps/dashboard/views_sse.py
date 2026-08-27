@@ -5,6 +5,7 @@ Supports Last-Event-ID for cursor recovery and resync.
 Applies authorization: only authenticated users in WhatsApp group can receive events.
 """
 
+import sys
 import logging
 import json
 from django.contrib.auth.decorators import login_required
@@ -136,12 +137,11 @@ def sse_events_stream(request):
         401 JSON response if not authenticated
         403 JSON response if forbidden
     """
-    import sys
     from apps.whatsapp.redis_events import get_latest_cursor
 
     # Check authentication (return 401 JSON instead of HTML redirect)
     if not request.user.is_authenticated:
-        logger.info(f"[SSE] Unauthenticated request from {request.remote_addr}")
+        logger.info(f"[SSE] Unauthenticated request from {request.META.get('REMOTE_ADDR', 'unknown')}")
         return JsonResponse(
             {"detail": "Authentication required"},
             status=401
@@ -149,7 +149,7 @@ def sse_events_stream(request):
 
     # Check authorization (return 403 JSON instead of PermissionDenied HTML)
     if not can_manage_whatsapp(request.user):
-        logger.warning(f"[SSE] Unauthorized access from {request.user.username}")
+        logger.warning(f"[SSE] Unauthorized access from {request.user.username} ({request.META.get('REMOTE_ADDR', 'unknown')})")
         return JsonResponse(
             {"detail": "Forbidden: no WhatsApp access"},
             status=403
@@ -266,7 +266,10 @@ def _event_generator(request, bus, last_event_id, cursor_too_old=False):
     thread_id = threading.current_thread().ident
 
     try:
-        logger.info(f"[SSE GEN] ENTRY: connection_id={connection_id}, user={request.user.username}, cursor={last_event_id}, pid={pid}, thread={thread_id}")
+        msg = f"[SSE GEN] ENTRY: connection_id={connection_id}, user={request.user.username}, cursor={last_event_id}, pid={pid}, thread={thread_id}"
+        logger.info(msg)
+        print(msg, file=sys.stderr)
+        sys.stderr.flush()
 
         # SSE initial handshake
         yield ': connected\n\n'
@@ -299,9 +302,18 @@ def _event_generator(request, bus, last_event_id, cursor_too_old=False):
 
         # Initial load (filtered) - MATERIALIZE ONCE
         try:
+            msg_init = f"[SSE GEN] Initial load: calling get_events(cursor={last_event_id})"
+            logger.info(msg_init)
+            print(msg_init, file=sys.stderr)
+            sys.stderr.flush()
+
             events_gen = get_events(cursor=last_event_id)
             events = list(events_gen)
-            logger.info(f"[SSE GEN] Initial load: {len(events)} events")
+
+            msg_loaded = f"[SSE GEN] Initial load complete: {len(events)} events"
+            logger.info(msg_loaded)
+            print(msg_loaded, file=sys.stderr)
+            sys.stderr.flush()
         except Exception as e:
             logger.error(f"[SSE GEN] Error loading initial events: {e}", exc_info=True)
             raise
@@ -335,11 +347,17 @@ def _event_generator(request, bus, last_event_id, cursor_too_old=False):
 
             try:
                 cursor_before = last_yielded_id
-                logger.info(f"[SSE GEN #{connection_id} IT#{iteration_count}] POLL starting: cursor={cursor_before}")
+                msg_poll_start = f"[SSE GEN #{connection_id} IT#{iteration_count}] POLL starting: cursor={cursor_before}"
+                logger.info(msg_poll_start)
+                print(msg_poll_start, file=sys.stderr)
+                sys.stderr.flush()
 
                 new_events = list(get_events(cursor=last_yielded_id))
 
-                logger.info(f"[SSE GEN #{connection_id} IT#{iteration_count}] POLL result: {len(new_events)} events from cursor={cursor_before}")
+                msg_poll_result = f"[SSE GEN #{connection_id} IT#{iteration_count}] POLL result: {len(new_events)} events from cursor={cursor_before}"
+                logger.info(msg_poll_result)
+                print(msg_poll_result, file=sys.stderr)
+                sys.stderr.flush()
 
                 if new_events:
                     for event in new_events:
@@ -351,28 +369,46 @@ def _event_generator(request, bus, last_event_id, cursor_too_old=False):
                         if authorized:
                             pending.append(event)
                             last_yielded_id = event.id
-                            logger.info(f"[SSE GEN #{connection_id}] Event {event.id} queued, cursor updated to {last_yielded_id}")
+                            msg_queued = f"[SSE GEN #{connection_id}] Event {event.id} queued, cursor updated to {last_yielded_id}"
+                            logger.info(msg_queued)
+                            print(msg_queued, file=sys.stderr)
+                            sys.stderr.flush()
                         else:
                             logger.info(f"[SSE GEN #{connection_id}] Event {event.id} FILTERED (channel={channel_id})")
             except Exception as e:
-                logger.error(f"[SSE GEN #{connection_id}] POLL error: {e}", exc_info=True)
+                msg_err = f"[SSE GEN #{connection_id}] POLL error: {e}"
+                logger.error(msg_err, exc_info=True)
+                print(msg_err, file=sys.stderr)
+                sys.stderr.flush()
 
             # Heartbeat every 30 seconds
             heartbeat_count += 1
             if heartbeat_count >= heartbeat_interval:
                 hb = f': heartbeat at {timezone.now().isoformat()}\n\n'
-                logger.info(f"[SSE GEN #{connection_id}] HEARTBEAT")
+                msg_hb = f"[SSE GEN #{connection_id}] HEARTBEAT"
+                logger.info(msg_hb)
+                print(msg_hb, file=sys.stderr)
+                sys.stderr.flush()
                 yield hb
                 heartbeat_count = 0
 
     except GeneratorExit:
-        logger.info(f"[SSE GEN] Client disconnected after {iteration_count} iterations")
+        msg_exit = f"[SSE GEN] Client disconnected after {iteration_count} iterations"
+        logger.info(msg_exit)
+        print(msg_exit, file=sys.stderr)
+        sys.stderr.flush()
         raise
     except Exception as e:
-        logger.exception(f"[SSE GEN] Fatal error in generator")
+        msg_fatal = f"[SSE GEN] Fatal error in generator: {e}"
+        logger.exception(msg_fatal)
+        print(msg_fatal, file=sys.stderr)
+        sys.stderr.flush()
         raise
     finally:
-        logger.info(f"[SSE GEN] Generator closed, iterations={iteration_count}")
+        msg_final = f"[SSE GEN] Generator closed, iterations={iteration_count}"
+        logger.info(msg_final)
+        print(msg_final, file=sys.stderr)
+        sys.stderr.flush()
 
 
 def _format_event(event_id: str, event_type: str, data: dict) -> str:
