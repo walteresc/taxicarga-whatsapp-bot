@@ -156,7 +156,10 @@ def sse_events_stream(request):
         )
 
     # Get Last-Event-ID from request header (standard SSE - sent on browser reconnect)
-    # or query param (for explicit cursor reset), or default to latest (new connections)
+    # or query param (for explicit cursor reset), or default to last 1 hour (new connections)
+    import time
+    from apps.whatsapp.redis_events import get_event_bus
+
     last_event_id = request.headers.get('Last-Event-ID')
     if not last_event_id:
         last_event_id = request.GET.get('cursor')
@@ -164,12 +167,18 @@ def sse_events_stream(request):
     # PASO 4: Defensa — rechazar cursor=0 explícitamente
     # cursor=0 significa "replay completo" y NO debe usarse en operación normal
     if last_event_id == '0' or last_event_id == '':
-        logger.info(f"[SSE] Received cursor={repr(last_event_id)}, using latest instead")
-        last_event_id = get_latest_cursor()
+        logger.info(f"[SSE] Received cursor={repr(last_event_id)}, using 1-hour cursor instead")
+        # Use cursor from 1 hour ago to catch recent events missed by late UI load
+        hour_ago_ms = int((time.time() - 3600) * 1000)  # 1 hour ago in milliseconds
+        last_event_id = f"{hour_ago_ms}-0"
+        logger.info(f"[SSE] Synthetic 1-hour cursor: {last_event_id}")
 
     if not last_event_id:
-        # NEW CONNECTION: Start from latest event, not from beginning
-        last_event_id = get_latest_cursor()
+        # NEW CONNECTION: Start from 1 hour ago, not from latest
+        # This ensures events published before UI load are still available
+        hour_ago_ms = int((time.time() - 3600) * 1000)
+        last_event_id = f"{hour_ago_ms}-0"
+        logger.info(f"[SSE] NEW connection, using 1-hour cursor: {last_event_id}")
 
     print(f"[SSE-ENTRY] user={request.user.username}, cursor={last_event_id}", file=sys.stderr)
     sys.stderr.flush()
@@ -331,15 +340,48 @@ def _event_generator(request, bus, last_event_id, cursor_too_old=False):
             iteration_count += 1
 
             # Yield pending events
+            if pending:
+                msg_drain = f"[SSE GEN #{connection_id}] DRAINING pending: {len(pending)} events"
+                logger.info(msg_drain)
+                print(msg_drain, file=sys.stderr)
+                sys.stderr.flush()
+
             while pending:
+                msg_before_popleft = f"[SSE GEN #{connection_id}] CP-14A BEFORE popleft, pending.size={len(pending)}"
+                logger.info(msg_before_popleft)
+                print(msg_before_popleft, file=sys.stderr)
+                sys.stderr.flush()
+
                 event = pending.popleft()
+
+                msg_after_popleft = f"[SSE GEN #{connection_id}] CP-14B AFTER popleft: event.id={event.id}"
+                logger.info(msg_after_popleft)
+                print(msg_after_popleft, file=sys.stderr)
+                sys.stderr.flush()
+
                 frame = _format_event(
                     event_id=event.id,
                     event_type=event.type,
                     data=event.data
                 )
-                logger.info(f"[SSE GEN #{connection_id}] YIELD event {event.id} (type={event.type}, corr_id={event.data.get('correlation_id', 'N/A')[:20]})")
+
+                msg_format_ok = f"[SSE GEN #{connection_id}] CP-14C FORMATTED: {len(frame)} bytes, first 50: {frame[:50]}"
+                logger.info(msg_format_ok)
+                print(msg_format_ok, file=sys.stderr)
+                sys.stderr.flush()
+
+                msg_before_yield = f"[SSE GEN #{connection_id}] CP-14D BEFORE yield event {event.id} (type={event.type})"
+                logger.info(msg_before_yield)
+                print(msg_before_yield, file=sys.stderr)
+                sys.stderr.flush()
+
                 yield frame
+
+                msg_after_yield = f"[SSE GEN #{connection_id}] CP-14E AFTER yield (resuming)"
+                logger.info(msg_after_yield)
+                print(msg_after_yield, file=sys.stderr)
+                sys.stderr.flush()
+
                 last_yielded_id = event.id
 
             # Poll for new events
