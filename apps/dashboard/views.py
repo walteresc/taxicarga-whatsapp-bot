@@ -1204,6 +1204,8 @@ def _datetime_or_none(value):
 def api_conversaciones_activas(request):
     """API endpoint: /dashboard/whatsapp/conversaciones/api/active/
     Returns active conversations ordered by ultima_actividad DESC."""
+    from apps.whatsapp.redis_events import get_latest_cursor
+
     convs = ConversacionWhatsApp.objects.filter(
         cerrada_en__isnull=True
     ).select_related(
@@ -1224,4 +1226,5 @@ def api_conversaciones_activas(request):
     return JsonResponse({
         'conversations': conversations,
         'count': len(conversations),
+        'snapshot_cursor': get_latest_cursor(),
     })
