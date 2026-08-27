@@ -19,21 +19,38 @@ async function paso1() {
   console.log('[PASO 1] === INITIALIZE WITH FIXED VIEWPORT ===')
   console.log('[PASO 1] Viewport: 1920x1080')
 
-  // Navigate to bandeja
+  // Navigate to bandeja (Vue app at /atencion/bandeja-entrada/)
   console.log('\n[PASO 1] === NAVIGATE TO BANDEJA ===')
-  await page.goto('http://localhost:8001/dashboard/whatsapp/conversaciones/', {
+  await page.goto('http://localhost:8001/atencion/bandeja-entrada/', {
     waitUntil: 'networkidle',
   })
 
   // Check if logged in
-  const currentUrl = page.url()
+  let currentUrl = page.url()
   if (currentUrl.includes('/login')) {
     console.log('[PASO 1] ⚠️  Login required. Please log in manually in the browser.')
     console.log('[PASO 1] After login, press ENTER here to continue...')
     await new Promise(resolve => setTimeout(resolve, 60000)) // Wait 60s for manual login
   }
 
-  console.log('[PASO 1] ✓ Bandeja loaded')
+  // Verify we're on the correct route
+  currentUrl = page.url()
+  if (!currentUrl.includes('/atencion/bandeja-entrada')) {
+    console.error('[PASO 1] ✗ NOT on correct route!')
+    console.error('[PASO 1] Expected: /atencion/bandeja-entrada/')
+    console.error('[PASO 1] Got:', currentUrl)
+    process.exit(1)
+  }
+
+  // Verify page title/content
+  const bodyText = await page.evaluate(() => document.body.innerText)
+  if (!bodyText.includes('Bandeja') && !bodyText.includes('bandeja')) {
+    console.error('[PASO 1] ✗ "Bandeja" text not found on page')
+    console.error('[PASO 1] Page content:', bodyText.substring(0, 200))
+    process.exit(1)
+  }
+
+  console.log('[PASO 1] ✓ Bandeja loaded on correct route: ' + currentUrl)
 
   // Find and click Walter
   console.log('\n[PASO 1] === FIND WALTER ===')

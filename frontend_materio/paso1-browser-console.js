@@ -1,11 +1,21 @@
 /**
  * PASO 1: Browser console script to reproduce layout bug (before/after resize)
- * Usage: Copy/paste into browser DevTools console while on bandeja-entrada
+ * Usage: Copy/paste into browser DevTools console while on http://localhost:8001/atencion/bandeja-entrada/
+ * IMPORTANT: Must be on Vue app route, NOT legacy /dashboard/whatsapp/conversaciones/
  */
 
 (async function paso1() {
   console.log('[PASO 1] === INITIALIZE TEST ===')
   console.log('[PASO 1] Viewport:', window.innerWidth, 'x', window.innerHeight)
+
+  // Verify correct route
+  if (!window.location.pathname.includes('/atencion/bandeja-entrada')) {
+    console.error('[PASO 1] ✗ WRONG ROUTE!')
+    console.error('[PASO 1] You are on:', window.location.pathname)
+    console.error('[PASO 1] Must be on: /atencion/bandeja-entrada/')
+    return
+  }
+  console.log('[PASO 1] ✓ Correct route: /atencion/bandeja-entrada/')
 
   // Wait for Vue to be ready
   await new Promise(r => setTimeout(r, 2000))

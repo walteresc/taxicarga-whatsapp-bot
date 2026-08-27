@@ -29,19 +29,31 @@ async function paso5() {
     })
 
     try {
-      // Navigate
-      await page.goto('http://localhost:8001/dashboard/whatsapp/conversaciones/', {
+      // Navigate to correct Vue app route
+      await page.goto('http://localhost:8001/atencion/bandeja-entrada/', {
         waitUntil: 'networkidle',
         timeout: 10000,
       })
 
-      // Check login
+      // Check login and correct route
       const currentUrl = page.url()
       if (currentUrl.includes('/login')) {
         console.log(`[PASO 5] ⚠️  ${viewport.name}: Login required`)
         results.push({
           viewport: viewport.name,
           status: 'LOGIN_REQUIRED',
+          bubbles: 0,
+          timelineHeight: 0,
+        })
+        await browser.close()
+        continue
+      }
+
+      if (!currentUrl.includes('/atencion/bandeja-entrada')) {
+        console.log(`[PASO 5] ✗ ${viewport.name}: NOT on correct route - ${currentUrl}`)
+        results.push({
+          viewport: viewport.name,
+          status: 'WRONG_ROUTE',
           bubbles: 0,
           timelineHeight: 0,
         })
