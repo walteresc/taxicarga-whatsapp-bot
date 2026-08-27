@@ -45,8 +45,17 @@ export const useEventStore = defineStore('events', () => {
     lastCursor: '0',
     receivedEvents: [],      // All events received from SSE
     dispatchedEvents: [],    // Events dispatched to subscribers
+    handledEvents: [],       // Events successfully handled by processEvent
     subscriberCount: 0,
-    sseConnectionCount: 0
+    sseConnectionCount: 0,
+    upsertCount: 0,          // Counter of messagesStore.upsertMessage calls
+    // Runtime state (updated live)
+    sseOpen: false,
+    isPolling: false,
+    sseError: null,
+    pollError: null,
+    eventSourceUrl: null,
+    eventSourceReadyState: null
   }
 
   // Expose diagnostics globally
@@ -113,6 +122,11 @@ export const useEventStore = defineStore('events', () => {
       logConnection('openSSE', 'creating_new', { cursor })
       console.log(`[SSE] Creating EventSource: cursor=${cursor}, url=${url}`)
       eventSource.value = new EventSource(url, { withCredentials: true })
+
+      // Expose URL and readyState to diagnostics
+      diagnostics.eventSourceUrl = url
+      diagnostics.eventSourceReadyState = eventSource.value.readyState
+
       console.log(`[SSE] EventSource created, readyState=${eventSource.value.readyState}`)
 
       // SSE event types from backend
@@ -123,8 +137,8 @@ export const useEventStore = defineStore('events', () => {
             const data = JSON.parse(event.data)
             // CP16: Add event type to data so subscribers know which event it is
             data.type = eventType
-            data.id = event.lastEventId || '0'  // Preserve SSE id
-            console.log(`[CP16-Handler] ${eventType} received, id=${data.id}`)
+            data.event_id = event.lastEventId || '0'  // Rename: event_id (not id) to avoid confusion with conversation_id
+            console.log(`[CP16-Handler] ${eventType} received, event_id=${data.event_id}`)
             addEvent(data)
             lastEventTime.value = new Date()
           } catch (error) {
@@ -147,6 +161,9 @@ export const useEventStore = defineStore('events', () => {
       eventSource.value.onopen = () => {
         sseOpen.value = true
         sseError.value = null
+        diagnostics.sseOpen = true
+        diagnostics.sseError = null
+        diagnostics.eventSourceReadyState = 1
 
         // Cancel any pending reconnection timer (since we're now connected)
         if (reconnectionTimer) {
@@ -158,6 +175,7 @@ export const useEventStore = defineStore('events', () => {
         reconnectionAttempt = 0
 
         stopPolling() // CRITICAL: Stop polling when SSE connects
+        diagnostics.isPolling = false
         logConnection('openSSE', 'onopen_called')
         console.log('[REALTIME CP10] SSE connection opened, readyState=1, polling stopped, attempt counter reset')
       }
@@ -185,6 +203,9 @@ export const useEventStore = defineStore('events', () => {
     console.error('[handleSSEError] SSE error:', error)
     sseOpen.value = false
     sseError.value = 'SSE disconnected'
+    diagnostics.sseOpen = false
+    diagnostics.sseError = error?.message || 'SSE disconnected'
+    diagnostics.eventSourceReadyState = eventSource.value?.readyState ?? 2
     logConnection('handleSSEError', 'error_event_fired', { error: error?.message, isDisconnecting })
 
     // If this is a deliberate disconnect (logout/unmount), don't reconnect
@@ -342,11 +363,13 @@ export const useEventStore = defineStore('events', () => {
       }
 
       pollError.value = null
+      diagnostics.pollError = null
       lastEventTime.value = new Date()
 
       return data.events?.length || 0
     } catch (error) {
       pollError.value = error.message
+      diagnostics.pollError = error.message
       console.error('Event polling error:', error)
       throw error
     }
@@ -370,6 +393,7 @@ export const useEventStore = defineStore('events', () => {
     }
 
     isPolling.value = true
+    diagnostics.isPolling = true
     logConnection('startPolling', 'started')
     console.log('[POLLING] Starting event polling (SSE fallback)')
 
@@ -412,6 +436,7 @@ export const useEventStore = defineStore('events', () => {
       pollTimerId = null
     }
     isPolling.value = false
+    diagnostics.isPolling = false
   }
 
   /**
@@ -500,17 +525,18 @@ export const useEventStore = defineStore('events', () => {
       return Promise.resolve()
     }
 
-    // Guard: cursor=0 no permitido
-    if (lastCursor.value === '0' || lastCursor.value === '') {
-      const error = 'Invalid cursor'
-      console.error('[eventStore.connect] REJECTED: cursor is invalid:', lastCursor.value)
+    // Guard: cursor must be valid (allow '0' for fresh start, require digits-digits format otherwise)
+    if (lastCursor.value === null || lastCursor.value === undefined || lastCursor.value === '') {
+      const error = 'Cursor is null, undefined, or empty'
+      console.error('[eventStore.connect] REJECTED: cursor invalid:', lastCursor.value)
       logConnection('connect', 'rejected_invalid_cursor', { cursor: lastCursor.value })
       return Promise.reject(new Error(error))
     }
 
-    // Guard: cursor debe tener formato válido
-    if (!/^\d+-\d+$/.test(lastCursor.value)) {
-      const error = 'Cursor format invalid'
+    // Allow '0' as valid (fresh start, server treats as "from beginning")
+    // Also allow 'digits-digits' format (normal Redis Stream IDs)
+    if (lastCursor.value !== '0' && !/^\d+-\d+$/.test(lastCursor.value)) {
+      const error = `Cursor format invalid: ${lastCursor.value}`
       console.error('[eventStore.connect] REJECTED: cursor format invalid:', lastCursor.value)
       logConnection('connect', 'rejected_invalid_format', { cursor: lastCursor.value })
       return Promise.reject(new Error(error))

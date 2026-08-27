@@ -15,6 +15,12 @@ export const useConversationsStore = defineStore('conversations', () => {
    * Insert or update conversation.
    */
   const upsertConversation = (conv) => {
+    // Guard: reject invalid conversation IDs (redis event IDs, undefined, or non-integers)
+    if (!conv.id || typeof conv.id !== 'number' || String(conv.id).includes('-')) {
+      console.warn('[conversationsStore.upsertConversation] Rejecting invalid id:', conv.id)
+      return
+    }
+
     const existing = conversations.value.findIndex(c => c.id === conv.id)
 
     if (existing >= 0) {

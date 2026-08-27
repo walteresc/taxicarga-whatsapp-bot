@@ -93,7 +93,7 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
               preview: conv.preview,
               ultima_actividad: conv.ultima_actividad,
               unread_count: conv.unread_count || 0,
-              estado_atencion: conv.estado,
+              estado_atencion: conv.estado_atencion,
             })
           })
         }
@@ -177,7 +177,7 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
             preview: conv.preview,
             ultima_actividad: conv.ultima_actividad,
             unread_count: conv.unread_count || 0,
-            estado_atencion: conv.estado,
+            estado_atencion: conv.estado_atencion,
           })
         })
       }
@@ -215,6 +215,21 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
       // Normalize event structure
       const eventData = event.data || event
 
+      // Record handled event in diagnostics
+      if (typeof window !== 'undefined' && window.__WHATSAPP_REALTIME_DIAGNOSTICS__) {
+        const diagnostics = Object.values(window.__WHATSAPP_REALTIME_DIAGNOSTICS__)[0]
+        if (diagnostics) {
+          if (!diagnostics.handledEvents) diagnostics.handledEvents = []
+          diagnostics.handledEvents.push({
+            id: event.id,
+            type: event.type,
+            message_id: event.message_id,
+            conversation_id: event.conversation_id,
+            timestamp: new Date().toISOString()
+          })
+        }
+      }
+
       // PRIORIDAD 7: Update bandeja/timeline based on event type
       switch (event.type) {
         case 'message.created':
@@ -247,8 +262,8 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
    * PRIORIDADES 5, 7: Update conversation + timeline
    */
   const handleMessageCreated = (event, messagesStore, conversationsStore) => {
-    const eventData = event.data || event
-    const { message_id, conversation_id, content, direction, origen, tipo, timestamp, from, id, replay_of } = eventData
+    const eventData = (event.data && Object.keys(event.data).length > 0) ? event.data : event
+    const { message_id, conversation_id, content, direction, origen, tipo, timestamp, from, sender_type, event_id, replay_of } = eventData
 
     console.log('[handleMessageCreated] EXEC: message_id=' + message_id + ', conversation_id=' + conversation_id + ', event_id=' + id + ', replay_of=' + (replay_of || 'N/A'))
 
@@ -272,7 +287,7 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
 
     // Update or create message in timeline
     if (messagesStore && messagesStore.upsertMessage) {
-      console.log('[handleMessageCreated] Calling upsertMessage with:', { message_id, conversation_id, direction, origen, content: content?.substring(0, 20) })
+      console.log('[handleMessageCreated] Calling upsertMessage with:', { message_id, conversation_id, direction, origen, sender_type, content: content?.substring(0, 20) })
       messagesStore.upsertMessage({
         id: message_id,
         message_id,
@@ -283,6 +298,7 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
         tipo,
         timestamp,
         sender: from,
+        sender_type,
       })
       console.log('[handleMessageCreated] upsertMessage called successfully')
     } else {

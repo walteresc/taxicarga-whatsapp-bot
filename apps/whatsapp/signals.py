@@ -72,6 +72,32 @@ def capture_old_values(sender, instance, **kwargs):
         instance._old_values = {}
 
 
+def get_sender_name(message_instance, conversation):
+    """Safely extract sender name based on message origin.
+
+    Never raises: falls back to generic names if FK is missing.
+    Uses getattr and try/except to protect signal from crashing.
+    """
+    try:
+        origen = message_instance.origen
+        if origen == MensajeWhatsApp.ORIGEN_CLIENTE:
+            # Inbound: name from client
+            return getattr(conversation.cliente, 'nombre', 'Cliente')
+        elif origen == MensajeWhatsApp.ORIGEN_ASESOR:
+            # Outbound by advisor: name from user (FK autor)
+            if message_instance.autor:
+                full_name = message_instance.autor.get_full_name()
+                return full_name.strip() if full_name else message_instance.autor.username
+            return 'Asesor'
+        elif origen == MensajeWhatsApp.ORIGEN_BOT:
+            return 'Bot'
+        elif origen == MensajeWhatsApp.ORIGEN_SISTEMA:
+            return 'Sistema'
+    except Exception as e:
+        logger.warning(f"[get_sender_name] Error extracting name: {e}")
+    return 'Unknown'
+
+
 @receiver(post_save, sender=MensajeWhatsApp)
 def publish_message_created_event(sender, instance, created, **kwargs):
     """Publish message.created event with complete conversation state.
@@ -97,6 +123,7 @@ def publish_message_created_event(sender, instance, created, **kwargs):
             unread_delta = 1 if instance.direccion == MensajeWhatsApp.ENTRANTE else 0
 
             # Complete event with all data frontend needs for bandeja + timeline
+            # FASE 5B Opción A: publish full content + sender_name + status
             event_data = {
                 'conversation_id': conv.id,
                 'channel_id': conv.channel_id,
@@ -104,9 +131,12 @@ def publish_message_created_event(sender, instance, created, **kwargs):
                 'message_id': instance.id,
                 'meta_message_id': instance.meta_message_id,
                 'sender_type': instance.sender_type,  # 'customer' or 'advisor'
+                'sender_name': get_sender_name(instance, conv),  # Safe extraction
                 'direction': instance.direccion,  # 'entrante' or 'saliente'
                 'content_type': instance.tipo,
-                'preview': instance.contenido[:100] if instance.contenido else f"[{instance.tipo}]",
+                'content': instance.contenido[:8000] if instance.contenido else '',  # Full text (8KB limit)
+                'preview': instance.contenido[:100] if instance.contenido else f"[{instance.tipo}]",  # Truncated for list
+                'status': instance.estado,  # Message status (recibido, entregado, etc.)
                 'timestamp': instance.fecha_mensaje.isoformat() if instance.fecha_mensaje else timezone.now().isoformat(),
                 'conversation': {
                     'summary': conv.resumen,
@@ -185,7 +215,9 @@ def publish_conversation_state_change(sender, instance, created, update_fields=N
         'cliente_id': instance.cliente_id,
         'channel_id': instance.channel_id,
         'summary': instance.resumen,
+        'preview': instance.resumen[:100] if instance.resumen else '',
         'last_activity': instance.ultima_actividad.isoformat() if instance.ultima_actividad else None,
+        'unread_count': 0,
         'attention_state': instance.estado_atencion,
         'bot_paused': instance.bot_pausado,
         'collection_state': instance.estado_recopilacion,
