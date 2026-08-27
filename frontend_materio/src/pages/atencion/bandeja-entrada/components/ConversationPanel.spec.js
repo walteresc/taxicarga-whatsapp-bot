@@ -15,7 +15,7 @@ const REAL_API_RESPONSE = {
   messages: [
     {
       id: 1,
-      sender: 'customer',
+      sender: 'client',
       senderName: 'Walter',
       source: 'whatsapp_customer',
       badge: null,
@@ -27,7 +27,7 @@ const REAL_API_RESPONSE = {
     },
     {
       id: 2,
-      sender: 'customer',
+      sender: 'client',
       senderName: 'Walter',
       source: 'whatsapp_customer',
       badge: null,
@@ -39,7 +39,7 @@ const REAL_API_RESPONSE = {
     },
     {
       id: 3,
-      sender: 'customer',
+      sender: 'client',
       senderName: 'Walter',
       source: 'whatsapp_customer',
       badge: null,
@@ -51,7 +51,7 @@ const REAL_API_RESPONSE = {
     },
     {
       id: 30,
-      sender: 'customer',
+      sender: 'client',
       senderName: 'Walter',
       source: 'whatsapp_customer',
       badge: null,
@@ -63,7 +63,7 @@ const REAL_API_RESPONSE = {
     },
     {
       id: 144,
-      sender: 'customer',
+      sender: 'client',
       senderName: 'Walter',
       source: 'whatsapp_customer',
       badge: null,
@@ -75,7 +75,7 @@ const REAL_API_RESPONSE = {
     },
     {
       id: 145,
-      sender: 'customer',
+      sender: 'client',
       senderName: 'Walter',
       source: 'whatsapp_customer',
       badge: null,

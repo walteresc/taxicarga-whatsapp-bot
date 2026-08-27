@@ -12,11 +12,40 @@ export const useMessagesStore = defineStore('messages', () => {
   const messages = ref({})
 
   /**
+   * Normalize sender value: customer→client, advisor→advisor, bot→bot
+   * Ensures all components use canonical sender values
+   */
+  const normalizeSender = (senderValue) => {
+    const normalized = {
+      'customer': 'client',
+      'cliente': 'client',
+      'entrante': 'client',
+      'whatsapp_customer': 'client',
+      'advisor': 'advisor',
+      'asesor': 'advisor',
+      'bot': 'bot',
+    }
+    return normalized[senderValue] || 'client'
+  }
+
+  /**
+   * Normalize message before storing
+   */
+  const normalizeMessage = (msg) => {
+    return {
+      ...msg,
+      sender: normalizeSender(msg.sender),
+    }
+  }
+
+  /**
    * Insert or update message in conversation.
-   * messages[conversation_id] = [{ id, timestamp, sender_type, ... }]
+   * messages[conversation_id] = [{ id, timestamp, sender, ... }]
+   * Normalizes sender values to: client, advisor, bot
    */
   const upsertMessage = (msg) => {
-    const { conversation_id, id } = msg
+    const normalizedMsg = normalizeMessage(msg)
+    const { conversation_id, id } = normalizedMsg
 
     if (!messages.value[conversation_id]) {
       messages.value[conversation_id] = []
@@ -25,9 +54,9 @@ export const useMessagesStore = defineStore('messages', () => {
     const existing = messages.value[conversation_id].findIndex(m => m.id === id)
 
     if (existing >= 0) {
-      messages.value[conversation_id][existing] = { ...messages.value[conversation_id][existing], ...msg }
+      messages.value[conversation_id][existing] = { ...messages.value[conversation_id][existing], ...normalizedMsg }
     } else {
-      messages.value[conversation_id].push(msg)
+      messages.value[conversation_id].push(normalizedMsg)
     }
 
     // Sort by timestamp ASC
@@ -67,10 +96,10 @@ export const useMessagesStore = defineStore('messages', () => {
       console.log('[messagesStore] Response JSON received, type:', typeof data, 'isArray:', Array.isArray(data))
 
       if (Array.isArray(data)) {
-        messages.value[conversationId] = data
+        messages.value[conversationId] = data.map(normalizeMessage)
         console.log('[messagesStore] Loaded array: count=' + data.length)
       } else if (data.messages) {
-        messages.value[conversationId] = data.messages
+        messages.value[conversationId] = data.messages.map(normalizeMessage)
         console.log('[messagesStore] Loaded from data.messages: count=' + data.messages.length)
       } else {
         messages.value[conversationId] = []

@@ -13,7 +13,7 @@ import { useMessagesStore } from '@/stores/messagesStore'
 const REAL_DATA = [
   {
     id: 1,
-    sender: 'customer',
+    sender: 'client',
     senderName: 'Walter',
     source: 'whatsapp_customer',
     badge: null,

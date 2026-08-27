@@ -12,7 +12,7 @@ const REAL_ENDPOINT_RESPONSE = {
   messages: [
     {
       id: 1,
-      sender: 'customer',
+      sender: 'client',
       senderName: 'Walter',
       source: 'whatsapp_customer',
       badge: null,
@@ -24,7 +24,7 @@ const REAL_ENDPOINT_RESPONSE = {
     },
     {
       id: 145,
-      sender: 'customer',
+      sender: 'client',
       senderName: 'Walter',
       source: 'whatsapp_customer',
       badge: null,
@@ -84,9 +84,9 @@ describe('messagesStore', () => {
       const messages = store.getMessages(conversationId)
       const real0010 = messages.find(m => m.id === 145)
 
-      // All fields must be present
+      // All fields must be present (sender is normalized to 'client')
       expect(real0010).toBeDefined()
-      expect(real0010.sender).toBe('customer')
+      expect(real0010.sender).toBe('client')
       expect(real0010.senderName).toBe('Walter')
       expect(real0010.source).toBe('whatsapp_customer')
       expect(real0010.type).toBe('text')

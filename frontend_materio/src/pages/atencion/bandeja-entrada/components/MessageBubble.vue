@@ -1,10 +1,10 @@
 <template>
-  <div :class="['message-container', senderType]">
+  <div :class="['message-container', senderType]" :data-testid="`message-row-${message.id}`" :data-sender="senderType">
     <!-- Mostrar nombre del asesor/bot encima del mensaje -->
     <div v-if="showSenderName" class="sender-name">{{ message.senderName }}</div>
 
     <!-- Burbuja del mensaje -->
-    <div :class="['message-bubble', senderType]">
+    <div :class="['message-bubble', senderType]" :data-testid="`message-bubble-${message.id}`">
       <p class="message-text">{{ message.text }}</p>
 
       <div class="message-footer">
