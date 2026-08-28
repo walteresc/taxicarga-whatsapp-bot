@@ -44,6 +44,7 @@ describe('groupMessagesByDate with real REAL-0010 data', () => {
 
     REAL_DATA.forEach(msg => {
       const parsed = parseDate(msg.timestamp)
+
       console.log(
         `[TEST] id=${msg.id} timestamp=${msg.timestamp} parsed=${parsed} isValid=${!isNaN(parsed?.getTime())}`,
       )
@@ -58,6 +59,7 @@ describe('groupMessagesByDate with real REAL-0010 data', () => {
 
     REAL_DATA.forEach(msg => {
       const dateStr = formatDateSeparator(msg.timestamp)
+
       console.log(`[TEST] id=${msg.id} dateStr="${dateStr}"`)
       expect(dateStr).not.toBeNull()
       expect(typeof dateStr).toBe('string')
@@ -83,6 +85,7 @@ describe('groupMessagesByDate with real REAL-0010 data', () => {
 
     // Total messages
     const totalMessages = groups.reduce((sum, group) => sum + group.messages.length, 0)
+
     console.log(`[TEST] Total messages in all groups: ${totalMessages}`)
     expect(totalMessages).toBe(6)
 
@@ -91,6 +94,7 @@ describe('groupMessagesByDate with real REAL-0010 data', () => {
       .flatMap(group => group.messages)
       .map(msg => msg.id)
       .sort((a, b) => a - b)
+
     console.log(`[TEST] All IDs preserved: ${allIds.join(',')}`)
     expect(allIds).toEqual([1, 2, 3, 30, 144, 145])
 
@@ -98,6 +102,7 @@ describe('groupMessagesByDate with real REAL-0010 data', () => {
     const hasReal0010 = groups
       .flatMap(group => group.messages)
       .some(msg => msg.id === 145)
+
     console.log(`[TEST] REAL-0010 present: ${hasReal0010}`)
     expect(hasReal0010).toBe(true)
 
@@ -123,6 +128,7 @@ describe('groupMessagesByDate with real REAL-0010 data', () => {
     for (let i = 1; i < orderedMessages.length; i++) {
       const prevDate = new Date(orderedMessages[i - 1].timestamp)
       const currDate = new Date(orderedMessages[i].timestamp)
+
       console.log(
         `[TEST] Order check: id=${orderedMessages[i - 1].id} (${prevDate.getTime()}) <= id=${orderedMessages[i].id} (${currDate.getTime()})`,
       )

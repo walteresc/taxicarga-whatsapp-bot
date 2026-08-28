@@ -14,6 +14,7 @@ test.describe.serial('E2E Visual: Bandeja-Entrada Real UI', () => {
   test.beforeEach(async ({ page }) => {
     // Capture console errors for debugging
     const consoleErrors = []
+
     page.on('console', msg => {
       if (msg.type() === 'error') {
         consoleErrors.push(msg.text())
@@ -47,12 +48,12 @@ test.describe.serial('E2E Visual: Bandeja-Entrada Real UI', () => {
     try {
       await page.goto(`${VITE_URL}/atencion/bandeja-entrada`, {
         waitUntil: 'domcontentloaded',
-        timeout: 30000
+        timeout: 30000,
       })
 
       // Wait for main container to render
       await page.waitForSelector('.bandeja-page, [data-testid="conversation-list"], .main-container', {
-        timeout: 15000
+        timeout: 15000,
       }).catch(() => {
         console.log('[PAGE] Selector timeout - page may still be loading')
       })
@@ -72,6 +73,7 @@ test.describe.serial('E2E Visual: Bandeja-Entrada Real UI', () => {
 
     // Capture initial conversation count
     const convsBefore = await page.locator('[class*="conversation"], [class*="bandeja"], [class*="item"]').count()
+
     console.log(`[VISUAL] Conversaciones iniciales: ${convsBefore}`)
 
     // Send webhook
@@ -98,6 +100,7 @@ test.describe.serial('E2E Visual: Bandeja-Entrada Real UI', () => {
     }
 
     const res = await context.request.post(WEBHOOK_URL, { data: payload })
+
     console.log(`[WEBHOOK] Inbound POST -> ${res.status()}`)
     expect(res.status()).toBe(200)
 
@@ -108,6 +111,7 @@ test.describe.serial('E2E Visual: Bandeja-Entrada Real UI', () => {
       // Try broader search
       const bodyText = await page.locator('body').textContent()
       const found = bodyText.includes(testId)
+
       console.log(`[VISUAL] Message found in DOM: ${found}`)
 
       if (!found) {
@@ -122,10 +126,12 @@ test.describe.serial('E2E Visual: Bandeja-Entrada Real UI', () => {
 
     // Verify no reload
     const reloadCount = await page.evaluate(() => window.performance.navigation.type === 1 ? 1 : 0)
+
     expect(reloadCount).toBe(0)
 
     // Verify exactly one instance
     const instances = (await page.locator('body').textContent()).split(testId).length - 1
+
     console.log(`[DEDUP] Instancias del mensaje: ${instances}`)
     expect(instances).toBeLessThanOrEqual(2)  // Allow 1 or 2 (once per textContent, once in DOM)
   })
@@ -196,12 +202,13 @@ test.describe.serial('E2E Visual: Bandeja-Entrada Real UI', () => {
 
     // Verify both appeared
     const bodyText = await page.locator('body').textContent()
+
     expect(bodyText.includes(testIdInbound)).toBe(true)
     expect(bodyText.includes(testIdEcho)).toBe(true)
     console.log(`[ECHO TEST] Both messages in DOM`)
   })
 
-  test('5. Dos pestañas: ambas reciben, ninguna duplica', async ({ browser }) => {
+  test('5. DOS pestañas: ambas reciben, ninguna duplica', async ({ browser }) => {
     const context1 = await browser.newContext()
     const context2 = await browser.newContext()
 
@@ -214,7 +221,7 @@ test.describe.serial('E2E Visual: Bandeja-Entrada Real UI', () => {
     await page1.waitForLoadState('networkidle')
     await page2.waitForLoadState('networkidle')
 
-    console.log(`[TABS] Dos pestañas cargadas`)
+    console.log(`[TABS] DOS pestañas cargadas`)
 
     const testPhone = `+5191${Date.now().toString().slice(-6)}`
     const testId = `TWO_TABS_${Date.now()}`
@@ -243,6 +250,7 @@ test.describe.serial('E2E Visual: Bandeja-Entrada Real UI', () => {
 
     // Send webhook once
     const res = await page1.context().request.post(WEBHOOK_URL, { data: payload })
+
     expect(res.status()).toBe(200)
 
     await page1.waitForTimeout(2000)
@@ -303,6 +311,7 @@ test.describe.serial('E2E Visual: Bandeja-Entrada Real UI', () => {
     }
 
     const res = await context.request.post(WEBHOOK_URL, { data: payload })
+
     expect(res.status()).toBe(200)
     console.log(`[FALLBACK] Webhook durante blockage: ${res.status()}`)
 
@@ -313,6 +322,7 @@ test.describe.serial('E2E Visual: Bandeja-Entrada Real UI', () => {
       console.log(`[FALLBACK] Polling recupero el mensaje`)
     } else {
       const bodyText = await page.locator('body').textContent()
+
       console.log(`[FALLBACK] Message in DOM: ${bodyText.includes(testId)}`)
     }
   })
@@ -323,6 +333,7 @@ test.describe.serial('E2E Visual: Bandeja-Entrada Real UI', () => {
     // Placeholder: verify DOM state before/after
 
     const initialTitle = await page.title()
+
     expect(initialTitle).toBeTruthy()
     console.log(`[LOGOUT] Initial state: ${initialTitle}`)
 

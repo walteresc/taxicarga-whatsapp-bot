@@ -17,7 +17,7 @@
 /**
  * Normalize senderType to canonical values
  */
-export const normalizeSenderType = (raw) => {
+export const normalizeSenderType = raw => {
   if (!raw) return 'unknown'
 
   const map = {
@@ -69,7 +69,7 @@ export const normalizeDirection = (raw, senderType) => {
 /**
  * Normalize content type to canonical values
  */
-export const normalizeContentType = (raw) => {
+export const normalizeContentType = raw => {
   if (!raw) return 'text'
 
   const map = {
@@ -99,16 +99,54 @@ export const normalizeContentType = (raw) => {
 }
 
 /**
- * Extract text content from various field names
+ * Normalize message delivery status to canonical values.
+ * Backend (MensajeWhatsApp.estado) uses Spanish DB values; some paths (SSE payload
+ * in signals.py) send them raw/untranslated, so this is the frontend backstop even
+ * when the backend serializer's own mapping (ESTADO_TO_STATUS) is bypassed.
  */
-export const extractText = (msg) => {
-  return msg.text || msg.content || msg.body || msg.preview || ''
+export const normalizeStatus = raw => {
+  if (!raw) return 'unknown'
+
+  const map = {
+    recibido: 'received',
+    received: 'received',
+    pendiente: 'sending',
+    sending: 'sending',
+    enviado: 'sent',
+    sent: 'sent',
+    entregado: 'delivered',
+    delivered: 'delivered',
+    leido: 'read',
+    read: 'read',
+    error: 'failed',
+    failed: 'failed',
+  }
+
+  return map[raw?.toLowerCase?.().trim()] || 'unknown'
+}
+
+/**
+ * Extract text content from various field names
+ * PRECEDENCE (highest to lowest): content > contenido > text > body > preview
+ * preview is LAST: it's truncated and only a fallback
+ */
+export const extractText = msg => {
+  // Explicit precedence: content (canonical English) > contenido (backend Spanish)
+  if (msg.content && typeof msg.content === 'string') return msg.content
+  if (msg.contenido && typeof msg.contenido === 'string') return msg.contenido
+  if (msg.text && typeof msg.text === 'string') return msg.text
+  if (msg.body && typeof msg.body === 'string') return msg.body
+
+  // Preview is always last: it's truncated
+  if (msg.preview && typeof msg.preview === 'string') return msg.preview
+  
+  return ''
 }
 
 /**
  * Normalize a single message to canonical format
  */
-export const normalizeMessage = (raw) => {
+export const normalizeMessage = raw => {
   // Extract sender type from multiple possible fields
   const rawSenderType = raw.sender || raw.sender_type || raw.senderType || 'unknown'
   const senderType = normalizeSenderType(rawSenderType)
@@ -127,7 +165,7 @@ export const normalizeMessage = (raw) => {
     conversationId: raw.conversation_id || raw.conversationId || null,
     externalMessageId: raw.external_message_id || raw.externalMessageId || null,
 
-    // Sender info
+    // Sender info (explicit precedence: senderName > sender_name > nombre)
     senderType,
     senderName: raw.senderName || raw.sender_name || raw.nombre || '',
     avatar: raw.avatar || raw.avatar_url || null,
@@ -135,14 +173,17 @@ export const normalizeMessage = (raw) => {
     // Message direction
     direction,
 
-    // Content
+    // Content (extractText has explicit precedence: content > contenido > text > body > preview)
     contentType,
     text: extractText(raw),
     media: raw.media || raw.adjunto || null,
+    attachments: raw.attachments || null,
+    caption: raw.caption || null,
 
-    // Timing and status
+    // Timing and status (explicit precedence: status > estado)
     timestamp: raw.timestamp || raw.fecha_mensaje || raw.created_at || null,
-    status: raw.status || raw.estado || 'unknown',
+    status: normalizeStatus(raw.status || raw.estado),
+    errorDetail: raw.errorDetail || raw.error_detalle || null,
 
     // Metadata (pass-through for compatibility)
     source: raw.source || null,
@@ -153,7 +194,8 @@ export const normalizeMessage = (raw) => {
 /**
  * Normalize an array of messages
  */
-export const normalizeMessages = (messages) => {
+export const normalizeMessages = messages => {
   if (!Array.isArray(messages)) return []
+  
   return messages.map(normalizeMessage)
 }

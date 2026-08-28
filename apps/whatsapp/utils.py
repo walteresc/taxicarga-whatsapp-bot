@@ -559,10 +559,11 @@ def extract_event(payload):
             "mime_type": "",
             "sha256": "",
             "caption": "",
+            "from_name": message.get("from_name") or message.get("pushName") or "",
         }
         if event["type"] == "text":
             event["text"] = message.get("text", {}).get("body", "")
-        elif event["type"] in {"image", "audio", "document"}:
+        elif event["type"] in {"image", "audio", "document", "video"}:
             media = message.get(event["type"], {})
             event.update(
                 {

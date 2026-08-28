@@ -60,6 +60,7 @@ async function diagnose() {
   })
 
   console.log('\n=== OPENING http://localhost:8001/login ===\n')
+
   const startTime = Date.now()
 
   try {
@@ -102,6 +103,7 @@ async function diagnose() {
   }
 
   console.log('\n=== CHECKING NETWORK ===\n')
+
   const requests = page.context().storageState?.cookies || []
 
   // Get all pending requests (we can't directly, but check sessionStorage)
@@ -110,6 +112,7 @@ async function diagnose() {
       localStorage: Object.keys(localStorage),
       sessionStorage: Object.keys(sessionStorage),
     }))
+
     console.log('Storage:', sessionData)
   } catch (e) {
     console.warn('Could not read storage:', e.message)

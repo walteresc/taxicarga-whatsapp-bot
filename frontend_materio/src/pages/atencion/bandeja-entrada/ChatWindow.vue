@@ -1,11 +1,21 @@
 <template>
   <div class="chat-window">
-    <div v-if="!conversation" class="empty-state">
-      <i class="ri-mail-open-line"></i>
-      <p class="title">Selecciona una conversación</p>
-      <p class="text">Elige una conversación de la lista para revisar mensajes y responder</p>
+    <div
+      v-if="!conversation"
+      class="empty-state"
+    >
+      <i class="ri-mail-open-line" />
+      <p class="title">
+        Selecciona una conversación
+      </p>
+      <p class="text">
+        Elige una conversación de la lista para revisar mensajes y responder
+      </p>
     </div>
-    <div v-else class="chat-content">
+    <div
+      v-else
+      class="chat-content"
+    >
       <!-- ENCABEZADO -->
       <div class="chat-header">
         <div class="header-left">
@@ -13,29 +23,56 @@
           <p>{{ conversation.phone }} · {{ conversation.channel }}</p>
         </div>
         <div class="header-actions">
-          <button v-if="conversation.status === 'COTIZAR'" class="badge-btn orange">Por cotizar</button>
-          <button v-if="conversation.status === 'BOT'" class="badge-btn success">Bot atendiendo</button>
-          <button @click="$emit('take-control')" class="action-btn primary">Tomar control</button>
+          <button
+            v-if="conversation.status === 'COTIZAR'"
+            class="badge-btn orange"
+          >
+            Por cotizar
+          </button>
+          <button
+            v-if="conversation.status === 'BOT'"
+            class="badge-btn success"
+          >
+            Bot atendiendo
+          </button>
+          <button
+            class="action-btn primary"
+            @click="$emit('take-control')"
+          >
+            Tomar control
+          </button>
           <button class="action-btn menu-btn">
-            <i class="ri-more-2-fill"></i>
+            <i class="ri-more-2-fill" />
           </button>
         </div>
       </div>
 
       <!-- MENSAJES -->
-      <div class="messages-container" ref="messagesContainer">
-        <div v-if="loadingMessages" class="loading">Cargando mensajes...</div>
+      <div
+        ref="messagesContainer"
+        class="messages-container"
+      >
+        <div
+          v-if="loadingMessages"
+          class="loading"
+        >
+          Cargando mensajes...
+        </div>
         <div v-else>
           <div
             v-for="msg in messages"
             :key="msg.id"
-            :class="['message', { 'from-client': msg.sender === 'client', 'from-bot': msg.sender === 'bot', 'from-advisor': msg.sender === 'advisor' }]"
+            class="message"
+            :class="[{ 'from-client': msg.sender === 'client', 'from-bot': msg.sender === 'bot', 'from-advisor': msg.sender === 'advisor' }]"
           >
             <div class="msg-bubble">
               <p>{{ msg.content }}</p>
               <div class="msg-footer">
                 <small>{{ formatTime(msg.timestamp) }}</small>
-                <span v-if="msg.sender === 'bot'" class="ia-badge">IA</span>
+                <span
+                  v-if="msg.sender === 'bot'"
+                  class="ia-badge"
+                >IA</span>
               </div>
             </div>
           </div>
@@ -46,21 +83,24 @@
       <div class="input-area">
         <div class="input-wrapper">
           <button class="icon-btn">
-            <i class="ri-attachment-line"></i>
+            <i class="ri-attachment-line" />
           </button>
           <input
             v-model="newMessage"
-            @keyup.enter="sendMessage"
             type="text"
             placeholder="Escribe un mensaje..."
             class="input-field"
-          />
+            @keyup.enter="sendMessage"
+          >
           <button class="icon-btn">
-            <i class="ri-emotion-smile-line"></i>
+            <i class="ri-emotion-smile-line" />
           </button>
         </div>
-        <button @click="sendMessage" class="send-btn">
-          <i class="ri-send-plane-2-fill"></i>
+        <button
+          class="send-btn"
+          @click="sendMessage"
+        >
+          <i class="ri-send-plane-2-fill" />
           Enviar
         </button>
       </div>
@@ -86,6 +126,7 @@ const messagesContainer = ref(null)
 const formatTime = time => {
   if (!time) return ''
   const date = new Date(time)
+  
   return date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
 }
 
@@ -94,6 +135,7 @@ const loadMessages = async () => {
   loadingMessages.value = true
   try {
     const data = await conversationService.getConversationMessages(props.conversation.id)
+
     messages.value = data.messages || []
     setTimeout(scrollToBottom, 100)
   } catch (error) {
@@ -112,6 +154,7 @@ const sendMessage = async () => {
   if (!newMessage.value.trim() || !props.conversation) return
 
   const messageText = newMessage.value
+
   newMessage.value = ''
 
   try {
@@ -133,7 +176,7 @@ watch(
   () => props.conversation?.id,
   () => {
     loadMessages()
-  }
+  },
 )
 </script>
 

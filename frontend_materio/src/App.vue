@@ -9,7 +9,7 @@ const route = useRoute()
 useEventStore()
 
 // Aplicar clase 'inbox-route' solo en bandeja-entrada
-watch(() => route.path, (newPath) => {
+watch(() => route.path, newPath => {
   const isBandeja = newPath.includes('bandeja-entrada')
   if (isBandeja) {
     document.documentElement.classList.add('inbox-route')

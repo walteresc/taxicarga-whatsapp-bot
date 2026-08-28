@@ -6,9 +6,11 @@ test.describe('Gate 7 Heartbeat', () => {
 
     // Authenticate
     console.log('Step 1: Authenticating...')
+
     const loginResp = await page.request.post('http://localhost:8001/dashboard/api/auth/login/', {
       data: { username: 'e2e_test', password: 'e2e_test_pass_123' },
     })
+
     expect(loginResp.status()).toBe(200)
     console.log('✓ Authenticated')
 
@@ -20,6 +22,7 @@ test.describe('Gate 7 Heartbeat', () => {
 
     // Capture SSE response headers and body
     console.log('Step 3: Monitoring SSE stream...')
+
     const startTime = Date.now()
     let sseDetected = false
     let heartbeatReceived = false
@@ -35,6 +38,7 @@ test.describe('Gate 7 Heartbeat', () => {
         // Try to read stream content
         try {
           const text = await resp.text()
+
           streamContent = text.substring(0, 500)
           if (text.includes('heartbeat') || text.includes(':')) {
             heartbeatReceived = true
@@ -55,7 +59,9 @@ test.describe('Gate 7 Heartbeat', () => {
     while (elapsed < heartbeatTimeout && !heartbeatReceived) {
       await page.waitForTimeout(checkInterval)
       elapsed += checkInterval
+
       const passedSecs = Math.floor(elapsed / 1000)
+
       console.log(`  [${passedSecs}s] Still waiting...`)
 
       // If SSE detected, it's working
@@ -78,6 +84,7 @@ test.describe('Gate 7 Heartbeat', () => {
 
     // Check page stability
     const convItems = await page.locator('.conversation-item').count()
+
     console.log(`Conversations loaded: ${convItems}`)
 
     // Summary

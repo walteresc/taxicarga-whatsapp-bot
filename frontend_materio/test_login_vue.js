@@ -19,6 +19,7 @@ async function testLogin() {
   await page.waitForSelector('input[type="text"], input[name*="username"], input[name*="user"]', { timeout: 10000 })
 
   console.log('\n=== FILLING CREDENTIALS ===')
+
   const usernameField = await page.$('input[type="text"], input[name*="username"], input[type="email"]')
   const passwordField = await page.$('input[type="password"]')
 
@@ -30,10 +31,12 @@ async function testLogin() {
     console.log('✗ Could not find form fields')
     await page.screenshot({ path: 'test_login_form_not_found.png' })
     await browser.close()
+    
     return
   }
 
   console.log('\n=== SUBMITTING ===')
+
   const submitBtn = await page.$('button[type="submit"], button:has-text("Iniciar sesión"), button:has-text("Sign in"), button:has-text("Login")')
   if (submitBtn) {
     await submitBtn.click()
@@ -51,6 +54,7 @@ async function testLogin() {
   }
 
   console.log('\n=== CHECKING SESSION ===')
+
   const cookies = await page.context().cookies()
   const sessionCookie = cookies.find(c => c.name === 'sessionid')
   if (sessionCookie) {
@@ -60,7 +64,9 @@ async function testLogin() {
   }
 
   console.log('\n=== CHECKING BANDEJA ===')
+
   const conversationRows = await page.$$('tr, [role="row"], .conversation, [data-testid*="conversation"]')
+
   console.log(`Found ${conversationRows.length} conversation elements`)
 
   console.log('\n=== SCREENSHOT ===')

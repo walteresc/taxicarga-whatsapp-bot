@@ -5,7 +5,7 @@ export const useInboxLayout = () => {
   const route = useRoute()
 
   const isInboxRoute = computed(() =>
-    route.path.includes('bandeja-entrada')
+    route.path.includes('bandeja-entrada'),
   )
 
   return {

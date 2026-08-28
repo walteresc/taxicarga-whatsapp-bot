@@ -9,6 +9,7 @@ export default defineConfig({
   use: {
     baseURL: 'http://localhost:5177',
     trace: 'on-first-retry',
+
     // Reuse storageState for authenticated sessions
     storageState: './auth.json',
   },

@@ -32,11 +32,14 @@ test.describe('Gate 3: Inbound YCloud Without F5', () => {
     console.log('Step 2: Navigating to bandeja...')
     await page.goto('http://localhost:5177/atencion/bandeja-entrada', { waitUntil: 'networkidle' })
     await page.waitForSelector('.conversation-item', { timeout: 10000 })
+
     const initialCount = await page.locator('.conversation-item').count()
+
     console.log(`✓ Bandeja loaded: ${initialCount} conversations`)
 
     // Step 3: Send YCloud inbound webhook
     console.log('Step 3: Sending YCloud inbound webhook...')
+
     const webhookPayload = {
       eventId: `test-inbound-${Date.now()}`,
       createTime: new Date().toISOString(),
@@ -70,6 +73,7 @@ test.describe('Gate 3: Inbound YCloud Without F5', () => {
       console.log('✓ Webhook accepted')
     } else {
       const respText = await webhookResp.text()
+
       console.log(`⚠ Webhook response: ${respText.substring(0, 100)}...`)
     }
 
@@ -79,7 +83,9 @@ test.describe('Gate 3: Inbound YCloud Without F5', () => {
 
     // Step 5: Verify conversation appears/updated
     console.log('Step 5: Verifying conversation in DOM...')
+
     const updatedCount = await page.locator('.conversation-item').count()
+
     console.log(`Conversations after webhook: ${updatedCount}`)
 
     // If new conversation added
@@ -89,6 +95,7 @@ test.describe('Gate 3: Inbound YCloud Without F5', () => {
       // Get last (newest) conversation
       const firstConv = page.locator('.conversation-item').first()
       const convText = await firstConv.textContent()
+
       console.log(`New conversation: ${convText.substring(0, 60)}...`)
 
       // Click to open timeline
@@ -97,7 +104,9 @@ test.describe('Gate 3: Inbound YCloud Without F5', () => {
 
       // Step 6: Verify message in timeline
       console.log('Step 6: Checking timeline...')
+
       const timelineItems = await page.locator('[class*="message"], [class*="timeline"]').count()
+
       console.log(`Timeline items: ${timelineItems}`)
 
       if (timelineItems > 0) {
@@ -110,7 +119,9 @@ test.describe('Gate 3: Inbound YCloud Without F5', () => {
 
     // Step 7: Verify no errors
     console.log('Step 7: Checking for errors...')
+
     const errors = []
+
     page.on('console', msg => {
       if (msg.type() === 'error') errors.push(msg.text())
     })

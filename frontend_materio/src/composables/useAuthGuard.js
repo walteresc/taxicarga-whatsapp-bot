@@ -9,12 +9,15 @@ export const useAuthGuard = () => {
       const isAuthenticated = await authService.checkAuth()
       if (!isAuthenticated) {
         router.push('/login')
+        
         return false
       }
+      
       return true
     } catch (error) {
       console.error('Auth check error:', error)
       router.push('/login')
+      
       return false
     }
   }

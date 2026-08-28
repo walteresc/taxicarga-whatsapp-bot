@@ -8,13 +8,13 @@
 
     <!-- SEARCH -->
     <div class="search-section">
-      <i class="ri-search-line search-icon"></i>
+      <i class="ri-search-line search-icon" />
       <input
         v-model="searchPhone"
         type="text"
         placeholder="Buscar por nombre, teléfono o mensaje"
         class="search-input"
-      />
+      >
     </div>
 
     <!-- FILTERS ROW 1 -->
@@ -22,14 +22,18 @@
       <button
         v-for="tag in filterTags"
         :key="tag"
+        class="filter-chip"
+        :class="[{ active: activeFilters.includes(tag) }]"
         @click="toggleFilter(tag)"
-        :class="['filter-chip', { active: activeFilters.includes(tag) }]"
       >
         {{ tag }}
       </button>
       <button class="filter-chip filter-button">
-        <i class="ri-filter-line"></i>
-        <span v-if="activeFiltersCount > 0" class="badge">{{ activeFiltersCount }}</span>
+        <i class="ri-filter-line" />
+        <span
+          v-if="activeFiltersCount > 0"
+          class="badge"
+        >{{ activeFiltersCount }}</span>
       </button>
     </div>
 
@@ -39,10 +43,11 @@
       <button
         v-for="channel in visibleChannels"
         :key="channel"
+        class="channel-chip"
+        :class="[{ active: activeChannels.includes(channel) }]"
         @click="toggleChannel(channel)"
-        :class="['channel-chip', { active: activeChannels.includes(channel) }]"
       >
-        <i :class="`ri-${getChannelIcon(channel)}`"></i>
+        <i :class="`ri-${getChannelIcon(channel)}`" />
         {{ channel }}
       </button>
 
@@ -50,10 +55,10 @@
       <button
         v-for="channel in selectedHiddenChannels"
         :key="`selected-${channel}`"
+        class="channel-chip active removable" 
         @click.stop="removeChannel(channel)"
-        :class="['channel-chip', 'active', 'removable']"
       >
-        <i :class="`ri-${getChannelIcon(channel)}`"></i>
+        <i :class="`ri-${getChannelIcon(channel)}`" />
         {{ channel }}
         <span class="remove-icon">×</span>
       </button>
@@ -61,20 +66,28 @@
       <!-- Dropdown for more channels -->
       <div class="channel-dropdown-wrapper">
         <button
+          class="channel-chip"
+          :class="[{ active: showDropdown }]"
           @click="toggleDropdown"
-          :class="['channel-chip', { active: showDropdown }]"
         >
           <span>Más</span>
-          <i class="ri-arrow-down-s-line dropdown-arrow" :class="{ rotated: showDropdown }"></i>
+          <i
+            class="ri-arrow-down-s-line dropdown-arrow"
+            :class="{ rotated: showDropdown }"
+          />
         </button>
-        <div v-if="showDropdown" class="channel-dropdown">
+        <div
+          v-if="showDropdown"
+          class="channel-dropdown"
+        >
           <button
             v-for="channel in hiddenChannels"
             :key="`hidden-${channel}`"
+            class="dropdown-item"
+            :class="[{ selected: activeChannels.includes(channel) }]"
             @click="toggleChannel(channel); toggleDropdown()"
-            :class="['dropdown-item', { selected: activeChannels.includes(channel) }]"
           >
-            <i :class="`ri-${getChannelIcon(channel)}`"></i>
+            <i :class="`ri-${getChannelIcon(channel)}`" />
             {{ channel }}
           </button>
         </div>
@@ -84,41 +97,77 @@
     <!-- CONVERSATIONS LIST -->
     <div class="conversations-container">
       <!-- LOADING STATE -->
-      <div v-if="loading" class="state-container">
-        <div v-for="i in 5" :key="`skeleton-${i}`" class="skeleton-item">
-          <div class="skeleton-avatar"></div>
+      <div
+        v-if="loading"
+        class="state-container"
+      >
+        <div
+          v-for="i in 5"
+          :key="`skeleton-${i}`"
+          class="skeleton-item"
+        >
+          <div class="skeleton-avatar" />
           <div class="skeleton-content">
-            <div class="skeleton-line"></div>
-            <div class="skeleton-line short"></div>
+            <div class="skeleton-line" />
+            <div class="skeleton-line short" />
           </div>
         </div>
       </div>
 
       <!-- ERROR STATE -->
-      <div v-else-if="error" class="state-container">
+      <div
+        v-else-if="error"
+        class="state-container"
+      >
         <div class="empty-state">
-          <i class="ri-error-warning-line error-icon"></i>
-          <p class="error-title">No pudimos cargar las conversaciones</p>
-          <button @click="loadConversations" class="retry-btn">Reintentar</button>
+          <i class="ri-error-warning-line error-icon" />
+          <p class="error-title">
+            No pudimos cargar las conversaciones
+          </p>
+          <button
+            class="retry-btn"
+            @click="loadConversations"
+          >
+            Reintentar
+          </button>
         </div>
       </div>
 
       <!-- NO RESULTS STATE -->
-      <div v-else-if="filteredConversations.length === 0 && hasActiveFilters" class="state-container">
+      <div
+        v-else-if="filteredConversations.length === 0 && hasActiveFilters"
+        class="state-container"
+      >
         <div class="empty-state">
-          <i class="ri-inbox-line empty-icon"></i>
-          <p class="empty-title">No encontramos conversaciones</p>
-          <p class="empty-text">No hay conversaciones que coincidan con los filtros seleccionados</p>
-          <button @click="clearFilters" class="clear-btn">Limpiar filtros</button>
+          <i class="ri-inbox-line empty-icon" />
+          <p class="empty-title">
+            No encontramos conversaciones
+          </p>
+          <p class="empty-text">
+            No hay conversaciones que coincidan con los filtros seleccionados
+          </p>
+          <button
+            class="clear-btn"
+            @click="clearFilters"
+          >
+            Limpiar filtros
+          </button>
         </div>
       </div>
 
       <!-- EMPTY STATE -->
-      <div v-else-if="filteredConversations.length === 0" class="state-container">
+      <div
+        v-else-if="filteredConversations.length === 0"
+        class="state-container"
+      >
         <div class="empty-state">
-          <i class="ri-inbox-line empty-icon"></i>
-          <p class="empty-title">Aún no hay conversaciones</p>
-          <p class="empty-text">Las nuevas conversaciones aparecerán aquí</p>
+          <i class="ri-inbox-line empty-icon" />
+          <p class="empty-title">
+            Aún no hay conversaciones
+          </p>
+          <p class="empty-text">
+            Las nuevas conversaciones aparecerán aquí
+          </p>
         </div>
       </div>
 
@@ -126,24 +175,49 @@
       <div
         v-for="conv in filteredConversations"
         :key="conv.id"
-        @click="selectConversation(conv)"
         class="conversation-item"
+        @click="selectConversation(conv)"
       >
         <div class="avatar">
-          <img v-if="conv.avatar" :src="conv.avatar" :alt="conv.name" />
-          <div v-else class="avatar-placeholder">{{ getInitials(conv.name) }}</div>
+          <img
+            v-if="conv.avatar"
+            :src="conv.avatar"
+            :alt="conv.name"
+          >
+          <div
+            v-else
+            class="avatar-placeholder"
+          >
+            {{ getInitials(conv.name) }}
+          </div>
         </div>
         <div class="content">
           <div class="header">
-            <h4 class="name">{{ conv.name }}</h4>
+            <h4 class="name">
+              {{ conv.name }}
+            </h4>
             <span class="time">{{ formatTime(conv.lastMessageTime) }}</span>
           </div>
-          <p class="preview">{{ conv.lastMessage }}</p>
+          <p class="preview">
+            {{ conv.lastMessage }}
+          </p>
           <div class="badges">
-            <span v-if="conv.status === 'COTIZAR'" class="badge orange">Por cotizar</span>
-            <span v-if="conv.status === 'BOT'" class="badge">Bot</span>
-            <span v-if="conv.status === 'ASESOR'" class="badge">Asesor</span>
-            <span v-if="conv.unread" class="badge-number">{{ conv.unread }}</span>
+            <span
+              v-if="conv.status === 'COTIZAR'"
+              class="badge orange"
+            >Por cotizar</span>
+            <span
+              v-if="conv.status === 'BOT'"
+              class="badge"
+            >Bot</span>
+            <span
+              v-if="conv.status === 'ASESOR'"
+              class="badge"
+            >Asesor</span>
+            <span
+              v-if="conv.unread"
+              class="badge-number"
+            >{{ conv.unread }}</span>
           </div>
         </div>
       </div>
@@ -174,6 +248,8 @@ const totalCount = computed(() => conversations.value.length)
 const activeFiltersCount = computed(() => {
   const count = activeFilters.value.filter(f => f !== 'Todos').length +
     activeChannels.value.filter(c => c !== 'Todos').length
+
+  
   return count > 0 ? count : 0
 })
 
@@ -192,11 +268,12 @@ const filteredConversations = computed(() => {
 
   if (searchPhone.value) {
     const query = searchPhone.value.toLowerCase()
+
     filtered = filtered.filter(
       conv =>
         conv.name.toLowerCase().includes(query) ||
         conv.phone.toLowerCase().includes(query) ||
-        conv.lastMessage.toLowerCase().includes(query)
+        conv.lastMessage.toLowerCase().includes(query),
     )
   }
 
@@ -276,6 +353,7 @@ const formatTime = time => {
   if (diff < 60) return 'Ahora'
   if (diff < 3600) return `${Math.floor(diff / 60)}m`
   if (diff < 86400) return `${Math.floor(diff / 3600)}h`
+  
   return date.toLocaleDateString('es-ES', { month: 'short', day: 'numeric' })
 }
 
@@ -299,6 +377,8 @@ const getChannelIcon = channel => {
     TikTok: 'tiktok-line',
     Otros: 'more-2-fill',
   }
+
+  
   return icons[channel] || 'global-line'
 }
 
@@ -307,6 +387,7 @@ const loadConversations = async () => {
   error.value = false
   try {
     const data = await conversationService.getActiveConversations()
+
     conversations.value = data.conversations || []
   } catch (err) {
     console.error('Error loading conversations:', err)

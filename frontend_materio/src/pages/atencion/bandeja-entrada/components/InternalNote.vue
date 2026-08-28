@@ -1,12 +1,19 @@
 <template>
   <div class="internal-note">
     <div class="note-header">
-      <i class="ri-sticky-note-line"></i>
+      <i class="ri-sticky-note-line" />
       <span>Nota interna</span>
       <span class="note-time">{{ formatTime(note.timestamp) }}</span>
     </div>
-    <div class="note-content">{{ note.text }}</div>
-    <div v-if="note.author" class="note-author">{{ note.author }}</div>
+    <div class="note-content">
+      {{ note.text }}
+    </div>
+    <div
+      v-if="note.author"
+      class="note-author"
+    >
+      {{ note.author }}
+    </div>
   </div>
 </template>
 
@@ -21,6 +28,7 @@ defineProps({
 const formatTime = time => {
   if (!time) return ''
   const date = new Date(time)
+  
   return date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
 }
 </script>

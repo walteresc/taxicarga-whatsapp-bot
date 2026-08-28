@@ -3,10 +3,11 @@
 const DASHBOARD_BASE = '/dashboard/whatsapp/conversaciones'
 
 // Mapear estado_atencion del backend a attentionMode unificado
-const mapAttentionMode = (conv) => {
+const mapAttentionMode = conv => {
   if (conv.estado_atencion === 'cerrada') return 'closed'
   if (conv.estado_atencion === 'asesor') return 'advisor'
   if (conv.estado_atencion === 'bot') return 'bot'
+
   // Fallback: si no está cerrada y no tiene asesor, es unassigned
   return conv.responsable ? 'advisor' : 'unassigned'
 }
@@ -22,6 +23,7 @@ export const conversationService = {
       if (filters.advisor) params.append('advisor', filters.advisor)
 
       const url = `${DASHBOARD_BASE}/api/active/?${params.toString()}`
+
       const response = await fetch(url, {
         headers: {
           'Content-Type': 'application/json',
@@ -55,6 +57,7 @@ export const conversationService = {
       }
     } catch (error) {
       console.error('Error fetching conversations:', error)
+      
       return { conversations: [] }
     }
   },
@@ -80,6 +83,7 @@ export const conversationService = {
       }
     } catch (error) {
       console.error('Error fetching messages:', error)
+      
       return { messages: [], total: 0 }
     }
   },
@@ -99,7 +103,9 @@ export const conversationService = {
           message: message.text,
         }),
       })
+
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      
       return { status: 'ok', message }
     } catch (error) {
       console.error('Error sending message:', error)
@@ -121,6 +127,8 @@ export const conversationService = {
           action: 'take',
         }),
       })
+
+      
       return response.ok
     } catch (error) {
       console.error('Error taking conversation:', error)
@@ -143,6 +151,8 @@ export const conversationService = {
           instruction,
         }),
       })
+
+      
       return response.ok
     } catch (error) {
       console.error('Error returning to bot:', error)
@@ -165,6 +175,8 @@ export const conversationService = {
           reason,
         }),
       })
+
+      
       return response.ok
     } catch (error) {
       console.error('Error sending to quote:', error)
@@ -186,6 +198,8 @@ export const conversationService = {
           action: 'close',
         }),
       })
+
+      
       return response.ok
     } catch (error) {
       console.error('Error closing conversation:', error)
@@ -203,8 +217,10 @@ export const conversationService = {
         },
         credentials: 'include',
       })
+
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
       const data = await response.json()
+      
       return {
         is_paused: data.is_paused,  // true = paused, false = active
         paused_at: data.paused_at,
@@ -226,7 +242,9 @@ export const conversationService = {
         },
         credentials: 'include',
       })
+
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      
       return response.json()
     } catch (error) {
       console.error('Error pausing bot:', error)
@@ -245,7 +263,9 @@ export const conversationService = {
         },
         credentials: 'include',
       })
+
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      
       return response.json()
     } catch (error) {
       console.error('Error activating bot:', error)
@@ -274,6 +294,7 @@ export const conversationService = {
         }
       }
     }
+    
     return cookieValue || ''
   },
 }

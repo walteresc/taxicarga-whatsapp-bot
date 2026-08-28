@@ -7,7 +7,8 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_POST, require_http_methods
+import json
 import logging
 
 logger = logging.getLogger(__name__)
@@ -41,7 +42,7 @@ from apps.whatsapp.domain import (
     tomar_conversacion,
 )
 from apps.whatsapp.models import ConversacionWhatsApp, MensajeWhatsApp, WhatsAppChannel
-from apps.whatsapp.services import send_whatsapp_message
+from apps.whatsapp.services import send_whatsapp_message, send_crm_message
 
 
 @login_required
@@ -448,6 +449,92 @@ def _si_no(value):
     return "Si" if value else "No"
 
 
+# Backend estado (Spanish, DB-canonical) -> frontend status (English, canonical contract)
+ESTADO_TO_STATUS = {
+    'recibido': 'received',
+    'pendiente': 'sending',
+    'enviado': 'sent',
+    'entregado': 'delivered',
+    'leido': 'read',
+    'error': 'failed',
+}
+
+
+def _serialize_mensaje(msg, conversation):
+    """Canonical message JSON shape — single source of truth.
+
+    Reused by conversation_messages() (list) and api_send_message() (single message),
+    so both endpoints and the SSE payload contract stay in sync.
+    """
+    sender_type = msg.sender_type or _map_mensaje_origen_to_sender(msg.origen)
+    source = msg.source or "unknown"
+
+    if msg.sender_type == MensajeWhatsApp.SENDER_CUSTOMER:
+        sender_name = conversation.cliente.nombre if conversation.cliente else 'Cliente'
+        badge = None
+    elif msg.sender_type == MensajeWhatsApp.SENDER_BOT:
+        sender_name = 'TaxiCarga Bot'
+        badge = 'bot'
+    elif msg.sender_type == MensajeWhatsApp.SENDER_ADVISOR:
+        if msg.source == MensajeWhatsApp.SOURCE_WHATSAPP_BUSINESS_APP:
+            sender_name = 'Atención humana desde WhatsApp'
+            badge = 'whatsapp'
+        else:
+            sender_name = msg.autor.get_full_name() or msg.autor.username if msg.autor else 'Asesor'
+            badge = 'crm'
+    else:
+        sender_name = 'Sistema'
+        badge = 'system'
+
+    mensaje_type = 'text'
+    adjuntos_data = []
+    if msg.tipo in ('imagen', 'audio', 'video', 'documento'):
+        mensaje_type = msg.tipo
+        for adjunto in msg.adjuntos.all():
+            adjunto_dict = {
+                'id': adjunto.id,
+                'type': adjunto.formato,
+                'media_id': adjunto.ycloud_media_id,
+                'mime_type': adjunto.mime_type,
+                'filename': adjunto.filename,
+                'file_size': adjunto.file_size,
+                'sha256': adjunto.sha256,
+            }
+            # Always serve through the authenticated proxy — MEDIA_ROOT is private
+            # (datos_privados/media) and not exposed by nginx or any Django urlpattern,
+            # so adjunto.archivo.url would point nowhere servable.
+            adjunto_dict['url'] = f'/media/proxy/{adjunto.ycloud_media_id}/'
+            adjuntos_data.append(adjunto_dict)
+
+        if not adjuntos_data and msg.ycloud_media_id:
+            adjuntos_data.append({
+                'id': None,
+                'type': mensaje_type,
+                'media_id': msg.ycloud_media_id,
+                'mime_type': msg.mime_type or 'application/octet-stream',
+                'filename': msg.filename or f'{mensaje_type}-{msg.id}',
+                'file_size': msg.file_size or 0,
+                'sha256': msg.sha256 or '',
+                'url': f'/media/proxy/{msg.ycloud_media_id}/',
+            })
+
+    return {
+        'id': msg.id,
+        'sender': msg.sender_type or 'unknown',
+        'senderName': sender_name,
+        'source': source,
+        'badge': badge,
+        'type': mensaje_type,
+        'text': msg.contenido,
+        'caption': msg.caption or None,
+        'attachments': adjuntos_data if adjuntos_data else None,
+        'timestamp': msg.fecha_mensaje.isoformat(),
+        'status': ESTADO_TO_STATUS.get(msg.estado, msg.estado),
+        'errorDetail': msg.error_detalle or None,
+        'avatar': None,
+    }
+
+
 @login_required
 @whatsapp_required
 def conversation_messages(request, conversation_id):
@@ -459,44 +546,9 @@ def conversation_messages(request, conversation_id):
     mark_conversation_as_read(conversation, request.user)
     messages = MensajeWhatsApp.objects.filter(
         conversacion=conversation
-    ).select_related('autor').order_by('fecha_mensaje')
+    ).select_related('autor').prefetch_related('adjuntos').order_by('fecha_mensaje')
 
-    messages_list = []
-    for msg in messages:
-        # Use canonical sender_type and source
-        sender_type = msg.sender_type or _map_mensaje_origen_to_sender(msg.origen)
-        source = msg.source or "unknown"
-
-        # Determine sender name and badge
-        if msg.sender_type == MensajeWhatsApp.SENDER_CUSTOMER:
-            sender_name = conversation.cliente.nombre if conversation.cliente else 'Cliente'
-            badge = None
-        elif msg.sender_type == MensajeWhatsApp.SENDER_BOT:
-            sender_name = 'TaxiCarga Bot'
-            badge = 'bot'
-        elif msg.sender_type == MensajeWhatsApp.SENDER_ADVISOR:
-            if msg.source == MensajeWhatsApp.SOURCE_WHATSAPP_BUSINESS_APP:
-                sender_name = 'Atención humana desde WhatsApp'
-                badge = 'whatsapp'
-            else:
-                sender_name = msg.autor.get_full_name() or msg.autor.username if msg.autor else 'Asesor'
-                badge = 'crm'
-        else:
-            sender_name = 'Sistema'
-            badge = 'system'
-
-        messages_list.append({
-            'id': msg.id,
-            'sender': msg.sender_type or 'unknown',
-            'senderName': sender_name,
-            'source': source,
-            'badge': badge,
-            'type': 'text',
-            'text': msg.contenido,
-            'timestamp': msg.fecha_mensaje.isoformat(),
-            'status': msg.estado,
-            'avatar': None,
-        })
+    messages_list = [_serialize_mensaje(msg, conversation) for msg in messages]
 
     logger.info(f"conversation_messages: {conversation_id} → {len(messages_list)} mensajes")
 
@@ -552,6 +604,86 @@ def resume_bot(request, conversation_id):
     ownership.save()
     logger.info(f"Bot reactivated for conversation {conversation_id}")
     return JsonResponse({'status': 'active'})
+
+
+@login_required
+@whatsapp_required
+@require_http_methods(["POST"])
+def mark_conversation_read(request, conversation_id):
+    """Mark conversation as read for the current user"""
+    conversation = get_object_or_404(ConversacionWhatsApp, pk=conversation_id)
+    from apps.whatsapp.services_read_state import mark_conversation_as_read
+    mark_conversation_as_read(conversation, request.user)
+    return JsonResponse({'status': 'marked_read'})
+
+
+@login_required
+@whatsapp_required
+@require_http_methods(["POST"])
+def api_send_message(request, conversation_id):
+    """JSON endpoint for the SPA composer — advisor manual reply.
+
+    Contract:
+      POST body (JSON): {"message": str, "client_msg_id": str (optional, echoed back)}
+      200 -> {"success": true, "clientMsgId", "message": <_serialize_mensaje shape>}
+      400 -> {"success": false, "error_code": "empty_message"|"invalid_json", "error_detail": str}
+      409 -> {"success": false, "error_code": "conversation_locked", "error_detail": str}
+      502 -> {"success": false, "clientMsgId", "message": <_serialize_mensaje shape>,
+              "error_code": str, "error_detail": str}
+              (502 = YCloud/upstream failed to accept the message; the failed attempt
+              is still persisted and returned so the advisor sees it and can retry)
+    """
+    conversation = get_object_or_404(ConversacionWhatsApp, pk=conversation_id)
+
+    try:
+        data = json.loads(request.body or b"{}")
+    except (ValueError, TypeError):
+        return JsonResponse(
+            {"success": False, "error_code": "invalid_json", "error_detail": "Cuerpo de la petición inválido."},
+            status=400,
+        )
+
+    contenido = (data.get("message") or "").strip()
+    client_msg_id = data.get("client_msg_id", "")
+
+    if not contenido:
+        return JsonResponse(
+            {"success": False, "error_code": "empty_message", "error_detail": "Escribe un mensaje."},
+            status=400,
+        )
+
+    try:
+        conversation = tomar_conversacion(conversation.id, request.user)
+    except (ConversacionOcupada, TransicionConversacionInvalida) as exc:
+        return JsonResponse(
+            {"success": False, "error_code": "conversation_locked", "error_detail": str(exc)},
+            status=409,
+        )
+
+    # Advisor takes manual control (mirrors legacy _enviar_respuesta)
+    from apps.whatsapp_bot_v4.models import ConversationOwnership
+    ownership, _ = ConversationOwnership.objects.get_or_create(conversation=conversation)
+    ownership.owner_type = ConversationOwnership.OWNER_ADVISOR
+    ownership.control_mode = ConversationOwnership.MODE_MANUAL
+    ownership.advisor_id = request.user
+    ownership.last_human_message_at = timezone.now()
+    ownership.save()
+
+    result = send_crm_message(conversation, request.user, contenido)
+    mensaje = result["message"]
+
+    conversation.ultimo_mensaje_enviado = timezone.now()
+    conversation.ultima_actividad = timezone.now()
+    conversation.save(update_fields=["ultimo_mensaje_enviado", "ultima_actividad", "actualizada_en"])
+
+    payload = {
+        "success": result["success"],
+        "clientMsgId": client_msg_id,
+        "message": _serialize_mensaje(mensaje, conversation),
+        "error_code": result["error_code"],
+        "error_detail": result["error_detail"],
+    }
+    return JsonResponse(payload, status=200 if result["success"] else 502)
 
 
 @login_required

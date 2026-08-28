@@ -105,6 +105,7 @@ describe('ConversationPanel full rendering with real data', () => {
           }),
         }
       }
+      
       return {
         ok: false,
         status: 404,
@@ -161,20 +162,26 @@ describe('ConversationPanel full rendering with real data', () => {
     console.log('[FULL] ✓ Load complete')
 
     console.log('[FULL] === STEP 3: VERIFY COMPUTED ===')
+
     const computed = wrapper.vm.messages
+
     console.log('[FULL] Computed messages count:', computed.length)
     expect(computed).toHaveLength(6)
     console.log('[FULL] ✓ Computed has 6 messages')
 
     console.log('[FULL] === STEP 4: VERIFY PROPS PASSED TO TIMELINE ===')
+
     const messageTimelineComponent = wrapper.findComponent({ name: 'MessageTimeline' })
     const timelineProps = messageTimelineComponent.props()
+
     console.log('[FULL] Timeline received messages prop count:', timelineProps.messages.length)
     expect(timelineProps.messages).toHaveLength(6)
     console.log('[FULL] ✓ Timeline received 6 messages')
 
     console.log('[FULL] === STEP 5: VERIFY DOM BUBBLES ===')
+
     const bubbles = wrapper.findAll('.message-bubble')
+
     console.log('[FULL] DOM bubbles count:', bubbles.length)
     expect(bubbles).toHaveLength(6)
     console.log('[FULL] ✓ DOM has 6 bubbles')
@@ -183,13 +190,16 @@ describe('ConversationPanel full rendering with real data', () => {
     bubbles.forEach((bubble, idx) => {
       const text = bubble.text()
       const dataId = bubble.attributes('data-id')
+
       console.log(`[FULL] Bubble ${idx}: data-id=${dataId} text="${text.substring(0, 40)}"`)
       expect(dataId).toBeDefined()
     })
     console.log('[FULL] ✓ All bubbles have data-id')
 
     console.log('[FULL] === STEP 7: VERIFY REAL-0010 ===')
+
     const real0010Bubble = wrapper.findAll('.message-bubble').find(b => b.text().includes('REAL-0010'))
+
     console.log('[FULL] REAL-0010 bubble:', real0010Bubble?.text().substring(0, 40))
     expect(real0010Bubble).toBeDefined()
     expect(real0010Bubble?.text()).toContain('REAL-0010')
@@ -231,14 +241,17 @@ describe('ConversationPanel full rendering with real data', () => {
 
     // Verify structure
     const chatContent = wrapper.find('.chat-content')
+
     expect(chatContent.exists()).toBe(true)
     console.log('[STRUCT] ✓ .chat-content exists')
 
     const timeline = wrapper.find('.message-timeline')
+
     expect(timeline.exists()).toBe(true)
     console.log('[STRUCT] ✓ .message-timeline exists')
 
     const composer = wrapper.find('.chat-composer')
+
     expect(composer.exists()).toBe(true)
     console.log('[STRUCT] ✓ .chat-composer exists')
   })

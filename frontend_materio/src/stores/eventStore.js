@@ -55,7 +55,7 @@ export const useEventStore = defineStore('events', () => {
     sseError: null,
     pollError: null,
     eventSourceUrl: null,
-    eventSourceReadyState: null
+    eventSourceReadyState: null,
   }
 
   // Expose diagnostics globally
@@ -69,6 +69,7 @@ export const useEventStore = defineStore('events', () => {
   const logConnection = (action, reason, details = {}) => {
     const timestamp = new Date().toISOString()
     const stack = new Error().stack?.split('\n').slice(2, 5).join(' | ') || ''
+
     const entry = {
       instanceId,
       timestamp,
@@ -78,8 +79,9 @@ export const useEventStore = defineStore('events', () => {
       eventSourceState: eventSource.value?.readyState ?? 'null',
       isPolling: isPolling.value,
       stack: stack.substring(0, 80),
-      ...details
+      ...details,
     }
+
     connectionLog.value.push(entry)
     console.log(`[CONN-LOG] ${action} (${reason})`, entry)
   }
@@ -94,13 +96,16 @@ export const useEventStore = defineStore('events', () => {
       if (readyState === EventSource.CONNECTING) {
         logConnection('openSSE', 'idempotent_reuse_connecting', { readyState })
         console.log(`[SSE] Guard: EventSource already CONNECTING (${readyState}), reusing`)
+        
         return
       }
       if (readyState === EventSource.OPEN) {
         logConnection('openSSE', 'idempotent_reuse_open', { readyState })
         console.log(`[SSE] Guard: EventSource already OPEN (${readyState}), reusing`)
+        
         return
       }
+
       // If CLOSED (2), close it and create new
       logConnection('openSSE', 'closing_dead_connection', { readyState })
       eventSource.value.close()
@@ -131,10 +136,12 @@ export const useEventStore = defineStore('events', () => {
 
       // SSE event types from backend
       // CP16 FIX: Create typed handlers to preserve event.type in data
-      const createEventHandler = (eventType) => {
-        return (event) => {
+      const createEventHandler = eventType => {
+        return event => {
           try {
             const data = JSON.parse(event.data)
+
+
             // CP16: Add event type to data so subscribers know which event it is
             data.type = eventType
             data.event_id = event.lastEventId || '0'  // Rename: event_id (not id) to avoid confusion with conversation_id
@@ -190,8 +197,9 @@ export const useEventStore = defineStore('events', () => {
   /**
    * Handle resync request from server
    */
-  const handleResyncRequired = (event) => {
+  const handleResyncRequired = event => {
     console.warn('Server requesting resync - cursor too old')
+
     // Fetch full state from REST
     reconcileFromREST()
   }
@@ -199,7 +207,7 @@ export const useEventStore = defineStore('events', () => {
   /**
    * Handle SSE errors (MANUAL RECONNECTION STRATEGY)
    */
-  const handleSSEError = (error) => {
+  const handleSSEError = error => {
     console.error('[handleSSEError] SSE error:', error)
     sseOpen.value = false
     sseError.value = 'SSE disconnected'
@@ -215,6 +223,7 @@ export const useEventStore = defineStore('events', () => {
         eventSource.value.close()
         eventSource.value = null
       }
+      
       return
     }
 
@@ -236,6 +245,7 @@ export const useEventStore = defineStore('events', () => {
 
     // Schedule reconnection with exponential backoff
     const backoffMs = Math.min(1000 * Math.pow(2, reconnectionAttempt), 30000)
+
     reconnectionAttempt += 1
 
     console.log(`[handleSSEError] Scheduling reconnection attempt ${reconnectionAttempt} after ${backoffMs}ms`)
@@ -248,6 +258,7 @@ export const useEventStore = defineStore('events', () => {
 
         connect().catch(err => {
           console.error('[handleSSEError] Reconnect failed:', err)
+
           // Don't start polling yet, let error handler schedule next retry
           // This will trigger handleSSEError again, which schedules next retry
         })
@@ -261,7 +272,7 @@ export const useEventStore = defineStore('events', () => {
    */
   const subscribers = new Set()
 
-  const subscribe = (handler) => {
+  const subscribe = handler => {
     subscribers.add(handler)
     diagnostics.subscriberCount = subscribers.size
     console.log(`[eventStore.subscribe] Added handler, total subscribers: ${subscribers.size}`)
@@ -274,24 +285,34 @@ export const useEventStore = defineStore('events', () => {
     }
   }
 
-  const notifySubscribers = (event) => {
-    console.log(`[eventStore.notifySubscribers] Event ${event.type} (id=${event.id}) to ${subscribers.size} subscribers`)
+  const notifySubscribers = event => {
+    console.log(`[eventStore.notifySubscribers] Event ${event.type} (event_id=${event.event_id}) to ${subscribers.size} subscribers`)
 
     // TRABAJO A: Record dispatch
     diagnostics.dispatchedEvents.push({
-      id: event.id,
+      id: event.event_id,
       type: event.type,
       message_id: event.message_id,
       conversation_id: event.conversation_id,
       replay_of: event.replay_of,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     })
 
     for (const handler of subscribers) {
       try {
         handler(event)
       } catch (error) {
-        console.error('[eventStore.notifySubscribers] Handler failed:', error.message)
+        console.error('[eventStore.notifySubscribers] Handler failed:', error.message, error.stack)
+
+        // Record handler errors in diagnostics for debugging
+        if (!diagnostics.handlerErrors) diagnostics.handlerErrors = []
+        diagnostics.handlerErrors.push({
+          event_id: event.event_id,
+          event_type: event.type,
+          error_message: error.message,
+          error_stack: error.stack?.substring(0, 200),
+          timestamp: new Date().toISOString(),
+        })
       }
     }
   }
@@ -299,28 +320,46 @@ export const useEventStore = defineStore('events', () => {
   /**
    * Add event (deduped by ID)
    */
-  const addEvent = (event) => {
+  const addEvent = event => {
     // TRABAJO A: Record received event
     diagnostics.receivedEvents.push({
-      id: event.id,
+      id: event.event_id,
       type: event.type,
       message_id: event.message_id,
       conversation_id: event.conversation_id,
       replay_of: event.replay_of,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     })
 
-    // Check if event already exists
-    const exists = events.value.some(e => e.id === event.id)
-    if (exists) {
-      console.log(`[eventStore.addEvent] Duplicate event ${event.id}, skipping`)
+    // BUG 2 FIX: Protect against events with null/undefined/empty IDs
+    if (!event.event_id || event.event_id === '' || event.event_id === '0') {
+      console.warn('[eventStore.addEvent] Event without valid id (undefined/null/empty), processing anyway for diagnostics')
+      if (!diagnostics.nullIdEvents) diagnostics.nullIdEvents = []
+      diagnostics.nullIdEvents.push({
+        type: event.type,
+        message_id: event.message_id,
+        conversation_id: event.conversation_id,
+        timestamp: new Date().toISOString(),
+      })
+      // Don't dedup: process it anyway
+      events.value.push(event)
+      notifySubscribers(event)
       return
     }
 
-    console.log(`[eventStore.addEvent] Adding event ${event.id} type=${event.type} message_id=${event.message_id} replay_of=${event.replay_of || 'N/A'}`)
+    // Check if event already exists (dedup by event_id)
+    const exists = events.value.some(e => e.event_id === event.event_id)
+    if (exists) {
+      console.log(`[eventStore.addEvent] Duplicate event ${event.event_id}, skipping`)
+
+      return
+    }
+
+    console.log(`[eventStore.addEvent] Adding event ${event.event_id} type=${event.type} message_id=${event.message_id} replay_of=${event.replay_of || 'N/A'}`)
     events.value.push(event)
-    lastCursor.value = event.id
-    diagnostics.lastCursor = event.id
+    // BUG 3 FIX: Update cursor with event_id so it advances
+    lastCursor.value = event.event_id
+    diagnostics.lastCursor = event.event_id
 
     // PASO 3: Notify subscribers AFTER dedup check and array update
     notifySubscribers(event)
@@ -343,7 +382,7 @@ export const useEventStore = defineStore('events', () => {
             'Content-Type': 'application/json',
             'X-Requested-With': 'XMLHttpRequest',
           },
-        }
+        },
       )
 
       if (!response.ok) {
@@ -383,12 +422,14 @@ export const useEventStore = defineStore('events', () => {
     if (isPolling.value) {
       logConnection('startPolling', 'already_polling')
       console.log('[POLLING] Already polling, skipping')
+      
       return
     }
 
     if (sseOpen.value) {
       logConnection('startPolling', 'sse_open_no_need_polling')
       console.log('[POLLING] SSE open, no need for polling fallback')
+      
       return
     }
 
@@ -414,8 +455,9 @@ export const useEventStore = defineStore('events', () => {
         if (isPolling.value && !sseOpen.value) {
           const nextInterval = Math.min(
             pollInterval.value * 1.5,
-            maxPollInterval.value
+            maxPollInterval.value,
           )
+
           pollInterval.value = nextInterval
           console.log(`[POLLING] Error, backing off to ${nextInterval}ms`)
           pollTimerId = setTimeout(poll, nextInterval)
@@ -453,7 +495,7 @@ export const useEventStore = defineStore('events', () => {
             'Content-Type': 'application/json',
             'X-Requested-With': 'XMLHttpRequest',
           },
-        }
+        },
       )
 
       if (!response.ok) {
@@ -462,11 +504,11 @@ export const useEventStore = defineStore('events', () => {
 
       const data = await response.json()
 
-      // Rebuild event list (dedup by ID)
-      const eventMap = new Map(events.value.map(e => [e.id, e]))
+      // Rebuild event list (dedup by event_id)
+      const eventMap = new Map(events.value.map(e => [e.event_id, e]))
 
       data.events?.forEach(event => {
-        eventMap.set(event.id, event)
+        eventMap.set(event.event_id, event)
       })
 
       events.value = Array.from(eventMap.values())
@@ -507,6 +549,7 @@ export const useEventStore = defineStore('events', () => {
     if (connectionPromise) {
       console.log('[eventStore.connect] Connection in progress, returning existing promise')
       logConnection('connect', 'idempotent_return_existing_promise')
+      
       return await connectionPromise
     }
 
@@ -515,6 +558,7 @@ export const useEventStore = defineStore('events', () => {
     if (sseOpen.value) {
       console.log('[eventStore.connect] Already connected via SSE (readyState=OPEN), returning')
       logConnection('connect', 'idempotent_already_connected_sse')
+      
       return Promise.resolve()
     }
 
@@ -522,14 +566,17 @@ export const useEventStore = defineStore('events', () => {
     if (isPolling.value && eventSource.value && eventSource.value.readyState !== 2) {
       console.log('[eventStore.connect] Polling active but EventSource not CLOSED, returning')
       logConnection('connect', 'idempotent_polling_active')
+      
       return Promise.resolve()
     }
 
     // Guard: cursor must be valid (allow '0' for fresh start, require digits-digits format otherwise)
     if (lastCursor.value === null || lastCursor.value === undefined || lastCursor.value === '') {
       const error = 'Cursor is null, undefined, or empty'
+
       console.error('[eventStore.connect] REJECTED: cursor invalid:', lastCursor.value)
       logConnection('connect', 'rejected_invalid_cursor', { cursor: lastCursor.value })
+      
       return Promise.reject(new Error(error))
     }
 
@@ -537,8 +584,10 @@ export const useEventStore = defineStore('events', () => {
     // Also allow 'digits-digits' format (normal Redis Stream IDs)
     if (lastCursor.value !== '0' && !/^\d+-\d+$/.test(lastCursor.value)) {
       const error = `Cursor format invalid: ${lastCursor.value}`
+
       console.error('[eventStore.connect] REJECTED: cursor format invalid:', lastCursor.value)
       logConnection('connect', 'rejected_invalid_format', { cursor: lastCursor.value })
+      
       return Promise.reject(new Error(error))
     }
 
@@ -551,7 +600,7 @@ export const useEventStore = defineStore('events', () => {
         openSSE()
 
         // Wait for SSE to open OR timeout and fallback to polling
-        await new Promise((resolve) => {
+        await new Promise(resolve => {
           const checkInterval = setInterval(() => {
             if (sseOpen.value || isPolling.value) {
               clearInterval(checkInterval)
@@ -589,8 +638,9 @@ export const useEventStore = defineStore('events', () => {
   /**
    * Set cursor from API snapshot (critical for SSE coherence)
    */
-  const setSnapshotCursor = (cursor) => {
+  const setSnapshotCursor = cursor => {
     const oldCursor = lastCursor.value
+
     lastCursor.value = cursor || '0'
     console.log('[eventStore.setSnapshotCursor] Set from "' + oldCursor + '" to "' + lastCursor.value + '"')
   }
@@ -629,16 +679,16 @@ export const useEventStore = defineStore('events', () => {
   /**
    * Get events of specific type
    */
-  const getEventsByType = (type) => {
+  const getEventsByType = type => {
     return events.value.filter(e => e.type === type)
   }
 
   /**
    * Get conversation-related events
    */
-  const getConversationEvents = (conversationId) => {
+  const getConversationEvents = conversationId => {
     return events.value.filter(
-      e => e.data?.conversation_id === conversationId
+      e => e.data?.conversation_id === conversationId,
     )
   }
 
@@ -657,9 +707,11 @@ export const useEventStore = defineStore('events', () => {
   // Computed
   const eventCount = computed(() => events.value.length)
   const isConnected = computed(() => sseOpen.value || isPolling.value)
+
   const connectionStatus = computed(() => {
     if (sseOpen.value) return 'connected_sse'
     if (isPolling.value) return 'connected_polling'
+    
     return 'disconnected'
   })
 

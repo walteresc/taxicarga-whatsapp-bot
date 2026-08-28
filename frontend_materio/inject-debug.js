@@ -9,10 +9,12 @@
   const appEl = document.getElementById('app')
   if (!appEl || !appEl.__vue__) {
     console.log('[DEBUG] Vue app not found')
+    
     return
   }
 
   const app = appEl.__vue__
+
   console.log('[DEBUG] Vue app:', app)
 
   // Try to access Pinia store
@@ -27,6 +29,7 @@
   const panelEl = document.querySelector('[class*="conversation-panel"]')
   if (panelEl && panelEl.__vue__) {
     const panel = panelEl.__vue__
+
     console.log('[DEBUG] ConversationPanel instance:', panel)
     console.log('[DEBUG] Props:', panel.props)
     console.log('[DEBUG] Computed messages:', panel.messages)
@@ -59,6 +62,7 @@
 
   // Check message bubbles
   const bubbles = document.querySelectorAll('.message-bubble')
+
   console.log('[DEBUG] Message bubbles count:', bubbles.length)
 
   // Check for empty state
@@ -79,8 +83,9 @@
         set(target, prop, value) {
           console.log('[DEBUG WATCH] Store.messages.' + prop + ' changed to:', value)
           target[prop] = value
+          
           return true
-        }
+        },
       }
 
       store.messages.value = new Proxy(originalValue, handler)

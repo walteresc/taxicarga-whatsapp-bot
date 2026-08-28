@@ -39,6 +39,7 @@ test.describe('E2E: Database Verification', () => {
 
     // Send webhook
     const res = await request.post(WEBHOOK_URL, { data: payload })
+
     expect(res.status()).toBeLessThan(500)
     console.log(`[WEBHOOK] POST ${WEBHOOK_URL} -> ${res.status()}`)
 
@@ -48,6 +49,7 @@ test.describe('E2E: Database Verification', () => {
     // Verify in database via Django ORM
     const dbCheck = await request.get(`${WEBHOOK_URL}?check_message=${testId}`)
     const text = await dbCheck.text()
+
     console.log(`[DB CHECK] ${text}`)
 
     // If no DB check endpoint, at least verify webhook accepted
@@ -145,6 +147,7 @@ test.describe('E2E: Database Verification', () => {
     // Send 3 times
     for (let i = 0; i < 3; i++) {
       const res = await request.post(WEBHOOK_URL, { data: payload })
+
       expect(res.status()).toBeLessThan(500)
       console.log(`[IDEMPOTENT] Attempt ${i + 1}: ${res.status()}`)
 
@@ -201,11 +204,14 @@ test.describe('E2E: Database Verification', () => {
     }
 
     const res1 = await request.post(WEBHOOK_URL, { data: payload1 })
+
     expect(res1.status()).toBeLessThan(500)
 
     await new Promise(r => setTimeout(r, 500))
 
     const res2 = await request.post(WEBHOOK_URL, { data: payload2 })
+
+
     // Should still succeed (messages are different, same phone ok)
     expect(res2.status()).toBeLessThan(500)
 

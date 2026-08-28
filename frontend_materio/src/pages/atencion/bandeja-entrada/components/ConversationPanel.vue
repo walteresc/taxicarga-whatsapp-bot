@@ -1,22 +1,44 @@
 <template>
-  <div class="conversation-panel" data-testid="conversation-panel">
+  <div
+    class="conversation-panel"
+    data-testid="conversation-panel"
+  >
     <!-- Empty state -->
     <EmptyConversationState v-if="!conversationId" />
 
     <!-- Chat -->
-    <div v-else class="chat-content" data-testid="chat-content">
+    <div
+      v-else
+      class="chat-content"
+      data-testid="chat-content"
+    >
       <!-- Header -->
-      <ConversationHeader :conversation="conversation" :bot-global-paused="botGlobalPaused" :effective-bot-paused="effectiveBotPaused" class="conversation-header" data-testid="conversation-header" />
+      <ConversationHeader
+        :conversation="conversation"
+        :bot-global-paused="botGlobalPaused"
+        :effective-bot-paused="effectiveBotPaused"
+        class="conversation-header"
+        data-testid="conversation-header"
+      />
 
       <!-- Messages -->
-      <MessageTimeline :messages="messages" :loading="loadingMessages" class="message-timeline" data-testid="message-timeline-wrapper" />
+      <MessageTimeline
+        :messages="messages"
+        :loading="loadingMessages"
+        class="message-timeline"
+        data-testid="message-timeline-wrapper"
+        @retry="handleRetryMessage"
+      />
 
       <!-- Composer -->
       <ChatComposer
+        ref="composerRef"
         class="chat-composer"
         :attention-mode="conversation?.attentionMode || 'unassigned'"
         :advisor-name="conversation?.responsable?.nombre || 'Walter Escobar'"
         :effective-bot-paused="effectiveBotPaused"
+        :sending="sendingMessage"
+        :send-error="sendError"
         @send-message="handleSendMessage"
         @take-control="handleTakeControl"
         @assign-me="handleAssignMe"
@@ -35,6 +57,7 @@ import MessageTimeline from './MessageTimeline.vue'
 import ChatComposer from './ChatComposer.vue'
 import { conversationService } from '@/services/conversationService'
 import { useMessagesStore } from '@/stores/messagesStore'
+import { normalizeMessage } from '@/utils/messageNormalizer'
 
 const props = defineProps({
   conversationId: {
@@ -69,6 +92,7 @@ const messages = computed(() => {
 
   if (!convId) {
     console.log('[ConversationPanel computed] No conversationId, return []')
+    
     return []
   }
 
@@ -96,6 +120,17 @@ const loadMessages = async () => {
     // Load messages into Pinia store (will be reflected in computed messages)
     await messagesStore.loadConversationMessages(props.conversationId)
     console.log('[ConversationPanel] Messages loaded, count=' + messages.value.length)
+
+    // Mark conversation as read when opened
+    try {
+      await fetch(`/dashboard/whatsapp/conversaciones/${props.conversationId}/mark-read/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      console.log('[ConversationPanel] Marked as read: ' + props.conversationId)
+    } catch (error) {
+      console.warn('[ConversationPanel] Error marking read:', error)
+    }
   } catch (error) {
     console.error('Error loading messages:', error)
   } finally {
@@ -103,28 +138,136 @@ const loadMessages = async () => {
   }
 }
 
-const handleSendMessage = (messageData) => {
-  console.log('Send message:', messageData)
-  // TODO: Implement send message via API
+const composerRef = ref(null)
+const sendingMessage = ref(false)
+const sendError = ref('')
+
+/**
+ * Send a text message to the backend and reconcile the optimistic bubble.
+ * Shared by the composer's normal send and the "Reintentar" button on a failed
+ * bubble (MessageBubble -> MessageTimeline -> here).
+ */
+const sendTextMessage = async (text, tempId) => {
+  const convId = props.conversationId
+
+  messagesStore.upsertMessage({
+    id: tempId,
+    conversation_id: convId,
+    content: text,
+    direction: 'saliente',
+    sender_type: 'advisor',
+    content_type: 'texto',
+    timestamp: new Date().toISOString(),
+    status: 'sending',
+  })
+
+  sendingMessage.value = true
+  sendError.value = ''
+
+  try {
+    const response = await fetch(`/dashboard/whatsapp/conversaciones/${convId}/enviar/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': conversationService.getCsrfToken(),
+      },
+      credentials: 'include',
+      body: JSON.stringify({ message: text, client_msg_id: tempId }),
+    })
+
+    let data = null
+    try {
+      data = await response.json()
+    } catch {
+      data = null
+    }
+
+    messagesStore.removeMessage(convId, tempId)
+
+    if (data?.success && data.message) {
+      messagesStore.upsertMessage(normalizeMessage(data.message))
+      composerRef.value?.clear()
+    } else {
+      // Persist the failed attempt as its own bubble (backend already saved it with
+      // estado='error' when data.message is present) so the advisor can retry it.
+      const detail = data?.error_detail || 'No se pudo enviar el mensaje.'
+      if (data?.message) {
+        messagesStore.upsertMessage(normalizeMessage(data.message))
+      } else {
+        messagesStore.upsertMessage({
+          id: tempId,
+          conversation_id: convId,
+          content: text,
+          direction: 'saliente',
+          sender_type: 'advisor',
+          content_type: 'texto',
+          timestamp: new Date().toISOString(),
+          status: 'failed',
+          errorDetail: detail,
+        })
+      }
+      sendError.value = detail
+    }
+  } catch (error) {
+    console.error('[ConversationPanel] Send message failed:', error)
+    messagesStore.removeMessage(convId, tempId)
+    messagesStore.upsertMessage({
+      id: tempId,
+      conversation_id: convId,
+      content: text,
+      direction: 'saliente',
+      sender_type: 'advisor',
+      content_type: 'texto',
+      timestamp: new Date().toISOString(),
+      status: 'failed',
+      errorDetail: 'No se pudo conectar con el servidor.',
+    })
+    sendError.value = 'No se pudo conectar con el servidor. Verifica tu conexión e intenta de nuevo.'
+  } finally {
+    sendingMessage.value = false
+  }
+}
+
+const handleSendMessage = messageData => {
+  if (messageData.type !== 'text') {
+    sendError.value = 'Enviar imágenes, audio o documentos desde el CRM todavía no está disponible.'
+
+    return
+  }
+
+  const tempId = messageData.clientMsgId || `local-${Date.now()}`
+
+  sendTextMessage(messageData.text, tempId)
+}
+
+/** Retry a previously failed outbound message (from MessageBubble's retry button). */
+const handleRetryMessage = failedMessage => {
+  if (!failedMessage?.text) return
+  messagesStore.removeMessage(props.conversationId, failedMessage.id)
+  sendTextMessage(failedMessage.text, `local-retry-${Date.now()}`)
 }
 
 const handleTakeControl = () => {
   console.log('Take control of conversation')
+
   // TODO: Implement take control
 }
 
 const handleAssignMe = () => {
   console.log('Assign conversation to me')
+
   // TODO: Implement assign to me
 }
 
 const handleReopen = () => {
   console.log('Reopen conversation')
+
   // TODO: Implement reopen conversation
 }
 
 const clearReply = () => {
   console.log('Clear reply')
+
   // TODO: Clear reply state
 }
 

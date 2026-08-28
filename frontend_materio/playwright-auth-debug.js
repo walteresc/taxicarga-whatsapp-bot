@@ -18,17 +18,19 @@ export default async function globalAuthSetup() {
   const failedRequests = []
 
   // Instrumentar
-  page.on('request', (req) => {
+  page.on('request', req => {
     const url = req.url()
     const method = req.method()
+
     requests.push({ method, url, timestamp: new Date().toISOString() })
     console.log(`[REQ] ${method} ${url.replace(DJANGO_URL, '').replace(VITE_URL, '')}`)
   })
 
-  page.on('response', (res) => {
+  page.on('response', res => {
     const url = res.url()
     const status = res.status()
     const headers = res.headers()
+
     responses.push({
       url,
       status,
@@ -39,18 +41,19 @@ export default async function globalAuthSetup() {
     console.log(`[RES] ${status} ${url.replace(DJANGO_URL, '').replace(VITE_URL, '')}`)
   })
 
-  page.on('requestfailed', (req) => {
+  page.on('requestfailed', req => {
     failedRequests.push({ url: req.url(), failure: req.failure().errorText })
     console.log(`[FAIL] ${req.url().replace(DJANGO_URL, '')} - ${req.failure().errorText}`)
   })
 
-  page.on('console', (msg) => {
+  page.on('console', msg => {
     const text = msg.text()
+
     consoleLogs.push(text)
     console.log(`[CONSOLE] ${text}`)
   })
 
-  page.on('pageerror', (err) => {
+  page.on('pageerror', err => {
     pageErrors.push(err.message)
     console.log(`[ERROR] ${err.message}`)
   })
@@ -75,13 +78,17 @@ export default async function globalAuthSetup() {
     // Step 4: Capturar referencias antes de submit
     const csrfField = await page.evaluate(() => {
       const token = document.querySelector('input[name="csrfmiddlewaretoken"]')
+      
       return token ? 'csrf_present' : 'csrf_missing'
     })
+
     console.log(`[CSRF] ${csrfField}\n`)
 
     // Step 5: Intentar submit
     console.log('[4] Ejecutando form.submit()\n')
+
     const urlBefore = page.url()
+
     console.log(`[URL_BEFORE] ${urlBefore}\n`)
 
     await page.evaluate(() => {
@@ -96,19 +103,22 @@ export default async function globalAuthSetup() {
 
     // Esperar a que pase algo
     console.log('\n[5] Esperando respuesta (5s max)\n')
-    await new Promise((resolve) => setTimeout(resolve, 2000))
+    await new Promise(resolve => setTimeout(resolve, 2000))
 
     const urlAfter = page.url()
+
     console.log(`[URL_AFTER] ${urlAfter}\n`)
     console.log(`[URL_CHANGED] ${urlBefore !== urlAfter ? 'SI' : 'NO'}\n`)
 
     // Step 6: Verificar cookies
     console.log('[6] Verificando cookies\n')
+
     const cookies = await context.cookies()
-    const cookieNames = cookies.map((c) => c.name)
+    const cookieNames = cookies.map(c => c.name)
+
     console.log(`[COOKIES] ${cookieNames.join(', ')}\n`)
 
-    const sessionCookie = cookies.find((c) => c.name.includes('sessionid'))
+    const sessionCookie = cookies.find(c => c.name.includes('sessionid'))
     if (sessionCookie) {
       console.log(`[SESSION] Presente (${sessionCookie.name})\n`)
     } else {
@@ -118,17 +128,19 @@ export default async function globalAuthSetup() {
     // Step 7: Resumen de requests
     console.log('\n[RESUMEN]\n')
     console.log(`Total requests: ${requests.length}`)
-    const postRequests = requests.filter((r) => r.method === 'POST')
+
+    const postRequests = requests.filter(r => r.method === 'POST')
+
     console.log(`POST requests: ${postRequests.length}`)
-    postRequests.forEach((r) => {
+    postRequests.forEach(r => {
       console.log(`  - ${r.url.replace(DJANGO_URL, '').replace(VITE_URL, '')}`)
     })
 
     console.log(`\nConsole logs: ${consoleLogs.length}`)
-    consoleLogs.slice(-5).forEach((l) => console.log(`  - ${l}`))
+    consoleLogs.slice(-5).forEach(l => console.log(`  - ${l}`))
 
     console.log(`\nPage errors: ${pageErrors.length}`)
-    pageErrors.forEach((e) => console.log(`  - ${e}`))
+    pageErrors.forEach(e => console.log(`  - ${e}`))
 
     // Step 8: Guardar state
     console.log('\n[7] Guardando storageState\n')

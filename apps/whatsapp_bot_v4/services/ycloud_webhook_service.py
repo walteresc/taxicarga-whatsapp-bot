@@ -118,7 +118,9 @@ def _normalize_ycloud_payload(event_type, payload):
                 canonical["is_edit"] = True
                 canonical["original_wamid"] = original_msg_id
                 canonical["from"] = msg_data.get("from")
-                canonical["from_name"] = msg_data.get("fromName", "")
+                canonical["from_name"] = (msg_data.get("customerProfile") or {}).get("name") or msg_data.get("fromName", "")
+                canonical["from_user_id"] = msg_data.get("fromUserId", "")
+                canonical["reply_to_wamid"] = (msg_data.get("context") or {}).get("id", "")
                 canonical["wamid"] = original_msg_id  # Use ORIGINAL wamid for lookup
                 canonical["text"] = edited_msg.get("text", {}).get("body", "")
                 canonical["type"] = "text"
@@ -127,7 +129,15 @@ def _normalize_ycloud_payload(event_type, payload):
                 # Normal inbound message (NOT edited)
                 canonical["is_edit"] = False
                 canonical["from"] = msg_data.get("from")
-                canonical["from_name"] = msg_data.get("fromName", "")  # Contact name from YCloud
+                # Contact name: YCloud sends it under customerProfile.name (real field).
+                # fromName kept as legacy fallback in case older payload shapes use it.
+                canonical["from_name"] = (msg_data.get("customerProfile") or {}).get("name") or msg_data.get("fromName", "")
+                # fromUserId is YCloud's opaque persistent identity — present even when
+                # 'from' (the phone) is omitted, e.g. on reply/quote messages.
+                canonical["from_user_id"] = msg_data.get("fromUserId", "")
+                # If this message quotes/replies to a previous one, YCloud sets 'context.id'
+                # to that message's wamid — used as an identity fallback when 'from' is absent.
+                canonical["reply_to_wamid"] = (msg_data.get("context") or {}).get("id", "")
                 canonical["wamid"] = msg_data.get("id")
                 canonical["text"] = msg_data.get("text", {}).get("body", "")
                 canonical["image"] = msg_data.get("image")
@@ -663,7 +673,13 @@ Ejemplo: Si asesor dice "pueden enviar fotos", NO digas "no es necesario". Conti
 
 
 def send_via_ycloud(phone_number, message_text):
-    """Enviar mensaje via YCloud API v2"""
+    """Enviar mensaje via YCloud API v2.
+
+    Returns a dict, never raises for HTTP/network failures:
+      success -> {"success": True, "wamid": <id>, "raw": <response json>}
+      failure -> {"success": False, "code": <str>, "message": <str>,
+                  "status_code": <int|None>, "raw": <parsed body or {}>}
+    """
     import requests
 
     # ENDPOINT CORRECTO
@@ -692,19 +708,34 @@ def send_via_ycloud(phone_number, message_text):
 
     try:
         response = requests.post(url, json=payload, headers=headers, timeout=10)
-
-        logger.warning(f"[YCloud] STATUS: {response.status_code}")
-        logger.warning(f"[YCloud] RESPONSE: {response.text}")
-
-        if response.status_code == 200 or response.status_code == 202:
-            logger.info(f"[YCloud] Message accepted: {response.json().get('id')}")
-            return response.json()
-        else:
-            logger.error(f"[YCloud] Error {response.status_code}: {response.text}")
-            return None
     except requests.RequestException as e:
-        logger.error(f"[YCloud] Request error: {e}")
-        return None
+        logger.error(f"[YCloud] Send request failed: {e}")
+        return {"success": False, "code": "network_error", "message": str(e), "status_code": None, "raw": {}}
+
+    logger.warning(f"[YCloud] STATUS: {response.status_code}")
+    logger.warning(f"[YCloud] RESPONSE: {response.text}")
+
+    if response.status_code in (200, 202):
+        data = response.json()
+        logger.info(f"[YCloud] Message accepted: {data.get('id')}")
+        return {"success": True, "wamid": data.get("id", ""), "raw": data}
+
+    try:
+        error_body = response.json()
+    except ValueError:
+        error_body = {}
+
+    code = error_body.get("code") or f"http_{response.status_code}"
+    message = error_body.get("message") or response.text[:300]
+    logger.error(f"[YCloud] Error {response.status_code} ({code}): {message}")
+
+    return {
+        "success": False,
+        "code": code,
+        "message": message,
+        "status_code": response.status_code,
+        "raw": error_body,
+    }
 
 
 def extract_and_fill_lead_data(conversation, message_text):

@@ -36,6 +36,7 @@ describe('Effective bot state (CORRECCIÓN 1)', () => {
       })
 
       const text = wrapper.text()
+
       expect(text).toContain('Bot pausado globalmente')
       expect(text).not.toContain('Bot atendiendo')
       expect(text).not.toContain('pausada en esta conversación')
@@ -57,6 +58,7 @@ describe('Effective bot state (CORRECCIÓN 1)', () => {
       })
 
       const text = wrapper.text()
+
       expect(text).toContain('pausada en esta conversación')
       expect(text).not.toContain('pausado globalmente')
       expect(text).not.toContain('Bot atendiendo')
@@ -78,6 +80,7 @@ describe('Effective bot state (CORRECCIÓN 1)', () => {
       })
 
       const text = wrapper.text()
+
       expect(text).toContain('Bot atendiendo')
       expect(text).not.toContain('pausado')
     })
@@ -98,6 +101,7 @@ describe('Effective bot state (CORRECCIÓN 1)', () => {
       })
 
       const text = wrapper.text()
+
       expect(text).toContain('pausado')
       expect(text).not.toContain('Bot atendiendo')
     })
@@ -112,6 +116,7 @@ describe('Effective bot state (CORRECCIÓN 1)', () => {
 
       scenarios.forEach(({ globalPaused, conversationPaused }) => {
         const effectivePaused = globalPaused || conversationPaused
+
         const wrapper = mount(ConversationHeader, {
           props: {
             conversation: {
@@ -127,6 +132,7 @@ describe('Effective bot state (CORRECCIÓN 1)', () => {
         })
 
         const text = wrapper.text()
+
         const statusCount = (
           (text.match(/Bot atendiendo/g) || []).length +
           (text.match(/pausado/g) || []).length
@@ -149,6 +155,7 @@ describe('Effective bot state (CORRECCIÓN 1)', () => {
       })
 
       const text = wrapper.text()
+
       expect(text).toContain('pausado')
       expect(text).not.toContain('atendiendo')
       expect(wrapper.find('.take-control-btn').exists()).toBe(false)
@@ -165,6 +172,7 @@ describe('Effective bot state (CORRECCIÓN 1)', () => {
       })
 
       const text = wrapper.text()
+
       expect(text).toContain('atendiendo')
       expect(text).not.toContain('pausado')
       expect(wrapper.find('.take-control-btn').exists()).toBe(true)

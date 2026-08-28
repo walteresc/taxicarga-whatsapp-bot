@@ -2,13 +2,13 @@
   <div class="conversation-sidebar">
     <!-- FILA 1: BUSCADOR -->
     <div class="conversation-search">
-      <i class="ri-search-line search-icon"></i>
+      <i class="ri-search-line search-icon" />
       <input
         v-model="searchPhone"
         type="text"
         placeholder="Buscar por nombre, teléfono o mensaje"
         class="search-input"
-      />
+      >
     </div>
 
     <!-- FILA 2: FILTROS -->
@@ -17,9 +17,10 @@
       <button
         v-for="tag in filterTabs"
         :key="tag"
-        @click="toggleFilter(tag)"
-        :class="['filter-tab', { active: activeFilters.includes(tag) }]"
+        class="filter-tab"
+        :class="[{ active: activeFilters.includes(tag) }]"
         :title="tag"
+        @click="toggleFilter(tag)"
       >
         {{ tag }}
       </button>
@@ -34,24 +35,31 @@
       <!-- Advanced filters button -->
       <button
         class="filter-btn"
-        @click="toggleFilterMenu"
         :title="activeFiltersCount > 0 ? `${activeFiltersCount} filtro(s) activo(s)` : 'Filtros avanzados'"
+        @click="toggleFilterMenu"
       >
-        <i class="ri-filter-line"></i>
-        <span v-if="activeFiltersCount > 0" class="badge">{{ activeFiltersCount }}</span>
+        <i class="ri-filter-line" />
+        <span
+          v-if="activeFiltersCount > 0"
+          class="badge"
+        >{{ activeFiltersCount }}</span>
       </button>
 
       <!-- Advanced filter menu (positioned absolutely) -->
-      <div v-if="showFilterMenu" class="filter-menu">
+      <div
+        v-if="showFilterMenu"
+        class="filter-menu"
+      >
         <div class="filter-group">
           <label class="group-title">Más filtros</label>
           <button
             v-for="tag in advancedFilterTags"
             :key="tag"
+            class="menu-item"
+            :class="[{ active: activeFilters.includes(tag) }]"
             @click="toggleFilter(tag)"
-            :class="['menu-item', { active: activeFilters.includes(tag) }]"
           >
-            <i class="ri-checkbox-blank-circle-line"></i>
+            <i class="ri-checkbox-blank-circle-line" />
             {{ tag }}
           </button>
         </div>
@@ -61,41 +69,77 @@
     <!-- CONVERSATIONS LIST -->
     <div class="conversations-container">
       <!-- LOADING STATE -->
-      <div v-if="loading" class="state-container">
-        <div v-for="i in 5" :key="`skeleton-${i}`" class="skeleton-item">
-          <div class="skeleton-avatar"></div>
+      <div
+        v-if="loading"
+        class="state-container"
+      >
+        <div
+          v-for="i in 5"
+          :key="`skeleton-${i}`"
+          class="skeleton-item"
+        >
+          <div class="skeleton-avatar" />
           <div class="skeleton-content">
-            <div class="skeleton-line"></div>
-            <div class="skeleton-line short"></div>
+            <div class="skeleton-line" />
+            <div class="skeleton-line short" />
           </div>
         </div>
       </div>
 
       <!-- ERROR STATE -->
-      <div v-else-if="error" class="state-container">
+      <div
+        v-else-if="error"
+        class="state-container"
+      >
         <div class="empty-state">
-          <i class="ri-error-warning-line error-icon"></i>
-          <p class="error-title">No pudimos cargar las conversaciones</p>
-          <button @click="loadConversations" class="retry-btn">Reintentar</button>
+          <i class="ri-error-warning-line error-icon" />
+          <p class="error-title">
+            No pudimos cargar las conversaciones
+          </p>
+          <button
+            class="retry-btn"
+            @click="loadConversations"
+          >
+            Reintentar
+          </button>
         </div>
       </div>
 
       <!-- NO RESULTS STATE -->
-      <div v-else-if="filteredConversations.length === 0 && hasActiveFilters" class="state-container">
+      <div
+        v-else-if="filteredConversations.length === 0 && hasActiveFilters"
+        class="state-container"
+      >
         <div class="empty-state">
-          <i class="ri-inbox-line empty-icon"></i>
-          <p class="empty-title">No encontramos conversaciones</p>
-          <p class="empty-text">No hay conversaciones que coincidan con los filtros seleccionados</p>
-          <button @click="clearFilters" class="clear-btn">Limpiar filtros</button>
+          <i class="ri-inbox-line empty-icon" />
+          <p class="empty-title">
+            No encontramos conversaciones
+          </p>
+          <p class="empty-text">
+            No hay conversaciones que coincidan con los filtros seleccionados
+          </p>
+          <button
+            class="clear-btn"
+            @click="clearFilters"
+          >
+            Limpiar filtros
+          </button>
         </div>
       </div>
 
       <!-- EMPTY STATE -->
-      <div v-else-if="filteredConversations.length === 0" class="state-container">
+      <div
+        v-else-if="filteredConversations.length === 0"
+        class="state-container"
+      >
         <div class="empty-state">
-          <i class="ri-inbox-line empty-icon"></i>
-          <p class="empty-title">Aún no hay conversaciones</p>
-          <p class="empty-text">Las nuevas conversaciones aparecerán aquí</p>
+          <i class="ri-inbox-line empty-icon" />
+          <p class="empty-title">
+            Aún no hay conversaciones
+          </p>
+          <p class="empty-text">
+            Las nuevas conversaciones aparecerán aquí
+          </p>
         </div>
       </div>
 
@@ -103,29 +147,63 @@
       <div
         v-for="conv in filteredConversations"
         :key="conv.id"
+        class="conversation-item"
+        :class="[{ active: props.selectedConversationId === conv.id }]"
         @click="selectConversation(conv)"
-        :class="['conversation-item', { active: props.selectedConversationId === conv.id }]"
       >
         <div class="avatar">
-          <img v-if="conv.avatar" :src="conv.avatar" :alt="conv.name" />
-          <div v-else class="avatar-placeholder" :style="getAvatarStyle(conv.id)">
+          <img
+            v-if="conv.avatar"
+            :src="conv.avatar"
+            :alt="conv.name"
+          >
+          <div
+            v-else
+            class="avatar-placeholder"
+            :style="getAvatarStyle(conv.id)"
+          >
             <span v-if="conv.name">{{ getInitials(conv.name) }}</span>
-            <i v-else class="ri-account-circle-line"></i>
+            <i
+              v-else
+              class="ri-account-circle-line"
+            />
           </div>
         </div>
         <div class="content">
           <div class="header">
-            <h4 class="name">{{ conv.name || formatPhone(conv.phone) }}</h4>
+            <h4 class="name">
+              {{ conv.name || formatPhone(conv.phone) }}
+            </h4>
             <span class="time">{{ formatTime(conv.lastActivity) }}</span>
           </div>
-          <p class="preview">{{ formatPreview(conv.preview) }}</p>
+          <p class="preview">
+            {{ formatPreview(conv.preview) }}
+          </p>
           <div class="badges">
-            <span v-if="conv.estadoCotizacion === 'Por cotizar'" class="badge orange">Por cotizar</span>
-            <span v-if="conv.attentionMode === 'bot'" class="badge">Bot</span>
-            <span v-if="conv.attentionMode === 'advisor'" class="badge">Asesor</span>
-            <span v-if="conv.attentionMode === 'unassigned'" class="badge gray">Sin asignar</span>
-            <span v-if="conv.attentionMode === 'closed'" class="badge gray">Cerrada</span>
-            <span v-if="conv.unread > 0" class="badge-number">{{ conv.unread }}</span>
+            <span
+              v-if="conv.estadoCotizacion === 'Por cotizar'"
+              class="badge orange"
+            >Por cotizar</span>
+            <span
+              v-if="conv.attentionMode === 'bot'"
+              class="badge"
+            >Bot</span>
+            <span
+              v-if="conv.attentionMode === 'advisor'"
+              class="badge"
+            >Asesor</span>
+            <span
+              v-if="conv.attentionMode === 'unassigned'"
+              class="badge gray"
+            >Sin asignar</span>
+            <span
+              v-if="conv.attentionMode === 'closed'"
+              class="badge gray"
+            >Cerrada</span>
+            <span
+              v-if="conv.unread > 0"
+              class="badge-number"
+            >{{ conv.unread }}</span>
           </div>
         </div>
       </div>
@@ -165,6 +243,8 @@ const totalCount = computed(() => conversationsStore.conversations.length)
 const activeFiltersCount = computed(() => {
   const count = activeFilters.value.filter(f => f !== 'Todas').length +
     activeChannels.value.filter(c => c !== 'Todos').length
+
+  
   return count > 0 ? count : 0
 })
 
@@ -179,12 +259,13 @@ const filteredConversations = computed(() => {
 
   if (searchPhone.value) {
     const query = searchPhone.value.toLowerCase()
+
     filtered = filtered.filter(
       conv =>
         conv.name.toLowerCase().includes(query) ||
         conv.phone.toLowerCase().includes(query) ||
         (conv.preview && conv.preview.toLowerCase().includes(query)) ||
-        (conv.resumen && conv.resumen.toLowerCase().includes(query))
+        (conv.resumen && conv.resumen.toLowerCase().includes(query)),
     )
   }
 
@@ -196,14 +277,20 @@ const filteredConversations = computed(() => {
       if (activeFilters.value.includes('Bot atendiendo') && conv.attentionMode !== 'bot') return false
       if (activeFilters.value.includes('Asesor atendiendo') && conv.attentionMode !== 'advisor') return false
       if (activeFilters.value.includes('Cerradas') && conv.attentionMode !== 'closed') return false
+      
       return true
     })
   }
 
   if (!activeChannels.value.includes('Todos')) {
-    filtered = filtered.filter(conv => activeChannels.value.includes(conv.channel))
+    filtered = filtered.filter(conv => {
+      const channelId = conv.channel?.id || conv.channel_id
+      return activeChannels.value.includes(String(channelId))
+    })
   }
 
+  // Ensure conversations remain sorted by lastActivity (most recent first)
+  // Backend already sorts, but preserve order in filtered results
   return filtered
 })
 
@@ -230,6 +317,7 @@ const toggleFilter = tag => {
       activeFilters.value = ['Todas']
     }
   }
+
   // Close filter menu after selection
   showFilterMenu.value = false
 }
@@ -285,6 +373,7 @@ const formatTime = time => {
   // Last 7 days: show day name (Lun, Mar, etc)
   if (diffDays < 7) {
     const dayName = date.toLocaleDateString('es-ES', { weekday: 'short' })
+    
     return dayName.charAt(0).toUpperCase() + dayName.slice(1)
   }
 
@@ -294,6 +383,7 @@ const formatTime = time => {
 
 const getInitials = name => {
   if (!name) return ''
+  
   return name
     .split(' ')
     .map(n => n[0])
@@ -304,11 +394,13 @@ const getInitials = name => {
 
 const formatPreview = text => {
   if (!text) return 'Conversación nueva'
+
   // Normalize common message types
   if (text.includes('Imagen') || text.match(/📷|Foto/i)) return '📷 Foto'
   if (text.includes('Audio') || text.match(/🎤|Audio/i)) return '🎤 Audio'
   if (text.includes('Documento') || text.match(/📄|Documento/i)) return '📄 Documento'
   if (text.includes('Ubicación') || text.match(/📍|Ubicación/i)) return '📍 Ubicación'
+  
   return text
 }
 
@@ -323,12 +415,15 @@ const getChannelIcon = channel => {
     TikTok: 'tiktok-line',
     Otros: 'more-2-fill',
   }
+
+  
   return icons[channel] || 'global-line'
 }
 
 const getAvatarStyle = contactId => {
   const colors = ['#FF6B9D', '#C44569', '#F8B500', '#56AB2F', '#0085CA', '#662E9B']
   const index = Math.abs(contactId % colors.length)
+  
   return {
     backgroundColor: colors[index],
     color: '#fff',
@@ -340,6 +435,7 @@ const formatPhone = phone => {
   if (phone.startsWith('+')) {
     return phone.slice(0, 3) + ' ' + phone.slice(3)
   }
+  
   return phone
 }
 
@@ -367,7 +463,7 @@ onUnmounted(() => {
 })
 
 // Emit count update whenever filtered results change
-watch(() => filteredConversations.value.length, (newCount) => {
+watch(() => filteredConversations.value.length, newCount => {
   emit('update-count', newCount)
 })
 </script>

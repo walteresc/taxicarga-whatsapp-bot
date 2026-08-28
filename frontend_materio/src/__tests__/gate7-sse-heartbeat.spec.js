@@ -61,6 +61,7 @@ test.describe('Gate 7: SSE Heartbeat Real', () => {
     const getEventStoreState = async () => {
       return await page.evaluate(() => {
         const store = window.__pinia?.state?.value?.events
+        
         return {
           sseOpen: store?.sseOpen,
           isPolling: store?.isPolling,
@@ -117,6 +118,7 @@ test.describe('Gate 7: SSE Heartbeat Real', () => {
 
     // Final store state
     const finalState = await getEventStoreState()
+
     console.log(`Final SSE open: ${finalState.sseOpen}`)
     console.log(`Final polling active: ${finalState.isPolling}`)
     console.log(`Events received: ${finalState.eventCount}`)

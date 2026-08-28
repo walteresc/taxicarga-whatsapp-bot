@@ -13,6 +13,7 @@
     console.error('[PASO 1] ✗ WRONG ROUTE!')
     console.error('[PASO 1] You are on:', window.location.pathname)
     console.error('[PASO 1] Must be on: /atencion/bandeja-entrada/')
+    
     return
   }
   console.log('[PASO 1] ✓ Correct route: /atencion/bandeja-entrada/')
@@ -28,6 +29,7 @@
 
   if (!timeline) {
     console.error('[PASO 1] ✗ Timeline not found')
+    
     return
   }
 
@@ -55,6 +57,7 @@
   html2canvas(document.body, { allowTaint: true, useCORS: true })
     .then(canvas => {
       const link = document.createElement('a')
+
       link.href = canvas.toDataURL()
       link.download = 'paso1-before-resize.png'
       console.log('[PASO 1] Screenshot BEFORE URL:', link.href.substring(0, 50) + '...')

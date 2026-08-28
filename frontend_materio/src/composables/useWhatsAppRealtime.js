@@ -14,6 +14,7 @@ import { useEventStore } from '@/stores/eventStore'
 function isValidRedisCursor(cursor) {
   if (!cursor || typeof cursor !== 'string') return false
   if (cursor === '' || cursor === '0') return false
+
   // Valid Redis Stream ID format: "timestamp-sequence"
   // Examples: "1234567890-0", "1-0" (synthetic), "1234-5"
   return /^\d+-\d+$/.test(cursor)
@@ -41,11 +42,13 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
     // Idempotent: si ya se inicializó o está en progreso, retornar
     if (isInitialized.value) {
       console.log('[REALTIME CP2] Already initialized, return')
+      
       return
     }
 
     if (initializationPromise) {
       console.log('[REALTIME CP2B] Initialization in progress, await existing promise')
+      
       return await initializationPromise
     }
 
@@ -55,6 +58,7 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
 
       try {
         console.log('[REALTIME CP3] REST snapshot: GET /dashboard/whatsapp/conversaciones/api/active/')
+
         const fetchUrl = '/dashboard/whatsapp/conversaciones/api/active/'
         const fetchResponse = await fetch(fetchUrl)
 
@@ -64,6 +68,7 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
         }
 
         const parsedData = await fetchResponse.json()
+
         console.log('[REALTIME CP4] Response received. Keys:', Object.keys(parsedData))
 
         // PASO 3: Validar cursor ANTES de usar
@@ -72,6 +77,7 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
 
         if (!isValidRedisCursor(cursor)) {
           console.warn('[REALTIME CP5A] Invalid snapshot_cursor, applying workaround')
+
           // Workaround: si cursor es 0 o inválido, usar latest desde now
           // Backend debería garantizar cursor válido, pero defenderse aquí
           cursor = await _fetchLatestCursorFromPoll()
@@ -90,10 +96,18 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
               id: conv.id,
               cliente_id: conv.cliente_id,
               channel_id: conv.channel_id,
+              name: conv.name,
+              phone: conv.phone,
               preview: conv.preview,
-              ultima_actividad: conv.ultima_actividad,
+              ultima_actividad: conv.ultima_actividad || conv.last_activity,
               unread_count: conv.unread_count || 0,
               estado_atencion: conv.estado_atencion,
+              avatar: conv.avatar,
+              channel: conv.channel,
+              estado_cotizacion: conv.estado_cotizacion,
+              lead_id: conv.lead_id,
+              responsable: conv.responsable,
+              service_data: conv.service_data,
             })
           })
         }
@@ -143,9 +157,11 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
       const response = await fetch('/dashboard/whatsapp/api/events/poll/?cursor=0&limit=1')
       if (!response.ok) throw new Error('Poll failed')
       const data = await response.json()
+      
       return data.latest_cursor || '0'
     } catch (err) {
       console.warn('Fallback poll failed:', err.message)
+      
       return '0'
     }
   }
@@ -170,15 +186,7 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
 
       if (data.conversations) {
         data.conversations.forEach(conv => {
-          conversationsStore.upsertConversation({
-            id: conv.id,
-            cliente_id: conv.cliente_id,
-            channel_id: conv.channel_id,
-            preview: conv.preview,
-            ultima_actividad: conv.ultima_actividad,
-            unread_count: conv.unread_count || 0,
-            estado_atencion: conv.estado_atencion,
-          })
+          conversationsStore.upsertConversation(conv)
         })
       }
     } catch (error) {
@@ -197,6 +205,7 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
     // IDEMPOTENT: If already subscribed, return
     if (isSubscribed && unsubscribeEvents) {
       console.log('[REALTIME subscribeToEvents] Already subscribed, skipping')
+      
       return
     }
 
@@ -209,7 +218,7 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
     }
 
     // Handler for each event
-    const processEvent = (event) => {
+    const processEvent = event => {
       console.log('[REALTIME processEvent] type=' + event.type + ', conv_id=' + (event.conversation_id || event.data?.conversation_id) + ', correlation_id=' + (event.correlation_id || event.data?.correlation_id))
 
       // Normalize event structure
@@ -221,32 +230,32 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
         if (diagnostics) {
           if (!diagnostics.handledEvents) diagnostics.handledEvents = []
           diagnostics.handledEvents.push({
-            id: event.id,
+            id: event.event_id,
             type: event.type,
             message_id: event.message_id,
             conversation_id: event.conversation_id,
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
           })
         }
       }
 
       // PRIORIDAD 7: Update bandeja/timeline based on event type
       switch (event.type) {
-        case 'message.created':
-          handleMessageCreated({ ...event, data: eventData }, messagesStore, conversationsStore)
-          break
+      case 'message.created':
+        handleMessageCreated({ ...event, data: eventData }, messagesStore, conversationsStore)
+        break
 
-        case 'conversation.created':
-        case 'conversation.updated':
-          handleConversationUpdated({ ...event, data: eventData }, conversationsStore)
-          break
+      case 'conversation.created':
+      case 'conversation.updated':
+        handleConversationUpdated({ ...event, data: eventData }, conversationsStore)
+        break
 
-        case 'resync.required':
-          handleResyncRequired(conversationsStore, messagesStore)
-          break
+      case 'resync.required':
+        handleResyncRequired(conversationsStore, messagesStore)
+        break
 
-        default:
-          console.warn('[REALTIME] Unknown event type:', event.type)
+      default:
+        console.warn('[REALTIME] Unknown event type:', event.type)
       }
     }
 
@@ -263,9 +272,9 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
    */
   const handleMessageCreated = (event, messagesStore, conversationsStore) => {
     const eventData = (event.data && Object.keys(event.data).length > 0) ? event.data : event
-    const { message_id, conversation_id, content, direction, origen, tipo, timestamp, from, sender_type, event_id, replay_of } = eventData
+    const { message_id, conversation_id, content, direction, origen, content_type, timestamp, from, sender_type, event_id, replay_of, attachments, caption } = eventData
 
-    console.log('[handleMessageCreated] EXEC: message_id=' + message_id + ', conversation_id=' + conversation_id + ', event_id=' + id + ', replay_of=' + (replay_of || 'N/A'))
+    console.log('[handleMessageCreated] EXEC: message_id=' + message_id + ', conversation_id=' + conversation_id + ', event_id=' + event_id + ', replay_of=' + (replay_of || 'N/A'))
 
     // TRABAJO A: Record handler execution
     if (typeof window !== 'undefined' && window.__WHATSAPP_REALTIME_DIAGNOSTICS__) {
@@ -275,12 +284,12 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
       }
       if (diagnostics) {
         diagnostics.handledEvents.push({
-          id: id,
+          id: event_id,
           type: 'message.created',
           message_id: message_id,
           conversation_id: conversation_id,
           replay_of: replay_of,
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
         })
       }
     }
@@ -295,10 +304,12 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
         content,
         direction,
         origen,
-        tipo,
+        content_type,
         timestamp,
         sender: from,
         sender_type,
+        attachments,
+        caption,
       })
       console.log('[handleMessageCreated] upsertMessage called successfully')
     } else {

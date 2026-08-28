@@ -10,6 +10,7 @@ test.describe('FASE 5B Browser Integration', () => {
 
     // Monitor Network requests
     const networkRequests = []
+
     page.on('request', req => networkRequests.push({
       url: req.url(),
       method: req.method(),
@@ -24,6 +25,7 @@ test.describe('FASE 5B Browser Integration', () => {
 
     // Check that page loaded
     const title = await page.title()
+
     console.log('Page title:', title)
     expect(title).toBeTruthy()
 
@@ -59,6 +61,7 @@ test.describe('FASE 5B Browser Integration', () => {
     const page = await context.newPage()
 
     const consoleErrors = []
+
     page.on('console', msg => {
       if (msg.type() === 'error') {
         consoleErrors.push(msg.text())
@@ -70,6 +73,7 @@ test.describe('FASE 5B Browser Integration', () => {
 
     // Filter for CORS errors
     const corsErrors = consoleErrors.filter(e => e.includes('CORS') || e.includes('403'))
+
     expect(corsErrors.length).toBe(0)
 
     console.log('No CORS errors detected')
@@ -82,10 +86,12 @@ test.describe('FASE 5B Browser Integration', () => {
     const page = await context.newPage()
 
     const response = await page.goto(`${VITE_URL}/index.html`)
+
     expect(response.status()).toBe(200)
 
     // Check for HTML doctype
     const content = await page.content()
+
     expect(content).toContain('<!DOCTYPE')
     expect(content).toContain('<html')
 

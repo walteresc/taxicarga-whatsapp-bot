@@ -44,6 +44,7 @@ describe('Stores: FASE 5B State Management', () => {
       store.reorderConversations()
 
       const ids = store.conversations.map(c => c.id)
+
       expect(ids).toEqual([2, 1, 3])
     })
 
@@ -52,6 +53,7 @@ describe('Stores: FASE 5B State Management', () => {
       store.updateConversationState(1, { unread_count: 0, bot_paused: true })
 
       const conv = store.getConversation(1)
+
       expect(conv.unread_count).toBe(0)
       expect(conv.bot_paused).toBe(true)
     })
@@ -74,9 +76,11 @@ describe('Stores: FASE 5B State Management', () => {
 
     it('upsertMessage adds message', () => {
       const msg = { id: 101, conversation_id: 1, sender_type: 'customer', timestamp: '2026-08-22T10:00:00Z', contenido: 'test' }
+
       store.upsertMessage(msg)
 
       const msgs = store.getMessages(1)
+
       expect(msgs.length).toBe(1)
       expect(msgs[0].id).toBe(101)
     })
@@ -86,6 +90,7 @@ describe('Stores: FASE 5B State Management', () => {
       store.upsertMessage({ id: 2, conversation_id: 1, timestamp: '2026-08-22T09:00:00Z' })
 
       const msgs = store.getMessages(1)
+
       expect(msgs[0].id).toBe(2)
       expect(msgs[1].id).toBe(1)
     })
@@ -95,6 +100,7 @@ describe('Stores: FASE 5B State Management', () => {
       store.upsertMessage({ id: 1, conversation_id: 1, timestamp: '2026-08-22T10:00:00Z', contenido: 'updated' })
 
       const msgs = store.getMessages(1)
+
       expect(msgs.length).toBe(1)
       expect(msgs[0].contenido).toBe('updated')
     })
@@ -141,6 +147,7 @@ describe('Stores: FASE 5B State Management', () => {
       store.addEvent({ id: 'e3', type: 'message.created' })
 
       const created = store.getEventsByType('message.created')
+
       expect(created.length).toBe(2)
     })
 
@@ -149,6 +156,7 @@ describe('Stores: FASE 5B State Management', () => {
       store.addEvent({ id: 'e2', type: 'message.created', data: { conversation_id: 2 } })
 
       const conv1 = store.getConversationEvents(1)
+
       expect(conv1.length).toBe(1)
     })
 

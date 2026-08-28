@@ -23,7 +23,9 @@ export const authService = {
       }
 
       const data = await response.json()
+
       localStorage.setItem('user', JSON.stringify(data.user))
+      
       return data
     } catch (error) {
       console.error('Login error:', error)
@@ -42,6 +44,7 @@ export const authService = {
         credentials: 'include',
       })
       localStorage.removeItem('user')
+      
       return { status: 'ok' }
     } catch (error) {
       console.error('Logout error:', error)
@@ -61,7 +64,9 @@ export const authService = {
 
       if (!response.ok) throw new Error('Not authenticated')
       const data = await response.json()
+
       localStorage.setItem('user', JSON.stringify(data.user))
+      
       return data.user
     } catch (error) {
       localStorage.removeItem('user')
@@ -78,7 +83,9 @@ export const authService = {
         },
         credentials: 'include',
       })
+
       const data = await response.json()
+      
       return data.authenticated
     } catch (error) {
       return false
@@ -88,6 +95,7 @@ export const authService = {
   // Get stored user (from localStorage)
   getStoredUser() {
     const user = localStorage.getItem('user')
+    
     return user ? JSON.parse(user) : null
   },
 }

@@ -1,21 +1,39 @@
 <template>
-  <div class="message-timeline" data-testid="message-timeline">
+  <div
+    class="message-timeline"
+    data-testid="message-timeline"
+  >
     <!-- Loading state -->
-    <div v-if="loading" class="loading-state" data-testid="loading-state">
-      <div v-for="i in 5" :key="`skeleton-${i}`" class="skeleton-message">
-        <div class="skeleton-avatar"></div>
-        <div class="skeleton-bubble"></div>
+    <div
+      v-if="loading"
+      class="loading-state"
+      data-testid="loading-state"
+    >
+      <div
+        v-for="i in 5"
+        :key="`skeleton-${i}`"
+        class="skeleton-message"
+      >
+        <div class="skeleton-avatar" />
+        <div class="skeleton-bubble" />
       </div>
     </div>
 
     <!-- Empty state -->
-    <div v-else-if="messageGroups.length === 0" class="empty-state" data-testid="empty-state">
-      <i class="ri-message-2-line"></i>
+    <div
+      v-else-if="messageGroups.length === 0"
+      class="empty-state"
+      data-testid="empty-state"
+    >
+      <i class="ri-message-2-line" />
       <p>Sin mensajes</p>
     </div>
 
     <!-- Messages grouped by date -->
-    <div v-else data-testid="groups-container">
+    <div
+      v-else
+      data-testid="groups-container"
+    >
       <div
         v-for="group in messageGroups"
         :key="group.displayDate || 'invalid'"
@@ -23,7 +41,11 @@
         :data-testid="`message-group-${group.displayDate || 'invalid'}`"
       >
         <!-- Date separator (only if date is valid) -->
-        <div v-if="group.displayDate" class="date-separator" :data-testid="`date-separator-${group.displayDate}`">
+        <div
+          v-if="group.displayDate"
+          class="date-separator"
+          :data-testid="`date-separator-${group.displayDate}`"
+        >
           <span>{{ group.displayDate }}</span>
         </div>
 
@@ -33,10 +55,22 @@
           :key="message.id"
           :data-testid="`message-bubble-${message.id}`"
         >
-          <!-- Canonical contentType determines rendering -->
-          <MensajeMedia v-if="isMultimedia(message.contentType)" :message="message" />
-          <InternalNote v-else-if="message.contentType === 'internal-note'" :note="message" />
-          <MessageBubble v-else :message="message" :data-testid="`bubble-${message.id}`" />
+          <!-- Canonical contentType determines rendering.
+               MessageBubble handles text AND multimedia (image/audio/video/document)
+               using the canonical normalizeMessage() contract (contentType/attachments/
+               status/timestamp) — MensajeMedia was a separate, unmaintained component
+               still reading raw backend field names (tipo/adjuntos/estado/fecha_mensaje),
+               which is why images never rendered through it. -->
+          <InternalNote
+            v-if="message.contentType === 'internal-note'"
+            :note="message"
+          />
+          <MessageBubble
+            v-else
+            :message="message"
+            :data-testid="`bubble-${message.id}`"
+            @retry="$emit('retry', $event)"
+          />
         </div>
       </div>
     </div>
@@ -46,7 +80,6 @@
 <script setup>
 import { computed } from 'vue'
 import MessageBubble from './MessageBubble.vue'
-import MensajeMedia from './MensajeMedia.vue'
 import InternalNote from './InternalNote.vue'
 import { groupMessagesByDate } from '@/utils/dateUtils'
 
@@ -58,10 +91,7 @@ const props = defineProps({
   loading: Boolean,
 })
 
-// Check if contentType is multimedia (not text or internal-note)
-const isMultimedia = (contentType) => {
-  return ['image', 'audio', 'video', 'document', 'location'].includes(contentType)
-}
+defineEmits(['retry'])
 
 const messageGroups = computed(() => {
   return groupMessagesByDate(props.messages)

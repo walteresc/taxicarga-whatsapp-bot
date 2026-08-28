@@ -63,6 +63,7 @@ print(f"USER_ID={user.id}")
   try {
     // Escribir script en archivo temporal en directorio raíz
     const scriptPath = '../../.e2e_auth_setup.py'
+
     fs.writeFileSync(scriptPath, pythonScript)
     console.log(`[AUTH] Script written to ${scriptPath}`)
 
@@ -113,6 +114,7 @@ print(f"USER_ID={user.id}")
     console.log('[3] Verificar acceso con sessionid\n')
 
     const browser = await chromium.launch()
+
     const context = await browser.newContext({
       ignoreHTTPSErrors: true,
       httpCredentials: undefined,

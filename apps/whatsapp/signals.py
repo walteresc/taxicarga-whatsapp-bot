@@ -122,6 +122,24 @@ def publish_message_created_event(sender, instance, created, **kwargs):
             # For simplicity: message just arrived = +1 unread for first viewer
             unread_delta = 1 if instance.direccion == MensajeWhatsApp.ENTRANTE else 0
 
+            # Build attachment data if message has multimedia
+            adjuntos_data = []
+            if instance.tipo in ('imagen', 'audio', 'video', 'documento'):
+                for adjunto in instance.adjuntos.all():
+                    adjunto_dict = {
+                        'id': adjunto.id,
+                        'type': adjunto.formato,
+                        'media_id': adjunto.ycloud_media_id,
+                        'mime_type': adjunto.mime_type,
+                        'filename': adjunto.filename,
+                        'file_size': adjunto.file_size,
+                        'sha256': adjunto.sha256,
+                    }
+                    # Always serve through the authenticated proxy — MEDIA_ROOT is
+                    # private and not exposed by nginx or any Django urlpattern.
+                    adjunto_dict['url'] = f'/media/proxy/{adjunto.ycloud_media_id}/'
+                    adjuntos_data.append(adjunto_dict)
+
             # Complete event with all data frontend needs for bandeja + timeline
             # FASE 5B Opción A: publish full content + sender_name + status
             event_data = {
@@ -138,6 +156,8 @@ def publish_message_created_event(sender, instance, created, **kwargs):
                 'preview': instance.contenido[:100] if instance.contenido else f"[{instance.tipo}]",  # Truncated for list
                 'status': instance.estado,  # Message status (recibido, entregado, etc.)
                 'timestamp': instance.fecha_mensaje.isoformat() if instance.fecha_mensaje else timezone.now().isoformat(),
+                'caption': instance.caption or None,
+                'attachments': adjuntos_data if adjuntos_data else None,
                 'conversation': {
                     'summary': conv.resumen,
                     'last_activity': conv.ultima_actividad.isoformat() if conv.ultima_actividad else timezone.now().isoformat(),

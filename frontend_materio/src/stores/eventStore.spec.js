@@ -5,6 +5,7 @@ import { useEventStore } from './eventStore'
 describe('EventStore Idempotence Tests', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+
     // Mock EventSource
     global.EventSource = vi.fn().mockImplementation(() => ({
       readyState: 0, // CONNECTING
@@ -21,6 +22,7 @@ describe('EventStore Idempotence Tests', () => {
   describe('connect() idempotency', () => {
     it('should return same promise for multiple connect() calls', async () => {
       const store = useEventStore()
+
       store.setSnapshotCursor('1234-0')
 
       const promise1 = store.connect()
@@ -33,12 +35,14 @@ describe('EventStore Idempotence Tests', () => {
 
     it('should create only one EventSource for multiple connect() calls', async () => {
       const store = useEventStore()
+
       store.setSnapshotCursor('1234-0')
 
       // Mock EventSource counter
       let eventSourceCount = 0
       global.EventSource = vi.fn().mockImplementation(() => {
         eventSourceCount++
+        
         return {
           readyState: 0,
           addEventListener: vi.fn(),
@@ -57,11 +61,13 @@ describe('EventStore Idempotence Tests', () => {
 
     it('should not create new EventSource if already CONNECTING', () => {
       const store = useEventStore()
+
       store.setSnapshotCursor('1234-0')
 
       let eventSourceCount = 0
       global.EventSource = vi.fn().mockImplementation(() => {
         eventSourceCount++
+        
         return {
           readyState: 0, // CONNECTING
           addEventListener: vi.fn(),
@@ -78,21 +84,26 @@ describe('EventStore Idempotence Tests', () => {
 
     it('should not create new EventSource if already OPEN', () => {
       const store = useEventStore()
+
       store.setSnapshotCursor('1234-0')
 
       let eventSourceCount = 0
       global.EventSource = vi.fn().mockImplementation(() => {
         eventSourceCount++
+
         const mock = {
           readyState: 1, // OPEN
           addEventListener: vi.fn(),
           close: vi.fn(),
           onopen: null,
         }
+
+
         // Simulate onopen being called
         setTimeout(() => {
           store._setSSEOpen(true) // Internal method to set sseOpen
         }, 0)
+        
         return mock
       })
 
@@ -108,10 +119,13 @@ describe('EventStore Idempotence Tests', () => {
       const store = useEventStore()
 
       let pollCount = 0
+
       // Mock fetchEventsPoll
       const originalFetch = store.fetchEventsPoll
+
       store.fetchEventsPoll = vi.fn().mockResolvedValue(0).mockImplementationOnce(() => {
         pollCount++
+        
         return Promise.resolve(0)
       })
 
@@ -125,6 +139,7 @@ describe('EventStore Idempotence Tests', () => {
 
     it('should not start polling if SSE is open', () => {
       const store = useEventStore()
+
       store.sseOpen = true
 
       const fetchSpy = vi.spyOn(store, 'fetchEventsPoll')
@@ -134,8 +149,9 @@ describe('EventStore Idempotence Tests', () => {
       expect(fetchSpy).not.toHaveBeenCalled()
     })
 
-    it('should stop polling when SSE opens', (done) => {
+    it('should stop polling when SSE opens', done => {
       const store = useEventStore()
+
       store.setSnapshotCursor('1234-0')
 
       store.startPolling()
@@ -155,6 +171,7 @@ describe('EventStore Idempotence Tests', () => {
   describe('disconnect() cleanup', () => {
     it('should close SSE and stop polling', () => {
       const store = useEventStore()
+
       store.setSnapshotCursor('1234-0')
 
       // Setup mock EventSource
@@ -164,6 +181,7 @@ describe('EventStore Idempotence Tests', () => {
         close: vi.fn(),
         onopen: null,
       }
+
       global.EventSource = vi.fn().mockReturnValue(mockEventSource)
 
       store.connect()
@@ -180,6 +198,7 @@ describe('EventStore Idempotence Tests', () => {
 
     it('should clear connection state on disconnect', () => {
       const store = useEventStore()
+
       store.setSnapshotCursor('1234-0')
 
       store.disconnect()
@@ -194,10 +213,12 @@ describe('EventStore Idempotence Tests', () => {
   describe('Error recovery', () => {
     it('should not create multiple polling instances on repeated errors', async () => {
       const store = useEventStore()
+
       store.setSnapshotCursor('1234-0')
 
       let pollStartCount = 0
       const originalStartPolling = store.startPolling
+
       store.startPolling = vi.fn((original => {
         return function() {
           pollStartCount++
@@ -214,6 +235,97 @@ describe('EventStore Idempotence Tests', () => {
       expect(pollStartCount).toBeLessThanOrEqual(1)
 
       store.stopPolling()
+    })
+  })
+
+  describe('Deduplication (BUG 1 fix)', () => {
+    it('should process two consecutive message.created events with different event_ids', () => {
+      const store = useEventStore()
+
+      // First event
+      const event1 = {
+        event_id: '1787851865521-0',
+        type: 'message.created',
+        message_id: 337,
+        conversation_id: 18,
+      }
+
+      // Second event (different event_id)
+      const event2 = {
+        event_id: '1787851875351-0',
+        type: 'message.created',
+        message_id: 338,
+        conversation_id: 18,
+      }
+
+      store.addEvent(event1)
+      expect(store.events.length).toBe(1)
+      expect(store.lastCursor).toBe('1787851865521-0')
+
+      store.addEvent(event2)
+      expect(store.events.length).toBe(2) // Should NOT discard as duplicate
+      expect(store.lastCursor).toBe('1787851875351-0') // Cursor should advance
+    })
+
+    it('should skip duplicate events with same event_id', () => {
+      const store = useEventStore()
+
+      const event = {
+        event_id: '1234-0',
+        type: 'message.created',
+        message_id: 100,
+        conversation_id: 10,
+      }
+
+      store.addEvent(event)
+      expect(store.events.length).toBe(1)
+
+      // Try to add same event again
+      store.addEvent(event)
+      expect(store.events.length).toBe(1) // Should remain 1, duplicate rejected
+    })
+  })
+
+  describe('Null/undefined ID protection (BUG 2 fix)', () => {
+    it('should process events with null/undefined event_id and record in diagnostics', () => {
+      const store = useEventStore()
+
+      const eventNoId = {
+        event_id: undefined,
+        type: 'message.created',
+        message_id: 500,
+        conversation_id: 20,
+      }
+
+      store.addEvent(eventNoId)
+      expect(store.events.length).toBe(1) // Should still process, not block stream
+      expect(store.nullIdEvents).toBeDefined()
+    })
+
+    it('should not block subsequent events when one has no id', () => {
+      const store = useEventStore()
+
+      // Event with no ID
+      const eventNoId = {
+        event_id: undefined,
+        type: 'message.created',
+        message_id: 500,
+        conversation_id: 20,
+      }
+
+      // Event with valid ID
+      const eventWithId = {
+        event_id: '2000-0',
+        type: 'message.created',
+        message_id: 501,
+        conversation_id: 20,
+      }
+
+      store.addEvent(eventNoId)
+      store.addEvent(eventWithId)
+
+      expect(store.events.length).toBe(2)
+      expect(store.lastCursor).toBe('2000-0') // Cursor should update to last valid ID
     })
   })
 })

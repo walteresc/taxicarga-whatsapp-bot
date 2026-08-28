@@ -36,10 +36,12 @@ export default async function globalSetup() {
 
   // Verify we're logged in by checking for logout link or dashboard content
   const isLoggedIn = await page.locator('text="Logout", text="Cerrar sesion", text="bandeja"').first().isVisible().catch(() => false)
+
   console.log(`[SETUP] Logged in: ${isLoggedIn ? 'YES' : 'checking...'}`)
 
   // Navigate to bandeja to ensure session is set
   await page.goto('http://localhost:5177/atencion/bandeja-entrada', { waitUntil: 'domcontentloaded' })
+
   // Wait for Vue hydration or first meaningful paint
   await page.waitForLoadState('domcontentloaded')
   await page.waitForTimeout(2000)  // Brief wait for initial render

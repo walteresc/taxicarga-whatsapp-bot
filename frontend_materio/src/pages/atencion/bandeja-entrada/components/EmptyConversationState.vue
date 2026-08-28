@@ -1,13 +1,12 @@
 <template>
   <div class="empty-state">
-    <i class="ri-mail-open-line empty-icon"></i>
+    <i class="ri-mail-open-line empty-icon" />
     <h3>Selecciona una conversación</h3>
     <p>Elige una conversación de la lista para revisar mensajes y responder</p>
   </div>
 </template>
 
-<script setup>
-</script>
+
 
 <style scoped>
 .empty-state {

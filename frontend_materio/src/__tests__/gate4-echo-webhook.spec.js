@@ -37,19 +37,24 @@ test.describe('Gate 4: Echo/Advisor Takeover Without F5', () => {
 
     // Step 3: Select first conversation
     console.log('Step 3: Selecting conversation...')
+
     const firstConv = page.locator('.conversation-item').first()
     const convText = await firstConv.textContent()
+
     console.log(`Selected: ${convText.substring(0, 60)}...`)
     await firstConv.click()
     await page.waitForTimeout(2000)
 
     // Step 4: Count initial timeline messages
     console.log('Step 4: Counting initial messages...')
+
     const initialMsgCount = await page.locator('[class*="message"], [class*="bubble"]').count()
+
     console.log(`Initial timeline messages: ${initialMsgCount}`)
 
     // Step 5: Send echo/echo webhook
     console.log('Step 5: Sending echo webhook (whatsapp.message.echoes)...')
+
     const echoPayload = {
       eventId: `test-echo-${Date.now()}`,
       createTime: new Date().toISOString(),
@@ -90,7 +95,9 @@ test.describe('Gate 4: Echo/Advisor Takeover Without F5', () => {
 
     // Step 7: Verify message appears once
     console.log('Step 7: Verifying message in timeline...')
+
     const updatedMsgCount = await page.locator('[class*="message"], [class*="bubble"]').count()
+
     console.log(`Timeline messages after echo: ${updatedMsgCount}`)
 
     if (updatedMsgCount > initialMsgCount) {
@@ -101,6 +108,7 @@ test.describe('Gate 4: Echo/Advisor Takeover Without F5', () => {
 
     // Step 8: Verify takeover indicators
     console.log('Step 8: Checking takeover state...')
+
     const convItem = page.locator('.conversation-item').first()
     const itemText = await convItem.textContent()
 
@@ -119,8 +127,10 @@ test.describe('Gate 4: Echo/Advisor Takeover Without F5', () => {
 
     // Step 9: Verify no duplicate messages
     console.log('Step 9: Checking for duplicates...')
+
     const bodyText = itemText
     const echoCount = (bodyText.match(/echo/gi) || []).length
+
     console.log(`"echo" mentions in conversation: ${echoCount}`)
 
     if (echoCount === 1 || updatedMsgCount === initialMsgCount + 1) {
@@ -131,7 +141,9 @@ test.describe('Gate 4: Echo/Advisor Takeover Without F5', () => {
 
     // Step 10: Verify stability
     console.log('Step 10: Checking stability...')
+
     const errors = []
+
     page.on('console', msg => {
       if (msg.type() === 'error') errors.push(msg.text())
     })

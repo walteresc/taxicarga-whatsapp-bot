@@ -43,6 +43,7 @@ export const useEventStore = defineStore('events', () => {
   const logConnection = (action, reason, details = {}) => {
     const timestamp = new Date().toISOString()
     const stack = new Error().stack?.split('\n').slice(2, 4).join(' | ') || ''
+
     connectionLog.value.push({
       instanceId,
       timestamp,
@@ -52,7 +53,7 @@ export const useEventStore = defineStore('events', () => {
       state: state.value,
       eventSourceReadyState: eventSource.value?.readyState ?? 'null',
       stack: stack.substring(0, 100),
-      ...details
+      ...details,
     })
     console.log(`[CONN-${instanceId}] ${action} (${reason})`, details)
   }
@@ -65,7 +66,7 @@ export const useEventStore = defineStore('events', () => {
       from: oldState,
       to: newState,
       reason,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     })
     console.log(`[STATE] ${oldState} → ${newState} (${reason})`)
   }
@@ -82,6 +83,7 @@ export const useEventStore = defineStore('events', () => {
       if (readyState === EventSource.CONNECTING || readyState === EventSource.OPEN) {
         logConnection('connect_guard', 'sse_already_open', { readyState })
         console.warn(`[SSE] Guard: EventSource already ${readyState === 0 ? 'CONNECTING' : 'OPEN'}, skip`)
+        
         return
       }
     }
@@ -90,6 +92,7 @@ export const useEventStore = defineStore('events', () => {
     if (state.value !== 'idle' && state.value !== 'reconnect_wait') {
       logConnection('connect_guard', 'invalid_state', { currentState: state.value })
       console.warn(`[SSE] Guard: Invalid state ${state.value}, expected idle/reconnect_wait`)
+      
       return
     }
 
@@ -97,6 +100,7 @@ export const useEventStore = defineStore('events', () => {
     if (lastCursor.value === '0') {
       logConnection('connect_blocked', 'cursor_is_zero')
       console.warn('[SSE] Cannot connect: cursor is 0, snapshot not loaded')
+      
       return
     }
 
@@ -110,6 +114,7 @@ export const useEventStore = defineStore('events', () => {
   const openSSE = () => {
     if (eventSource.value) {
       logConnection('openSSE_skip', 'already_exists')
+      
       return
     }
 
@@ -140,7 +145,7 @@ export const useEventStore = defineStore('events', () => {
       // Error handler: DOES NOT create new EventSource
       eventSource.value.onerror = () => {
         logConnection('sse_onerror', 'error_event_fired', {
-          readyState: eventSource.value?.readyState
+          readyState: eventSource.value?.readyState,
         })
 
         sseOpen.value = false
@@ -177,16 +182,18 @@ export const useEventStore = defineStore('events', () => {
   const scheduleReconnect = () => {
     if (reconnectTimerId) {
       logConnection('reconnect_already_scheduled', 'skip')
+      
       return
     }
 
     const delays = [1000, 2000, 5000, 10000, 30000] // 1s, 2s, 5s, 10s, 30s max
     const delay = delays[Math.min(reconnectAttempts, delays.length - 1)]
+
     reconnectAttempts++
 
     logConnection('reconnect_scheduled', 'backoff', {
       attempt: reconnectAttempts,
-      delayMs: delay
+      delayMs: delay,
     })
 
     transitionState('reconnect_wait', `reconnect_scheduled_in_${delay}ms`)
@@ -206,9 +213,10 @@ export const useEventStore = defineStore('events', () => {
   /**
    * Handle SSE event
    */
-  const handleSSEEvent = (event) => {
+  const handleSSEEvent = event => {
     try {
       const data = JSON.parse(event.data)
+
       addEvent(data)
       lastEventTime.value = new Date()
     } catch (error) {
@@ -216,7 +224,7 @@ export const useEventStore = defineStore('events', () => {
     }
   }
 
-  const handleResyncRequired = (event) => {
+  const handleResyncRequired = event => {
     console.warn('Server requesting resync - cursor too old')
     reconcileFromREST()
   }
@@ -224,7 +232,7 @@ export const useEventStore = defineStore('events', () => {
   /**
    * Add event (deduped by ID)
    */
-  const addEvent = (event) => {
+  const addEvent = event => {
     const exists = events.value.some(e => e.id === event.id)
     if (exists) {
       return
@@ -250,7 +258,7 @@ export const useEventStore = defineStore('events', () => {
             'Content-Type': 'application/json',
             'X-Requested-With': 'XMLHttpRequest',
           },
-        }
+        },
       )
 
       if (!response.ok) {
@@ -284,6 +292,7 @@ export const useEventStore = defineStore('events', () => {
   const startPolling = () => {
     if (pollTimerId || state.value === 'sse_open') {
       logConnection('polling_skip', 'already_polling_or_sse_open')
+      
       return
     }
 
@@ -301,8 +310,9 @@ export const useEventStore = defineStore('events', () => {
         if (pollTimerId && state.value === 'polling') {
           const nextInterval = Math.min(
             pollInterval.value * 1.5,
-            maxPollInterval.value
+            maxPollInterval.value,
           )
+
           pollInterval.value = nextInterval
           pollTimerId = setTimeout(poll, nextInterval)
         }
@@ -340,7 +350,7 @@ export const useEventStore = defineStore('events', () => {
             'Content-Type': 'application/json',
             'X-Requested-With': 'XMLHttpRequest',
           },
-        }
+        },
       )
 
       if (!response.ok) {
@@ -386,6 +396,7 @@ export const useEventStore = defineStore('events', () => {
     if (state.value !== 'idle') {
       logConnection('initialize_skip', 'not_idle', { currentState: state.value })
       console.log(`[Init] Already initialized (state=${state.value})`)
+      
       return
     }
 

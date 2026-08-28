@@ -24,18 +24,21 @@ test.describe('Gate 3: Inbound Message Real E2E', () => {
     // Step 2: Navigate to bandeja
     console.log('Step 2: Navigating to bandeja...')
     await page.goto('http://localhost:5177/atencion/bandeja-entrada', { waitUntil: 'domcontentloaded' })
+
     // Wait for conversation list to render - might take longer
     await page.waitForSelector('.conversation-item, [class*="conversation"], [class*="bandeja"]', { timeout: 20000 })
     console.log('✓ Bandeja loaded')
 
     // Record initial state
     const initialCount = await page.locator('.conversation-item').count()
+
     console.log(`Initial conversations: ${initialCount}`)
 
     // Step 3: Create YCloud webhook payload with CORRECT HMAC
     console.log('Step 3: Creating YCloud webhook payload...')
 
     const timestamp = Math.floor(Date.now() / 1000)
+
     const payload = {
       id: `gate3-test-${Date.now()}`,
       type: 'whatsapp.inbound_message.received',
@@ -68,6 +71,7 @@ test.describe('Gate 3: Inbound Message Real E2E', () => {
 
     // Format 2: HMAC(secret, timestamp.body)
     const signedContent = `${timestampStr}.${payloadJson}`
+
     const hmac2 = crypto
       .createHmac('sha256', secret)
       .update(signedContent)
@@ -84,6 +88,7 @@ test.describe('Gate 3: Inbound Message Real E2E', () => {
 
     // Step 4: Send webhook with correct HMAC
     console.log('Step 4: Sending webhook with valid HMAC...')
+
     const webhookResp = await page.request.post('http://localhost:8001/webhooks/ycloud/v1/', {
       headers: {
         'Content-Type': 'application/json',
@@ -93,7 +98,9 @@ test.describe('Gate 3: Inbound Message Real E2E', () => {
     })
 
     console.log(`Webhook response: ${webhookResp.status()}`)
+
     const respText = await webhookResp.text()
+
     console.log(`Response: ${respText.substring(0, 200)}...`)
 
     if (webhookResp.status() !== 200) {
@@ -109,7 +116,9 @@ test.describe('Gate 3: Inbound Message Real E2E', () => {
 
     // Step 6: Verify conversation appears or updates
     console.log('Step 6: Checking for new/updated conversation...')
+
     const updatedCount = await page.locator('.conversation-item').count()
+
     console.log(`Conversations after webhook: ${updatedCount}`)
 
     if (updatedCount > initialCount) {
@@ -118,6 +127,7 @@ test.describe('Gate 3: Inbound Message Real E2E', () => {
       // Get first conversation
       const firstConv = page.locator('.conversation-item').first()
       const convText = await firstConv.textContent()
+
       console.log(`First conversation: ${convText.substring(0, 80)}...`)
 
       // Click to open timeline
@@ -126,7 +136,9 @@ test.describe('Gate 3: Inbound Message Real E2E', () => {
 
       // Step 7: Verify in timeline
       console.log('Step 7: Checking timeline...')
+
       const messages = await page.locator('[class*="message"], [class*="bubble"]').count()
+
       console.log(`Timeline messages: ${messages}`)
 
       if (messages > 0) {
@@ -138,7 +150,9 @@ test.describe('Gate 3: Inbound Message Real E2E', () => {
 
     // Step 8: Verify stability
     console.log('Step 8: Checking stability...')
+
     const errors = []
+
     page.on('console', msg => {
       if (msg.type() === 'error') errors.push(msg.text())
     })

@@ -205,6 +205,10 @@ Migs: campo 0001→**0005** (0005=EquipoFrecuente), leads 0011→0012, whatsapp 
 | WHATSAPP_ACCESS_TOKEN | "" | Meta API token |
 | WHATSAPP_PHONE_NUMBER_ID | "" | Número WhatsApp |
 | WHATSAPP_API_VERSION | v20.0 | API version |
+| YCLOUD_API_KEY | "" | YCloud API key (X-API-Key header) — envío y descarga de medios |
+| YCLOUD_WEBHOOK_SECRET | "" | Valida webhooks entrantes de YCloud (HMAC) — distinta de YCLOUD_API_KEY |
+
+⚠️ **Docker (`docker-compose.yml`, servicio `django`/`taxicarga-api`): `docker restart <container>` NO recarga `.env`.** El contenedor conserva el entorno con el que fue creado. Para que cambios en `.env` (nuevas variables, valores actualizados) lleguen al contenedor, usar `docker compose up -d <servicio>` (recrea el contenedor), no `docker restart`. Confirmado 2026-08-27: `YCLOUD_API_KEY` añadida a `.env` no llegó al proceso tras `docker restart taxicarga-api`; sí llegó tras `docker compose up -d django`.
 
 ---
 

@@ -57,10 +57,12 @@ describe('messagesStore', () => {
 
       // Load messages
       const conversationId = 1
+
       await store.loadConversationMessages(conversationId)
 
       // Verify parser extracted data.messages
       const messages = store.getMessages(conversationId)
+
       console.log('[TEST] Loaded messages:', messages)
 
       expect(messages).toHaveLength(2)
@@ -79,6 +81,7 @@ describe('messagesStore', () => {
       }))
 
       const conversationId = 1
+
       await store.loadConversationMessages(conversationId)
 
       const messages = store.getMessages(conversationId)
@@ -111,9 +114,12 @@ describe('messagesStore', () => {
       }))
 
       const conversationId = 1
+
       await store.loadConversationMessages(conversationId)
 
       const messages = store.getMessages(conversationId)
+
+
       // Must return 1 message, not 100
       expect(messages).toHaveLength(1)
     })
@@ -129,10 +135,12 @@ describe('messagesStore', () => {
 
       // Load with number key
       const conversationId = 1
+
       await store.loadConversationMessages(conversationId)
 
       // Read with number key
       const messages1 = store.getMessages(1)
+
       // Read with string key
       const messages2 = store.getMessages('1')
 
@@ -152,6 +160,7 @@ describe('messagesStore', () => {
       }))
 
       const conversationId = 1
+
       await store.loadConversationMessages(conversationId)
 
       // Then upsert same message (replay scenario)
@@ -188,6 +197,7 @@ describe('messagesStore', () => {
       })
 
       const messages = store.getMessages(1)
+
       expect(messages[0].id).toBe(2) // Earlier timestamp first
       expect(messages[1].id).toBe(1) // Later timestamp second
     })
@@ -197,6 +207,7 @@ describe('messagesStore', () => {
     it('should return empty array if conversation not found', () => {
       const store = useMessagesStore()
       const messages = store.getMessages(999)
+
       expect(messages).toEqual([])
     })
   })

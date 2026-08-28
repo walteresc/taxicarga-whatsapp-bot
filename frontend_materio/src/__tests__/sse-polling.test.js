@@ -143,6 +143,7 @@ describe('SSE & Polling: FASE 5B Real-time Channel', () => {
       conversationStore.reorderConversations()
 
       const ids = conversationStore.conversations.map(c => c.id)
+
       expect(ids[0]).toBe(2)
     })
   })

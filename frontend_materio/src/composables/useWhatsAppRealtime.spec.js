@@ -189,6 +189,7 @@ describe('useWhatsAppRealtime Idempotence Tests', () => {
         if (attemptCount === 1) {
           return Promise.reject(new Error('Network error'))
         }
+        
         return Promise.resolve({
           ok: true,
           json: async () => ({

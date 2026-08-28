@@ -2,32 +2,35 @@
   <div class="channel-dropdown-wrapper">
     <button
       class="channel-btn"
-      @click="isOpen = !isOpen"
       :title="`Filtrar por ${selectedLabel}`"
+      @click="isOpen = !isOpen"
     >
-      <i :class="`ri-${selectedIcon}-line`"></i>
+      <i :class="`ri-${selectedIcon}-line`" />
       <span>{{ selectedLabel }}</span>
-      <i class="ri-arrow-down-s-line dropdown-icon"></i>
+      <i class="ri-arrow-down-s-line dropdown-icon" />
     </button>
 
-    <div v-if="isOpen" class="channel-menu">
+    <div
+      v-if="isOpen"
+      class="channel-menu"
+    >
       <button
         class="channel-item"
         :class="{ active: props.activeChannels.includes('Todos') }"
         @click="toggleChannel('Todos')"
       >
-        <i class="ri-global-line"></i>
+        <i class="ri-global-line" />
         Todos los canales
       </button>
       <button
         v-for="channel in channels"
-        :key="channel"
         v-if="channel !== 'Todos'"
+        :key="channel"
         class="channel-item"
         :class="{ active: props.activeChannels.includes(channel) }"
         @click="toggleChannel(channel)"
       >
-        <i :class="`ri-${getChannelIcon(channel)}`"></i>
+        <i :class="`ri-${getChannelIcon(channel)}`" />
         {{ channel }}
       </button>
     </div>
@@ -48,26 +51,29 @@ const emit = defineEmits(['update:activeChannels', 'open-dropdown'])
 
 const isOpen = ref(false)
 
-watch(isOpen, (newVal) => {
+watch(isOpen, newVal => {
   if (newVal) {
     emit('open-dropdown')
   }
 })
+
 const channels = ['Todos', 'WhatsApp', 'Correo', 'Instagram', 'Facebook', 'Chat web', 'TikTok', 'Otros']
 
 const selectedLabel = computed(() => {
   if (props.activeChannels.length === 0) return 'Canal'
   if (props.activeChannels.includes('Todos')) return 'Canal'
+  
   return props.activeChannels[0]
 })
 
 const selectedIcon = computed(() => {
   const selected = selectedLabel.value
   if (selected === 'Canal') return 'global-line'
+  
   return getChannelIcon(selected)
 })
 
-const getChannelIcon = (channel) => {
+const getChannelIcon = channel => {
   const icons = {
     WhatsApp: 'whatsapp-line',
     Correo: 'mail-line',
@@ -77,10 +83,12 @@ const getChannelIcon = (channel) => {
     TikTok: 'tiktok-line',
     Otros: 'more-2-fill',
   }
+
+  
   return icons[channel] || 'global-line'
 }
 
-const toggleChannel = (channel) => {
+const toggleChannel = channel => {
   let newChannels = [...props.activeChannels]
 
   if (channel === 'Todos') {

@@ -2,75 +2,112 @@
   <div class="conversation-header">
     <div class="header-left">
       <div class="contact-avatar">
-        <img v-if="conversation.avatar" :src="conversation.avatar" :alt="conversation.name" />
-        <div v-else class="avatar-placeholder">{{ getInitials(conversation.name) }}</div>
+        <img
+          v-if="conversation.avatar"
+          :src="conversation.avatar"
+          :alt="conversation.name"
+        >
+        <div
+          v-else
+          class="avatar-placeholder"
+        >
+          {{ getInitials(conversation.name) }}
+        </div>
       </div>
 
       <div class="contact-info">
         <h3>{{ conversation.name }}</h3>
         <div class="contact-meta">
-          <i :class="`ri-${getChannelIcon(conversation.channel)}`" class="channel-icon"></i>
-          <span>{{ conversation.channel }}</span>
+          <i
+            :class="`ri-${getChannelIcon(conversation.channel.name)}`"
+            class="channel-icon"
+          />
+          <span>{{ conversation.channel.name }}</span>
           <span class="separator">·</span>
           <span class="status">{{ getStatus(conversation, effectiveBotPaused) }}</span>
-          <span v-if="effectiveBotPaused" class="separator">·</span>
-          <span v-if="effectiveBotPaused && botGlobalPaused" class="status-paused">🤖 Bot pausado globalmente</span>
-          <span v-else-if="effectiveBotPaused" class="status-paused">🤖 Bot pausado en esta conversación</span>
         </div>
       </div>
     </div>
 
     <div class="header-actions">
       <!-- Action button (dynamic based on attention mode) -->
-      <button v-if="conversation.attentionMode === 'bot'" class="action-btn primary" @click="$emit('take-conversation')">
-        <i class="ri-user-add-line"></i>
+      <button
+        v-if="conversation.attentionMode === 'bot'"
+        class="action-btn primary"
+        @click="$emit('take-conversation')"
+      >
+        <i class="ri-user-add-line" />
         Tomar conversación
       </button>
-      <button v-else-if="conversation.attentionMode === 'advisor'" class="action-btn secondary" @click="$emit('return-bot')">
-        <i class="ri-robot-line"></i>
+      <button
+        v-else-if="conversation.attentionMode === 'advisor'"
+        class="action-btn secondary"
+        @click="$emit('return-bot')"
+      >
+        <i class="ri-robot-line" />
         Devolver al bot
       </button>
-      <button v-else-if="conversation.attentionMode === 'unassigned'" class="action-btn primary" @click="$emit('assign-me')">
-        <i class="ri-user-add-line"></i>
+      <button
+        v-else-if="conversation.attentionMode === 'unassigned'"
+        class="action-btn primary"
+        @click="$emit('assign-me')"
+      >
+        <i class="ri-user-add-line" />
         Asignarme
       </button>
-      <button v-else-if="conversation.attentionMode === 'closed'" class="action-btn secondary" @click="$emit('reopen')">
-        <i class="ri-refresh-line"></i>
+      <button
+        v-else-if="conversation.attentionMode === 'closed'"
+        class="action-btn secondary"
+        @click="$emit('reopen')"
+      >
+        <i class="ri-refresh-line" />
         Reabrir
       </button>
 
       <!-- Theme switcher -->
-      <button class="icon-btn" title="Cambiar tema">
-        <i class="ri-contrast-2-line"></i>
+      <button
+        class="icon-btn"
+        title="Cambiar tema"
+      >
+        <i class="ri-contrast-2-line" />
       </button>
 
       <!-- Notifications -->
-      <button class="icon-btn" title="Notificaciones">
-        <i class="ri-notification-line"></i>
+      <button
+        class="icon-btn"
+        title="Notificaciones"
+      >
+        <i class="ri-notification-line" />
       </button>
 
       <!-- Menu button -->
-      <button class="menu-btn" @click="showMenu = !showMenu">
-        <i class="ri-more-2-fill"></i>
+      <button
+        class="menu-btn"
+        @click="showMenu = !showMenu"
+      >
+        <i class="ri-more-2-fill" />
       </button>
 
       <!-- Dropdown menu -->
-      <div v-if="showMenu" class="dropdown-menu">
+      <div
+        v-if="showMenu"
+        class="dropdown-menu"
+      >
         <button class="menu-item">
-          <i class="ri-mail-open-line"></i>
+          <i class="ri-mail-open-line" />
           Marcar como no leída
         </button>
         <button class="menu-item">
-          <i class="ri-shuffle-line"></i>
+          <i class="ri-shuffle-line" />
           Transferir
         </button>
         <button class="menu-item">
-          <i class="ri-close-circle-line"></i>
+          <i class="ri-close-circle-line" />
           Cerrar conversación
         </button>
-        <hr />
+        <hr>
         <button class="menu-item danger">
-          <i class="ri-forbid-line"></i>
+          <i class="ri-forbid-line" />
           Bloquear contacto
         </button>
       </div>
@@ -117,17 +154,31 @@ const getChannelIcon = channel => {
     Facebook: 'facebook-circle-line',
     'Chat web': 'chat-3-line',
   }
+
+  
   return icons[channel] || 'global-line'
 }
 
 const getStatus = (conversation, effectiveBotPaused) => {
-  // CORRECCIÓN 1: No mostrar "Bot atendiendo" si el bot está pausado (global o conversación)
-  if (conversation.attentionMode === 'bot' && effectiveBotPaused) return 'Bot pausado'
-  if (conversation.attentionMode === 'bot') return 'Bot atendiendo'
-  if (conversation.attentionMode === 'advisor') return `Atendido por ${conversation.responsable?.nombre || 'Asesor'}`
-  if (conversation.attentionMode === 'unassigned') return 'Esperando asignación'
-  if (conversation.attentionMode === 'closed') return 'Conversación cerrada'
-  return 'Esperando'
+  // Map backend estado_atencion values to display text
+  // Backend values: "bot" | "asesor" | "cerrada"
+  const estado = conversation.estado_atencion || conversation.attentionMode
+
+  if (!estado) {
+    return 'Sin estado'
+  }
+
+  switch (estado.toLowerCase()) {
+  case 'bot':
+    return effectiveBotPaused ? 'Bot pausado' : 'Bot atendiendo'
+  case 'asesor':
+    return `Atendido por ${conversation.responsable?.nombre || 'Asesor'}`
+  case 'cerrada':
+    return 'Conversación cerrada'
+  default:
+    // Any other value is a data issue, not an error
+    return `Estado: ${estado}`
+  }
 }
 </script>
 

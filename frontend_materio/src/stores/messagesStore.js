@@ -17,7 +17,7 @@ export const useMessagesStore = defineStore('messages', () => {
    * messages[conversation_id] = [{ id, timestamp, sender, ... }]
    * Normalizes sender values to: client, advisor, bot
    */
-  const upsertMessage = (msg) => {
+  const upsertMessage = msg => {
     const normalizedMsg = normalizeMessage(msg)
     const conversationId = normalizedMsg.conversationId
     const id = normalizedMsg.id
@@ -52,6 +52,7 @@ export const useMessagesStore = defineStore('messages', () => {
     messages.value[conversationId].sort((a, b) => {
       const aTime = new Date(a.timestamp || 0).getTime()
       const bTime = new Date(b.timestamp || 0).getTime()
+      
       return aTime - bTime
     })
   }
@@ -59,21 +60,36 @@ export const useMessagesStore = defineStore('messages', () => {
   /**
    * Get all messages for a conversation.
    */
-  const getMessages = (conversationId) => {
+  const getMessages = conversationId => {
     return messages.value[conversationId] || []
+  }
+
+  /**
+   * Remove a single message (used to drop an optimistic bubble once replaced
+   * by its real, server-confirmed counterpart).
+   */
+  const removeMessage = (conversationId, id) => {
+    const list = messages.value[conversationId]
+    if (!list) return
+    const idx = list.findIndex(m => m.id === id)
+    if (idx >= 0) {
+      list.splice(idx, 1)
+    }
   }
 
   /**
    * Load initial messages for a conversation from REST.
    * Mutates existing array (or creates new one) to ensure reactivity in computed properties.
    */
-  const loadConversationMessages = async (conversationId) => {
+  const loadConversationMessages = async conversationId => {
     try {
       // FIXED: Use correct Spanish endpoint name "mensajes" not "messages"
       const url = `/dashboard/whatsapp/conversaciones/${conversationId}/mensajes/`
+
       console.log('[messagesStore] loadConversationMessages START: conversationId=' + conversationId + ', url=' + url)
 
       const response = await fetch(url)
+
       console.log('[messagesStore] HTTP response: status=' + response.status)
 
       // Check for HTTP errors before attempting JSON parse
@@ -83,6 +99,7 @@ export const useMessagesStore = defineStore('messages', () => {
       }
 
       const data = await response.json()
+
       console.log('[messagesStore] Response JSON received, type:', typeof data, 'isArray:', Array.isArray(data))
 
       // Ensure array exists
@@ -109,12 +126,14 @@ export const useMessagesStore = defineStore('messages', () => {
         messages.value[conversationId].sort((a, b) => {
           const aTime = new Date(a.timestamp || a.fecha_mensaje || 0).getTime()
           const bTime = new Date(b.timestamp || b.fecha_mensaje || 0).getTime()
+          
           return aTime - bTime
         })
         console.log('[messagesStore] After sort: count=' + messages.value[conversationId].length + ', IDs:', messages.value[conversationId].map(m => m.id || m.message_id).join(','))
       }
     } catch (error) {
       console.error(`[messagesStore] Failed to load messages for conversation ${conversationId}:`, error.message)
+
       // Clear on error (mutate instead of replace)
       if (!messages.value[conversationId]) {
         messages.value[conversationId] = []
@@ -127,7 +146,7 @@ export const useMessagesStore = defineStore('messages', () => {
   /**
    * Clear messages for a conversation.
    */
-  const clearConversation = (conversationId) => {
+  const clearConversation = conversationId => {
     if (messages.value[conversationId]) {
       messages.value[conversationId].splice(0, Infinity)
     }
@@ -147,6 +166,7 @@ export const useMessagesStore = defineStore('messages', () => {
     messages,
     upsertMessage,
     getMessages,
+    removeMessage,
     loadConversationMessages,
     clearConversation,
     clear,

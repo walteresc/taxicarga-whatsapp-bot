@@ -13,7 +13,9 @@ test.describe('Gate 3 Diagnostic', () => {
           password: 'e2e_test_pass_123',
         },
       })
+
       const loginData = await loginResponse.json()
+
       console.log(`Login response status: ${loginResponse.status()}`)
       console.log(`Login response: ${JSON.stringify(loginData).substring(0, 100)}`)
 
@@ -40,6 +42,7 @@ test.describe('Gate 3 Diagnostic', () => {
 
     // Check current URL and auth status
     const currentUrl = page.url()
+
     console.log(`Current URL: ${currentUrl}`)
 
     if (currentUrl.includes('/login')) {
@@ -57,7 +60,9 @@ test.describe('Gate 3 Diagnostic', () => {
 
       // Diagnostic checks
       console.log('\nDiagnostic checks:')
+
       const bodyHTML = await page.content()
+
       console.log(`Page HTML length: ${bodyHTML.length} chars`)
       console.log(`Contains "conversation-list-root": ${bodyHTML.includes('conversation-list-root')}`)
       console.log(`Contains "conversation-sidebar": ${bodyHTML.includes('conversation-sidebar')}`)
@@ -88,17 +93,20 @@ test.describe('Gate 3 Diagnostic', () => {
     // Check diagnostic counter
     const diagnosticCounter = page.locator('[data-testid="diagnostic-count"]')
     const counterText = await diagnosticCounter.textContent()
+
     console.log(`Diagnostic counter shows: ${counterText}`)
 
     // Check diagnostic list items
     const diagnosticItems = page.locator('[data-testid="diagnostic-item"]')
     const itemCount = await diagnosticItems.count()
+
     console.log(`Diagnostic list items: ${itemCount}`)
 
     if (itemCount > 0) {
       console.log('First diagnostic items:')
       for (let i = 0; i < Math.min(3, itemCount); i++) {
         const text = await diagnosticItems.nth(i).textContent()
+
         console.log(`  [${i}]: ${text}`)
       }
     }
@@ -106,11 +114,13 @@ test.describe('Gate 3 Diagnostic', () => {
     // Check actual conversation items (from template v-for)
     const conversationItems = page.locator('[data-testid="conversation-item"], .conversation-item')
     const actualItemCount = await conversationItems.count()
+
     console.log(`Actual conversation items rendered: ${actualItemCount}`)
 
     // Get page state
     const pageState = await page.evaluate(() => {
       const root = document.querySelector('[data-testid="conversation-list-root"]')
+      
       return {
         rootExists: !!root,
         rootHTML: root ? root.innerHTML.substring(0, 500) : 'NOT FOUND',
@@ -130,12 +140,14 @@ test.describe('Gate 3 Diagnostic', () => {
       console.log(`\nEmpty states found: ${emptyCount}`)
       for (let i = 0; i < Math.min(2, emptyCount); i++) {
         const text = await emptyStates.nth(i).textContent()
+
         console.log(`  Empty[${i}]: ${text}`)
       }
     }
 
     // Check console errors
     const errors = []
+
     page.on('console', msg => {
       if (msg.type() === 'error') {
         errors.push(msg.text())

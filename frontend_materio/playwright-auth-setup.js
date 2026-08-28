@@ -53,6 +53,7 @@ export default async function globalAuthSetup() {
     const isLoggedIn = await page.evaluate(() => {
       return !window.location.pathname.includes('login')
     })
+
     console.log(`[AUTH] Page after submit: ${isLoggedIn ? 'redirected from login' : 'still on login page'}`)
 
     // Step 3: Verificar cookies
@@ -81,6 +82,7 @@ export default async function globalAuthSetup() {
 
     // Step 6: Guardar cookies manualmente
     const allCookies = await context.cookies()
+
     const authState = {
       cookies: allCookies,
       timestamp: new Date().toISOString(),
@@ -89,6 +91,7 @@ export default async function globalAuthSetup() {
 
     // Guardar en archivo para referencia
     const fs = await import('fs')
+
     fs.writeFileSync(AUTH_FILE, JSON.stringify(authState, null, 2))
     console.log(`[AUTH] Cookies saved: ${allCookies.length} total`)
 

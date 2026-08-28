@@ -17,6 +17,7 @@ test('Inbound canónico: webhook local → aparece en UI sin F5', async ({ page,
 
   // Capturar lista de conversaciones inicial
   const convCountBefore = await page.locator('[data-test="conversation-item"]').count()
+
   console.log(`[UI] Conversaciones antes: ${convCountBefore}`)
 
   // 2. Enviar webhook inbound Meta format
@@ -43,6 +44,7 @@ test('Inbound canónico: webhook local → aparece en UI sin F5', async ({ page,
   }
 
   console.log(`[WEBHOOK] Enviando inbound desde ${testPhone}`)
+
   const webhookResponse = await page.context().request.post(WEBHOOK_URL, {
     data: webhookPayload,
   })
@@ -70,6 +72,7 @@ test('Inbound canónico: webhook local → aparece en UI sin F5', async ({ page,
 
       // Verificar que contiene el texto del test
       const conversationText = await page.textContent('[data-test="conversation-item"]')
+
       expect(conversationText).toContain(testId)
       console.log(`[UI] Texto correcto: ${testId}`)
 
@@ -94,6 +97,7 @@ test('Inbound canónico: webhook local → aparece en UI sin F5', async ({ page,
   const reloadCount = await page.evaluate(() => {
     return window.performance.navigation.type === 1 ? 1 : 0
   })
+
   expect(reloadCount).toBe(0)
   console.log(`[CHECK] No hay F5/reload`)
 
@@ -103,6 +107,7 @@ test('Inbound canónico: webhook local → aparece en UI sin F5', async ({ page,
            window.__eventSource?.readyState === 1 || // OPEN
            document.body.innerHTML.includes('EventSource')
   })
+
   console.log(`[CHECK] SSE conectado: ${sseConnected}`)
 
   // 6. Verificar preview y hora
@@ -121,6 +126,7 @@ test('Inbound canónico: webhook local → aparece en UI sin F5', async ({ page,
     const messageTime = new Date(timestamp_el)
     const now = new Date()
     const diff = (now - messageTime) / 1000
+
     console.log(`[TIME-CHECK] Diferencia: ${diff.toFixed(1)}s`)
     expect(diff).toBeLessThan(60) // Menos de 1 minuto
   }
@@ -131,17 +137,20 @@ test('Inbound canónico: webhook local → aparece en UI sin F5', async ({ page,
 
   const msgInTimeline = page.locator(`text="${testId}"`)
   const timelineVisible = await msgInTimeline.isVisible()
+
   console.log(`[TIMELINE] Mensaje visible: ${timelineVisible}`)
   expect(timelineVisible).toBe(true)
 
   // 8. Verificar que aparece una sola vez
   const msgCount = await msgInTimeline.count()
+
   console.log(`[DEDUP] Instancias del mensaje: ${msgCount}`)
   expect(msgCount).toBe(1)
 
   // 9. Verificar unread cambió
   const unreadBadge = page.locator('[data-test="unread-count"]').first()
   const hasUnread = await unreadBadge.isVisible()
+
   console.log(`[UNREAD] Badge visible: ${hasUnread}`)
 
   console.log(`[RESULT] PASS: Inbound canónico sin F5`)

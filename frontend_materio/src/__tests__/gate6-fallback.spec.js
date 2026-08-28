@@ -6,9 +6,11 @@ test.describe('Gate 6 Fallback & Reconnection', () => {
 
     // Authenticate
     console.log('Step 1: Authenticating...')
+
     const loginResp = await page.request.post('http://localhost:8001/dashboard/api/auth/login/', {
       data: { username: 'e2e_test', password: 'e2e_test_pass_123' },
     })
+
     expect(loginResp.status()).toBe(200)
     console.log('✓ Authenticated')
 
@@ -20,7 +22,9 @@ test.describe('Gate 6 Fallback & Reconnection', () => {
 
     // Monitor network for SSE or polling requests
     console.log('Step 3: Monitoring for SSE/polling...')
+
     const networkLog = []
+
     page.on('response', resp => {
       if (resp.url().includes('/sse/') || resp.url().includes('/poll/')) {
         networkLog.push({
@@ -40,18 +44,22 @@ test.describe('Gate 6 Fallback & Reconnection', () => {
 
     // Verify stability (simulated fallback test)
     console.log('Step 4: Checking stability...')
+
     const convItems = await page.locator('.conversation-item').count()
+
     console.log(`✓ Conversations still loaded: ${convItems}`)
 
     // Check for disconnect/reconnect indicators
     const pageContent = await page.content()
     const hasFallbackIndicator = pageContent.includes('polling') || pageContent.includes('reconnect')
+
     console.log(`Fallback indicator present: ${hasFallbackIndicator}`)
 
     // Logout test
     console.log('Step 5: Testing logout...')
     try {
       const logoutResp = await page.request.post('http://localhost:8001/dashboard/api/auth/logout/', {})
+
       expect(logoutResp.status()).toBe(200)
       console.log('✓ Logout successful')
     } catch (err) {

@@ -98,7 +98,7 @@ describe('ConversationPanel integration', () => {
     setActivePinia(pinia)
 
     // Mock fetch globally
-    global.fetch = vi.fn(async (url) => {
+    global.fetch = vi.fn(async url => {
       if (url.includes('/mensajes/')) {
         return {
           ok: true,
@@ -106,6 +106,7 @@ describe('ConversationPanel integration', () => {
           json: async () => REAL_API_RESPONSE,
         }
       }
+      
       return {
         ok: false,
         status: 404,
@@ -122,6 +123,7 @@ describe('ConversationPanel integration', () => {
 
     // Verify store was populated
     const messages = store.getMessages(1)
+
     expect(messages).toHaveLength(6)
     expect(messages[0].id).toBe(1)
     expect(messages[5].id).toBe(145)
@@ -160,6 +162,7 @@ describe('ConversationPanel integration', () => {
 
     // Check if messages computed has 6 items
     const messages = wrapper.vm.messages
+
     console.log('[TEST] Messages computed:', messages.length)
 
     expect(messages).toHaveLength(6)
@@ -232,6 +235,7 @@ describe('ConversationPanel integration', () => {
     await wrapper.vm.$nextTick()
 
     const messages = wrapper.vm.messages
+
     expect(messages).toHaveLength(6)
   })
 })

@@ -15,6 +15,7 @@ test('Heartbeat real: SSE abierto 40s, captura latido ~30s', async ({ page }) =>
       const text = msg.text()
       if (text.includes('heartbeat') || text.includes('ping')) {
         const timestamp = Date.now()
+
         heartbeats.push(timestamp)
         console.log(`[HEARTBEAT] ${text} @ ${new Date(timestamp).toISOString()}`)
       }
@@ -57,20 +58,23 @@ test('Heartbeat real: SSE abierto 40s, captura latido ~30s', async ({ page }) =>
           window.__sseStartTime = Date.now()
         })
 
-        this.addEventListener('heartbeat', (e) => {
+        this.addEventListener('heartbeat', e => {
           const elapsed = (Date.now() - window.__sseStartTime) / 1000
+
           console.log(`[HEARTBEAT] Recibido en ${elapsed.toFixed(1)}s: ${e.data?.substring(0, 50)}`)
         })
 
-        this.addEventListener('message', (e) => {
+        this.addEventListener('message', e => {
           if (e.data.includes(':heartbeat') || e.data === ':heartbeat') {
             const elapsed = (Date.now() - window.__sseStartTime) / 1000
+
             console.log(`[HEARTBEAT-RAW] Frame en ${elapsed.toFixed(1)}s`)
           }
         })
 
         this.addEventListener('error', () => {
           const elapsed = (Date.now() - window.__sseStartTime) / 1000
+
           console.log(`[SSE-ERROR] Error en ${elapsed.toFixed(1)}s`)
         })
       }
@@ -79,12 +83,14 @@ test('Heartbeat real: SSE abierto 40s, captura latido ~30s', async ({ page }) =>
 
   // Esperar 40 segundos manteniendo la conexión
   console.log(`[TEST] Esperando 40s para capturar heartbeat (~30s)...`)
+
   const startTime = Date.now()
 
   // Verificar que SSE está en el HTML/JS
   const hasSSE = await page.evaluate(() => {
     return typeof window.EventSource !== 'undefined' || document.body.innerHTML.includes('EventSource')
   })
+
   console.log(`[CHECK] EventSource disponible: ${hasSSE}`)
 
   // Esperar
@@ -119,6 +125,7 @@ test('Heartbeat real: SSE abierto 40s, captura latido ~30s', async ({ page }) =>
 
   // Verificar que la página no refresca
   const title = await page.title()
+
   expect(title).toBeTruthy()
   console.log(`[CHECK] Página intacta, título: ${title}`)
 

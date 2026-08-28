@@ -1,43 +1,76 @@
 <template>
-  <div :class="['message-container', senderType]">
+  <div
+    class="message-container"
+    :class="[senderType]"
+  >
     <!-- Mostrar nombre del asesor/bot encima del mensaje -->
-    <div v-if="showSenderName" class="sender-name">{{ message.senderName }}</div>
+    <div
+      v-if="showSenderName"
+      class="sender-name"
+    >
+      {{ message.senderName }}
+    </div>
 
     <!-- Burbuja del mensaje -->
-    <div :class="['message-bubble', senderType, `media-${message.tipo}`]">
+    <div
+      class="message-bubble"
+      :class="[senderType, `media-${message.tipo}`]"
+    >
       <!-- Contenido según tipo -->
-      <component :is="mediaComponent" :message="message" />
+      <component
+        :is="mediaComponent"
+        :message="message"
+      />
 
       <div class="message-footer">
         <span class="message-time">{{ formatTime(message.fecha_mensaje) }}</span>
-        <span v-if="showStatus" :class="['message-status', message.estado]">
-          <i :class="getStatusIcon(message.estado)"></i>
+        <span
+          v-if="showStatus"
+          class="message-status"
+          :class="[message.estado]"
+        >
+          <i :class="getStatusIcon(message.estado)" />
         </span>
       </div>
     </div>
 
     <!-- Indicador de retención -->
-    <div v-if="showRetentionWarning" class="retention-warning">
-      <i class="ri-shield-exclamation-line"></i>
+    <div
+      v-if="showRetentionWarning"
+      class="retention-warning"
+    >
+      <i class="ri-shield-exclamation-line" />
       <span>Se eliminará el {{ retentionDate }}</span>
     </div>
 
     <!-- Loading state (para media_status=PENDING) -->
-    <div v-if="isMediaPending" class="media-loading">
-      <div class="spinner"></div>
+    <div
+      v-if="isMediaPending"
+      class="media-loading"
+    >
+      <div class="spinner" />
       <span>Descargando multimedia...</span>
     </div>
 
     <!-- Error state (para media_status=FAILED/EXPIRED) -->
-    <div v-if="isMediaFailed" class="media-error">
-      <i class="ri-alert-line"></i>
+    <div
+      v-if="isMediaFailed"
+      class="media-error"
+    >
+      <i class="ri-alert-line" />
       <span>{{ mediaErrorMessage }}</span>
     </div>
 
     <!-- Botón de reintentar si falló -->
-    <div v-if="message.estado === 'error'" class="message-retry">
-      <button @click="retryMessage" class="retry-btn">
-        <i class="ri-refresh-line"></i>
+    <div
+      v-if="message.estado === 'error'"
+      class="message-retry"
+    >
+      <button
+        class="retry-btn"
+        @click="retryMessage"
+      >
+        <i class="ri-refresh-line" />
         Reintentar
       </button>
     </div>
@@ -82,6 +115,8 @@ const senderType = computed(() => {
     advisor: 'advisor',
     system: 'system',
   }
+
+  
   return senderMap[props.message.sender_type] || 'client'
 })
 
@@ -115,6 +150,7 @@ const mediaErrorMessage = computed(() => {
   if (props.message.media_status === 'failed') {
     return 'No se pudo descargar el archivo'
   }
+  
   return 'Archivo no disponible'
 })
 
@@ -149,6 +185,7 @@ const retentionDate = computed(() => {
   if (!adjunto.retain_until) return ''
 
   const date = new Date(adjunto.retain_until)
+  
   return date.toLocaleDateString('es-PE', {
     year: 'numeric',
     month: 'short',
@@ -156,11 +193,11 @@ const retentionDate = computed(() => {
   })
 })
 
-const formatTime = (timestamp) => {
+const formatTime = timestamp => {
   return formatMessageTime(timestamp) || ''
 }
 
-const getStatusIcon = (status) => {
+const getStatusIcon = status => {
   const icons = {
     recibido: 'ri-time-line',
     enviado: 'ri-check-line',
@@ -169,6 +206,8 @@ const getStatusIcon = (status) => {
     error: 'ri-close-circle-line',
     pendiente: 'ri-time-line',
   }
+
+  
   return icons[status] || 'ri-time-line'
 }
 

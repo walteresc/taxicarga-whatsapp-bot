@@ -23,6 +23,7 @@ test.describe('ConversationPanel timeline render', () => {
 
     // Click on Walter (first conversation)
     const firstConv = await page.locator('[data-testid="conversation-list"] button').first()
+
     await firstConv.click()
 
     // Wait for timeline to load
@@ -38,31 +39,37 @@ test.describe('ConversationPanel timeline render', () => {
 
     // **INSPECCIÓN 1: Elemento .message-timeline**
     const timelineElement = await page.locator('.message-timeline')
+
     console.log('[E2E] Timeline element found:', await timelineElement.isVisible())
 
     // **INSPECCIÓN 2: Contenedores de grupos**
     const messageGroups = await page.locator('.message-group')
     const groupCount = await messageGroups.count()
+
     console.log('[E2E] Message groups count:', groupCount)
 
     // **INSPECCIÓN 3: Elementos individuales de mensaje**
     const messages = await page.locator('.message-timeline > div > div > div')
     const messageCount = await messages.count()
+
     console.log('[E2E] Message elements count:', messageCount)
 
     // **INSPECCIÓN 4: Componentes burbuja (MensajeMedia o MessageBubble)**
     const bubbles = await page.locator('[class*="message-bubble"], [class*="mensaje-media"]')
     const bubbleCount = await bubbles.count()
+
     console.log('[E2E] Bubble components count:', bubbleCount)
 
     // **INSPECCIÓN 5: Textos de mensajes**
     const real0010Text = await page.locator('text=FASE5B-SSE-WALTER-REAL-0010')
     const hasReal0010 = await real0010Text.isVisible({ timeout: 1000 }).catch(() => false)
+
     console.log('[E2E] REAL-0010 visible:', hasReal0010)
 
     // **INSPECCIÓN 6: Styles computados**
     const timelineStyle = await timelineElement.evaluate(el => {
       const computed = window.getComputedStyle(el)
+      
       return {
         display: computed.display,
         visibility: computed.visibility,
@@ -79,20 +86,24 @@ test.describe('ConversationPanel timeline render', () => {
         flexBasis: computed.flexBasis,
       }
     })
+
     console.log('[E2E] Timeline computed styles:', timelineStyle)
 
     // **INSPECCIÓN 7: BoundingClientRect**
     const timelineRect = await timelineElement.boundingBox()
+
     console.log('[E2E] Timeline bounding box:', timelineRect)
 
     // **INSPECCIÓN 8: Empty state visible?**
     const emptyState = await page.locator('.empty-state').first()
     const emptyVisible = await emptyState.isVisible({ timeout: 1000 }).catch(() => false)
+
     console.log('[E2E] Empty state visible:', emptyVisible)
 
     // **INSPECCIÓN 9: Verificar loading state**
     const loadingState = await page.locator('.loading-state')
     const loadingVisible = await loadingState.isVisible({ timeout: 500 }).catch(() => false)
+
     console.log('[E2E] Loading state visible:', loadingVisible)
 
     // **INSPECCIÓN 10: Capturar screenshot**
@@ -115,6 +126,7 @@ test.describe('ConversationPanel timeline render', () => {
 
   test('capture console logs during timeline load', async ({ page, context }) => {
     const logs = []
+
     page.on('console', msg => {
       if (msg.text().includes('[ConversationPanel')) {
         logs.push(msg.text())
@@ -133,6 +145,7 @@ test.describe('ConversationPanel timeline render', () => {
 
     // Click first conversation
     const firstConv = await page.locator('[data-testid="conversation-list"] button').first()
+
     await firstConv.click()
 
     // Wait for render

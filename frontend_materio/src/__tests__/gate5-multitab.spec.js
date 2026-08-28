@@ -19,6 +19,7 @@ test.describe('Gate 5 Multi-Tab Sync', () => {
           password: 'e2e_test_pass_123',
         },
       })
+
       expect(resp.status()).toBe(200)
       console.log(`  ✓ Tab ${i} authenticated`)
     }
@@ -36,6 +37,7 @@ test.describe('Gate 5 Multi-Tab Sync', () => {
 
     const count1Initial = await page1.locator('.conversation-item').count()
     const count2Initial = await page2.locator('.conversation-item').count()
+
     console.log(`  ✓ Tab 1: ${count1Initial} conversations`)
     console.log(`  ✓ Tab 2: ${count2Initial} conversations`)
 
@@ -45,22 +47,28 @@ test.describe('Gate 5 Multi-Tab Sync', () => {
 
     // Select conversation in Tab 1
     console.log('Step 4: Selecting conversation in Tab 1...')
+
     const firstConv1 = await page1.locator('.conversation-item').first()
     const convText1 = await firstConv1.textContent()
+
     await firstConv1.click()
     await page1.waitForTimeout(1000)
     console.log(`  ✓ Selected: ${convText1.substring(0, 50)}...`)
 
     // Check Tab 2 (should not be affected - independent selection)
     console.log('Step 5: Checking Tab 2 independent state...')
+
     const convItemsTab2 = await page2.locator('.conversation-item').count()
+
     expect(convItemsTab2).toBe(count2Initial)
     console.log('  ✓ Tab 2 unaffected by Tab 1 selection')
 
     // Verify no cross-pollution errors
     console.log('Step 6: Checking for errors...')
+
     const errors1 = []
     const errors2 = []
+
     page1.on('console', msg => {
       if (msg.type() === 'error') errors1.push(msg.text())
     })

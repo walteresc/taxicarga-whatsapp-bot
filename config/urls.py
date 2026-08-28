@@ -1,6 +1,7 @@
 from django.contrib import admin
 from django.urls import include, path, re_path
 from apps.whatsapp.views import bot_schedules, bot_schedule_detail, bot_settings, whatsapp_channels, whatsapp_channel_detail, whatsapp_channel_asesores
+from apps.whatsapp.views_media import media_proxy
 from django.shortcuts import redirect
 from django.conf import settings
 from django.views.decorators.cache import never_cache
@@ -30,6 +31,7 @@ urlpatterns = [
     path("api/whatsapp-channels/asesores/", whatsapp_channel_asesores, name="api-whatsapp-channel-asesores"),
     path("api/whatsapp-channels/<int:channel_id>/", whatsapp_channel_detail, name="api-whatsapp-channel-detail"),
     path("webhook/whatsapp/", include("apps.whatsapp.urls")),
+    path("media/proxy/<str:media_id>/", media_proxy, name="media-proxy"),
     path("webhooks/chatwoot/", include("apps.integrations.urls")),
     path("webhooks/", include("apps.whatsapp_bot_v4.urls")),
 

@@ -1,20 +1,35 @@
 <template>
   <div class="service-card">
-    <div v-if="!conversation" class="empty">
+    <div
+      v-if="!conversation"
+      class="empty"
+    >
       <p>Selecciona una conversación</p>
     </div>
-    <div v-else class="card-content">
+    <div
+      v-else
+      class="card-content"
+    >
       <!-- CLIENTE HEADER -->
       <div class="client-header">
         <div class="avatar">
-          <img v-if="conversation.avatar" :src="conversation.avatar" :alt="conversation.name" />
-          <div v-else class="avatar-placeholder">{{ getInitials(conversation.name) }}</div>
+          <img
+            v-if="conversation.avatar"
+            :src="conversation.avatar"
+            :alt="conversation.name"
+          >
+          <div
+            v-else
+            class="avatar-placeholder"
+          >
+            {{ getInitials(conversation.name) }}
+          </div>
         </div>
         <div class="client-info">
           <h3>{{ conversation.name }}</h3>
           <p>{{ conversation.phone }}</p>
           <p class="channel">
-            <i class="ri-whatsapp-line"></i>
+            <i class="ri-whatsapp-line" />
             {{ conversation.channel }}
           </p>
         </div>
@@ -28,11 +43,17 @@
             <span>Responsable</span>
             <strong>{{ serviceData.responsable || 'Sin asignar' }}</strong>
           </div>
-          <p class="status-text">Atiende ahora</p>
+          <p class="status-text">
+            Atiende ahora
+          </p>
         </div>
         <div class="buttons">
-          <button class="btn btn-orange">Tomar control</button>
-          <button class="btn btn-secondary">Pausar bot</button>
+          <button class="btn btn-orange">
+            Tomar control
+          </button>
+          <button class="btn btn-secondary">
+            Pausar bot
+          </button>
         </div>
       </div>
 
@@ -64,7 +85,10 @@
             <label>Fecha</label>
             <p>
               {{ serviceData.fecha || 'Pendiente' }}
-              <span v-if="!serviceData.fechaConfirmada" class="warning-badge">⚠️</span>
+              <span
+                v-if="!serviceData.fechaConfirmada"
+                class="warning-badge"
+              >⚠️</span>
             </p>
           </div>
         </div>
@@ -76,7 +100,9 @@
         <div class="commercial-info">
           <div class="info-row">
             <span>Etapa</span>
-            <button class="badge-orange">{{ serviceData.etapa || 'Por cotizar' }}</button>
+            <button class="badge-orange">
+              {{ serviceData.etapa || 'Por cotizar' }}
+            </button>
           </div>
           <div class="info-row">
             <span>Precio sugerido</span>
@@ -87,7 +113,7 @@
 
       <!-- CREATE QUOTE BUTTON -->
       <button class="btn-create-quote">
-        <i class="ri-file-list-line"></i>
+        <i class="ri-file-list-line" />
         Crear cotización
       </button>
     </div>

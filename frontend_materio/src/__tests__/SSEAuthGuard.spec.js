@@ -22,12 +22,14 @@ describe('SSE Authentication Guard (CORRECCIÓN 2)', () => {
       if (url.includes('events/stream')) {
         authCheckOrder.push('EventSource')
       }
+      
       return originalFetch(url, opts)
     })
 
     // Track auth check
     const mockCheckAuth = vi.fn(async () => {
       authCheckOrder.push('checkAuth')
+      
       return true
     })
 
@@ -48,7 +50,7 @@ describe('SSE Authentication Guard (CORRECCIÓN 2)', () => {
     const initializeCalls = []
 
     // Mock: simulate unauthenticated user
-    global.fetch = vi.fn(async (url) => {
+    global.fetch = vi.fn(async url => {
       if (url.includes('/auth/')) {
         return {
           ok: false,
@@ -56,6 +58,7 @@ describe('SSE Authentication Guard (CORRECCIÓN 2)', () => {
           json: async () => ({ authenticated: false }),
         }
       }
+      
       return { ok: false, status: 404 }
     })
 
@@ -78,17 +81,21 @@ describe('SSE Authentication Guard (CORRECCIÓN 2)', () => {
     // During restoration, EventSource should NOT be created
     const checkAuthSimulated = async () => {
       states.push('checkAuth-start')
+
       // Simulating session restoration delay
       await new Promise(r => setTimeout(r, 10))
       states.push('checkAuth-complete')
+      
       return true
     }
 
     const initializeSimulated = async () => {
       states.push('initialize-start')
+
       // In real code, this calls eventStore.connect()
       // which creates EventSource
       states.push('EventSource-created')
+      
       return true
     }
 
@@ -153,6 +160,7 @@ describe('SSE Authentication Guard (CORRECCIÓN 2)', () => {
 
     // Simulate: create one connection
     const es1 = new EventSource('/api/events')
+
     eventSourceInstances.push(es1)
 
     // Verify: exactly 1 request, status 200

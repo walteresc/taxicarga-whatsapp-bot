@@ -1,74 +1,112 @@
 <template>
   <div class="chat-composer">
     <!-- Estado bot pausado (no mostrar "atendiendo" si pausado) -->
-    <div v-if="attentionMode === 'bot' && effectiveBotPaused" class="bot-paused-state">
+    <div
+      v-if="attentionMode === 'bot' && effectiveBotPaused"
+      class="bot-paused-state"
+    >
       <div class="bot-message paused">
-        <i class="ri-robot-line"></i>
+        <i class="ri-robot-line" />
         <span>El bot está pausado</span>
       </div>
     </div>
 
     <!-- Estado bot atendiendo -->
-    <div v-else-if="attentionMode === 'bot'" class="bot-attending">
+    <div
+      v-else-if="attentionMode === 'bot'"
+      class="bot-attending"
+    >
       <div class="bot-message">
-        <i class="ri-robot-line"></i>
+        <i class="ri-robot-line" />
         <span>El bot está atendiendo esta conversación</span>
       </div>
-      <button class="take-control-btn" @click="$emit('take-control')">
+      <button
+        class="take-control-btn"
+        @click="$emit('take-control')"
+      >
         Tomar conversación
       </button>
     </div>
 
     <!-- Estado sin asignar -->
-    <div v-else-if="attentionMode === 'unassigned'" class="unassigned-state">
+    <div
+      v-else-if="attentionMode === 'unassigned'"
+      class="unassigned-state"
+    >
       <div class="unassigned-message">
-        <i class="ri-user-line"></i>
+        <i class="ri-user-line" />
         <span>Esta conversación todavía no tiene asesor</span>
       </div>
-      <button class="assign-btn" @click="$emit('assign-me')">
+      <button
+        class="assign-btn"
+        @click="$emit('assign-me')"
+      >
         Asignarme
       </button>
     </div>
 
     <!-- Estado conversación cerrada -->
-    <div v-else-if="attentionMode === 'closed'" class="closed-state">
+    <div
+      v-else-if="attentionMode === 'closed'"
+      class="closed-state"
+    >
       <div class="closed-message">
-        <i class="ri-lock-line"></i>
+        <i class="ri-lock-line" />
         <span>Conversación cerrada</span>
       </div>
-      <button class="reopen-btn" @click="$emit('reopen')">
+      <button
+        class="reopen-btn"
+        @click="$emit('reopen')"
+      >
         Reabrir
       </button>
     </div>
 
     <!-- Composer activo (asesor atendiendo) -->
-    <div v-else-if="attentionMode === 'advisor'" class="composer-content">
+    <div
+      v-else-if="attentionMode === 'advisor'"
+      class="composer-content"
+    >
       <!-- Línea informativa -->
       <div class="composer-header">
         <div class="channel-info">
-          <i class="ri-whatsapp-line"></i>
+          <i class="ri-whatsapp-line" />
           <span>WhatsApp</span>
         </div>
         <div class="advisor-info">
           <span>Respondiendo como {{ advisorName }}</span>
         </div>
         <div class="status-badge">
-          <span class="status-dot"></span>
+          <span class="status-dot" />
           Disponible
         </div>
       </div>
 
       <!-- Respuesta citada -->
-      <div v-if="replyingTo" class="reply-preview">
+      <div
+        v-if="replyingTo"
+        class="reply-preview"
+      >
         <div class="reply-close">
           <button @click="$emit('clear-reply')">
-            <i class="ri-close-line"></i>
+            <i class="ri-close-line" />
           </button>
         </div>
         <div class="reply-content">
           <span class="reply-label">Respondiendo a {{ replyingTo.senderName }}</span>
-          <p class="reply-text">{{ replyingTo.text }}</p>
+          <p class="reply-text">
+            {{ replyingTo.text }}
+          </p>
         </div>
+      </div>
+
+      <!-- Error de envío -->
+      <div
+        v-if="sendError"
+        class="send-error-banner"
+      >
+        <i class="ri-error-warning-line" />
+        <span>{{ sendError }}</span>
       </div>
 
       <!-- Compositor input -->
@@ -78,55 +116,60 @@
           <button
             class="action-btn"
             title="Adjuntar archivo"
+            :disabled="sending"
             @click="$refs.fileInput?.click()"
           >
-            <i class="ri-attachment-line"></i>
+            <i class="ri-attachment-line" />
             <input
               ref="fileInput"
               type="file"
               hidden
               @change="handleFileSelect"
-            />
+            >
           </button>
 
           <button
             class="action-btn"
             title="Adjuntar imagen"
+            :disabled="sending"
             @click="$refs.imageInput?.click()"
           >
-            <i class="ri-image-add-line"></i>
+            <i class="ri-image-add-line" />
             <input
               ref="imageInput"
               type="file"
               accept="image/*"
               hidden
               @change="handleImageSelect"
-            />
+            >
           </button>
 
           <button
             class="action-btn"
             title="Grabar audio"
             :class="{ recording: recordingAudio }"
+            :disabled="sending"
             @click="toggleAudioRecording"
           >
-            <i :class="recordingAudio ? 'ri-stop-circle-fill' : 'ri-mic-line'"></i>
+            <i :class="recordingAudio ? 'ri-stop-circle-fill' : 'ri-mic-line'" />
           </button>
 
           <button
             class="action-btn"
             title="Respuestas rápidas"
+            :disabled="sending"
             @click="showQuickReplies = !showQuickReplies"
           >
-            <i class="ri-lightning-line"></i>
+            <i class="ri-lightning-line" />
           </button>
 
           <button
             class="action-btn"
             title="Emoji"
+            :disabled="sending"
             @click="showEmojiPicker = !showEmojiPicker"
           >
-            <i class="ri-emotion-smile-line"></i>
+            <i class="ri-emotion-smile-line" />
           </button>
         </div>
 
@@ -136,24 +179,28 @@
           placeholder="Escribe un mensaje..."
           class="message-textarea"
           rows="1"
+          :disabled="sending"
           @keydown.enter.exact="sendMessage"
           @keydown.enter.shift="handleShiftEnter"
           @input="autoResize"
-        ></textarea>
+        />
 
         <!-- Botón enviar -->
         <button
           class="send-btn"
-          :disabled="!messageText.trim()"
-          @click="sendMessage"
+          :disabled="!messageText.trim() || sending"
           title="Enviar (Enter)"
+          @click="sendMessage"
         >
-          <i class="ri-send-plane-2-fill"></i>
+          <i :class="sending ? 'ri-loader-4-line spin' : 'ri-send-plane-2-fill'" />
         </button>
       </div>
 
       <!-- Respuestas rápidas -->
-      <div v-if="showQuickReplies" class="quick-replies">
+      <div
+        v-if="showQuickReplies"
+        class="quick-replies"
+      >
         <button
           v-for="(reply, idx) in quickReplies"
           :key="idx"
@@ -165,7 +212,10 @@
       </div>
 
       <!-- Emoji picker -->
-      <div v-if="showEmojiPicker" class="emoji-picker">
+      <div
+        v-if="showEmojiPicker"
+        class="emoji-picker"
+      >
         <div
           v-for="emoji in emojis"
           :key="emoji"
@@ -182,12 +232,12 @@
 <script setup>
 import { ref, nextTick } from 'vue'
 
-defineProps({
+const props = defineProps({
   replyingTo: Object,
   attentionMode: {
     type: String,
     default: 'unassigned',
-    validator: (v) => ['bot', 'advisor', 'unassigned', 'closed'].includes(v),
+    validator: v => ['bot', 'advisor', 'unassigned', 'closed'].includes(v),
   },
   advisorName: {
     type: String,
@@ -196,6 +246,16 @@ defineProps({
   effectiveBotPaused: {
     type: Boolean,
     default: false,
+  },
+  // Parent-controlled: true while a send request is in flight (disables input)
+  sending: {
+    type: Boolean,
+    default: false,
+  },
+  // Parent-controlled: visible error message from the last failed send attempt
+  sendError: {
+    type: String,
+    default: '',
   },
 })
 
@@ -217,42 +277,56 @@ const quickReplies = [
 
 const emojis = ['👍', '😊', '❤️', '🎉', '✨', '👏', '🙏', '🚀', '😂', '🙌', '💪', '⭐']
 
-const autoResize = (event) => {
+const autoResize = event => {
   const textarea = event.target
+
   textarea.style.height = 'auto'
+
   const newHeight = Math.min(textarea.scrollHeight, 120)
+
   textarea.style.height = `${newHeight}px`
 }
 
-const sendMessage = async () => {
-  if (!messageText.value.trim()) return
+const sendMessage = () => {
+  if (!messageText.value.trim() || props.sending) return
 
+  // Text is intentionally NOT cleared here — the parent only calls clear() once
+  // the backend confirms the send. On failure, the text stays so the advisor can
+  // retry without retyping.
   emit('send-message', {
     text: messageText.value,
     type: 'text',
+    clientMsgId: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
   })
 
-  messageText.value = ''
   showQuickReplies.value = false
   showEmojiPicker.value = false
-
-  await nextTick()
-  const textarea = document.querySelector('.message-textarea')
-  if (textarea) {
-    textarea.style.height = 'auto'
-  }
 }
 
-const handleShiftEnter = (event) => {
+/** Called by the parent once a send is confirmed successful. */
+const clear = () => {
+  messageText.value = ''
+  nextTick(() => {
+    const textarea = document.querySelector('.message-textarea')
+    if (textarea) {
+      textarea.style.height = 'auto'
+    }
+  })
+}
+
+defineExpose({ clear })
+
+const handleShiftEnter = event => {
   event.preventDefault()
   messageText.value += '\n'
   nextTick(() => {
     const textarea = event.target
+
     autoResize({ target: textarea })
   })
 }
 
-const handleFileSelect = (event) => {
+const handleFileSelect = event => {
   const file = event.target.files?.[0]
   if (file) {
     emit('send-message', {
@@ -264,11 +338,12 @@ const handleFileSelect = (event) => {
   event.target.value = ''
 }
 
-const handleImageSelect = (event) => {
+const handleImageSelect = event => {
   const file = event.target.files?.[0]
   if (file) {
     const reader = new FileReader()
-    reader.onload = (e) => {
+
+    reader.onload = e => {
       emit('send-message', {
         type: 'image',
         content: e.target.result,
@@ -289,12 +364,12 @@ const toggleAudioRecording = () => {
   }
 }
 
-const selectQuickReply = (reply) => {
+const selectQuickReply = reply => {
   messageText.value = reply
   showQuickReplies.value = false
 }
 
-const insertEmoji = (emoji) => {
+const insertEmoji = emoji => {
   messageText.value += emoji
   showEmojiPicker.value = false
 }
@@ -308,6 +383,33 @@ const insertEmoji = (emoji) => {
   border-top: 1px solid #e0e0e0;
   flex-shrink: 0;
   min-height: 52px;
+}
+
+.send-error-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 16px 8px;
+  padding: 8px 12px;
+  background: #fdecea;
+  color: #c0392b;
+  border: 1px solid #f5c6cb;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.send-error-banner i {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.spin {
+  animation: composer-spin 0.8s linear infinite;
+}
+
+@keyframes composer-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .bot-attending,

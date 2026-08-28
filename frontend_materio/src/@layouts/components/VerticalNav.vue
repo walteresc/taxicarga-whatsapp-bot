@@ -61,10 +61,10 @@ const handleNavScroll = evt => {
       <!-- Hamburger toggle (desktop only) -->
       <button
         class="nav-toggle-hamburger"
-        @click="toggleVerticalNav"
         :title="isVerticalNavCollapsed ? 'Expandir menú' : 'Contraer menú'"
+        @click="toggleVerticalNav"
       >
-        <i class="ri-menu-line"></i>
+        <i class="ri-menu-line" />
       </button>
 
       <slot name="nav-header">

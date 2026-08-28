@@ -2,7 +2,7 @@
  * Parse fecha de múltiples formatos
  * Soporta: ISO string, Django datetime, timestamp, valor nulo
  */
-export const parseDate = (dateValue) => {
+export const parseDate = dateValue => {
   if (!dateValue) return null
 
   let date
@@ -27,7 +27,7 @@ export const parseDate = (dateValue) => {
  * Formatear fecha para mostrar en mensajes
  * Retorna: "HH:MM" o null si no es válida
  */
-export const formatMessageTime = (dateValue) => {
+export const formatMessageTime = dateValue => {
   const date = parseDate(dateValue)
   if (!date) return null
 
@@ -41,12 +41,13 @@ export const formatMessageTime = (dateValue) => {
  * Formatear fecha para separadores de grupo (Hoy, Ayer, fecha)
  * Retorna: "Hoy", "Ayer", "15 de agosto" o null
  */
-export const formatDateSeparator = (dateValue) => {
+export const formatDateSeparator = dateValue => {
   const date = parseDate(dateValue)
   if (!date) return null
 
   const today = new Date()
   const yesterday = new Date(today)
+
   yesterday.setDate(yesterday.getDate() - 1)
 
   const dateStr = date.toLocaleDateString('es-ES')
@@ -70,11 +71,12 @@ export const formatDateSeparator = (dateValue) => {
 /**
  * Agrupar mensajes por fecha
  */
-export const groupMessagesByDate = (messages) => {
+export const groupMessagesByDate = messages => {
   console.log('[groupMessagesByDate] Input messages count:', messages?.length)
 
   if (!messages || !Array.isArray(messages)) {
     console.log('[groupMessagesByDate] ERROR: messages is not array:', messages)
+    
     return []
   }
 
@@ -82,6 +84,7 @@ export const groupMessagesByDate = (messages) => {
 
   messages.forEach((msg, idx) => {
     const dateStr = formatDateSeparator(msg.timestamp)
+
     console.log(`[groupMessagesByDate] msg[${idx}] id=${msg.id} timestamp=${msg.timestamp} dateStr=${dateStr}`)
 
     if (!dateStr) {
@@ -107,6 +110,7 @@ export const groupMessagesByDate = (messages) => {
 
   const result = Object.values(groups).sort((a, b) => {
     if (!a.date || !b.date) return 0
+    
     return a.date.getTime() - b.date.getTime()
   })
 

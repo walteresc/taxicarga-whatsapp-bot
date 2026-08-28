@@ -27,6 +27,8 @@ export function useVerticalNavCollapse() {
 
   onMounted(() => {
     loadCollapsedState()
+
+
     // Apply initial state
     const wrapper = document.querySelector('.layout-wrapper')
     if (wrapper && isVerticalNavCollapsed.value) {

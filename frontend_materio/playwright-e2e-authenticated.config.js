@@ -22,6 +22,7 @@ export default defineConfig({
       name: 'chromium',
       use: {
         ...devices['Desktop Chrome'],
+
         // Restore auth from setup
         storageState: '.auth.json',
       },

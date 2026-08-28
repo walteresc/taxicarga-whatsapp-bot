@@ -3,23 +3,41 @@
     <!-- Header -->
     <div class="details-header">
       <h4>Información</h4>
-      <button v-if="mobileClose" class="close-btn" @click="$emit('close')">
-        <i class="ri-close-line"></i>
+      <button
+        v-if="mobileClose"
+        class="close-btn"
+        @click="$emit('close')"
+      >
+        <i class="ri-close-line" />
       </button>
     </div>
 
     <!-- Contact section -->
     <div class="details-section">
       <div class="section-avatar">
-        <img v-if="contact.avatar" :src="contact.avatar" :alt="contact.name" />
-        <div v-else class="avatar-placeholder">{{ getInitials(contact.name) }}</div>
+        <img
+          v-if="contact.avatar"
+          :src="contact.avatar"
+          :alt="contact.name"
+        >
+        <div
+          v-else
+          class="avatar-placeholder"
+        >
+          {{ getInitials(contact.name) }}
+        </div>
       </div>
       <h3>{{ contact.name }}</h3>
-      <p class="phone">{{ contact.phone }}</p>
+      <p class="phone">
+        {{ contact.phone }}
+      </p>
     </div>
 
     <!-- Service info -->
-    <div v-if="service" class="details-section">
+    <div
+      v-if="service"
+      class="details-section"
+    >
       <h4>Servicio</h4>
       <div class="info-row">
         <span class="label">Origen</span>
@@ -31,7 +49,10 @@
       </div>
       <div class="info-row">
         <span class="label">Estado</span>
-        <span :class="['status', service.status]">{{ service.status }}</span>
+        <span
+          class="status"
+          :class="[service.status]"
+        >{{ service.status }}</span>
       </div>
       <div class="info-row">
         <span class="label">Precio sugerido</span>
@@ -42,31 +63,52 @@
     <!-- Advisor info -->
     <div class="details-section">
       <h4>Asesor asignado</h4>
-      <div v-if="advisor" class="advisor-card">
+      <div
+        v-if="advisor"
+        class="advisor-card"
+      >
         <div class="advisor-avatar">
-          <img v-if="advisor.avatar" :src="advisor.avatar" :alt="advisor.name" />
-          <div v-else class="avatar-placeholder">{{ getInitials(advisor.name) }}</div>
+          <img
+            v-if="advisor.avatar"
+            :src="advisor.avatar"
+            :alt="advisor.name"
+          >
+          <div
+            v-else
+            class="avatar-placeholder"
+          >
+            {{ getInitials(advisor.name) }}
+          </div>
         </div>
         <div>
-          <div class="advisor-name">{{ advisor.name }}</div>
-          <div class="advisor-role">{{ advisor.role }}</div>
+          <div class="advisor-name">
+            {{ advisor.name }}
+          </div>
+          <div class="advisor-role">
+            {{ advisor.role }}
+          </div>
         </div>
       </div>
-      <div v-else class="empty-value">Sin asignar</div>
+      <div
+        v-else
+        class="empty-value"
+      >
+        Sin asignar
+      </div>
     </div>
 
     <!-- Action buttons -->
     <div class="details-actions">
       <button class="action-btn">
-        <i class="ri-file-text-line"></i>
+        <i class="ri-file-text-line" />
         Crear cotización
       </button>
       <button class="action-btn">
-        <i class="ri-calendar-line"></i>
+        <i class="ri-calendar-line" />
         Agendar llamada
       </button>
       <button class="action-btn">
-        <i class="ri-edit-line"></i>
+        <i class="ri-edit-line" />
         Editar datos
       </button>
     </div>
@@ -74,7 +116,10 @@
     <!-- Notes section -->
     <div class="details-section notes">
       <h4>Notas</h4>
-      <textarea placeholder="Agregar notas privadas..." class="notes-input"></textarea>
+      <textarea
+        placeholder="Agregar notas privadas..."
+        class="notes-input"
+      />
     </div>
   </div>
 </template>
@@ -97,6 +142,7 @@ defineEmits(['close'])
 
 const getInitials = name => {
   if (!name) return '?'
+  
   return name
     .split(' ')
     .map(n => n[0])

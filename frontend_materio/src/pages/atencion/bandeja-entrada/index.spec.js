@@ -48,6 +48,7 @@ describe('BandejaEntrada Bot Status', () => {
     await new Promise(r => setTimeout(r, 50))
 
     const statusText = wrapper.find('.status-text')
+
     expect(statusText.text()).toContain('Bot global activo')
   })
 
@@ -70,6 +71,7 @@ describe('BandejaEntrada Bot Status', () => {
     await new Promise(r => setTimeout(r, 50))
 
     const statusText = wrapper.find('.status-text')
+
     expect(statusText.text()).toContain('Bot global pausado')
   })
 
@@ -93,6 +95,7 @@ describe('BandejaEntrada Bot Status', () => {
 
     const buttons = wrapper.findAll('button')
     const pauseButton = buttons.find(b => b.text().includes('Pausar bot'))
+
     expect(pauseButton).toBeDefined()
   })
 
@@ -116,6 +119,7 @@ describe('BandejaEntrada Bot Status', () => {
 
     const buttons = wrapper.findAll('button')
     const resumeButton = buttons.find(b => b.text().includes('Reanudar bot'))
+
     expect(resumeButton).toBeDefined()
   })
 
@@ -192,6 +196,7 @@ describe('BandejaEntrada Bot Status', () => {
     await new Promise(r => setTimeout(r, 50))
 
     const dot = wrapper.find('.dot')
+
     expect(dot.classes()).toContain('active')
 
     // Change to paused

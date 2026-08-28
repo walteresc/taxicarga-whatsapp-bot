@@ -28,20 +28,24 @@ test.describe('Gate 4: Echo/Takeover Real E2E', () => {
 
     // Step 3: Select first conversation
     console.log('Step 3: Selecting conversation...')
+
     const firstConv = page.locator('.conversation-item').first()
     const convText = await firstConv.textContent()
+
     console.log(`Selected: ${convText.substring(0, 60)}...`)
     await firstConv.click()
     await page.waitForTimeout(1000)
 
     // Record initial messages
     const initialMsgCount = await page.locator('[class*="message"], [class*="bubble"]').count()
+
     console.log(`Initial timeline messages: ${initialMsgCount}`)
 
     // Step 4: Create echo payload with CORRECT HMAC
     console.log('Step 4: Creating echo payload...')
 
     const timestamp = Math.floor(Date.now() / 1000)
+
     const payload = {
       id: `gate4-echo-${Date.now()}`,
       type: 'whatsapp.smb.message.echoes',
@@ -66,6 +70,7 @@ test.describe('Gate 4: Echo/Takeover Real E2E', () => {
 
     // Format 2: HMAC(secret, timestamp.body) - what Django tests use
     const signedContent = `${timestampStr}.${payloadJson}`
+
     const hmac = crypto
       .createHmac('sha256', secret)
       .update(signedContent)
@@ -77,6 +82,7 @@ test.describe('Gate 4: Echo/Takeover Real E2E', () => {
 
     // Step 5: Send echo webhook
     console.log('Step 5: Sending echo webhook...')
+
     const echoResp = await page.request.post('http://localhost:8001/webhooks/ycloud/v1/', {
       headers: {
         'Content-Type': 'application/json',
@@ -88,6 +94,7 @@ test.describe('Gate 4: Echo/Takeover Real E2E', () => {
     console.log(`Echo response: ${echoResp.status()}`)
     if (echoResp.status() !== 200) {
       const errText = await echoResp.text()
+
       console.log(`Response: ${errText.substring(0, 200)}...`)
     } else {
       console.log('✓ Echo accepted (200 OK)')
@@ -99,7 +106,9 @@ test.describe('Gate 4: Echo/Takeover Real E2E', () => {
 
     // Step 7: Verify message appears
     console.log('Step 7: Checking message in timeline...')
+
     const updatedMsgCount = await page.locator('[class*="message"], [class*="bubble"]').count()
+
     console.log(`Timeline messages after echo: ${updatedMsgCount}`)
 
     if (updatedMsgCount > initialMsgCount) {
@@ -110,6 +119,7 @@ test.describe('Gate 4: Echo/Takeover Real E2E', () => {
 
     // Step 8: Verify takeover state
     console.log('Step 8: Checking takeover indicators...')
+
     const advisorBadges = await page.locator('text=/Asesor|advisor/i').count()
     const takeoverIndicators = await page.locator('[class*="takeover"], [class*="advisor"], [class*="estado-asesor"]').count()
 
@@ -130,7 +140,9 @@ test.describe('Gate 4: Echo/Takeover Real E2E', () => {
 
     // Step 10: Verify stability
     console.log('Step 10: Checking errors...')
+
     const errors = []
+
     page.on('console', msg => {
       if (msg.type() === 'error') errors.push(msg.text())
     })

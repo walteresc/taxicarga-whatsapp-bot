@@ -28,20 +28,60 @@ const { initialize, cleanup } = useWhatsAppRealtime(conversationsStore, messages
 
 onMounted(async () => {
   console.log('[LAYOUT] DefaultLayoutWithVerticalNav mounted')
+
+  // Record initialization attempt in diagnostics
+  if (typeof window !== 'undefined' && window.__WHATSAPP_REALTIME_DIAGNOSTICS__) {
+    const diagnostics = Object.values(window.__WHATSAPP_REALTIME_DIAGNOSTICS__)[0]
+    if (diagnostics) {
+      if (!diagnostics.initializationAttempts) diagnostics.initializationAttempts = []
+      diagnostics.initializationAttempts.push({
+        timestamp: new Date().toISOString(),
+        status: 'starting',
+      })
+    }
+  }
+
   try {
     // CORRECCIÓN 2: Verify authentication before initializing SSE
     console.log('[LAYOUT] Checking authentication...')
+
     const isAuthenticated = await checkAuth()
     if (!isAuthenticated) {
       console.warn('[LAYOUT] Not authenticated, skipping real-time initialization')
+
+      // Record failed auth check
+      if (typeof window !== 'undefined' && window.__WHATSAPP_REALTIME_DIAGNOSTICS__) {
+        const diagnostics = Object.values(window.__WHATSAPP_REALTIME_DIAGNOSTICS__)[0]
+        if (diagnostics && diagnostics.initializationAttempts) {
+          diagnostics.initializationAttempts[diagnostics.initializationAttempts.length - 1].status = 'auth_failed'
+        }
+      }
+      
       return
     }
     console.log('[LAYOUT] Authentication verified, calling initialize()...')
     await initialize()
     console.log('[LAYOUT] initialize() completed successfully')
+
+    // Record successful initialization
+    if (typeof window !== 'undefined' && window.__WHATSAPP_REALTIME_DIAGNOSTICS__) {
+      const diagnostics = Object.values(window.__WHATSAPP_REALTIME_DIAGNOSTICS__)[0]
+      if (diagnostics && diagnostics.initializationAttempts) {
+        diagnostics.initializationAttempts[diagnostics.initializationAttempts.length - 1].status = 'success'
+      }
+    }
   } catch (error) {
     console.error('[LAYOUT] Failed to initialize real-time:', error)
     console.error('[LAYOUT] Error details:', error.message, error.stack)
+
+    // Record failed initialization with error
+    if (typeof window !== 'undefined' && window.__WHATSAPP_REALTIME_DIAGNOSTICS__) {
+      const diagnostics = Object.values(window.__WHATSAPP_REALTIME_DIAGNOSTICS__)[0]
+      if (diagnostics && diagnostics.initializationAttempts) {
+        diagnostics.initializationAttempts[diagnostics.initializationAttempts.length - 1].status = 'error'
+        diagnostics.initializationAttempts[diagnostics.initializationAttempts.length - 1].error = error.message
+      }
+    }
   }
 })
 
@@ -53,7 +93,10 @@ onUnmounted(() => {
 <template>
   <VerticalNavLayout :class="{ 'hide-navbar': isInboxRoute }">
     <!-- 👉 navbar (hidden in bandeja-entrada) -->
-    <template v-if="!isInboxRoute" #navbar="{ toggleVerticalOverlayNavActive }">
+    <template
+      v-if="!isInboxRoute"
+      #navbar="{ toggleVerticalOverlayNavActive }"
+    >
       <div class="d-flex h-100 align-center">
         <!-- 👉 Vertical nav toggle in overlay mode -->
         <IconBtn
@@ -132,7 +175,10 @@ onUnmounted(() => {
     <slot />
 
     <!-- 👉 Footer -->
-    <template v-if="!hideFooter" #footer>
+    <template
+      v-if="!hideFooter"
+      #footer
+    >
       <Footer />
     </template>
   </VerticalNavLayout>

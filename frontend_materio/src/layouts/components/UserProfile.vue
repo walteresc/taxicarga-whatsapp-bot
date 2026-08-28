@@ -30,6 +30,7 @@ const handleLogout = async () => {
     await router.replace('/dashboard/login/')
   } catch (error) {
     console.error('Logout error:', error)
+
     // Still try to navigate to login on error
     await router.replace('/dashboard/login/')
   } finally {
@@ -50,6 +51,7 @@ function getCsrfToken() {
       }
     }
   }
+  
   return cookieValue
 }
 </script>
@@ -162,7 +164,10 @@ function getCsrfToken() {
           <VDivider class="my-2" />
 
           <!-- 👉 Logout -->
-          <VListItem @click="handleLogout" :disabled="isLoggingOut">
+          <VListItem
+            :disabled="isLoggingOut"
+            @click="handleLogout"
+          >
             <template #prepend>
               <VIcon
                 class="me-2"

@@ -16,6 +16,7 @@ test.describe('Gate 3: HMAC Debug', () => {
 
     // Step 1: Create payload
     const timestamp = String(Math.floor(Date.now() / 1000))
+
     const payload = {
       id: `debug-${Date.now()}`,  // Django looks for 'id' or 'event_id'
       type: 'whatsapp.inbound_message.received',  // Django looks for 'type' or 'event'
@@ -29,10 +30,10 @@ test.describe('Gate 3: HMAC Debug', () => {
         fromName: 'Debug',
         type: 'text',
         text: {
-          body: 'Debug HMAC test'
+          body: 'Debug HMAC test',
         },
-        timestamp: new Date().toISOString()
-      }
+        timestamp: new Date().toISOString(),
+      },
     }
 
     // CRITICAL: Use ONE raw body variable for both signing and sending
@@ -62,6 +63,7 @@ test.describe('Gate 3: HMAC Debug', () => {
 
     // Format 2: timestamp.body
     const signedContent2 = `${timestamp}.${bodyString}`
+
     const hmac2 = crypto
       .createHmac('sha256', secret)
       .update(signedContent2)
@@ -75,21 +77,24 @@ test.describe('Gate 3: HMAC Debug', () => {
     // Try both signatures
     for (const [format, hmac] of [
       ['Format 1 (body only)', hmac1],
-      ['Format 2 (timestamp.body)', hmac2]
+      ['Format 2 (timestamp.body)', hmac2],
     ]) {
       console.log(`\n--- Testing ${format} ---`)
+
       const yCloudSignature = `t=${timestamp},s=${hmac}`
 
       const resp = await page.request.post('http://localhost:8001/webhooks/ycloud/v1/', {
         headers: {
           'Content-Type': 'application/json',
-          'Ycloud-Signature': yCloudSignature
+          'Ycloud-Signature': yCloudSignature,
         },
-        data: rawBody  // CRITICAL: Send exact raw body, not payload object
+        data: rawBody,  // CRITICAL: Send exact raw body, not payload object
       })
 
       console.log(`Response status: ${resp.status()}`)
+
       const respText = await resp.text()
+
       console.log(`Response: ${respText}`)
 
       if (resp.status() !== 200) {

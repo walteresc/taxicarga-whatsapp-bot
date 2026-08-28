@@ -9,7 +9,7 @@ def get_pizarra():
     from apps.campo.views import pizarra
     return pizarra
 
-from .views_whatsapp import whatsapp_conversacion_accion, whatsapp_conversaciones, conversation_messages, pause_bot, resume_bot, api_active_conversations, api_unread_counts, api_events_stream
+from .views_whatsapp import whatsapp_conversacion_accion, whatsapp_conversaciones, conversation_messages, pause_bot, resume_bot, mark_conversation_read, api_active_conversations, api_unread_counts, api_events_stream, api_send_message
 from .views_sse import sse_events_stream, debug_redis
 from .views_auth_api import api_login, api_logout, api_user, api_check_auth
 from apps.whatsapp.views_realtime import sse_conversation_updates
@@ -70,6 +70,8 @@ urlpatterns = [
     path("whatsapp/conversaciones/<int:conversation_id>/mensajes/", conversation_messages, name="conversation-messages"),
     path("whatsapp/conversaciones/<int:conversation_id>/pause-bot/", pause_bot, name="pause-bot"),
     path("whatsapp/conversaciones/<int:conversation_id>/resume-bot/", resume_bot, name="resume-bot"),
+    path("whatsapp/conversaciones/<int:conversation_id>/mark-read/", mark_conversation_read, name="mark-conversation-read"),
+    path("whatsapp/conversaciones/<int:conversation_id>/enviar/", api_send_message, name="api-send-message"),
     path("whatsapp/conversaciones/<int:conversation_id>/sse/", sse_conversation_updates, name="sse-conversation-updates"),
     path("whatsapp/sse/", sse_global_updates, name="sse-global-updates"),
     path("whatsapp/por-cotizar/", whatsapp_por_cotizar, name="dashboard-whatsapp-por-cotizar"),

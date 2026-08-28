@@ -33,6 +33,7 @@ test.describe('E2E Complete: WhatsApp SSE Streaming', () => {
 
     // Send webhook
     const webhookRes = await context.request.post(WEBHOOK_URL, { data: payload })
+
     expect(webhookRes.ok()).toBe(true)
 
     // Wait for message to appear (SSE or polling)
@@ -41,10 +42,12 @@ test.describe('E2E Complete: WhatsApp SSE Streaming', () => {
     // Check: message visible somewhere on page
     const textElement = page.locator(`text="${testId}"`)
     const isVisible = await textElement.first().isVisible().catch(() => false)
+
     expect(isVisible || (await page.locator('body').textContent()).includes(testId)).toBe(true)
 
     // Verify no reload
     const reloadCount = await page.evaluate(() => window.performance.navigation.type === 1 ? 1 : 0)
+
     expect(reloadCount).toBe(0)
   })
 
@@ -79,6 +82,7 @@ test.describe('E2E Complete: WhatsApp SSE Streaming', () => {
 
     // Check: conversation shows takeover state (UI-specific)
     const bodyText = await page.locator('body').textContent()
+
     expect(bodyText.includes('Advisor taking over')).toBe(true)
   })
 
@@ -155,6 +159,7 @@ test.describe('E2E Complete: WhatsApp SSE Streaming', () => {
     // This test needs network interception to work properly
     // For now, just verify polling endpoint exists
     const pollRes = await context.request.get(`${DJANGO_API}/api/events/polling/`)
+
     expect(pollRes.status()).toBeLessThan(500)
   })
 
@@ -171,6 +176,7 @@ test.describe('E2E Complete: WhatsApp SSE Streaming', () => {
 
   test('7. Message counts: unread badge increments on inbound', async ({ page, context }) => {
     const testPhone = `+5191${Date.now().toString().slice(-6)}`
+
     const payload = {
       from: testPhone,
       to: '51967619238',
@@ -193,6 +199,7 @@ test.describe('E2E Complete: WhatsApp SSE Streaming', () => {
 
     // Check if message appeared
     const bodyText = await page.locator('body').textContent()
+
     expect(bodyText.includes('Unread test')).toBe(true)
   })
 })

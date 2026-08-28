@@ -42,7 +42,11 @@ const handleLogin = async () => {
           </div>
 
           <!-- Error message -->
-          <VAlert v-if="error" type="error" class="mb-6">
+          <VAlert
+            v-if="error"
+            type="error"
+            class="mb-6"
+          >
             {{ error }}
           </VAlert>
 
@@ -69,9 +73,9 @@ const handleLogin = async () => {
               autocomplete="current-password"
               prepend-inner-icon="ri-lock-line"
               :append-inner-icon="isPasswordVisible ? 'ri-eye-off-line' : 'ri-eye-line'"
-              @click:append-inner="isPasswordVisible = !isPasswordVisible"
               class="mb-4"
               required
+              @click:append-inner="isPasswordVisible = !isPasswordVisible"
             />
 
             <!-- Submit button -->
@@ -81,13 +85,20 @@ const handleLogin = async () => {
               :disabled="loading"
               class="mb-4"
             >
-              <VIcon v-if="loading" icon="ri-loader-4-line" class="spinner" />
+              <VIcon
+                v-if="loading"
+                icon="ri-loader-4-line"
+                class="spinner"
+              />
               <span v-if="!loading">Iniciar sesión</span>
               <span v-else>Iniciando sesión...</span>
             </VBtn>
 
             <!-- Demo info -->
-            <VAlert type="info" class="mt-4">
+            <VAlert
+              type="info"
+              class="mt-4"
+            >
               <strong>Demo:</strong> testadmin / testpass123
             </VAlert>
           </VForm>

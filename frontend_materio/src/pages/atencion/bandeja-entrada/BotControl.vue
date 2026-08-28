@@ -3,15 +3,26 @@
     <div class="control-card">
       <h3>Control Bot Global</h3>
       <div class="status">
-        <span :class="['status-badge', botStatus]">
+        <span
+          class="status-badge"
+          :class="[botStatus]"
+        >
           {{ botStatus === 'ACTIVO' ? '✓ Activo' : '⏸ Pausado' }}
         </span>
       </div>
       <div class="buttons">
-        <button v-if="botStatus === 'PAUSADO'" @click="activateBot" class="btn-activate">
+        <button
+          v-if="botStatus === 'PAUSADO'"
+          class="btn-activate"
+          @click="activateBot"
+        >
           Activar Bot
         </button>
-        <button v-else @click="pauseBot" class="btn-pause">
+        <button
+          v-else
+          class="btn-pause"
+          @click="pauseBot"
+        >
           Pausar Bot
         </button>
       </div>
@@ -29,6 +40,7 @@ const loading = ref(false)
 const checkBotStatus = async () => {
   try {
     const response = await conversationService.getBotStatus()
+
     botStatus.value = response.status === 'active' ? 'ACTIVO' : 'PAUSADO'
   } catch (error) {
     console.error('Error checking bot status:', error)

@@ -7,19 +7,30 @@
       </div>
       <div class="header-right">
         <div class="status-indicator">
-          <span :class="['dot', botGlobalPaused ? 'inactive' : 'active']"></span>
+          <span
+            class="dot"
+            :class="[botGlobalPaused ? 'inactive' : 'active']"
+          />
           <span class="status-text">{{ botGlobalPaused ? 'Bot global pausado' : 'Bot global activo' }}</span>
         </div>
-        <button v-if="botGlobalPaused" @click="activateBot" class="activate-btn">
-          <i class="ri-play-line"></i>
+        <button
+          v-if="botGlobalPaused"
+          class="activate-btn"
+          @click="activateBot"
+        >
+          <i class="ri-play-line" />
           Reanudar bot
         </button>
-        <button v-else @click="pauseBot" class="pause-btn">
-          <i class="ri-pause-line"></i>
+        <button
+          v-else
+          class="pause-btn"
+          @click="pauseBot"
+        >
+          <i class="ri-pause-line" />
           Pausar bot
         </button>
         <button class="settings-btn">
-          <i class="ri-settings-3-line"></i>
+          <i class="ri-settings-3-line" />
         </button>
       </div>
     </div>
@@ -46,7 +57,10 @@
       </div>
 
       <!-- Panel derecho: Información del contacto (desktop) -->
-      <div v-if="selectedConversation && isDesktop" class="right-panel">
+      <div
+        v-if="selectedConversation && isDesktop"
+        class="right-panel"
+      >
         <ContactDetailsComponent
           :contact="selectedConversation"
           :service="selectedConversation.serviceData"
@@ -82,11 +96,12 @@ const isDesktop = computed(() => mdAndUp.value)
 const effectiveBotPaused = computed(() => {
   const globalPaused = botGlobalPaused.value
   const conversationPaused = selectedConversation.value?.bot_paused ?? false
+  
   return globalPaused || conversationPaused
 })
 
 // Métodos
-const selectConversation = (conversation) => {
+const selectConversation = conversation => {
   selectedConversationId.value = conversation.id
   selectedConversation.value = conversation
 }
@@ -114,6 +129,7 @@ const activateBot = async () => {
 const loadBotStatus = async () => {
   try {
     const status = await conversationService.getBotStatus()
+
     botGlobalPaused.value = status.is_paused
     console.log('[BandejaPagina] Estado del bot cargado:', { is_paused: status.is_paused })
   } catch (error) {

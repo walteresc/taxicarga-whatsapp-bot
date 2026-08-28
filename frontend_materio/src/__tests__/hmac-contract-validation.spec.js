@@ -14,6 +14,7 @@ import crypto from 'crypto'
 test.describe('HMAC Contract Validation', () => {
   const timestamp = String(Math.floor(Date.now() / 1000))
   const secret = 'test_secret_e2e'
+
   const basePayload = {
     id: `hmac-contract-${Date.now()}`,
     type: 'whatsapp.inbound_message.received',
@@ -33,6 +34,7 @@ test.describe('HMAC Contract Validation', () => {
 
   test('Format 1: HMAC(secret, body_only) - canonical or permissive?', async ({ page }) => {
     const rawBody = JSON.stringify(basePayload)
+
     const hmac = crypto
       .createHmac('sha256', secret)
       .update(rawBody)
@@ -55,17 +57,23 @@ test.describe('HMAC Contract Validation', () => {
     })
 
     console.log(`Response: ${resp.status()} ${resp.statusText()}`)
+
     const respBody = await resp.text()
+
     console.log(`Body: ${respBody}`)
 
     if (resp.status() === 200) {
       console.log(`✅ Format 1 ACCEPTED`)
+
+
       // Query DB to verify persistence
       const eventResp = await page.request.get(
-        `http://localhost:8001/api/webhook-events/?external_id=${basePayload.id}`
+        `http://localhost:8001/api/webhook-events/?external_id=${basePayload.id}`,
       )
+
       if (eventResp.ok) {
         const events = await eventResp.json()
+
         console.log(`✅ WebhookEvent created: ${events.length} entry`)
       }
     } else if (resp.status() === 401) {
@@ -78,6 +86,7 @@ test.describe('HMAC Contract Validation', () => {
   test('Format 2: HMAC(secret, timestamp.body) - canonical or permissive?', async ({ page }) => {
     const rawBody = JSON.stringify(basePayload)
     const signedContent = `${timestamp}.${rawBody}`
+
     const hmac = crypto
       .createHmac('sha256', secret)
       .update(signedContent)
@@ -101,7 +110,9 @@ test.describe('HMAC Contract Validation', () => {
     })
 
     console.log(`Response: ${resp.status()} ${resp.statusText()}`)
+
     const respBody = await resp.text()
+
     console.log(`Body: ${respBody}`)
 
     if (resp.status() === 200) {
@@ -135,6 +146,7 @@ test.describe('HMAC Contract Validation', () => {
 
   test('Modified body after signing returns 401', async ({ page }) => {
     const originalBody = JSON.stringify(basePayload)
+
     const hmac = crypto
       .createHmac('sha256', secret)
       .update(originalBody)

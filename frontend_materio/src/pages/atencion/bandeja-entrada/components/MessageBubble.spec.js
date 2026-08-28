@@ -24,15 +24,18 @@ describe('MessageBubble', () => {
     })
 
     const container = wrapper.find('[data-sender="customer"]')
+
     expect(container.exists()).toBe(true)
     expect(container.classes()).toContain('message-container')
     expect(container.classes()).toContain('message-container--customer')
 
     const bubble = wrapper.find('.message-bubble--customer')
+
     expect(bubble.exists()).toBe(true)
     expect(bubble.classes()).toContain('message-bubble')
 
     const text = wrapper.text()
+
     expect(text).toContain('Hola, ¿cómo están?')
   })
 
@@ -52,12 +55,15 @@ describe('MessageBubble', () => {
     })
 
     const container = wrapper.find('[data-sender="bot"]')
+
     expect(container.classes()).toContain('message-container--bot')
 
     const bubble = wrapper.find('.message-bubble--bot')
+
     expect(bubble.exists()).toBe(true)
 
     const text = wrapper.text()
+
     expect(text).toContain('Buenos días')
   })
 
@@ -77,12 +83,15 @@ describe('MessageBubble', () => {
     })
 
     const container = wrapper.find('[data-sender="advisor"]')
+
     expect(container.classes()).toContain('message-container--advisor')
 
     const bubble = wrapper.find('.message-bubble--advisor')
+
     expect(bubble.exists()).toBe(true)
 
     const senderName = wrapper.find('.sender-name')
+
     expect(senderName.exists()).toBe(true)
     expect(senderName.text()).toBe('Juan Pérez')
   })
@@ -138,10 +147,12 @@ describe('MessageBubble', () => {
     })
 
     const messageFooter = wrapper.find('.message-footer')
+
     expect(messageFooter.exists()).toBe(true)
 
     // Should display some time (format may vary by timezone)
     const text = wrapper.text()
+
     expect(text).toContain(':') // Should have time format with colon
     expect(text).toMatch(/\d{1,2}:\d{2}/) // HH:MM format
   })
@@ -163,11 +174,13 @@ describe('MessageBubble', () => {
     })
 
     const messageText = wrapper.find('.message-text')
+
     expect(messageText.exists()).toBe(true)
     expect(messageText.text()).toBe(longText)
 
     // Verify component has BEM modifier class for customer
     const bubble = wrapper.find('.message-bubble')
+
     expect(bubble.exists()).toBe(true)
     expect(bubble.classes()).toContain('message-bubble--customer')
   })
@@ -212,6 +225,7 @@ describe('MessageBubble', () => {
     expect(wrapper.find('.message-footer').exists()).toBe(true)
 
     const containerText = wrapper.text()
+
     expect(containerText).toContain('Mensaje de prueba')
     expect(containerText).toMatch(/\d{1,2}:\d{2}/) // Should contain time format
   })

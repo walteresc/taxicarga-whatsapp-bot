@@ -67,6 +67,13 @@ class Cliente(models.Model):
         default=True,
         help_text="Deactivated if merged or duplicate"
     )
+    ycloud_user_id = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        db_index=True,
+        help_text="YCloud internal fromUserId — fallback identity when the webhook omits 'from' (e.g. reply/quote messages)"
+    )
 
     class Meta:
         ordering = ["-ultima_interaccion"]

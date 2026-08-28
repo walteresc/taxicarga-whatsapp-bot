@@ -44,6 +44,12 @@ CSRF_TRUSTED_ORIGINS = [
 SESSION_COOKIE_SAMESITE = "Lax"
 SESSION_COOKIE_SECURE = False
 CSRF_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_SECURE = False
+# The SPA reads the CSRF cookie via JS (document.cookie) to send it back as the
+# X-CSRFToken header — this is Django's own documented AJAX/SPA pattern, so this
+# cookie (unlike the session cookie) must NOT be HttpOnly. Django's default for
+# this setting changed to True in a later version; pin it explicitly.
+CSRF_COOKIE_HTTPONLY = False
 
 INSTALLED_APPS = [
     "django.contrib.admin",

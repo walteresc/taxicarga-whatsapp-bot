@@ -27,6 +27,7 @@ test('Heartbeat: Real SSE stream 40s, captures heartbeat ~30s', async ({ page })
     // Intercept fetch to EventSource if possible
     if (window.EventSource) {
       const OrigES = window.EventSource
+
       window.EventSource = class extends OrigES {
         constructor(url) {
           super(url)
@@ -37,9 +38,10 @@ test('Heartbeat: Real SSE stream 40s, captures heartbeat ~30s', async ({ page })
             window.__streamOpen = Date.now()
           })
 
-          this.addEventListener('message', (e) => {
+          this.addEventListener('message', e => {
             if (e.data.includes(':heartbeat')) {
               const elapsed = (Date.now() - window.__streamStart) / 1000
+
               window.__heartbeats.push(elapsed)
               console.log(`[HEARTBEAT] ${elapsed.toFixed(1)}s: ${e.data.substring(0, 40)}`)
             } else if (e.data.trim().length > 0) {
@@ -93,16 +95,19 @@ test('Heartbeat: Real SSE stream 40s, captures heartbeat ~30s', async ({ page })
       intervals.push(hbData.heartbeats[i] - hbData.heartbeats[i - 1])
     }
     const avgInterval = intervals.reduce((a, b) => a + b) / intervals.length
+
     console.log(`[HEARTBEAT INTERVALS] Average: ${avgInterval.toFixed(1)}s, Count: ${intervals.length}`)
   }
 
   // Verify connection stayed open
   const pageTitle = await page.title()
+
   expect(pageTitle).toBeTruthy()
   console.log(`[CHECK] Page intact, title: ${pageTitle}`)
 
   // Verify no reload
   const reloadCount = await page.evaluate(() => window.performance.navigation.type === 1 ? 1 : 0)
+
   expect(reloadCount).toBe(0)
   console.log(`[CHECK] No page reload detected`)
 

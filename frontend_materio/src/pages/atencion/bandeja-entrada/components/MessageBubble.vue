@@ -1,24 +1,180 @@
 <template>
-  <div :class="['message-container', `message-container--${message.senderType}`]" :data-testid="`message-row-${message.id}`" :data-sender="message.senderType">
+  <div
+    class="message-container"
+    :class="[`message-container--${message.senderType}`]"
+    :data-testid="`message-row-${message.id}`"
+    :data-sender="message.senderType"
+  >
     <!-- Mostrar nombre del asesor/bot encima del mensaje -->
-    <div v-if="showSenderName" class="sender-name">{{ message.senderName }}</div>
+    <div
+      v-if="showSenderName"
+      class="sender-name"
+    >
+      {{ message.senderName }}
+    </div>
 
     <!-- Burbuja del mensaje -->
-    <div :class="['message-bubble', `message-bubble--${message.senderType}`]" :data-testid="`message-bubble-${message.id}`">
-      <p class="message-text">{{ message.text }}</p>
+    <div
+      class="message-bubble"
+      :class="[`message-bubble--${message.senderType}`]"
+      :data-testid="`message-bubble-${message.id}`"
+    >
+      <!-- Contenido de imagen -->
+      <div
+        v-if="message.contentType === 'image'"
+        class="message-multimedia"
+      >
+        <template v-if="hasAttachments">
+          <img
+            v-for="(attachment, idx) in message.attachments"
+            :key="idx"
+            :src="attachment.url"
+            :alt="attachment.filename || 'Imagen'"
+            class="message-image"
+          >
+        </template>
+        <div
+          v-else
+          class="message-unavailable"
+        >
+          <i class="ri-image-line" />
+          <span>Imagen no disponible</span>
+        </div>
+        <p
+          v-if="message.caption"
+          class="message-caption"
+        >{{ message.caption }}</p>
+      </div>
+
+      <!-- Contenido de audio -->
+      <div
+        v-else-if="message.contentType === 'audio'"
+        class="message-multimedia"
+      >
+        <template v-if="hasAttachments">
+          <div
+            v-for="(attachment, idx) in message.attachments"
+            :key="idx"
+            class="message-audio"
+          >
+            <audio
+              controls
+              class="audio-player"
+            >
+              <source
+                :src="attachment.url"
+                :type="attachment.mime_type || 'audio/ogg'"
+              >
+              Tu navegador no soporta audio.
+            </audio>
+          </div>
+        </template>
+        <div
+          v-else
+          class="message-unavailable"
+        >
+          <i class="ri-mic-line" />
+          <span>Audio no disponible</span>
+        </div>
+      </div>
+
+      <!-- Contenido de video -->
+      <div
+        v-else-if="message.contentType === 'video'"
+        class="message-multimedia"
+      >
+        <template v-if="hasAttachments">
+          <video
+            v-for="(attachment, idx) in message.attachments"
+            :key="idx"
+            controls
+            class="message-video"
+          >
+            <source
+              :src="attachment.url"
+              :type="attachment.mime_type || 'video/mp4'"
+            >
+            Tu navegador no soporta video.
+          </video>
+        </template>
+        <div
+          v-else
+          class="message-unavailable"
+        >
+          <i class="ri-video-line" />
+          <span>Video no disponible</span>
+        </div>
+        <p
+          v-if="message.caption"
+          class="message-caption"
+        >{{ message.caption }}</p>
+      </div>
+
+      <!-- Contenido de documento -->
+      <div
+        v-else-if="message.contentType === 'document'"
+        class="message-document"
+      >
+        <template v-if="hasAttachments">
+          <div
+            v-for="(attachment, idx) in message.attachments"
+            :key="idx"
+            class="document-link"
+          >
+            <a
+              :href="attachment.url"
+              :download="attachment.filename"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <i class="ri-file-download-line" />
+              {{ attachment.filename || 'Descargar archivo' }}
+            </a>
+          </div>
+        </template>
+        <div
+          v-else
+          class="message-unavailable"
+        >
+          <i class="ri-file-line" />
+          <span>Documento no disponible</span>
+        </div>
+      </div>
+
+      <!-- Contenido de texto -->
+      <p
+        v-else
+        class="message-text"
+      >
+        {{ message.text }}
+      </p>
 
       <div class="message-footer">
         <span class="message-time">{{ formatTime(message.timestamp) }}</span>
-        <span v-if="showStatus" :class="['message-status', message.status]">
-          <i :class="getStatusIcon(message.status)"></i>
+        <span
+          v-if="showStatus"
+          class="message-status"
+          :class="[message.status]"
+        >
+          <i :class="getStatusIcon(message.status)" />
         </span>
       </div>
     </div>
 
     <!-- Botón de reintentar si falló -->
-    <div v-if="message.status === 'failed'" class="message-retry">
-      <button @click="retryMessage" class="retry-btn">
-        <i class="ri-refresh-line"></i>
+    <div
+      v-if="message.status === 'failed'"
+      class="message-retry"
+    >
+      <span
+        v-if="message.errorDetail"
+        class="retry-error-detail"
+      >{{ message.errorDetail }}</span>
+      <button
+        class="retry-btn"
+        @click="retryMessage"
+      >
+        <i class="ri-refresh-line" />
         Reintentar
       </button>
     </div>
@@ -47,11 +203,15 @@ const showStatus = computed(() => {
   return props.message.senderType === 'advisor' && props.message.status
 })
 
-const formatTime = (timestamp) => {
+const hasAttachments = computed(() => {
+  return Array.isArray(props.message.attachments) && props.message.attachments.length > 0
+})
+
+const formatTime = timestamp => {
   return formatMessageTime(timestamp) || ''
 }
 
-const getStatusIcon = (status) => {
+const getStatusIcon = status => {
   const icons = {
     sending: 'ri-time-line',
     sent: 'ri-check-line',
@@ -59,6 +219,8 @@ const getStatusIcon = (status) => {
     read: 'ri-check-double-fill',
     failed: 'ri-close-circle-line',
   }
+
+  
   return icons[status] || 'ri-time-line'
 }
 
@@ -212,8 +374,17 @@ const retryMessage = () => {
 /* Botón de reintentar */
 .message-retry {
   display: flex;
-  justify-content: flex-end;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
   margin-top: 4px;
+}
+
+.retry-error-detail {
+  font-size: 11px;
+  color: #f44336;
+  text-align: right;
+  max-width: 240px;
 }
 
 .retry-btn {
@@ -237,5 +408,106 @@ const retryMessage = () => {
 
 .retry-btn i {
   font-size: 12px;
+}
+
+/* Multimedia */
+.message-multimedia {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.message-image {
+  max-width: 100%;
+  max-height: 300px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.message-video {
+  max-width: 100%;
+  max-height: 300px;
+  border-radius: 6px;
+}
+
+.audio-player {
+  width: 100%;
+  max-width: 300px;
+  height: 32px;
+  border-radius: 4px;
+}
+
+.message-caption {
+  margin: 4px 0 0 0;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.message-unavailable {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 4px;
+  font-size: 13px;
+  font-style: italic;
+  opacity: 0.75;
+  min-width: 140px;
+}
+
+.message-unavailable i {
+  font-size: 16px;
+}
+
+.message-document {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.document-link {
+  display: flex;
+  align-items: center;
+}
+
+.document-link a {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  text-decoration: none;
+  transition: all 0.2s;
+  word-break: break-all;
+}
+
+.message-bubble--customer .document-link a {
+  color: #1976d2;
+  background: rgba(25, 118, 210, 0.1);
+}
+
+.message-bubble--customer .document-link a:hover {
+  background: rgba(25, 118, 210, 0.2);
+}
+
+.message-bubble--bot .document-link a {
+  color: #1976d2;
+  background: rgba(25, 118, 210, 0.1);
+}
+
+.message-bubble--bot .document-link a:hover {
+  background: rgba(25, 118, 210, 0.2);
+}
+
+.message-bubble--advisor .document-link a {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.message-bubble--advisor .document-link a:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.document-link i {
+  font-size: 16px;
 }
 </style>

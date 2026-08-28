@@ -334,6 +334,89 @@ def _download_whatsapp_media(cliente, lead, event, allowed_types, max_bytes):
 
 
 # ============================================================================
+# CRM outbound send (advisor manual reply from the SPA)
+# ============================================================================
+
+def send_crm_message(conversacion, actor, contenido):
+    """Send an outbound text message from the CRM (advisor manual reply).
+
+    Service-layer function — not tied to any specific view/channel, so other
+    surfaces (other channels, future automations) can reuse it.
+
+    The MensajeWhatsApp row is created ONCE, after the YCloud call resolves, already
+    carrying its final estado. This keeps the post_save signal (which publishes to
+    Redis for SSE) firing exactly once with correct, final data — no intermediate
+    "pendiente" state observable by other connected clients.
+
+    Storing meta_message_id = the wamid YCloud returns, with source=SOURCE_CRM, lets
+    classify_event()'s existing echo-dedup guard recognize a later echo of this same
+    wamid and skip it (see YCloudMessageProcessor.classify_event, EVENT_ECHO branch).
+
+    Returns:
+        {
+            "success": bool,
+            "message": MensajeWhatsApp,
+            "error_code": str | None,
+            "error_detail": str | None,
+        }
+    """
+    contenido = (contenido or "").strip()
+    if not contenido:
+        return {
+            "success": False, "message": None,
+            "error_code": "empty_message", "error_detail": "Escribe un mensaje.",
+        }
+
+    if not (settings.YCLOUD_ENABLED and settings.YCLOUD_API_KEY):
+        result = {
+            "success": False,
+            "code": "ycloud_unavailable",
+            "message": "El envío por YCloud no está habilitado o falta configurar la API key.",
+        }
+    else:
+        from apps.whatsapp_bot_v4.services.ycloud_webhook_service import send_via_ycloud
+        result = send_via_ycloud(conversacion.cliente.telefono, contenido)
+
+    if result.get("success"):
+        estado = "enviado"
+        error_codigo = ""
+        error_detalle = ""
+        meta_message_id = result.get("wamid", "")
+    else:
+        estado = "error"
+        error_codigo = (result.get("code") or "send_failed")[:80]
+        error_detalle = result.get("message") or "No se pudo enviar el mensaje."
+        combined = f"{error_codigo} {error_detalle}".lower()
+        if "balance" in combined or "insufficient" in combined:
+            error_codigo = "insufficient_balance"
+            error_detalle = "Saldo insuficiente en la cuenta de YCloud para enviar mensajes."
+        meta_message_id = ""
+
+    mensaje = MensajeWhatsApp.objects.create(
+        conversacion=conversacion,
+        direccion=MensajeWhatsApp.SALIENTE,
+        origen=MensajeWhatsApp.ORIGEN_ASESOR,
+        tipo="texto",
+        contenido=contenido,
+        autor=actor,
+        estado=estado,
+        error_codigo=error_codigo,
+        error_detalle=error_detalle,
+        sender_type=MensajeWhatsApp.SENDER_ADVISOR,
+        source=MensajeWhatsApp.SOURCE_CRM,
+        meta_message_id=meta_message_id,
+        fecha_mensaje=timezone.now(),
+    )
+
+    return {
+        "success": result.get("success", False),
+        "message": mensaje,
+        "error_code": error_codigo or None,
+        "error_detail": error_detalle or None,
+    }
+
+
+# ============================================================================
 # Phase C: Secure multimedia download and storage (2026-08-20)
 # ============================================================================
 
@@ -412,7 +495,9 @@ def download_mensaje_adjunto(
         logger.error("YCLOUD_API_KEY not configured")
         return {"success": False, "reason": "api_key_missing"}
 
-    headers = {"Authorization": f"Bearer {api_key}"}
+    # YCloud's REST API authenticates via the 'X-API-Key' header, not Bearer tokens
+    # (confirmed against docs.ycloud.com/reference/authentication).
+    headers = {"X-API-Key": api_key}
     content = None
     file_size = 0
     sha256_hash = ""

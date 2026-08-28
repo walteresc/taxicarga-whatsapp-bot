@@ -2,7 +2,7 @@ from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
-from django.views.decorators.csrf import csrf_exempt, csrf_protect
+from django.views.decorators.csrf import csrf_exempt, csrf_protect, ensure_csrf_cookie
 import json
 import logging
 
@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 @csrf_exempt
+@ensure_csrf_cookie
 @require_http_methods(["POST"])
 def api_login(request):
     """API login endpoint - accepts JSON with username/password, returns user info"""
@@ -78,6 +79,7 @@ def api_logout(request):
     return JsonResponse({'status': 'ok'})
 
 
+@ensure_csrf_cookie
 @require_http_methods(["GET"])
 def api_check_auth(request):
     """Check if user is authenticated"""
