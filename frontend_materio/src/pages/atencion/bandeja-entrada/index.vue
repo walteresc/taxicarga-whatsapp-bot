@@ -3,7 +3,7 @@
     <!-- Cabecera principal -->
     <div class="page-header">
       <div class="header-left">
-        <h1>Bandeja de entrada <span class="count-badge">{{ conversationCount }}</span></h1>
+        <h1>{{ currentView === 'archived' ? 'Archivados' : 'Bandeja de entrada' }} <span class="count-badge">{{ conversationCount }}</span></h1>
       </div>
       <div class="header-right">
         <div class="status-indicator">
@@ -29,6 +29,30 @@
           <i class="ri-pause-line" />
           Pausar bot
         </button>
+        <div class="status-indicator transportistas-indicator">
+          <span
+            class="dot"
+            :class="[transportistasBotPaused ? 'inactive' : 'active']"
+          />
+          <span class="status-text">🚚 {{ transportistasBotPaused ? 'Bot transportistas pausado' : 'Bot transportistas activo' }}</span>
+        </div>
+        <button
+          v-if="transportistasBotPaused"
+          class="activate-btn"
+          :title="!transportistasBotFlagHabilitado ? 'TRANSPORTISTA_BOT_ENABLED está en false — no responderá aunque actives esto' : ''"
+          @click="activateTransportistasBot"
+        >
+          <i class="ri-play-line" />
+          Reanudar
+        </button>
+        <button
+          v-else
+          class="pause-btn"
+          @click="pauseTransportistasBot"
+        >
+          <i class="ri-pause-line" />
+          Pausar
+        </button>
         <button class="settings-btn">
           <i class="ri-settings-3-line" />
         </button>
@@ -36,13 +60,17 @@
     </div>
 
     <!-- Área de trabajo principal -->
-    <div class="main-container">
+    <div
+      class="main-container"
+      :class="{ 'panel-collapsed': !showRightPanel }"
+    >
       <!-- Panel izquierdo: Lista de conversaciones -->
       <div class="left-panel">
         <ConversationListComponent
           :selected-conversation-id="selectedConversationId"
           @conversation-selected="selectConversation"
           @update-count="conversationCount = $event"
+          @update-view="currentView = $event"
         />
       </div>
 
@@ -53,21 +81,41 @@
           :conversation="selectedConversation"
           :bot-global-paused="botGlobalPaused"
           :effective-bot-paused="effectiveBotPaused"
+          @show-info="handleShowInfo"
         />
       </div>
 
-      <!-- Panel derecho: Información del contacto (desktop) -->
+      <!-- Panel derecho: Información del contacto (pantallas anchas, empotrado) -->
       <div
-        v-if="selectedConversation && isDesktop"
+        v-if="showRightPanel"
         class="right-panel"
       >
         <ContactDetailsComponent
           :contact="selectedConversation"
           :service="selectedConversation.serviceData"
           :advisor="selectedConversation.responsable"
+          @close="infoPanelOpen = false"
         />
       </div>
     </div>
+
+    <!-- Información del contacto (pantallas angostas, modal flotante) -->
+    <Teleport to="body">
+      <div
+        v-if="selectedConversation && isNarrowForPanel && infoModalOpen"
+        class="info-modal-overlay"
+        @click.self="infoModalOpen = false"
+      >
+        <div class="info-modal-panel">
+          <ContactDetailsComponent
+            :contact="selectedConversation"
+            :service="selectedConversation.serviceData"
+            :advisor="selectedConversation.responsable"
+            @close="infoModalOpen = false"
+          />
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -81,16 +129,43 @@ import { conversationService } from '@/services/conversationService'
 import { useAuthGuard } from '@/composables/useAuthGuard'
 
 const { checkAuth } = useAuthGuard()
-const { mdAndUp } = useDisplay()
+const { width } = useDisplay()
 
 // Estado único para la conversación seleccionada
 const selectedConversationId = ref(null)
 const selectedConversation = ref(null)
 const botGlobalPaused = ref(false)  // true = paused, false = active
+
+// Bot de transportistas — interruptor INDEPENDIENTE del bot de clientes de
+// arriba (pueden combinarse en cualquier estado). Default true (pausado)
+// hasta que se confirme el estado real del servidor, para no sugerir
+// brevemente que está activo antes de cargar.
+const transportistasBotPaused = ref(true)
+const transportistasBotFlagHabilitado = ref(true)
 const conversationCount = ref(0)
+const currentView = ref('inbox')
+
+// Panel "Información" del contacto: empotrado en pantallas anchas, modal flotante
+// en pantallas angostas (por debajo del ancho en que el right-panel ya se ocultaba).
+const infoPanelOpen = ref(true)
+const infoModalOpen = ref(false)
 
 // Computed
-const isDesktop = computed(() => mdAndUp.value)
+const isNarrowForPanel = computed(() => width.value < 1440)
+
+// Whether the inline right-panel column should exist at all — used both to render
+// it and to collapse the grid track so the chat reclaims that width when closed.
+const showRightPanel = computed(() => (
+  Boolean(selectedConversation.value) && !isNarrowForPanel.value && infoPanelOpen.value
+))
+
+const handleShowInfo = () => {
+  if (isNarrowForPanel.value) {
+    infoModalOpen.value = true
+  } else {
+    infoPanelOpen.value = true
+  }
+}
 
 // CORRECCIÓN 1: Estado efectivo del bot = global OR conversación individual
 const effectiveBotPaused = computed(() => {
@@ -102,8 +177,12 @@ const effectiveBotPaused = computed(() => {
 
 // Métodos
 const selectConversation = conversation => {
-  selectedConversationId.value = conversation.id
-  selectedConversation.value = conversation
+  // null: the open conversation was archived (or otherwise closed) — clear the panel.
+  selectedConversationId.value = conversation?.id || null
+  selectedConversation.value = conversation || null
+
+  // Never carry a floating info modal over to a different conversation.
+  infoModalOpen.value = false
 }
 
 const pauseBot = async () => {
@@ -137,14 +216,54 @@ const loadBotStatus = async () => {
   }
 }
 
+const loadTransportistasBotStatus = async () => {
+  try {
+    const response = await fetch('/dashboard/tercerizacion/bot/estado/', { credentials: 'include' })
+    const data = await response.json()
+
+    transportistasBotPaused.value = data.transportistas_pausado
+    transportistasBotFlagHabilitado.value = data.transportistas_flag_habilitado
+  } catch (error) {
+    console.error('Error getting transportistas bot status:', error)
+  }
+}
+
+const pauseTransportistasBot = async () => {
+  try {
+    const response = await fetch('/dashboard/tercerizacion/bot/pausar/', {
+      method: 'POST',
+      headers: { 'X-CSRFToken': conversationService.getCsrfToken() },
+      credentials: 'include',
+    })
+    const data = await response.json()
+    if (data?.success) transportistasBotPaused.value = true
+  } catch (error) {
+    console.error('Error pausing transportistas bot:', error)
+  }
+}
+
+const activateTransportistasBot = async () => {
+  try {
+    const response = await fetch('/dashboard/tercerizacion/bot/activar/', {
+      method: 'POST',
+      headers: { 'X-CSRFToken': conversationService.getCsrfToken() },
+      credentials: 'include',
+    })
+    const data = await response.json()
+    if (data?.success) transportistasBotPaused.value = false
+  } catch (error) {
+    console.error('Error activating transportistas bot:', error)
+  }
+}
+
 // Lifecycle
 onMounted(async () => {
   // Verificar autenticación
   const isAuth = await checkAuth()
   if (!isAuth) return
 
-  // Cargar estado del bot global
-  await loadBotStatus()
+  // Cargar estado de ambos bots — independientes
+  await Promise.all([loadBotStatus(), loadTransportistasBotStatus()])
 })
 </script>
 
@@ -274,6 +393,12 @@ onMounted(async () => {
   height: 100%;
   width: 100%;
   align-items: stretch;
+  transition: grid-template-columns 0.2s ease;
+}
+
+/* Info panel closed (or no conversation selected) — chat reclaims the 330px column */
+.main-container.panel-collapsed {
+  grid-template-columns: 350px minmax(500px, 1fr);
 }
 
 @media (max-width: 1439px) {
@@ -344,6 +469,40 @@ onMounted(async () => {
   }
   .right-panel {
     display: none;
+  }
+}
+
+.info-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  justify-content: flex-end;
+  z-index: 2000;
+}
+
+.info-modal-panel {
+  width: 330px;
+  max-width: 90vw;
+  height: 100%;
+  background: #fff;
+  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.15);
+  animation: info-modal-slide-in 0.2s ease-out;
+}
+
+@keyframes info-modal-slide-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@media (max-width: 480px) {
+  .info-modal-panel {
+    width: 100%;
+    max-width: 100vw;
   }
 }
 </style>

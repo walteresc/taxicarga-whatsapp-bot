@@ -1,0 +1,109 @@
+{% extends "dashboard/base.html" %}
+{% block title %}OFERTA-{{ publicacion.codigo }}{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <div class="page-header-left">
+    <div class="icon-box" style="background:#EEF2FF;">
+      <span class="mdi mdi-truck-fast" style="color:#4F46E5;font-size:20px;"></span>
+    </div>
+    <span class="page-title">OFERTA-{{ publicacion.codigo }}</span>
+    {% if publicacion.estado == 'abierta' %}
+    <span class="badge" style="background:#D1FAE5;color:#065F46;">Abierta</span>
+    {% elif publicacion.estado == 'adjudicada' %}
+    <span class="badge" style="background:#DBEAFE;color:#1E40AF;">Adjudicada</span>
+    {% else %}
+    <span class="badge" style="background:#F3F4F6;color:#374151;">Cancelada</span>
+    {% endif %}
+  </div>
+  <div class="page-header-right">
+    <a href="{% url 'tercerizacion-list' %}" class="btn-outline">← Volver</a>
+    <a href="{% url 'dashboard-servicios-detail' publicacion.servicio.pk %}" class="btn-outline">
+      Ver servicio {{ publicacion.servicio.codigo }}
+    </a>
+  </div>
+</div>
+
+<div class="detail-grid">
+  <div class="detail-left">
+
+    <div class="detail-card">
+      <div class="detail-card-header">
+        <span class="mdi mdi-content-copy" style="color:#4F46E5;font-size:16px;"></span>
+        Texto para publicar
+      </div>
+      <div class="detail-card-body">
+        <textarea id="texto-publicacion" readonly rows="12"
+          style="width:100%;font-family:inherit;font-size:13px;padding:12px;border:1px solid #E5E7EB;border-radius:6px;color:#374151;resize:vertical;">{{ publicacion.texto_publicado }}</textarea>
+        <button type="button" onclick="copiarTexto()" class="btn-primary" style="margin-top:10px;">
+          📋 Copiar texto
+        </button>
+        <span id="copiado-msg" style="display:none;margin-left:10px;color:#059669;font-size:12px;">
+          Copiado ✓
+        </span>
+      </div>
+    </div>
+
+    <div class="detail-card">
+      <div class="detail-card-header">
+        <span class="mdi mdi-truck" style="color:#D97706;font-size:16px;"></span>
+        Ofertas recibidas
+      </div>
+      <div class="detail-card-body" style="padding:0;">
+        {% if ofertas %}
+        {% for o in ofertas %}
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:0.5px solid #F3F4F6;">
+          <div>
+            <span style="font-weight:600;color:#374151;">{{ o.cliente.display_name|default:o.cliente.nombre }}</span>
+            <span style="font-size:11px;color:#9CA3AF;margin-left:6px;">{{ o.creado_en|date:"d/m/Y H:i" }}</span>
+          </div>
+          <span style="font-weight:600;color:#059669;">
+            {% if o.precio_ofertado %}S/ {{ o.precio_ofertado|floatformat:2 }}{% else %}Sin precio aún{% endif %}
+          </span>
+        </div>
+        {% endfor %}
+        {% else %}
+        <div style="padding:24px 16px;text-align:center;color:#9CA3AF;font-size:13px;">
+          Todavía no hay ofertas. Llegarán aquí cuando un transportista responda al
+          link — la identificación automática se activa en la siguiente fase.
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+  </div>
+
+  <div class="detail-right">
+    <div class="detail-card">
+      <div class="detail-card-header">Datos de la publicación</div>
+      <div class="detail-card-body">
+        <div class="field-group">
+          <div class="field-label">Servicio</div>
+          <div class="field-value">{{ publicacion.servicio.codigo }}</div>
+        </div>
+        <div class="field-group" style="margin-top:10px;">
+          <div class="field-label">Creada por</div>
+          <div class="field-value">{{ publicacion.creado_por|default:"-" }}</div>
+        </div>
+        <div class="field-group" style="margin-top:10px;">
+          <div class="field-label">Fecha</div>
+          <div class="field-value">{{ publicacion.creado_en|date:"d/m/Y H:i" }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function copiarTexto() {
+  const el = document.getElementById('texto-publicacion');
+  el.select();
+  navigator.clipboard.writeText(el.value).then(function () {
+    const msg = document.getElementById('copiado-msg');
+    msg.style.display = 'inline';
+    setTimeout(function () { msg.style.display = 'none'; }, 2000);
+  });
+}
+</script>
+
+{% endblock %}

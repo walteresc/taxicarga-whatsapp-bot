@@ -42,7 +42,7 @@ from apps.whatsapp.domain import (
     tomar_conversacion,
 )
 from apps.whatsapp.models import ConversacionWhatsApp, MensajeWhatsApp, WhatsAppChannel
-from apps.whatsapp.services import send_whatsapp_message, send_crm_message
+from apps.whatsapp.services import send_whatsapp_message, send_crm_message, send_crm_media_message
 
 
 @login_required
@@ -110,6 +110,8 @@ def _filtrar_conversaciones(queryset, request):
     state = request.GET.get("state", "all")
     channel = request.GET.get("channel", "")
     advisor = request.GET.get("advisor", "")
+    archived = request.GET.get("archived", "false").lower() == "true"
+    transportistas = request.GET.get("transportistas", "false").lower() == "true"
 
     # Remove 24h filter - show ALL conversations
     # Frontend polls every 5 seconds anyway
@@ -123,6 +125,17 @@ def _filtrar_conversaciones(queryset, request):
     # FASE 5B: Filter only active channels for operational bandeja
     # Seed/inactive channels excluded from normal interface
     queryset = queryset.filter(channel__activo=True)
+
+    # Archivadas: estado del CRM, no de WhatsApp. La bandeja principal las excluye
+    # por defecto; ?archived=true trae solo las archivadas (pestaña "Archivados").
+    queryset = queryset.filter(archivada=archived)
+
+    # Transportistas: contacto (Cliente.es_transportista), no conversación. La
+    # bandeja principal los excluye por defecto (?transportistas=false, default);
+    # ?transportistas=true trae solo esas (pestaña "Transportistas"). El
+    # interruptor "Incluir transportistas" es puramente client-side (mismo
+    # patrón que Archivados: el frontend carga ambos lotes y particiona ahí).
+    queryset = queryset.filter(cliente__es_transportista=transportistas)
 
     if search:
         queryset = queryset.filter(
@@ -218,6 +231,8 @@ def _asesores_activos():
     ).distinct().order_by("first_name", "username")
 
 
+@login_required
+@whatsapp_required
 @csrf_exempt
 def api_active_conversations(request):
     """API endpoint: traer conversaciones activas con filtros para Materio
@@ -259,8 +274,9 @@ def api_active_conversations(request):
 
         data = []
         for conv in conversaciones_page:
-            # Obtener último mensaje eficientemente
-            ultimo_mensaje = conv.mensajes.order_by('-fecha_mensaje').first()
+            # Obtener último mensaje eficientemente — excluye ocultos en el CRM: si el
+            # oculto era el último, el preview debe caer al anterior VISIBLE.
+            ultimo_mensaje = conv.mensajes.filter(oculto_en_crm=False).order_by('-fecha_mensaje').first()
 
             # Contar mensajes no leídos para este usuario
             from apps.whatsapp.services_read_state import get_unread_count
@@ -294,6 +310,8 @@ def api_active_conversations(request):
                 },
                 'estado_atencion': conv.estado_atencion,
                 'estado_cotizacion': conv.estado_cotizacion,
+                'archived': conv.archivada,
+                'is_transportista': conv.cliente.es_transportista if conv.cliente else False,
                 'preview': preview,
                 'unread_count': unread_count,
                 'last_activity': conv.ultima_actividad.isoformat() if conv.ultima_actividad else conv.actualizada_en.isoformat(),
@@ -460,6 +478,40 @@ ESTADO_TO_STATUS = {
 }
 
 
+def _sender_name_and_badge(msg, conversation):
+    """Shared sender-name/badge resolution — used for the message itself and for
+    a quoted reply preview, so both always agree."""
+    if msg.sender_type == MensajeWhatsApp.SENDER_CUSTOMER:
+        return (conversation.cliente.nombre if conversation.cliente else 'Cliente'), None
+    if msg.sender_type == MensajeWhatsApp.SENDER_BOT:
+        return 'TaxiCarga Bot', 'bot'
+    if msg.sender_type == MensajeWhatsApp.SENDER_ADVISOR:
+        if msg.source == MensajeWhatsApp.SOURCE_WHATSAPP_BUSINESS_APP:
+            return 'Atención humana desde WhatsApp', 'whatsapp'
+        return (msg.autor.get_full_name() or msg.autor.username if msg.autor else 'Asesor'), 'crm'
+    return 'Sistema', 'system'
+
+
+def _reply_preview(msg, conversation):
+    """Small denormalized preview of the quoted message for the reply UI —
+    enough to render a WhatsApp-style quote block without a second fetch."""
+    if not msg.responde_a_id:
+        return None
+    quoted = msg.responde_a
+    sender_name, _badge = _sender_name_and_badge(quoted, conversation)
+    if quoted.tipo in ('imagen', 'audio', 'video', 'documento'):
+        preview_text = quoted.caption or f'[{quoted.tipo}]'
+    else:
+        preview_text = quoted.contenido[:120]
+
+    return {
+        'id': quoted.id,
+        'senderName': sender_name,
+        'type': quoted.tipo if quoted.tipo != 'texto' else 'text',
+        'text': preview_text,
+    }
+
+
 def _serialize_mensaje(msg, conversation):
     """Canonical message JSON shape — single source of truth.
 
@@ -468,23 +520,7 @@ def _serialize_mensaje(msg, conversation):
     """
     sender_type = msg.sender_type or _map_mensaje_origen_to_sender(msg.origen)
     source = msg.source or "unknown"
-
-    if msg.sender_type == MensajeWhatsApp.SENDER_CUSTOMER:
-        sender_name = conversation.cliente.nombre if conversation.cliente else 'Cliente'
-        badge = None
-    elif msg.sender_type == MensajeWhatsApp.SENDER_BOT:
-        sender_name = 'TaxiCarga Bot'
-        badge = 'bot'
-    elif msg.sender_type == MensajeWhatsApp.SENDER_ADVISOR:
-        if msg.source == MensajeWhatsApp.SOURCE_WHATSAPP_BUSINESS_APP:
-            sender_name = 'Atención humana desde WhatsApp'
-            badge = 'whatsapp'
-        else:
-            sender_name = msg.autor.get_full_name() or msg.autor.username if msg.autor else 'Asesor'
-            badge = 'crm'
-    else:
-        sender_name = 'Sistema'
-        badge = 'system'
+    sender_name, badge = _sender_name_and_badge(msg, conversation)
 
     mensaje_type = 'text'
     adjuntos_data = []
@@ -532,6 +568,14 @@ def _serialize_mensaje(msg, conversation):
         'status': ESTADO_TO_STATUS.get(msg.estado, msg.estado),
         'errorDetail': msg.error_detalle or None,
         'avatar': None,
+        # Only messages with a real wamid can be quote-replied to — YCloud's
+        # context.message_id requires it. Frontend uses this to enable/disable
+        # the reply action per-bubble instead of failing at send time.
+        # NOTE: sourced from wamid (real WhatsApp/Meta id), not meta_message_id (YCloud's
+        # internal id) — only wamid works as context.message_id when quoting this message.
+        'metaMessageId': msg.wamid or None,
+        'replyTo': _reply_preview(msg, conversation),
+        'reactionEmoji': msg.reaction_emoji or None,
     }
 
 
@@ -545,8 +589,8 @@ def conversation_messages(request, conversation_id):
     from apps.whatsapp.services_read_state import mark_conversation_as_read
     mark_conversation_as_read(conversation, request.user)
     messages = MensajeWhatsApp.objects.filter(
-        conversacion=conversation
-    ).select_related('autor').prefetch_related('adjuntos').order_by('fecha_mensaje')
+        conversacion=conversation, oculto_en_crm=False
+    ).select_related('autor', 'responde_a', 'responde_a__autor').prefetch_related('adjuntos').order_by('fecha_mensaje')
 
     messages_list = [_serialize_mensaje(msg, conversation) for msg in messages]
 
@@ -645,12 +689,24 @@ def api_send_message(request, conversation_id):
 
     contenido = (data.get("message") or "").strip()
     client_msg_id = data.get("client_msg_id", "")
+    reply_to_id = data.get("reply_to_id")
 
     if not contenido:
         return JsonResponse(
             {"success": False, "error_code": "empty_message", "error_detail": "Escribe un mensaje."},
             status=400,
         )
+
+    reply_to = None
+    if reply_to_id:
+        reply_to = MensajeWhatsApp.objects.filter(
+            id=reply_to_id, conversacion=conversation
+        ).first()
+        if not reply_to:
+            return JsonResponse(
+                {"success": False, "error_code": "reply_target_not_found", "error_detail": "El mensaje citado no existe."},
+                status=400,
+            )
 
     try:
         conversation = tomar_conversacion(conversation.id, request.user)
@@ -669,17 +725,330 @@ def api_send_message(request, conversation_id):
     ownership.last_human_message_at = timezone.now()
     ownership.save()
 
-    result = send_crm_message(conversation, request.user, contenido)
+    result = send_crm_message(conversation, request.user, contenido, reply_to=reply_to)
     mensaje = result["message"]
 
-    conversation.ultimo_mensaje_enviado = timezone.now()
-    conversation.ultima_actividad = timezone.now()
-    conversation.save(update_fields=["ultimo_mensaje_enviado", "ultima_actividad", "actualizada_en"])
+    if mensaje:
+        conversation.ultimo_mensaje_enviado = timezone.now()
+        conversation.ultima_actividad = timezone.now()
+        conversation.save(update_fields=["ultimo_mensaje_enviado", "ultima_actividad", "actualizada_en"])
 
     payload = {
         "success": result["success"],
         "clientMsgId": client_msg_id,
-        "message": _serialize_mensaje(mensaje, conversation),
+        "message": _serialize_mensaje(mensaje, conversation) if mensaje else None,
+        "error_code": result["error_code"],
+        "error_detail": result["error_detail"],
+    }
+    # No message row means the request was rejected before we even tried to send
+    # (e.g. replying to a message without a wamid) — that's a client error (400),
+    # distinct from 502 (we tried, YCloud/upstream rejected it).
+    if result["success"]:
+        status_code = 200
+    elif mensaje is None:
+        status_code = 400
+    else:
+        status_code = 502
+
+    return JsonResponse(payload, status=status_code)
+
+
+@login_required
+@whatsapp_required
+@require_http_methods(["POST"])
+def api_react_message(request, conversation_id, message_id):
+    """React to a message from the CRM (WhatsApp-style emoji reaction on a bubble).
+
+    Contract:
+      POST body (JSON): {"emoji": str}  ("" removes the current reaction)
+      200 -> {"success": true, "reactionEmoji": str|null}
+      400 -> {"success": false, "error_code": "reaction_target_no_wamid"|..., "error_detail": str}
+      404 -> message not found in this conversation
+      502 -> {"success": false, "error_code": str, "error_detail": str} (YCloud rejected it)
+    """
+    conversation = get_object_or_404(ConversacionWhatsApp, pk=conversation_id)
+    target_message = get_object_or_404(MensajeWhatsApp, pk=message_id, conversacion=conversation)
+
+    try:
+        data = json.loads(request.body or b"{}")
+    except (ValueError, TypeError):
+        return JsonResponse(
+            {"success": False, "error_code": "invalid_json", "error_detail": "Cuerpo de la petición inválido."},
+            status=400,
+        )
+
+    emoji = data.get("emoji", "")
+
+    from apps.whatsapp.services import send_crm_reaction
+    result = send_crm_reaction(conversation, target_message, emoji)
+
+    if result["success"]:
+        return JsonResponse({"success": True, "reactionEmoji": emoji or None}, status=200)
+
+    status_code = 400 if result["error_code"] in ("reaction_target_no_wamid", "ycloud_unavailable") else 502
+    return JsonResponse(
+        {"success": False, "error_code": result["error_code"], "error_detail": result["error_detail"]},
+        status=status_code,
+    )
+
+
+@login_required
+@whatsapp_required
+@require_http_methods(["POST"])
+def api_hide_message(request, conversation_id, message_id):
+    """'Ocultar en el CRM' — never deletes the row (messages are commercial evidence
+    for quotes). Hides it from the timeline and bandeja preview for EVERY CRM user
+    (shared inbox, not per-advisor), records who/when, and publishes it live so any
+    other session with this conversation open drops it without a reload.
+
+    Contract:
+      POST (no body needed)
+      200 -> {"success": true}
+      404 -> message not found in this conversation
+    """
+    conversation = get_object_or_404(ConversacionWhatsApp, pk=conversation_id)
+    message = get_object_or_404(MensajeWhatsApp, pk=message_id, conversacion=conversation)
+
+    if not message.oculto_en_crm:
+        message.oculto_en_crm = True
+        message.oculto_por = request.user
+        message.oculto_en = timezone.now()
+        message.save(update_fields=["oculto_en_crm", "oculto_por", "oculto_en"])
+
+        from apps.whatsapp.signals import publish_message_media_ready
+        publish_message_media_ready(message)
+
+    return JsonResponse({"success": True})
+
+
+@login_required
+@whatsapp_required
+@require_http_methods(["POST"])
+def api_archive_conversation(request, conversation_id):
+    """Archive a conversation — CRM-only state, doesn't touch WhatsApp at all.
+    No confirmation needed (low-risk, reversible). Publishes conversation.updated
+    (via the existing significant-fields signal) so it drops out of every open
+    session's main bandeja live, without a reload.
+    """
+    conversation = get_object_or_404(ConversacionWhatsApp, pk=conversation_id)
+
+    if not conversation.archivada:
+        conversation.archivada = True
+        conversation.archivada_por = request.user
+        conversation.archivada_en = timezone.now()
+        conversation.save(update_fields=["archivada", "archivada_por", "archivada_en"])
+
+    return JsonResponse({"success": True})
+
+
+@login_required
+@whatsapp_required
+@require_http_methods(["POST"])
+def api_unarchive_conversation(request, conversation_id):
+    """Manual unarchive (from the Archivados tab). See also: automatic unarchive on
+    a new inbound customer message, in services_ycloud.py's process_ycloud_event —
+    same WhatsApp behavior, triggered from the webhook instead of this endpoint.
+    """
+    conversation = get_object_or_404(ConversacionWhatsApp, pk=conversation_id)
+
+    if conversation.archivada:
+        conversation.archivada = False
+        conversation.archivada_por = None
+        conversation.archivada_en = None
+        conversation.save(update_fields=["archivada", "archivada_por", "archivada_en"])
+
+    return JsonResponse({"success": True})
+
+
+@login_required
+@whatsapp_required
+@require_http_methods(["POST"])
+def api_set_transportista(request, conversation_id):
+    """Marcar/desmarcar es_transportista a mano, desde la ficha del contacto o
+    el menú de la conversación. Es la vía de reversión obligatoria: la marca
+    automática (Fase 2, por código OFERTA-<código>) es pegajosa a propósito,
+    así que sin esto un cliente real marcado por error queda atrapado.
+
+    Contract:
+      POST body (JSON): {"es_transportista": bool}
+      200 -> {"success": true, "es_transportista": bool}
+    """
+    conversation = get_object_or_404(
+        ConversacionWhatsApp.objects.select_related("cliente"), pk=conversation_id
+    )
+    if not conversation.cliente:
+        return JsonResponse({"success": False, "error": "Conversación sin cliente."}, status=409)
+
+    try:
+        payload = json.loads(request.body or "{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"success": False, "error": "JSON inválido."}, status=400)
+
+    nuevo_valor = bool(payload.get("es_transportista"))
+
+    from apps.tercerizacion.services import marcar_transportista, desmarcar_transportista
+    from apps.whatsapp.signals import publish_transportista_state_change
+
+    if nuevo_valor:
+        marcar_transportista(conversation.cliente, usuario=request.user)
+    else:
+        desmarcar_transportista(conversation.cliente, usuario=request.user)
+
+    publish_transportista_state_change(conversation)
+
+    return JsonResponse({"success": True, "es_transportista": conversation.cliente.es_transportista})
+
+
+@login_required
+@whatsapp_required
+@require_http_methods(["POST"])
+def api_set_transportista_bot_pausado(request, conversation_id):
+    """Silencia/reactiva el bot de transportistas SOLO para esta conversación
+    — independiente del interruptor global (apps/tercerizacion, bot/pausar/)
+    y del pausado general del sistema. Útil si el bot se traba con un
+    transportista en particular sin querer apagarlo para todos.
+
+    Contract:
+      POST body (JSON): {"pausado": bool}
+      200 -> {"success": true, "pausado": bool}
+    """
+    conversation = get_object_or_404(ConversacionWhatsApp, pk=conversation_id)
+
+    try:
+        payload = json.loads(request.body or "{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"success": False, "error": "JSON inválido."}, status=400)
+
+    nuevo_valor = bool(payload.get("pausado"))
+
+    from apps.tercerizacion.models import TransportistaBotState
+    state, _ = TransportistaBotState.objects.get_or_create(conversacion=conversation)
+    state.pausado = nuevo_valor
+    state.save(update_fields=["pausado", "actualizado_en"])
+
+    return JsonResponse({"success": True, "pausado": state.pausado})
+
+
+@login_required
+@whatsapp_required
+@require_http_methods(["POST"])
+def api_forward_message(request, conversation_id, message_id):
+    """Forward a message (text or media) to a DIFFERENT conversation, WhatsApp
+    Web-style. Sent as a completely normal new message in the target conversation.
+
+    Contract:
+      POST body (JSON): {"target_conversation_id": int}
+      200 -> {"success": true, "message": <_serialize_mensaje shape, target conv>}
+      400 -> {"success": false, "error_code": str, "error_detail": str}
+      404 -> source message or target conversation not found
+      502 -> {"success": false, "error_code": str, "error_detail": str} (YCloud rejected it)
+    """
+    source_conversation = get_object_or_404(ConversacionWhatsApp, pk=conversation_id)
+    source_message = get_object_or_404(MensajeWhatsApp, pk=message_id, conversacion=source_conversation)
+
+    try:
+        data = json.loads(request.body or b"{}")
+    except (ValueError, TypeError):
+        return JsonResponse(
+            {"success": False, "error_code": "invalid_json", "error_detail": "Cuerpo de la petición inválido."},
+            status=400,
+        )
+
+    target_conversation_id = data.get("target_conversation_id")
+    if not target_conversation_id:
+        return JsonResponse(
+            {"success": False, "error_code": "missing_target", "error_detail": "Selecciona una conversación destino."},
+            status=400,
+        )
+
+    target_conversation = get_object_or_404(ConversacionWhatsApp, pk=target_conversation_id)
+
+    from apps.whatsapp.services import send_crm_forward_message
+    result = send_crm_forward_message(target_conversation, request.user, source_message)
+    mensaje = result["message"]
+
+    if mensaje:
+        target_conversation.ultimo_mensaje_enviado = timezone.now()
+        target_conversation.ultima_actividad = timezone.now()
+        target_conversation.save(update_fields=["ultimo_mensaje_enviado", "ultima_actividad", "actualizada_en"])
+
+    payload = {
+        "success": result["success"],
+        "message": _serialize_mensaje(mensaje, target_conversation) if mensaje else None,
+        "error_code": result["error_code"],
+        "error_detail": result["error_detail"],
+    }
+    if result["success"]:
+        status_code = 200
+    elif mensaje is None:
+        status_code = 400
+    else:
+        status_code = 502
+
+    return JsonResponse(payload, status=status_code)
+
+
+@login_required
+@whatsapp_required
+@require_http_methods(["POST"])
+def api_send_media_message(request, conversation_id):
+    """JSON endpoint for the SPA composer — advisor outbound media (image/video/audio/document).
+
+    Contract:
+      POST body (multipart/form-data): file, type ('imagen'|'video'|'audio'|'documento'),
+                                        caption (optional), client_msg_id (optional)
+      200 -> {"success": true, "clientMsgId", "message": <_serialize_mensaje shape>}
+      400 -> {"success": false, "error_code": "no_file"|"invalid_type", "error_detail": str}
+      409 -> {"success": false, "error_code": "conversation_locked", "error_detail": str}
+      502 -> upstream (YCloud) failed; failed attempt still persisted, same shape as 200
+    """
+    conversation = get_object_or_404(ConversacionWhatsApp, pk=conversation_id)
+
+    uploaded_file = request.FILES.get("file")
+    tipo = request.POST.get("type", "")
+    caption = (request.POST.get("caption") or "").strip() or None
+    client_msg_id = request.POST.get("client_msg_id", "")
+
+    if not uploaded_file:
+        return JsonResponse(
+            {"success": False, "error_code": "no_file", "error_detail": "No se recibió ningún archivo."},
+            status=400,
+        )
+
+    if tipo not in ("imagen", "video", "audio", "documento"):
+        return JsonResponse(
+            {"success": False, "error_code": "invalid_type", "error_detail": "Tipo de archivo inválido."},
+            status=400,
+        )
+
+    try:
+        conversation = tomar_conversacion(conversation.id, request.user)
+    except (ConversacionOcupada, TransicionConversacionInvalida) as exc:
+        return JsonResponse(
+            {"success": False, "error_code": "conversation_locked", "error_detail": str(exc)},
+            status=409,
+        )
+
+    from apps.whatsapp_bot_v4.models import ConversationOwnership
+    ownership, _ = ConversationOwnership.objects.get_or_create(conversation=conversation)
+    ownership.owner_type = ConversationOwnership.OWNER_ADVISOR
+    ownership.control_mode = ConversationOwnership.MODE_MANUAL
+    ownership.advisor_id = request.user
+    ownership.last_human_message_at = timezone.now()
+    ownership.save()
+
+    result = send_crm_media_message(conversation, request.user, tipo, uploaded_file, caption=caption)
+    mensaje = result["message"]
+
+    if mensaje:
+        conversation.ultimo_mensaje_enviado = timezone.now()
+        conversation.ultima_actividad = timezone.now()
+        conversation.save(update_fields=["ultimo_mensaje_enviado", "ultima_actividad", "actualizada_en"])
+
+    payload = {
+        "success": result["success"],
+        "clientMsgId": client_msg_id,
+        "message": _serialize_mensaje(mensaje, conversation) if mensaje else None,
         "error_code": result["error_code"],
         "error_detail": result["error_detail"],
     }

@@ -1,5 +1,8 @@
 <template>
-  <div class="chat-composer">
+  <div
+    ref="composerRoot"
+    class="chat-composer"
+  >
     <!-- Estado bot pausado (no mostrar "atendiendo" si pausado) -->
     <div
       v-if="attentionMode === 'bot' && effectiveBotPaused"
@@ -111,38 +114,150 @@
 
       <!-- Compositor input -->
       <div class="composer-input-wrapper">
-        <!-- Botones de acción -->
-        <div class="composer-actions">
-          <button
-            class="action-btn"
-            title="Adjuntar archivo"
-            :disabled="sending"
-            @click="$refs.fileInput?.click()"
+        <div class="composer-pill">
+          <div
+            ref="emojiAnchor"
+            class="action-anchor"
           >
-            <i class="ri-attachment-line" />
+            <button
+              class="action-btn"
+              title="Emoji"
+              :disabled="sending"
+              @click="showEmojiPicker = !showEmojiPicker; showQuickReplies = false"
+            >
+              <i class="ri-emotion-line" />
+            </button>
+
+            <!-- Emoji picker: floating popover anchored to this button -->
+            <div
+              v-if="showEmojiPicker"
+              class="popover emoji-picker"
+            >
+              <div
+                v-for="emoji in emojis"
+                :key="emoji"
+                class="emoji-item"
+                @click="insertEmoji(emoji)"
+              >
+                {{ emoji }}
+              </div>
+            </div>
+          </div>
+
+          <div
+            ref="attachAnchor"
+            class="action-anchor"
+          >
+            <button
+              class="action-btn"
+              title="Adjuntar"
+              :disabled="sending"
+              @click="showAttachMenu = !showAttachMenu; showEmojiPicker = false; showQuickReplies = false"
+            >
+              <i class="ri-attachment-line" />
+            </button>
+
+            <!-- Attach menu: floating popover anchored to this button -->
+            <div
+              v-if="showAttachMenu"
+              class="popover attach-menu"
+            >
+              <button
+                class="attach-option"
+                @click="$refs.documentInput?.click(); showAttachMenu = false"
+              >
+                <span class="attach-icon attach-icon--document"><i class="ri-file-text-line" /></span>
+                <span>Documento</span>
+              </button>
+              <button
+                class="attach-option"
+                @click="$refs.mediaInput?.click(); showAttachMenu = false"
+              >
+                <span class="attach-icon attach-icon--media"><i class="ri-image-2-line" /></span>
+                <span>Fotos y videos</span>
+              </button>
+              <button
+                class="attach-option"
+                @click="$refs.audioFileInput?.click(); showAttachMenu = false"
+              >
+                <span class="attach-icon attach-icon--audio"><i class="ri-mic-2-line" /></span>
+                <span>Audio</span>
+              </button>
+            </div>
+
             <input
-              ref="fileInput"
+              ref="documentInput"
               type="file"
               hidden
               @change="handleFileSelect"
             >
-          </button>
-
-          <button
-            class="action-btn"
-            title="Adjuntar imagen"
-            :disabled="sending"
-            @click="$refs.imageInput?.click()"
-          >
-            <i class="ri-image-add-line" />
             <input
-              ref="imageInput"
+              ref="mediaInput"
               type="file"
-              accept="image/*"
+              accept="image/*,video/*"
               hidden
               @change="handleImageSelect"
             >
-          </button>
+            <input
+              ref="audioFileInput"
+              type="file"
+              accept="audio/*"
+              hidden
+              @change="handleAudioFileSelect"
+            >
+          </div>
+
+          <div
+            ref="quickRepliesAnchor"
+            class="action-anchor"
+          >
+            <button
+              class="action-btn"
+              title="Respuestas rápidas"
+              :disabled="sending"
+              @click="showQuickReplies = !showQuickReplies; showEmojiPicker = false"
+            >
+              <i class="ri-flashlight-line" />
+            </button>
+
+            <!-- Quick replies: floating popover anchored to this button -->
+            <div
+              v-if="showQuickReplies"
+              class="popover quick-replies"
+            >
+              <button
+                v-for="(reply, idx) in quickReplies"
+                :key="idx"
+                class="quick-reply-btn"
+                @click="selectQuickReply(reply)"
+              >
+                {{ reply }}
+              </button>
+            </div>
+          </div>
+
+          <!-- Textarea con preview Markdown -->
+          <div class="textarea-container">
+            <textarea
+              ref="textareaEl"
+              v-model="messageText"
+              placeholder="Escribe un mensaje..."
+              class="message-textarea"
+              rows="1"
+              @keydown.enter.exact="sendMessage"
+              @keydown.enter.shift="handleShiftEnter"
+              @keydown.enter.ctrl="handleShiftEnter"
+              @keydown.ctrl.b.exact="handleBold"
+              @keydown.ctrl.i.exact="handleItalic"
+              @keydown.ctrl.shift.x="handleStrikethrough"
+            />
+            <!-- Preview Markdown en tiempo real -->
+            <div
+              v-if="messageText.trim()"
+              class="markdown-preview"
+              v-html="renderMarkdownPreview(messageText)"
+            />
+          </div>
 
           <button
             class="action-btn"
@@ -153,84 +268,25 @@
           >
             <i :class="recordingAudio ? 'ri-stop-circle-fill' : 'ri-mic-line'" />
           </button>
-
-          <button
-            class="action-btn"
-            title="Respuestas rápidas"
-            :disabled="sending"
-            @click="showQuickReplies = !showQuickReplies"
-          >
-            <i class="ri-lightning-line" />
-          </button>
-
-          <button
-            class="action-btn"
-            title="Emoji"
-            :disabled="sending"
-            @click="showEmojiPicker = !showEmojiPicker"
-          >
-            <i class="ri-emotion-smile-line" />
-          </button>
         </div>
-
-        <!-- Textarea -->
-        <textarea
-          v-model="messageText"
-          placeholder="Escribe un mensaje..."
-          class="message-textarea"
-          rows="1"
-          :disabled="sending"
-          @keydown.enter.exact="sendMessage"
-          @keydown.enter.shift="handleShiftEnter"
-          @input="autoResize"
-        />
 
         <!-- Botón enviar -->
         <button
           class="send-btn"
-          :disabled="!messageText.trim() || sending"
+          :disabled="!messageText.trim()"
+          :class="{ active: messageText.trim() }"
           title="Enviar (Enter)"
           @click="sendMessage"
         >
-          <i :class="sending ? 'ri-loader-4-line spin' : 'ri-send-plane-2-fill'" />
+          <i class="ri-send-plane-2-fill" />
         </button>
-      </div>
-
-      <!-- Respuestas rápidas -->
-      <div
-        v-if="showQuickReplies"
-        class="quick-replies"
-      >
-        <button
-          v-for="(reply, idx) in quickReplies"
-          :key="idx"
-          class="quick-reply-btn"
-          @click="selectQuickReply(reply)"
-        >
-          {{ reply }}
-        </button>
-      </div>
-
-      <!-- Emoji picker -->
-      <div
-        v-if="showEmojiPicker"
-        class="emoji-picker"
-      >
-        <div
-          v-for="emoji in emojis"
-          :key="emoji"
-          class="emoji-item"
-          @click="insertEmoji(emoji)"
-        >
-          {{ emoji }}
-        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, nextTick } from 'vue'
+import { ref, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 
 const props = defineProps({
   replyingTo: Object,
@@ -262,9 +318,47 @@ const props = defineProps({
 const emit = defineEmits(['send-message', 'clear-reply', 'take-control', 'assign-me', 'reopen'])
 
 const messageText = ref('')
+const textareaEl = ref(null)
 const showQuickReplies = ref(false)
 const showEmojiPicker = ref(false)
+const showAttachMenu = ref(false)
 const recordingAudio = ref(false)
+const emojiAnchor = ref(null)
+const quickRepliesAnchor = ref(null)
+const attachAnchor = ref(null)
+
+// The textarea is :disabled="sending" while the request is in flight — a disabled
+// field is force-blurred by the browser, so once it re-enables the advisor has to
+// click back in manually to keep typing. Restore focus automatically instead.
+watch(() => props.sending, (isSending, wasSending) => {
+  if (wasSending && !isSending) {
+    nextTick(() => textareaEl.value?.focus())
+  }
+})
+
+// mousedown + capture: fires before any click handler (including the toggle
+// buttons' own), so it reliably catches clicks anywhere outside each popover —
+// including clicks elsewhere in the composer bar (e.g. the textarea), not just
+// clicks outside the whole component.
+const closePopoversIfOutside = event => {
+  if (showEmojiPicker.value && emojiAnchor.value && !emojiAnchor.value.contains(event.target)) {
+    showEmojiPicker.value = false
+  }
+  if (showQuickReplies.value && quickRepliesAnchor.value && !quickRepliesAnchor.value.contains(event.target)) {
+    showQuickReplies.value = false
+  }
+  if (showAttachMenu.value && attachAnchor.value && !attachAnchor.value.contains(event.target)) {
+    showAttachMenu.value = false
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('mousedown', closePopoversIfOutside, true)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('mousedown', closePopoversIfOutside, true)
+})
 
 const quickReplies = [
   'Entendido, en breve me comunico',
@@ -277,27 +371,47 @@ const quickReplies = [
 
 const emojis = ['👍', '😊', '❤️', '🎉', '✨', '👏', '🙏', '🚀', '😂', '🙌', '💪', '⭐']
 
-const autoResize = event => {
-  const textarea = event.target
+const autoResize = () => {
+  const textarea = textareaEl.value
+  if (!textarea) return
 
   textarea.style.height = 'auto'
 
-  const newHeight = Math.min(textarea.scrollHeight, 120)
+  const newHeight = Math.min(textarea.scrollHeight, 200)
 
   textarea.style.height = `${newHeight}px`
 }
 
-const sendMessage = () => {
-  if (!messageText.value.trim() || props.sending) return
+// Single source of truth for resize: fires on every messageText change regardless
+// of cause (typing, Ctrl/Shift+Enter newline, bold/italic insert, quick-reply,
+// emoji, clear) — avoids each handler having to remember to call autoResize itself.
+watch(messageText, () => {
+  nextTick(autoResize)
+})
 
-  // Text is intentionally NOT cleared here — the parent only calls clear() once
-  // the backend confirms the send. On failure, the text stays so the advisor can
-  // retry without retyping.
+const sendMessage = event => {
+  // Enter's native behavior in a <textarea> is to insert a newline — without this,
+  // the browser does that AND sends, leaving a stray \n (and whatever gets typed
+  // right after it) sitting in the box on top of the next message.
+  event?.preventDefault()
+
+  // NOTE: deliberately NOT gated on props.sending — each send is independent (its
+  // own optimistic bubble, own tempId), so blocking on "is a previous one still in
+  // flight" only forced Enter to silently no-op while the advisor kept typing,
+  // corrupting the next message. Only guard against sending nothing.
+  if (!messageText.value.trim()) return
+
   emit('send-message', {
     text: messageText.value,
     type: 'text',
     clientMsgId: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
   })
+
+  // Cleared immediately (WhatsApp Web behavior) instead of waiting for the backend
+  // to confirm — otherwise typing the NEXT message while this one is still in
+  // flight edits the just-sent text instead of starting fresh. A failed send is
+  // recovered from its own bubble (retry button), not from the composer.
+  messageText.value = ''
 
   showQuickReplies.value = false
   showEmojiPicker.value = false
@@ -306,51 +420,122 @@ const sendMessage = () => {
 /** Called by the parent once a send is confirmed successful. */
 const clear = () => {
   messageText.value = ''
+  // Height reset handled by the messageText watcher (autoResize).
+}
+
+/** Called by the parent when a conversation is opened/selected. No-op if the
+ * textarea isn't mounted (e.g. bot is attending, no composer input shown). */
+const focus = () => {
+  textareaEl.value?.focus()
+}
+
+defineExpose({ clear, focus })
+
+/**
+ * Wrap the selected text (or insert empty markers at the cursor) with WhatsApp's
+ * own plain-text formatting syntax — *bold*, _italic_, ~strikethrough~. WhatsApp
+ * renders these client-side; there's nothing to send differently, no backend
+ * involved. If there's a selection, wrap it and keep it selected; otherwise
+ * insert the marker pair with the cursor placed between them.
+ */
+const applyMarkup = (event, marker) => {
+  event.preventDefault()
+
+  const textarea = event.target
+  const start = textarea.selectionStart
+  const end = textarea.selectionEnd
+  const selected = messageText.value.slice(start, end)
+
+  messageText.value = messageText.value.slice(0, start) + marker + selected + marker + messageText.value.slice(end)
+
   nextTick(() => {
-    const textarea = document.querySelector('.message-textarea')
-    if (textarea) {
-      textarea.style.height = 'auto'
+    if (selected) {
+      textarea.selectionStart = start + marker.length
+      textarea.selectionEnd = end + marker.length
+    } else {
+      textarea.selectionStart = textarea.selectionEnd = start + marker.length
     }
+    textarea.focus()
   })
 }
 
-defineExpose({ clear })
+const handleBold = event => applyMarkup(event, '*')
+const handleItalic = event => applyMarkup(event, '_')
+const handleStrikethrough = event => applyMarkup(event, '~')
 
+/** Insert a newline at the cursor (Shift+Enter or Ctrl+Enter), not just at the end. */
 const handleShiftEnter = event => {
   event.preventDefault()
-  messageText.value += '\n'
-  nextTick(() => {
-    const textarea = event.target
 
-    autoResize({ target: textarea })
+  const textarea = event.target
+  const start = textarea.selectionStart
+  const end = textarea.selectionEnd
+
+  messageText.value = messageText.value.slice(0, start) + '\n' + messageText.value.slice(end)
+
+  nextTick(() => {
+    textarea.selectionStart = textarea.selectionEnd = start + 1
+  })
+}
+
+const renderMarkdownPreview = (text) => {
+  if (!text) return ''
+
+  // Escapar HTML pero preservar estructura
+  let escaped = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+
+  // Resaltar líneas que empiezan con "- " (viñeta). El textarea real es invisible
+  // y este preview se le superpone encima — el cursor real sigue el ANCHO real del
+  // texto, así que NUNCA hay que quitar ni reemplazar caracteres (ni "-" por "•", ni
+  // los "*" del negrita): eso cambia el ancho visible vs. el real y el cursor queda
+  // desfasado. Solo se aplica color/negrita al texto tal cual está escrito.
+  const lines = escaped.split('\n')
+  const processed = lines.map(line => {
+    if (line.trim().startsWith('- ')) {
+      return `<span class="preview-bullet">${line}</span>`
+    }
+    return line
+  }).join('\n')
+
+  // Negrita: se resalta el fragmento completo, asteriscos incluidos — no se ocultan.
+  const withBold = processed.replace(/\*([^*]+)\*/g, '<strong>*$1*</strong>')
+
+  // Preservar saltos de línea
+  const final = withBold.replace(/\n/g, '<br>')
+
+  return final
+}
+
+// tipo values match MensajeWhatsApp.tipo directly (Spanish) — the backend media
+// send endpoint expects these exact strings, no translation layer needed.
+const emitFile = (file, tipo) => {
+  if (!file) return
+  emit('send-message', {
+    type: tipo,
+    file,
+    clientMsgId: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
   })
 }
 
 const handleFileSelect = event => {
-  const file = event.target.files?.[0]
-  if (file) {
-    emit('send-message', {
-      type: 'document',
-      fileName: file.name,
-      fileSize: `${(file.size / 1024).toFixed(2)} KB`,
-    })
-  }
+  emitFile(event.target.files?.[0], 'documento')
   event.target.value = ''
 }
 
 const handleImageSelect = event => {
   const file = event.target.files?.[0]
-  if (file) {
-    const reader = new FileReader()
 
-    reader.onload = e => {
-      emit('send-message', {
-        type: 'image',
-        content: e.target.result,
-      })
-    }
-    reader.readAsDataURL(file)
-  }
+  emitFile(file, file?.type?.startsWith('video/') ? 'video' : 'imagen')
+  event.target.value = ''
+}
+
+const handleAudioFileSelect = event => {
+  emitFile(event.target.files?.[0], 'audio')
   event.target.value = ''
 }
 
@@ -383,6 +568,8 @@ const insertEmoji = emoji => {
   border-top: 1px solid #e0e0e0;
   flex-shrink: 0;
   min-height: 52px;
+  position: relative;
+  z-index: 5;
 }
 
 .send-error-banner {
@@ -532,8 +719,10 @@ const insertEmoji = emoji => {
   align-items: center;
   gap: 16px;
   font-size: 12px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid #f0f0f0;
+  padding: 8px;
+  background: #f5f5f5;
+  border-radius: 6px;
+  border-bottom: 1px solid #eee;
 }
 
 .channel-info {
@@ -627,125 +816,220 @@ const insertEmoji = emoji => {
   display: flex;
   align-items: flex-end;
   gap: 8px;
+  padding: 4px 0;
 }
 
-.composer-actions {
+.composer-pill {
+  flex: 1;
+  min-width: 0;
   display: flex;
-  gap: 6px;
-  flex-shrink: 0;
+  align-items: flex-end;
+  gap: 2px;
+  background: #fff;
+  border: 1px solid #e9edef;
+  border-radius: 24px;
+  padding: 4px 6px;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.08);
 }
 
 .action-btn {
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #f5f5f7;
-  border: 1px solid #e0e0e0;
-  border-radius: 6px;
-  color: #666;
-  cursor: pointer;
-  font-size: 16px;
-  transition: all 0.2s;
-}
-
-.action-btn:hover {
-  background: #e8e8eb;
-  border-color: #999;
-  color: #333;
-}
-
-.action-btn.recording {
-  background: #ffebee;
-  border-color: #f44336;
-  color: #f44336;
-}
-
-.message-textarea {
-  flex: 1;
-  padding: 10px 12px;
-  border: 1px solid #d0d0d0;
-  border-radius: 6px;
-  background: #fff;
-  font-size: 13px;
-  font-family: inherit;
-  resize: none;
-  min-height: 40px;
-  max-height: 120px;
-  outline: none;
-  transition: all 0.2s;
-  color: #333;
-}
-
-.message-textarea:focus {
-  border-color: var(--v-primary-base, #ff6b3d);
-  box-shadow: 0 0 0 3px rgba(255, 107, 61, 0.1);
-}
-
-.message-textarea::placeholder {
-  color: #999;
-}
-
-.send-btn {
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--v-primary-base, #ff6b3d);
-  color: white;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 16px;
-  transition: all 0.2s;
   flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  color: #54656f;
+  cursor: pointer;
+  font-size: 20px;
+  transition: background 0.15s, color 0.15s;
 }
 
-.send-btn:hover:not(:disabled) {
-  background: #ff5722;
-  transform: scale(1.05);
-  box-shadow: 0 2px 8px rgba(255, 107, 61, 0.3);
+.action-btn:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.06);
+  color: #1d1d1d;
 }
 
-.send-btn:disabled {
+.action-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
 
+.action-btn.recording {
+  background: #fde8e8;
+  color: #e02b2b;
+}
+
+.message-textarea {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 4px;
+  border: none;
+  background: transparent;
+  font-size: 14px;
+  font-family: inherit;
+  line-height: 1.35;
+  resize: none;
+  min-height: 20px;
+  max-height: 200px;
+  outline: none;
+  /* Real text stays invisible — the styled overlay below renders it (bold/bullets).
+     Caret stays visible so the advisor can still see where they're typing. */
+  color: transparent;
+  caret-color: #111b21;
+}
+
+.message-textarea::placeholder {
+  color: #667781;
+}
+
+/* Plain block wrapper (not flex) — its height is driven purely by the in-flow
+   textarea, so the overlay (absolute, inset:0) always matches it exactly. */
+.textarea-container {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+}
+
+.markdown-preview {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  padding: 9px 4px;
+  font-size: 14px;
+  line-height: 1.35;
+  color: #111b21;
+  pointer-events: none;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow: hidden;
+  font-family: inherit;
+}
+
+/* v-html content isn't compiled by Vue's template scoping — :deep() is required
+   for these rules to actually reach it (a plain scoped selector silently never
+   matches, since the injected markup never receives the data-v-xxxx attribute). */
+:deep(.markdown-preview strong) {
+  font-weight: 700;
+}
+
+:deep(.preview-bullet) {
+  color: #008069;
+}
+
+.send-btn {
+  flex-shrink: 0;
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #d9dbdf;
+  color: #8696a0;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 18px;
+  transition: background 0.15s, color 0.15s, transform 0.1s;
+}
+
+.send-btn.active {
+  background: #00a884;
+  color: #fff;
+}
+
+.send-btn.active:hover:not(:disabled) {
+  background: #06976f;
+}
+
+.send-btn:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.send-btn:disabled {
+  cursor: not-allowed;
+}
+
+.action-anchor {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+}
+
+/* Floating panel that appears to originate from its trigger button, WhatsApp-style */
+.popover {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 0;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.18);
+  z-index: 30;
+  animation: popover-in 0.12s ease-out;
+}
+
+.popover::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 14px;
+  width: 12px;
+  height: 12px;
+  background: #fff;
+  transform: translateY(-6px) rotate(45deg);
+  border-radius: 2px;
+  box-shadow: 2px 2px 2px rgba(0, 0, 0, 0.03);
+  clip-path: polygon(100% 0, 0 0, 100% 100%);
+}
+
+@keyframes popover-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 .quick-replies {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding-top: 8px;
-  border-top: 1px solid #f0f0f0;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  width: 240px;
+  max-height: 260px;
+  overflow-y: auto;
 }
 
 .quick-reply-btn {
-  padding: 6px 12px;
-  background: #fff;
-  border: 1px solid #ddd;
-  border-radius: 16px;
-  font-size: 11px;
-  color: #666;
+  padding: 8px 10px;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  text-align: left;
+  color: #333;
   cursor: pointer;
-  white-space: nowrap;
-  transition: all 0.2s;
+  white-space: normal;
+  transition: background 0.15s;
 }
 
 .quick-reply-btn:hover {
-  background: #f9f9f9;
-  border-color: #999;
-  color: #333;
+  background: #f0f2f5;
 }
 
 .emoji-picker {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
-  gap: 4px;
-  padding-top: 8px;
-  border-top: 1px solid #f0f0f0;
+  gap: 2px;
+  padding: 8px;
+  width: 240px;
 }
 
 .emoji-item {
@@ -753,16 +1037,65 @@ const insertEmoji = emoji => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f5f5f7;
-  border-radius: 6px;
+  background: transparent;
+  border-radius: 8px;
   cursor: pointer;
-  font-size: 18px;
-  transition: all 0.2s;
+  font-size: 20px;
+  transition: background 0.15s;
   border: none;
 }
 
 .emoji-item:hover {
-  background: #e8e8eb;
-  transform: scale(1.1);
+  background: #f0f2f5;
+}
+
+.attach-menu {
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  width: 220px;
+}
+
+.attach-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  color: #333;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.attach-option:hover {
+  background: #f0f2f5;
+}
+
+.attach-icon {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 19px;
+}
+
+.attach-icon--document {
+  background: #7f66ff;
+}
+
+.attach-icon--media {
+  background: #bf59cf;
+}
+
+.attach-icon--audio {
+  background: #ff9800;
 }
 </style>

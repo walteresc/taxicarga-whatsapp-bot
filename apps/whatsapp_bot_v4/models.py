@@ -121,6 +121,16 @@ class BotGlobalConfig(models.Model):
     paused_at = models.DateTimeField(null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    # Interruptor global INDEPENDIENTE para el bot de transportistas
+    # (apps/tercerizacion) — a propósito no reutiliza is_paused: el usuario
+    # necesita poder tener, por ejemplo, bot de clientes pausado y bot de
+    # transportistas activo (o viceversa, o ambos) sin que se pisen. Default
+    # True (pausado) — mismo criterio "apagado por defecto" que
+    # TRANSPORTISTA_BOT_ENABLED (settings), que sigue siendo el interruptor
+    # de nivel operación/despliegue; este es el de uso diario desde el CRM.
+    transportistas_paused = models.BooleanField(default=True)
+    transportistas_paused_at = models.DateTimeField(null=True, blank=True)
+
     class Meta:
         verbose_name_plural = "Bot Global Config"
 

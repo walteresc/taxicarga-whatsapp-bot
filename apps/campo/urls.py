@@ -1,8 +1,13 @@
 from django.urls import path
 
 from . import views
+from .views_personal_api import ayudante_api, ayudantes_api, conductor_api, conductores_api
 
 urlpatterns = [
+    path("api/personal/conductores/", conductores_api, name="api-personal-conductores"),
+    path("api/personal/conductores/<int:pk>/", conductor_api, name="api-personal-conductor"),
+    path("api/personal/ayudantes/", ayudantes_api, name="api-personal-ayudantes"),
+    path("api/personal/ayudantes/<int:pk>/", ayudante_api, name="api-personal-ayudante"),
     path("", views.campo_index, name="dashboard-campo"),
     # API — estado (legacy kanban)
     path("api/cambiar-estado/", views.api_cambiar_estado, name="api-cambiar-estado"),

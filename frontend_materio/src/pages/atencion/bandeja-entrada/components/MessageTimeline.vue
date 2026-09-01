@@ -1,5 +1,6 @@
 <template>
   <div
+    ref="timelineEl"
     class="message-timeline"
     data-testid="message-timeline"
   >
@@ -52,7 +53,7 @@
         <!-- Messages in this group -->
         <div
           v-for="message in group.messages"
-          :key="message.id"
+          :key="message.clientMsgId || message.id"
           :data-testid="`message-bubble-${message.id}`"
         >
           <!-- Canonical contentType determines rendering.
@@ -70,6 +71,10 @@
             :message="message"
             :data-testid="`bubble-${message.id}`"
             @retry="$emit('retry', $event)"
+            @reply="$emit('reply', $event)"
+            @forward="$emit('forward', $event)"
+            @hide-for-me="$emit('hide-for-me', $event)"
+            @react="$emit('react', $event)"
           />
         </div>
       </div>
@@ -78,7 +83,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, watch, nextTick } from 'vue'
 import MessageBubble from './MessageBubble.vue'
 import InternalNote from './InternalNote.vue'
 import { groupMessagesByDate } from '@/utils/dateUtils'
@@ -91,11 +96,43 @@ const props = defineProps({
   loading: Boolean,
 })
 
-defineEmits(['retry'])
+defineEmits(['retry', 'reply', 'forward', 'hide-for-me', 'react'])
 
 const messageGroups = computed(() => {
   return groupMessagesByDate(props.messages)
 })
+
+const timelineEl = ref(null)
+
+const scrollToBottom = () => {
+  nextTick(() => {
+    if (!timelineEl.value) return
+    timelineEl.value.scrollTop = timelineEl.value.scrollHeight
+
+    // Images load asynchronously and grow the container AFTER this scroll runs,
+    // leaving the view stuck partway up. Re-adjust once each one finishes loading.
+    const images = timelineEl.value.querySelectorAll('img')
+
+    images.forEach(img => {
+      if (!img.complete) {
+        img.addEventListener('load', () => {
+          if (timelineEl.value) {
+            timelineEl.value.scrollTop = timelineEl.value.scrollHeight
+          }
+        }, { once: true })
+      }
+    })
+  })
+}
+
+// New conversation opened or messages array replaced (covers both cases even when
+// the new conversation happens to have the same message count as the previous one).
+watch(() => props.loading, (isLoading, wasLoading) => {
+  if (wasLoading && !isLoading) scrollToBottom()
+})
+
+// New message appended (SSE) while already viewing this conversation.
+watch(() => props.messages.length, scrollToBottom)
 </script>
 
 <style scoped>

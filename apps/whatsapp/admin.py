@@ -75,10 +75,18 @@ class ConversacionWhatsAppAdmin(admin.ModelAdmin):
 
 @admin.register(MensajeWhatsApp)
 class MensajeWhatsAppAdmin(admin.ModelAdmin):
-    list_display = ("id", "conversacion", "origen", "tipo", "estado", "fecha_mensaje")
-    list_filter = ("origen", "tipo", "estado")
+    list_display = ("id", "conversacion", "origen", "tipo", "estado", "oculto_en_crm", "fecha_mensaje")
+    list_filter = ("origen", "tipo", "estado", "oculto_en_crm")
     search_fields = ("meta_message_id", "contenido")
     readonly_fields = [field.name for field in MensajeWhatsApp._meta.fields]
+    actions = ["restaurar_ocultos"]
+
+    @admin.action(description="Restaurar (quitar 'Ocultar en el CRM')")
+    def restaurar_ocultos(self, request, queryset):
+        updated = queryset.filter(oculto_en_crm=True).update(
+            oculto_en_crm=False, oculto_por=None, oculto_en=None
+        )
+        self.message_user(request, f"{updated} mensaje(s) restaurado(s).")
 
 
 @admin.register(AuditoriaWhatsApp)

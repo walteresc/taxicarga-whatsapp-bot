@@ -1,6 +1,10 @@
 <template>
   <div class="conversation-header">
-    <div class="header-left">
+    <div
+      class="header-left"
+      title="Ver información del contacto"
+      @click="$emit('show-info')"
+    >
       <div class="contact-avatar">
         <img
           v-if="conversation.avatar"
@@ -133,7 +137,7 @@ defineProps({
   },
 })
 
-defineEmits(['take-conversation', 'return-bot', 'assign-me', 'reopen'])
+defineEmits(['take-conversation', 'return-bot', 'assign-me', 'reopen', 'show-info'])
 
 const showMenu = ref(false)
 
@@ -198,6 +202,13 @@ const getStatus = (conversation, effectiveBotPaused) => {
   gap: 12px;
   flex: 1;
   min-width: 0;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+
+.header-left:hover {
+  background: #f5f5f5;
 }
 
 .contact-avatar {

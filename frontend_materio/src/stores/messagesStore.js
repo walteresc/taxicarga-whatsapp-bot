@@ -26,15 +26,59 @@ export const useMessagesStore = defineStore('messages', () => {
       messages.value[conversationId] = []
     }
 
-    const existing = messages.value[conversationId].findIndex(m => m.id === id)
+    const list = messages.value[conversationId]
+
+    let existing = list.findIndex(m => m.id === id)
+
+    // Reconcile: a real (server-issued) advisor message can arrive via TWO races —
+    // the send request's own REST response, or the SSE echo of that same message —
+    // whichever wins first, under a DIFFERENT id than the optimistic "local-..."
+    // bubble already in the list. If not matched by id, look for that stale
+    // optimistic entry (by its own clientMsgId, or by content as a fallback for the
+    // SSE path, which never knows the tempId) and reuse its EXACT array slot.
+    //
+    // This must replace IN PLACE rather than remove-then-push: v-for keys on
+    // clientMsgId specifically so this transition never changes the DOM node's key.
+    // Splicing out the old entry and pushing a new one (even synchronously, even
+    // merged into one Vue flush) still changes the v-for key from tempId to the
+    // real id, which tears down and recreates the DOM node — replaying its CSS
+    // entrance animation. THAT replay, not an actual double-render, is what reads
+    // as "appears, disappears, appears again".
+    if (existing < 0) {
+      const clientKey = normalizedMsg.clientMsgId || id
+      existing = list.findIndex(m =>
+        (m.clientMsgId && m.clientMsgId === clientKey)
+        || (
+          typeof m.id === 'string' && m.id.startsWith('local-')
+          && m.status === 'sending'
+          && m.contentType === normalizedMsg.contentType
+          && (m.text || '') === (normalizedMsg.text || '')
+        )
+      )
+      if (existing >= 0) {
+        normalizedMsg.clientMsgId = list[existing].clientMsgId || list[existing].id
+      }
+    }
+
     let upsertResult = 'inserted'
 
     if (existing >= 0) {
+      const prev = list[existing]
+      const merged = { ...prev, ...normalizedMsg }
+
+      // Outbound media messages publish their SSE snapshot the instant the row is
+      // created — BEFORE the upload/adjunto exists — so that event always carries
+      // attachments: null. If it arrives after the real HTTP reconcile (or a REST
+      // reload) already attached the file, don't let it erase what we already have.
+      if (!normalizedMsg.attachments && prev.attachments) {
+        merged.attachments = prev.attachments
+      }
+
       // CRITICAL: Use splice for Vue 3 reactivity — array[i] = value does NOT trigger updates
-      messages.value[conversationId].splice(existing, 1, { ...messages.value[conversationId][existing], ...normalizedMsg })
+      list.splice(existing, 1, merged)
       upsertResult = 'updated'
     } else {
-      messages.value[conversationId].push(normalizedMsg)
+      list.push(normalizedMsg)
     }
 
     // TRABAJO A: Log upsert

@@ -318,6 +318,23 @@ class ConversacionWhatsApp(models.Model):
     ultimo_mensaje_cliente = models.DateTimeField(null=True, blank=True)
     ultimo_mensaje_enviado = models.DateTimeField(null=True, blank=True)
     cerrada_en = models.DateTimeField(null=True, blank=True)
+    archivada = models.BooleanField(
+        default=False,
+        help_text="Estado del CRM únicamente — no afecta al WhatsApp real del cliente "
+                  "ni del asesor. Sale de la bandeja principal a la pestaña 'Archivados'. "
+                  "Se reactiva sola cuando el cliente escribe un mensaje nuevo (mismo "
+                  "comportamiento que archivar un chat en WhatsApp real).",
+    )
+    archivada_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="Quién archivó esta conversación (auditoría). NULL si se desarchivó "
+                  "automáticamente por un mensaje nuevo del cliente.",
+    )
+    archivada_en = models.DateTimeField(null=True, blank=True)
     creada_en = models.DateTimeField(auto_now_add=True)
     actualizada_en = models.DateTimeField(auto_now=True)
 
@@ -381,11 +398,55 @@ class MensajeWhatsApp(models.Model):
         related_name="mensajes",
     )
     meta_message_id = models.CharField(max_length=255, blank=True)
+    wamid = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="wamid real de WhatsApp/Meta (formato 'wamid.XXXX'), requerido por YCloud "
+                  "para citar un mensaje (context.message_id) en una respuesta. Distinto de "
+                  "meta_message_id, que es el id interno de YCloud (formato hex corto) usado "
+                  "para correlación de eventos/estado — nunca sirve para citar.",
+    )
     direccion = models.CharField(max_length=10, choices=DIRECCIONES)
     origen = models.CharField(max_length=10, choices=ORIGENES)
     tipo = models.CharField(max_length=20, choices=TIPOS, default="texto")
     contenido = models.TextField(blank=True)
     question_targets = models.JSONField(default=list, blank=True)
+    responde_a = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="respuestas",
+        help_text="Mensaje citado (quote-reply). NULL si no responde a nada, o si el "
+                   "mensaje citado fue borrado — la cita se pierde, nunca el mensaje.",
+    )
+    reaction_emoji = models.CharField(
+        max_length=8,
+        blank=True,
+        default="",
+        help_text="Emoji de reacción actual sobre ESTE mensaje (uno solo, como WhatsApp "
+                  "1:1 — la última reacción reemplaza a la anterior). Vacío = sin reacción. "
+                  "YCloud manda '' explícito cuando el usuario quita su reacción.",
+    )
+    oculto_en_crm = models.BooleanField(
+        default=False,
+        help_text="'Ocultar en el CRM' — solo deja de mostrarse en el timeline y en el "
+                  "preview de la bandeja (para TODOS los usuarios del CRM, no solo quien "
+                  "lo ocultó — es una bandeja compartida). NUNCA borra el registro: es "
+                  "evidencia comercial de cotizaciones. No afecta al WhatsApp del cliente "
+                  "en absoluto — eso no es técnicamente posible (YCloud no expone ningún "
+                  "endpoint de revocación).",
+    )
+    oculto_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="Quién ocultó este mensaje (auditoría).",
+    )
+    oculto_en = models.DateTimeField(null=True, blank=True, help_text="Cuándo se ocultó (auditoría).")
     evidencia = models.ForeignKey(
         EvidenciaWhatsapp,
         on_delete=models.SET_NULL,

@@ -69,11 +69,13 @@ class ConversationReadState(models.Model):
             user=user,
         ).first()
 
-        # Count inbound messages after last read
+        # Count inbound messages after last read — a hidden ("Ocultar en el CRM")
+        # message must not inflate the unread badge.
         unread = MensajeWhatsApp.objects.filter(
             conversacion=conversation,
             direccion=MensajeWhatsApp.ENTRANTE,
             sender_type=MensajeWhatsApp.SENDER_CUSTOMER,
+            oculto_en_crm=False,
         )
 
         if read_state and read_state.last_read_message:

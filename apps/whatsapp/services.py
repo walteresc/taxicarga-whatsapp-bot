@@ -337,11 +337,19 @@ def _download_whatsapp_media(cliente, lead, event, allowed_types, max_bytes):
 # CRM outbound send (advisor manual reply from the SPA)
 # ============================================================================
 
-def send_crm_message(conversacion, actor, contenido):
+def send_crm_message(conversacion, actor, contenido, reply_to=None):
     """Send an outbound text message from the CRM (advisor manual reply).
 
     Service-layer function — not tied to any specific view/channel, so other
     surfaces (other channels, future automations) can reuse it.
+
+    reply_to: optional MensajeWhatsApp instance being quote-replied to. Must have
+    a real `wamid` (WhatsApp/Meta's own message id, format 'wamid.XXXX') — NOT the
+    `meta_message_id` field, which is YCloud's internal id and does not work as
+    context.message_id (YCloud accepts it silently but WhatsApp never renders the
+    quote). The caller (the view) is responsible for only offering "reply" on
+    messages that have a wamid; this function still defends against being handed
+    one without it rather than silently sending without the quote.
 
     The MensajeWhatsApp row is created ONCE, after the YCloud call resolves, already
     carrying its final estado. This keeps the post_save signal (which publishes to
@@ -350,7 +358,9 @@ def send_crm_message(conversacion, actor, contenido):
 
     Storing meta_message_id = the wamid YCloud returns, with source=SOURCE_CRM, lets
     classify_event()'s existing echo-dedup guard recognize a later echo of this same
-    wamid and skip it (see YCloudMessageProcessor.classify_event, EVENT_ECHO branch).
+    wamid and skip it (see YCloudMessageProcessor.classify_event, EVENT_ECHO branch) —
+    that guard runs purely on wamid+source, before any 'from' resolution, so it holds
+    even for replies (whose inbound counterpart is the case where YCloud omits 'from').
 
     Returns:
         {
@@ -367,6 +377,16 @@ def send_crm_message(conversacion, actor, contenido):
             "error_code": "empty_message", "error_detail": "Escribe un mensaje.",
         }
 
+    reply_to_wamid = None
+    if reply_to is not None:
+        if not reply_to.wamid:
+            return {
+                "success": False, "message": None,
+                "error_code": "reply_target_no_wamid",
+                "error_detail": "No se puede responder a ese mensaje: no tiene wamid registrado.",
+            }
+        reply_to_wamid = reply_to.wamid
+
     if not (settings.YCLOUD_ENABLED and settings.YCLOUD_API_KEY):
         result = {
             "success": False,
@@ -375,7 +395,7 @@ def send_crm_message(conversacion, actor, contenido):
         }
     else:
         from apps.whatsapp_bot_v4.services.ycloud_webhook_service import send_via_ycloud
-        result = send_via_ycloud(conversacion.cliente.telefono, contenido)
+        result = send_via_ycloud(conversacion.cliente.telefono, contenido, reply_to_wamid=reply_to_wamid)
 
     if result.get("success"):
         estado = "enviado"
@@ -405,6 +425,7 @@ def send_crm_message(conversacion, actor, contenido):
         sender_type=MensajeWhatsApp.SENDER_ADVISOR,
         source=MensajeWhatsApp.SOURCE_CRM,
         meta_message_id=meta_message_id,
+        responde_a=reply_to,
         fecha_mensaje=timezone.now(),
     )
 
@@ -414,6 +435,298 @@ def send_crm_message(conversacion, actor, contenido):
         "error_code": error_codigo or None,
         "error_detail": error_detalle or None,
     }
+
+
+def send_crm_reaction(conversacion, target_message, emoji):
+    """React to a message from the CRM (advisor picks an emoji, WhatsApp-style).
+
+    target_message: the MensajeWhatsApp being reacted to. Must have a real `wamid`
+    (same requirement as reply) — the caller is responsible for only offering this
+    action on messages that have one.
+
+    Unlike send_crm_message, this never creates a new MensajeWhatsApp row — it
+    updates target_message.reaction_emoji directly, mirroring how an INCOMING
+    reaction is applied (handle_reaction_event in ycloud_webhook_service.py).
+
+    Returns:
+        {"success": bool, "error_code": str | None, "error_detail": str | None}
+    """
+    if not target_message.wamid:
+        return {
+            "success": False,
+            "error_code": "reaction_target_no_wamid",
+            "error_detail": "No se puede reaccionar a ese mensaje: no tiene wamid registrado.",
+        }
+
+    if not (settings.YCLOUD_ENABLED and settings.YCLOUD_API_KEY):
+        return {
+            "success": False,
+            "error_code": "ycloud_unavailable",
+            "error_detail": "El envío por YCloud no está habilitado o falta configurar la API key.",
+        }
+
+    from apps.whatsapp_bot_v4.services.ycloud_webhook_service import send_reaction_via_ycloud
+    result = send_reaction_via_ycloud(conversacion.cliente.telefono, target_message.wamid, emoji)
+
+    if not result.get("success"):
+        error_detalle = result.get("message") or "No se pudo enviar la reacción."
+        return {
+            "success": False,
+            "error_code": (result.get("code") or "send_failed")[:80],
+            "error_detail": error_detalle,
+        }
+
+    target_message.reaction_emoji = emoji
+    target_message.save(update_fields=["reaction_emoji"])
+
+    from apps.whatsapp.signals import publish_message_media_ready
+    publish_message_media_ready(target_message)
+
+    return {"success": True, "error_code": None, "error_detail": None}
+
+
+# Per-type limits and MIME allowlists as documented at docs.ycloud.com
+# (whatsapp-messaging-examples.md / whatsapp-message-sending-guide.md).
+MEDIA_SEND_LIMITS_BYTES = {
+    "imagen": 5 * 1024 * 1024,
+    "video": 16 * 1024 * 1024,
+    "audio": 16 * 1024 * 1024,
+    "documento": 100 * 1024 * 1024,
+}
+MEDIA_SEND_TIPO_TO_YCLOUD_TYPE = {
+    "imagen": "image",
+    "video": "video",
+    "audio": "audio",
+    "documento": "document",
+}
+MEDIA_SEND_FORMATO_MAP = {
+    "imagen": MensajeAdjunto.FORMATO_IMAGEN,
+    "video": MensajeAdjunto.FORMATO_VIDEO,
+    "audio": MensajeAdjunto.FORMATO_AUDIO,
+    "documento": MensajeAdjunto.FORMATO_DOCUMENTO,
+}
+RETENTION_POLICY_DAYS = {
+    MensajeWhatsApp.RETAIN_DEFAULT: 30,
+    MensajeWhatsApp.RETAIN_QUOTE: 60,
+    MensajeWhatsApp.RETAIN_SERVICE: 90,
+    MensajeWhatsApp.RETAIN_CLAIM: 365 * 10,
+    MensajeWhatsApp.RETAIN_NONE: 0,
+}
+
+
+def send_crm_media_message(conversacion, actor, tipo, uploaded_file, caption=None):
+    """Send an outbound media message (image/video/audio/document) from the CRM.
+
+    Uploads the file to YCloud (get a media id), sends the WhatsApp message
+    referencing that id, then persists BOTH the MensajeWhatsApp and a local
+    MensajeAdjunto copy — we already hold the bytes from the upload step, so
+    there's no separate download round-trip needed (unlike inbound media).
+
+    Returns the same {success, message, error_code, error_detail} shape as
+    send_crm_message(), for a single shared frontend reconciliation contract.
+    """
+    if tipo not in MEDIA_SEND_LIMITS_BYTES:
+        return {
+            "success": False, "message": None,
+            "error_code": "invalid_type", "error_detail": "Tipo de archivo no soportado.",
+        }
+
+    mime_type = uploaded_file.content_type or "application/octet-stream"
+
+    # Route by the file's REAL mime type, not just which attach button was clicked —
+    # a photo sent via "Documento" would otherwise reach the customer as a generic
+    # WhatsApp document instead of an inline image, and is worse UX either way.
+    if mime_type.startswith("image/") and tipo != "imagen":
+        tipo = "imagen"
+    elif mime_type.startswith("video/") and tipo != "video":
+        tipo = "video"
+    elif mime_type.startswith("audio/") and tipo != "audio":
+        tipo = "audio"
+
+    max_bytes = MEDIA_SEND_LIMITS_BYTES[tipo]
+    if uploaded_file.size > max_bytes:
+        return {
+            "success": False, "message": None,
+            "error_code": "file_too_large",
+            "error_detail": f"El archivo supera el límite de {max_bytes // (1024 * 1024)} MB para este tipo.",
+        }
+
+    content = uploaded_file.read()
+    return _send_crm_media_bytes(conversacion, actor, tipo, content, uploaded_file.name, mime_type, caption)
+
+
+def _send_crm_media_bytes(conversacion, actor, tipo, content, filename, mime_type, caption=None):
+    """Shared tail of send_crm_media_message(): upload bytes to YCloud, send, persist
+    both the MensajeWhatsApp and a local MensajeAdjunto copy. Extracted so forwarding
+    (send_crm_forward_message) can reuse it with bytes read from an EXISTING local
+    attachment instead of a freshly uploaded file — same YCloud call, same persistence,
+    only the byte source differs.
+    """
+    if not (settings.YCLOUD_ENABLED and settings.YCLOUD_API_KEY):
+        return {
+            "success": False, "message": None,
+            "error_code": "ycloud_unavailable",
+            "error_detail": "El envío por YCloud no está habilitado o falta configurar la API key.",
+        }
+
+    sha256_hash = hashlib.sha256(content).hexdigest()
+
+    from apps.whatsapp_bot_v4.services.ycloud_webhook_service import upload_media_to_ycloud, send_media_via_ycloud
+
+    sender_phone = settings.YCLOUD_SENDER_PHONE if settings.YCLOUD_SENDER_PHONE.startswith('+') else f'+{settings.YCLOUD_SENDER_PHONE}'
+    recipient_phone = conversacion.cliente.telefono
+
+    upload_result = upload_media_to_ycloud(sender_phone, content, filename, mime_type)
+
+    if not upload_result.get("success"):
+        error_detalle = upload_result.get("message") or "No se pudo subir el archivo a YCloud."
+        mensaje = MensajeWhatsApp.objects.create(
+            conversacion=conversacion,
+            direccion=MensajeWhatsApp.SALIENTE,
+            origen=MensajeWhatsApp.ORIGEN_ASESOR,
+            tipo=tipo,
+            contenido='',
+            autor=actor,
+            estado="error",
+            error_codigo=(upload_result.get("code") or "upload_failed")[:80],
+            error_detalle=error_detalle,
+            sender_type=MensajeWhatsApp.SENDER_ADVISOR,
+            source=MensajeWhatsApp.SOURCE_CRM,
+            caption=caption or '',
+            fecha_mensaje=timezone.now(),
+        )
+        return {"success": False, "message": mensaje, "error_code": mensaje.error_codigo, "error_detail": error_detalle}
+
+    media_id = upload_result["media_id"]
+    ycloud_type = MEDIA_SEND_TIPO_TO_YCLOUD_TYPE[tipo]
+    send_result = send_media_via_ycloud(
+        sender_phone, recipient_phone, ycloud_type, media_id,
+        caption=caption, filename=filename if tipo == "documento" else None,
+    )
+
+    if send_result.get("success"):
+        estado = "enviado"
+        error_codigo = ""
+        error_detalle = ""
+        meta_message_id = send_result.get("wamid", "")
+    else:
+        estado = "error"
+        error_codigo = (send_result.get("code") or "send_failed")[:80]
+        error_detalle = send_result.get("message") or "No se pudo enviar el archivo."
+        combined = f"{error_codigo} {error_detalle}".lower()
+        if "balance" in combined or "insufficient" in combined:
+            error_codigo = "insufficient_balance"
+            error_detalle = "Saldo insuficiente en la cuenta de YCloud para enviar mensajes."
+        meta_message_id = ""
+
+    mensaje = MensajeWhatsApp.objects.create(
+        conversacion=conversacion,
+        direccion=MensajeWhatsApp.SALIENTE,
+        origen=MensajeWhatsApp.ORIGEN_ASESOR,
+        tipo=tipo,
+        contenido='',
+        autor=actor,
+        estado=estado,
+        error_codigo=error_codigo,
+        error_detalle=error_detalle,
+        sender_type=MensajeWhatsApp.SENDER_ADVISOR,
+        source=MensajeWhatsApp.SOURCE_CRM,
+        meta_message_id=meta_message_id,
+        caption=caption or '',
+        ycloud_media_id=media_id,
+        mime_type=mime_type,
+        filename=filename,
+        file_size=len(content),
+        sha256=sha256_hash,
+        fecha_mensaje=timezone.now(),
+    )
+
+    # Persist a local copy regardless of send outcome — the upload to YCloud already
+    # succeeded (we're past that check), so we hold the bytes either way, and this
+    # reuses the same authenticated /media/proxy/ path already built for inbound media.
+    try:
+        days = RETENTION_POLICY_DAYS.get(mensaje.retention_policy, 30)
+        adjunto = MensajeAdjunto(
+            mensaje=mensaje,
+            ycloud_media_id=media_id,
+            formato=MEDIA_SEND_FORMATO_MAP[tipo],
+            mime_type=mime_type,
+            filename=filename,
+            file_size=len(content),
+            sha256=sha256_hash,
+            storage_location=MensajeAdjunto.URL_LOCAL,
+            retention_policy=mensaje.retention_policy,
+            retain_until=timezone.now() + timedelta(days=days),
+            downloaded_at=timezone.now(),
+        )
+        adjunto.archivo.save(filename, ContentFile(content), save=False)
+        adjunto.save()
+        mensaje.media_status = MensajeWhatsApp.MEDIA_READY
+        mensaje.save(update_fields=["media_status"])
+
+        # The message.created snapshot (published the instant this row was created,
+        # earlier in this same function) always went out with attachments: null —
+        # the adjunto didn't exist yet. Tell already-connected clients it's ready now.
+        from apps.whatsapp.signals import publish_message_media_ready
+        publish_message_media_ready(mensaje)
+    except Exception:
+        logger.exception(f"Error persisting outbound media adjunto for message {mensaje.id}")
+
+    return {
+        "success": send_result.get("success", False),
+        "message": mensaje,
+        "error_code": error_codigo or None,
+        "error_detail": error_detalle or None,
+    }
+
+
+def send_crm_forward_message(target_conversacion, actor, source_message):
+    """Forward a message (text or media) to a DIFFERENT conversation, WhatsApp
+    Web-style. Sent as a completely normal new message — source='crm',
+    sender_type='advisor' — same as any other CRM send; WhatsApp's own API has no
+    "forwarded" concept, and neither does ours.
+
+    Media is re-uploaded from OUR local copy (MensajeAdjunto.archivo), never by
+    reusing the original ycloud_media_id — media ids aren't guaranteed valid
+    indefinitely or across conversations, so re-uploading avoids that ambiguity
+    entirely (see MEDIA_SEND_LIMITS_BYTES section / send_crm_media_message).
+
+    Returns the same {success, message, error_code, error_detail} shape as
+    send_crm_message() / send_crm_media_message().
+    """
+    if source_message.tipo == "texto":
+        if not source_message.contenido.strip():
+            return {
+                "success": False, "message": None,
+                "error_code": "empty_message", "error_detail": "El mensaje no tiene contenido para reenviar.",
+            }
+        return send_crm_message(target_conversacion, actor, source_message.contenido)
+
+    if source_message.tipo not in MEDIA_SEND_TIPO_TO_YCLOUD_TYPE:
+        return {
+            "success": False, "message": None,
+            "error_code": "invalid_type", "error_detail": "Este tipo de mensaje no se puede reenviar.",
+        }
+
+    adjunto = source_message.adjuntos.first()
+    if not adjunto or not adjunto.archivo:
+        return {
+            "success": False, "message": None,
+            "error_code": "media_not_available",
+            "error_detail": "El archivo no está disponible localmente para reenviar.",
+        }
+
+    try:
+        adjunto.archivo.open("rb")
+        content = adjunto.archivo.read()
+    finally:
+        adjunto.archivo.close()
+
+    return _send_crm_media_bytes(
+        target_conversacion, actor, source_message.tipo,
+        content, adjunto.filename, adjunto.mime_type,
+        caption=source_message.caption or None,
+    )
 
 
 # ============================================================================
@@ -645,6 +958,12 @@ def download_mensaje_adjunto(
         # Update MensajeWhatsApp media_status
         mensaje.media_status = MensajeWhatsApp.MEDIA_READY
         mensaje.save(update_fields=["media_status"])
+
+        # The message.created snapshot (published when the webhook first created
+        # this row, before this download even started) always went out with
+        # attachments: null. Tell already-connected clients it's ready now.
+        from apps.whatsapp.signals import publish_message_media_ready
+        publish_message_media_ready(mensaje)
 
         return {
             "success": True,

@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 from django.utils import timezone
 from apps.clientes.phone_normalizer import normalize_phone
@@ -74,6 +75,23 @@ class Cliente(models.Model):
         db_index=True,
         help_text="YCloud internal fromUserId — fallback identity when the webhook omits 'from' (e.g. reply/quote messages)"
     )
+    es_transportista = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text="Marcado automáticamente al detectar un mensaje 'OFERTA-<código>' "
+                   "(tercerización de cargas). Reversible manualmente desde la ficha "
+                   "del contacto — no es un estado que deba quedar atrapado por error.",
+    )
+    es_transportista_marcado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="Quién marcó/desmarcó es_transportista. NULL = detección "
+                   "automática (Fase 2, por código OFERTA-<código> válido).",
+    )
+    es_transportista_marcado_en = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-ultima_interaccion"]

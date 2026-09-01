@@ -162,8 +162,12 @@ export const normalizeMessage = raw => {
   return {
     // Identity
     id: raw.id || raw.message_id || null,
+    // Stable v-for key across the optimistic → confirmed transition (id changes
+    // from a local tempId to the real DB id) — see messagesStore.upsertMessage.
+    clientMsgId: raw.clientMsgId || raw.client_msg_id || null,
     conversationId: raw.conversation_id || raw.conversationId || null,
     externalMessageId: raw.external_message_id || raw.externalMessageId || null,
+    metaMessageId: raw.metaMessageId || raw.meta_message_id || null,
 
     // Sender info (explicit precedence: senderName > sender_name > nombre)
     senderType,
@@ -179,6 +183,8 @@ export const normalizeMessage = raw => {
     media: raw.media || raw.adjunto || null,
     attachments: raw.attachments || null,
     caption: raw.caption || null,
+    replyTo: raw.replyTo || raw.reply_to || null,
+    reactionEmoji: raw.reactionEmoji || raw.reaction_emoji || null,
 
     // Timing and status (explicit precedence: status > estado)
     timestamp: raw.timestamp || raw.fecha_mensaje || raw.created_at || null,

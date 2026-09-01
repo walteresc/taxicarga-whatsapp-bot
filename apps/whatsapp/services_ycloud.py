@@ -169,6 +169,50 @@ class YCloudMessageProcessor:
             )
         return cliente
 
+    def _create_cliente_without_phone(self, user_id, display_name):
+        """Identity fallback of last resort — absolute last resort: a real phone
+        number for this contact isn't available ANYWHERE via the API, not just
+        omitted from this one webhook (confirmed: same contact, missing on BOTH
+        inbound (from_user_id) and echo/outbound (to_user_id) events). Product
+        rule: a message must NEVER be discarded for lack of identity.
+
+        Shared by both directions — the caller resolves which opaque id applies
+        (from_user_id for inbound, to_user_id for echo) and passes it generically.
+
+        Creates a Cliente keyed by YCloud's opaque user id — deliberately in a
+        format ('YCID:...') that can never collide with or be mistaken for a real
+        E.164 phone, since Cliente.telefono has no other way to express "unknown".
+        Caches ycloud_user_id immediately, so THIS contact's next message resolves
+        normally via _resolve_cliente_by_from_user_id even if it also omits 'from'.
+
+        If a real phone number ever surfaces later for the same user id, merge
+        this Cliente into the real one via the existing Cliente.merged_into field —
+        no automatic merge here, that needs a human decision (which real Cliente,
+        if any, is actually the same person).
+        """
+        if not user_id:
+            return None
+
+        placeholder_phone = f"YCID:{user_id}"[:30]
+        display_name = display_name or "Contacto sin número"
+
+        cliente, created = Cliente.objects.get_or_create(
+            telefono=placeholder_phone,
+            defaults={
+                "nombre": display_name,
+                "ycloud_user_id": user_id,
+                "name_source": Cliente.SOURCE_CHANNEL,
+            },
+        )
+        if created:
+            logger.warning(
+                "[YCloud] No phone number available anywhere for contact "
+                "(user_id=%s, name=%s) — created Cliente %s with placeholder "
+                "identity %s per 'never discard a message' rule",
+                user_id, display_name, cliente.id, placeholder_phone,
+            )
+        return cliente
+
     @transaction.atomic()
     def process_ycloud_event(self, event_type, event_data, channel, event_id=None, cliente=None):
         """
@@ -219,19 +263,39 @@ class YCloudMessageProcessor:
             # If cliente provided by views.py, use it; otherwise resolve from event and mark discards
             if not cliente:
                 if event_type == self.EVENT_ECHO:
-                    # Echo: 'to' is the customer, 'from' is the business.
-                    # 'to' is always present on echoes (the business always knows who it
-                    # sent the message to), so no fallback chain is needed here.
+                    # Echo: 'to' is the customer, 'from' is the business. Usually 'to'
+                    # is present — but the SAME "contact has no phone anywhere in the
+                    # API" case that affects inbound also affects echoes for that
+                    # contact (confirmed on a real conversation: both directions
+                    # missing the phone, only toUserId/fromUserId available). Same
+                    # fallback chain, mirrored: cached opaque id, then (product rule:
+                    # NEVER discard) a placeholder Cliente.
                     phone = event_data.get("to")
-                    if not phone:
-                        result["error"] = "Echo event missing 'to' field (customer phone)"
-                        _mark_event_discarded(event_id, "Echo missing 'to' (customer phone)", event_data)
-                        return result
-                    cliente = self._get_or_create_cliente_by_phone(phone, event_data)
+                    if phone:
+                        cliente = self._get_or_create_cliente_by_phone(phone, event_data)
+                    else:
+                        to_user_id = event_data.get("to_user_id") or ""
+                        cliente = (
+                            (Cliente.objects.filter(ycloud_user_id=to_user_id).first() if to_user_id else None)
+                            or self._create_cliente_without_phone(
+                                to_user_id or event_data.get("wamid"), event_data.get("to_name")
+                            )
+                        )
+                        if not cliente:
+                            result["error"] = "Echo event missing 'to' and no fallback identity available"
+                            _mark_event_discarded(
+                                event_id,
+                                "Echo missing 'to' and toUserId — no identity possible",
+                                event_data,
+                            )
+                            return result
                 else:
-                    # Inbound: 'from' is the customer. Some inbound messages (replies/quotes
-                    # to a previous message) omit 'from' entirely — fall back to resolving
-                    # identity via the quoted message, then via a cached opaque user id.
+                    # Inbound: 'from' is the customer. Some inbound messages (replies/quotes,
+                    # or contacts WhatsApp/YCloud never exposes a phone for at all — confirmed:
+                    # not a per-webhook fluke, some contacts have no phone anywhere in the API)
+                    # omit 'from' entirely — fall back to resolving identity via the quoted
+                    # message, then a cached opaque user id, then (product rule: NEVER discard
+                    # a message) create a placeholder Cliente keyed by that opaque id.
                     phone = event_data.get("from") or event_data.get("phone")
                     if phone:
                         cliente = self._get_or_create_cliente_by_phone(phone, event_data)
@@ -239,12 +303,19 @@ class YCloudMessageProcessor:
                         cliente = (
                             self._resolve_cliente_by_reply_context(event_data)
                             or self._resolve_cliente_by_from_user_id(event_data)
+                            or self._create_cliente_without_phone(
+                                event_data.get("from_user_id") or event_data.get("wamid"),
+                                event_data.get("from_name"),
+                            )
                         )
                         if not cliente:
-                            result["error"] = "No phone number and no fallback identity resolved"
+                            # Only reachable if even from_user_id AND wamid are both absent —
+                            # should not happen in practice, but still can't fabricate an
+                            # identity out of nothing.
+                            result["error"] = "No phone number and no fallback identity available at all"
                             _mark_event_discarded(
                                 event_id,
-                                "Inbound missing 'from'; reply-context and from_user_id fallback failed",
+                                "Inbound missing 'from', from_user_id, and wamid — no identity possible",
                                 event_data,
                             )
                             return result
@@ -289,6 +360,18 @@ class YCloudMessageProcessor:
             # 4. Lock conversation for atomic update
             conversation = ConversacionWhatsApp.objects.select_for_update().get(pk=conversation.pk)
 
+            # Auto-unarchive on a new message FROM the customer — same behavior as
+            # archiving a chat in real WhatsApp: a new incoming message brings it
+            # back to the main inbox. Outbound (advisor-sent) messages do NOT do
+            # this — sending into an archived chat keeps it archived, also matching
+            # real WhatsApp. archivada is a significant field (signals.py), so this
+            # save() alone publishes conversation.updated live — no extra plumbing.
+            if conversation.archivada and classification["direction"] == MensajeWhatsApp.ENTRANTE:
+                conversation.archivada = False
+                conversation.archivada_por = None
+                conversation.archivada_en = None
+                conversation.save(update_fields=["archivada", "archivada_por", "archivada_en"])
+
             # 5. Parse message details
             wamid = str(event_data.get("wamid") or event_data.get("message_id") or "")
             message_text = event_data.get("text") or event_data.get("body") or ""
@@ -328,16 +411,28 @@ class YCloudMessageProcessor:
             else:
                 # Normal new message — get or create
                 # Build message defaults (include media fields for multimedia messages)
+                # 'recibido' only makes sense for INBOUND (we received it). Echo events
+                # (advisor sent from the native WhatsApp Business app) are OUTBOUND —
+                # hardcoding 'recibido' for those too made them permanently show a clock
+                # in the CRM (no status icon is mapped for 'recibido' on a sent message).
+                estado_inicial = (
+                    "recibido" if classification["direction"] == MensajeWhatsApp.ENTRANTE
+                    else "enviado"
+                )
                 msg_defaults = {
                     "direccion": classification["direction"],
                     "origen": self._map_to_origen(classification["sender_type"]),
                     "tipo": message_type,
                     "contenido": message_text[:500],
-                    "estado": "recibido",
+                    "estado": estado_inicial,
                     "sender_type": classification["sender_type"],
                     "source": classification["source"],
                     "fecha_mensaje": message_timestamp,
                 }
+
+                real_wamid = str(event_data.get("real_wamid") or "")
+                if real_wamid:
+                    msg_defaults["wamid"] = real_wamid
 
                 # Populate media fields if multimedia message
                 # NOTE: _normalize_ycloud_payload() nests the media object under the

@@ -155,6 +155,11 @@ export const useEventStore = defineStore('events', () => {
       }
 
       eventSource.value.addEventListener('message.created', createEventHandler('message.created'))
+      // message.updated: published when async media (inbound download or CRM
+      // upload) finishes AFTER the message.created snapshot already went out
+      // without it. EventSource requires its own explicit listener per named
+      // SSE event — without this line these events are silently dropped.
+      eventSource.value.addEventListener('message.updated', createEventHandler('message.updated'))
       eventSource.value.addEventListener('conversation.created', createEventHandler('conversation.created'))
       eventSource.value.addEventListener('conversation.updated', createEventHandler('conversation.updated'))
 

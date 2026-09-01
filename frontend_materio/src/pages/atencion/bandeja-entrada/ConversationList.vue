@@ -11,18 +11,39 @@
       >
     </div>
 
-    <!-- FILA 2: FILTROS -->
-    <div class="conversation-filters">
-      <!-- State filter tabs -->
+    <!-- FILA 2: FILTROS (oculta dentro de Archivados — no aplican ahí) -->
+    <div
+      v-if="!showArchived"
+      class="conversation-filters"
+    >
+      <!-- State filter tabs — su estado "activo" visual solo aplica fuera de
+           Transportistas: son dos ejes distintos (Todas/Mías/No leídas filtran
+           DENTRO de la vista actual; Transportistas ES la vista), pero mostrar
+           "Todas" marcado a la vez que "Transportistas" confundía. -->
       <button
         v-for="tag in filterTabs"
         :key="tag"
         class="filter-tab"
-        :class="[{ active: activeFilters.includes(tag) }]"
+        :class="[{ active: activeFilters.includes(tag) && !showTransportistas }]"
         :title="tag"
         @click="toggleFilter(tag)"
       >
         {{ tag }}
+      </button>
+
+      <!-- Transportistas: partición separada (como Archivados), no un filtro
+           aditivo más — un contacto es transportista o no, es otro eje. -->
+      <button
+        class="filter-tab transportistas-tab"
+        :class="[{ active: showTransportistas }]"
+        title="Transportistas"
+        @click="showTransportistas = !showTransportistas"
+      >
+        🚚 Transportistas
+        <span
+          v-if="transportistasUnreadCount > 0"
+          class="tab-badge"
+        >{{ transportistasUnreadCount }}</span>
       </button>
 
       <!-- Channel dropdown -->
@@ -63,7 +84,49 @@
             {{ tag }}
           </button>
         </div>
+        <div
+          v-if="!showTransportistas"
+          class="filter-group"
+        >
+          <label class="group-title">Transportistas</label>
+          <button
+            class="menu-item"
+            :class="[{ active: includeTransportistas }]"
+            @click="includeTransportistas = !includeTransportistas"
+          >
+            <i class="ri-checkbox-blank-circle-line" />
+            Incluir transportistas en Todas
+          </button>
+        </div>
       </div>
+    </div>
+
+    <!-- Entrada "Archivados" (estilo WhatsApp) -->
+    <button
+      v-if="!showArchived"
+      class="archived-entry"
+      @click="showArchived = true"
+    >
+      <i class="ri-archive-line" />
+      <span class="archived-entry-label">Archivados</span>
+      <span
+        v-if="archivedCount > 0"
+        class="archived-entry-count"
+      >{{ archivedCount }}</span>
+    </button>
+
+    <!-- Cabecera al ver Archivados -->
+    <div
+      v-else
+      class="archived-header"
+    >
+      <button
+        class="archived-back-btn"
+        @click="showArchived = false"
+      >
+        <i class="ri-arrow-left-line" />
+      </button>
+      <span>Archivados</span>
     </div>
 
     <!-- CONVERSATIONS LIST -->
@@ -135,10 +198,10 @@
         <div class="empty-state">
           <i class="ri-inbox-line empty-icon" />
           <p class="empty-title">
-            Aún no hay conversaciones
+            {{ emptyStateTitle }}
           </p>
           <p class="empty-text">
-            Las nuevas conversaciones aparecerán aquí
+            {{ emptyStateText }}
           </p>
         </div>
       </div>
@@ -150,6 +213,7 @@
         class="conversation-item"
         :class="[{ active: props.selectedConversationId === conv.id }]"
         @click="selectConversation(conv)"
+        @contextmenu.prevent="openContextMenu($event, conv)"
       >
         <div class="avatar">
           <img
@@ -175,6 +239,13 @@
               {{ conv.name || formatPhone(conv.phone) }}
             </h4>
             <span class="time">{{ formatTime(conv.lastActivity) }}</span>
+            <button
+              class="archive-toggle-btn"
+              :title="conv.archived ? 'Desarchivar' : 'Archivar'"
+              @click.stop="setArchived(conv, !conv.archived)"
+            >
+              <i :class="conv.archived ? 'ri-inbox-unarchive-line' : 'ri-archive-line'" />
+            </button>
           </div>
           <p class="preview">
             {{ formatPreview(conv.preview) }}
@@ -208,6 +279,27 @@
         </div>
       </div>
     </div>
+
+    <!-- Menú de clic derecho — teletransportado a <body> (igual que en los mensajes):
+         .conversations-container tiene overflow-y:auto y recortaría el menú si se
+         posicionara dentro, sin importar el z-index. -->
+    <Teleport to="body">
+      <div
+        v-if="contextMenuFor"
+        ref="contextMenuRef"
+        class="context-menu"
+        :style="contextMenuStyle"
+        @click.stop
+      >
+        <button
+          class="context-menu-item"
+          @click="handleContextArchive"
+        >
+          <i :class="contextMenuFor.archived ? 'ri-inbox-unarchive-line' : 'ri-archive-line'" />
+          {{ contextMenuFor.archived ? 'Desarchivar' : 'Archivar' }}
+        </button>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -225,7 +317,7 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['conversation-selected', 'update-count'])
+const emit = defineEmits(['conversation-selected', 'update-count', 'update-view'])
 
 const conversationsStore = useConversationsStore()
 const loading = ref(false)
@@ -234,11 +326,24 @@ const searchPhone = ref('')
 const activeFilters = ref(['Todas'])
 const activeChannels = ref(['Todos'])
 const showFilterMenu = ref(false)
+const showArchived = ref(false)
+const showTransportistas = ref(false)
+const includeTransportistas = ref(false)
 
 const filterTabs = ['Todas', 'Mías', 'No leídas']
 const advancedFilterTags = ['Sin asignar', 'Bot atendiendo', 'Asesor atendiendo', 'Cerradas']
 
-const totalCount = computed(() => conversationsStore.conversations.length)
+const totalCount = computed(() => conversationsStore.conversations.filter(c => !c.archived).length)
+const archivedCount = computed(() => conversationsStore.conversations.filter(c => c.archived).length)
+
+// Suma de no leídos SOLO de transportistas — así el asesor ve, sin entrar a la
+// pestaña, que hay algo nuevo esperando ahí (nunca se mezcla con el contador
+// de la vista de clientes, que ya excluye transportistas por construcción).
+const transportistasUnreadCount = computed(() =>
+  conversationsStore.conversations
+    .filter(conv => conv.is_transportista && !conv.archived)
+    .reduce((sum, conv) => sum + (conv.unread || 0), 0)
+)
 
 const activeFiltersCount = computed(() => {
   const count = activeFilters.value.filter(f => f !== 'Todas').length +
@@ -248,6 +353,20 @@ const activeFiltersCount = computed(() => {
   return count > 0 ? count : 0
 })
 
+const emptyStateTitle = computed(() => {
+  if (showArchived.value) return 'No hay conversaciones archivadas'
+  if (showTransportistas.value) return 'Aún no hay transportistas'
+
+  return 'Aún no hay conversaciones'
+})
+
+const emptyStateText = computed(() => {
+  if (showArchived.value) return 'Las que archives aparecerán aquí'
+  if (showTransportistas.value) return 'Aparecerán aquí cuando un transportista responda a una publicación'
+
+  return 'Las nuevas conversaciones aparecerán aquí'
+})
+
 const hasActiveFilters = computed(() => {
   return searchPhone.value.trim() !== '' ||
     !activeFilters.value.includes('Todas') ||
@@ -255,7 +374,18 @@ const hasActiveFilters = computed(() => {
 })
 
 const filteredConversations = computed(() => {
-  let filtered = conversationsStore.conversations
+  // Archivadas y Transportistas: dos particiones independientes del resto de
+  // filtros (no son "Mías"/"No leídas" — son otro eje: dónde vive la
+  // conversación, y quién es el contacto). Archivados manda primero (una
+  // conversación archivada nunca se ve en Todas ni en Transportistas).
+  let filtered = conversationsStore.conversations.filter(conv => {
+    if (showArchived.value) return conv.archived
+    if (conv.archived) return false
+    if (showTransportistas.value) return conv.is_transportista
+    if (includeTransportistas.value) return true
+
+    return !conv.is_transportista
+  })
 
   if (searchPhone.value) {
     const query = searchPhone.value.toLowerCase()
@@ -302,6 +432,10 @@ const toggleFilterMenu = () => {
 const toggleFilter = tag => {
   if (tag === 'Todas') {
     activeFilters.value = ['Todas']
+
+    // "Todas" es la salida universal a la vista normal — el usuario espera
+    // que lo saque de Transportistas, no solo que limpie Mías/No leídas.
+    showTransportistas.value = false
   } else {
     const index = activeFilters.value.indexOf(tag)
     if (index > -1) {
@@ -439,6 +573,63 @@ const formatPhone = phone => {
   return phone
 }
 
+/** Archive/unarchive — CRM-only state, no confirmation (low-risk, reversible).
+ * Removes the conversation from local view immediately; if it's the currently open
+ * one, also tell the parent so it can clear the panel (matches WhatsApp: archiving
+ * the open chat closes it). Live for other sessions via the conversation.updated
+ * SSE event (archivada is a significant field — see signals.py). */
+const setArchived = async (conv, archived) => {
+  const action = archived ? 'archivar' : 'desarchivar'
+
+  try {
+    const response = await fetch(`/dashboard/whatsapp/conversaciones/${conv.id}/${action}/`, {
+      method: 'POST',
+      headers: { 'X-CSRFToken': conversationService.getCsrfToken() },
+      credentials: 'include',
+    })
+
+    if (response.ok) {
+      // updateConversationState does a plain shallow merge (no recomputed unread/
+      // attentionMode defaults like upsertConversation) — needed here since this is
+      // a PARTIAL patch and upsertConversation would otherwise reset unread to 0.
+      conversationsStore.updateConversationState(conv.id, { archived })
+      if (props.selectedConversationId === conv.id) {
+        emit('conversation-selected', null)
+      }
+    }
+  } catch (err) {
+    console.error(`[ConversationList] Failed to ${action} conversation:`, err)
+  }
+}
+
+const contextMenuFor = ref(null)
+const contextMenuStyle = ref({})
+const contextMenuRef = ref(null)
+
+const openContextMenu = (event, conv) => {
+  contextMenuFor.value = conv
+  contextMenuStyle.value = {
+    position: 'fixed',
+    top: `${event.clientY}px`,
+    left: `${event.clientX}px`,
+  }
+}
+
+const handleContextArchive = () => {
+  if (!contextMenuFor.value) return
+  setArchived(contextMenuFor.value, !contextMenuFor.value.archived)
+  contextMenuFor.value = null
+}
+
+// mousedown + capture (same pattern used for the message menu/other popovers in
+// this app): closes on any click outside — including right-clicking a DIFFERENT
+// row, which should move the menu, not leave two open.
+const closeContextMenuIfOutside = event => {
+  if (contextMenuFor.value && !contextMenuRef.value?.contains(event.target)) {
+    contextMenuFor.value = null
+  }
+}
+
 const loadConversations = async () => {
   loading.value = true
   error.value = false
@@ -456,22 +647,35 @@ onMounted(async () => {
   // Load initial conversations from store
   // useWhatsAppRealtime already handles SSE updates to conversationsStore
   await loadConversations()
+  document.addEventListener('mousedown', closeContextMenuIfOutside, true)
 })
 
 onUnmounted(() => {
   // Cleanup: store handles its own lifecycle
+  document.removeEventListener('mousedown', closeContextMenuIfOutside, true)
 })
 
 // Emit count update whenever filtered results change
 watch(() => filteredConversations.value.length, newCount => {
   emit('update-count', newCount)
 })
+
+// So the page header can say "Archivados" instead of "Bandeja de entrada" (and not
+// show a confusing "0" while viewing an empty Archivados tab).
+watch(showArchived, isArchived => {
+  emit('update-view', isArchived ? 'archived' : 'inbox')
+}, { immediate: true })
 </script>
 
 <style scoped>
 .conversation-sidebar {
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  /* flex, not grid: the number of top-level rows here varies (filtros y la fila de
+     Archivados/cabecera son v-if) — a fixed grid-template-rows count breaks (and
+     overlaps rows) the moment the number of children doesn't match its track count,
+     which is exactly what happened when the Archivados row was added. Flex just
+     stacks whatever is actually rendered, in order, no track count to keep in sync. */
+  display: flex;
+  flex-direction: column;
   height: 100%;
   background: #fff;
   border-right: 1px solid #e0e0e0;
@@ -524,6 +728,7 @@ watch(() => filteredConversations.value.length, newCount => {
   gap: 6px;
   padding: 6px 12px 8px;
   min-height: auto;
+  flex-shrink: 0;
   border-bottom: 1px solid rgba(0, 0, 0, 0.08);
   position: relative;
   flex-shrink: 0;
@@ -542,6 +747,27 @@ watch(() => filteredConversations.value.length, newCount => {
   white-space: nowrap;
   flex-shrink: 0;
   min-width: fit-content;
+}
+
+.transportistas-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--v-error-base, #f87171);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .filter-tab:hover {
@@ -837,6 +1063,123 @@ watch(() => filteredConversations.value.length, newCount => {
   justify-content: space-between;
   align-items: baseline;
   gap: 6px;
+}
+
+.archive-toggle-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #999;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 13px;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.conversation-item:hover .archive-toggle-btn {
+  opacity: 1;
+}
+
+.archive-toggle-btn:hover {
+  background: #eee;
+  color: #555;
+}
+
+.archived-entry {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  flex-shrink: 0;
+  padding: 10px 16px;
+  border: none;
+  border-bottom: 1px solid #e0e0e0;
+  background: #fff;
+  cursor: pointer;
+  font-size: 13px;
+  color: #333;
+  text-align: left;
+}
+
+.archived-entry:hover {
+  background: #f5f5f5;
+}
+
+.archived-entry i {
+  font-size: 18px;
+  color: #667781;
+}
+
+.archived-entry-label {
+  flex: 1;
+  font-weight: 500;
+}
+
+.archived-entry-count {
+  font-size: 12px;
+  color: #667781;
+}
+
+.archived-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  padding: 10px 16px;
+  border-bottom: 1px solid #e0e0e0;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.archived-back-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 18px;
+  color: #333;
+  padding: 4px;
+}
+
+.context-menu {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  min-width: 160px;
+  z-index: 20000;
+  overflow: hidden;
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 14px;
+  border: none;
+  background: transparent;
+  color: #333;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.context-menu-item:hover {
+  background: #f5f5f5;
+}
+
+.context-menu-item i {
+  font-size: 14px;
 }
 
 .name {

@@ -30,6 +30,7 @@ CONVERSATION_SIGNIFICANT_FIELDS = {
     'estado_recopilacion',
     'estado_cotizacion',
     'cerrada_en',
+    'archivada',
 }
 
 
@@ -98,6 +99,119 @@ def get_sender_name(message_instance, conversation):
     return 'Unknown'
 
 
+def build_message_event_data(instance):
+    """Build the canonical message event payload — shared by the message.created
+    signal and any explicit message.updated publish (e.g. once async media
+    becomes available after the row was already created)."""
+    conv = instance.conversacion
+
+    unread_delta = 1 if instance.direccion == MensajeWhatsApp.ENTRANTE else 0
+
+    adjuntos_data = []
+    if instance.tipo in ('imagen', 'audio', 'video', 'documento'):
+        for adjunto in instance.adjuntos.all():
+            adjunto_dict = {
+                'id': adjunto.id,
+                'type': adjunto.formato,
+                'media_id': adjunto.ycloud_media_id,
+                'mime_type': adjunto.mime_type,
+                'filename': adjunto.filename,
+                'file_size': adjunto.file_size,
+                'sha256': adjunto.sha256,
+            }
+            # Always serve through the authenticated proxy — MEDIA_ROOT is
+            # private and not exposed by nginx or any Django urlpattern.
+            adjunto_dict['url'] = f'/media/proxy/{adjunto.ycloud_media_id}/'
+            adjuntos_data.append(adjunto_dict)
+
+    reply_to_data = None
+    if instance.responde_a_id:
+        quoted = instance.responde_a
+        if quoted.tipo in ('imagen', 'audio', 'video', 'documento'):
+            preview_text = quoted.caption or f'[{quoted.tipo}]'
+        else:
+            preview_text = quoted.contenido[:120]
+        reply_to_data = {
+            'id': quoted.id,
+            'senderName': get_sender_name(quoted, conv),
+            'type': quoted.tipo if quoted.tipo != 'texto' else 'text',
+            'text': preview_text,
+        }
+
+    return {
+        'conversation_id': conv.id,
+        'channel_id': conv.channel_id,
+        'cliente_id': conv.cliente_id,
+        'message_id': instance.id,
+        # sourced from wamid, not meta_message_id — see MensajeWhatsApp.wamid docstring
+        'meta_message_id': instance.wamid,
+        'sender_type': instance.sender_type,  # 'customer' or 'advisor'
+        'sender_name': get_sender_name(instance, conv),  # Safe extraction
+        'direction': instance.direccion,  # 'entrante' or 'saliente'
+        'content_type': instance.tipo,
+        'content': instance.contenido[:8000] if instance.contenido else '',  # Full text (8KB limit)
+        'preview': instance.contenido[:100] if instance.contenido else f"[{instance.tipo}]",  # Truncated for list
+        'status': instance.estado,  # Message status (recibido, entregado, etc.)
+        'timestamp': instance.fecha_mensaje.isoformat() if instance.fecha_mensaje else timezone.now().isoformat(),
+        'caption': instance.caption or None,
+        'attachments': adjuntos_data if adjuntos_data else None,
+        'reply_to': reply_to_data,
+        'reaction_emoji': instance.reaction_emoji or None,
+        # 'Ocultar en el CRM' — frontend removes this message from its local store
+        # entirely (not just updates it) when this is true. Never means deleted.
+        'hidden': instance.oculto_en_crm,
+        'conversation': {
+            'summary': conv.resumen,
+            'last_activity': conv.ultima_actividad.isoformat() if conv.ultima_actividad else timezone.now().isoformat(),
+            'unread_delta': unread_delta,
+            'attention_state': conv.estado_atencion,
+            'bot_paused': conv.bot_pausado,
+            # Needed so the bandeja can render a brand-new conversation (first SSE
+            # event ever seen for it, not yet in the frontend store from a REST
+            # load) without showing "Desconocido" until the next full page reload.
+            'name': (conv.cliente.display_name or conv.cliente.nombre or conv.cliente.telefono) if conv.cliente else None,
+            'phone': conv.cliente.telefono if conv.cliente else None,
+        }
+    }
+
+
+def publish_transportista_state_change(conversation):
+    """Publica conversation.updated con is_transportista al marcar/desmarcar un
+    contacto como transportista. es_transportista vive en Cliente, no en
+    ConversacionWhatsApp, así que el post_save de más abajo no lo detecta solo
+    — se llama explícito, justo después del cambio, mismo patrón que
+    publish_message_media_ready."""
+    if not conversation.cliente:
+        return
+    try:
+        event_data = {
+            'conversation_id': conversation.id,
+            'cliente_id': conversation.cliente_id,
+            'channel_id': conversation.channel_id,
+            'is_transportista': conversation.cliente.es_transportista,
+        }
+        publish_event('conversation.updated', event_data)
+    except Exception as e:
+        logger.error(
+            f"Failed to publish transportista state change for conv {conversation.id}: {e}"
+        )
+
+
+def publish_message_media_ready(instance):
+    """Publish message.updated once async media (inbound download or CRM
+    upload) finishes AFTER the message row — and its message.created snapshot
+    — already existed without an attachment. Call explicitly right after the
+    MensajeAdjunto is created; not wired to any signal."""
+    if not instance.conversacion:
+        return
+    try:
+        event_data = build_message_event_data(instance)
+        event = publish_event('message.updated', event_data)
+        logger.info(f"[YCloud] message.updated published for msg_id={instance.id}, event_id={event.id if event else 'failed'}")
+    except Exception as e:
+        logger.error(f"Failed to publish message.updated for msg_id={instance.id}: {e}")
+
+
 @receiver(post_save, sender=MensajeWhatsApp)
 def publish_message_created_event(sender, instance, created, **kwargs):
     """Publish message.created event with complete conversation state.
@@ -114,58 +228,7 @@ def publish_message_created_event(sender, instance, created, **kwargs):
     def publish_in_committed_transaction():
         """Publish only after transaction commits."""
         try:
-            conv = instance.conversacion
-
-            # Calculate unread CANONICAL: only new messages since last read (at time of event)
-            # This MUST match ConversationReadState calculation for consistency
-            # Don't count all unread inbound - that's stale. Count ONLY new messages after event.
-            # For simplicity: message just arrived = +1 unread for first viewer
-            unread_delta = 1 if instance.direccion == MensajeWhatsApp.ENTRANTE else 0
-
-            # Build attachment data if message has multimedia
-            adjuntos_data = []
-            if instance.tipo in ('imagen', 'audio', 'video', 'documento'):
-                for adjunto in instance.adjuntos.all():
-                    adjunto_dict = {
-                        'id': adjunto.id,
-                        'type': adjunto.formato,
-                        'media_id': adjunto.ycloud_media_id,
-                        'mime_type': adjunto.mime_type,
-                        'filename': adjunto.filename,
-                        'file_size': adjunto.file_size,
-                        'sha256': adjunto.sha256,
-                    }
-                    # Always serve through the authenticated proxy — MEDIA_ROOT is
-                    # private and not exposed by nginx or any Django urlpattern.
-                    adjunto_dict['url'] = f'/media/proxy/{adjunto.ycloud_media_id}/'
-                    adjuntos_data.append(adjunto_dict)
-
-            # Complete event with all data frontend needs for bandeja + timeline
-            # FASE 5B Opción A: publish full content + sender_name + status
-            event_data = {
-                'conversation_id': conv.id,
-                'channel_id': conv.channel_id,
-                'cliente_id': conv.cliente_id,
-                'message_id': instance.id,
-                'meta_message_id': instance.meta_message_id,
-                'sender_type': instance.sender_type,  # 'customer' or 'advisor'
-                'sender_name': get_sender_name(instance, conv),  # Safe extraction
-                'direction': instance.direccion,  # 'entrante' or 'saliente'
-                'content_type': instance.tipo,
-                'content': instance.contenido[:8000] if instance.contenido else '',  # Full text (8KB limit)
-                'preview': instance.contenido[:100] if instance.contenido else f"[{instance.tipo}]",  # Truncated for list
-                'status': instance.estado,  # Message status (recibido, entregado, etc.)
-                'timestamp': instance.fecha_mensaje.isoformat() if instance.fecha_mensaje else timezone.now().isoformat(),
-                'caption': instance.caption or None,
-                'attachments': adjuntos_data if adjuntos_data else None,
-                'conversation': {
-                    'summary': conv.resumen,
-                    'last_activity': conv.ultima_actividad.isoformat() if conv.ultima_actividad else timezone.now().isoformat(),
-                    'unread_delta': unread_delta,
-                    'attention_state': conv.estado_atencion,
-                    'bot_paused': conv.bot_pausado,
-                }
-            }
+            event_data = build_message_event_data(instance)
 
             logger.warning(f"[CP-12] SIGNAL_EXECUTED: message.created signal fired for msg_id={instance.id}")
             event = publish_event('message.created', event_data)
@@ -242,6 +305,11 @@ def publish_conversation_state_change(sender, instance, created, update_fields=N
         'bot_paused': instance.bot_pausado,
         'collection_state': instance.estado_recopilacion,
         'quote_state': instance.estado_cotizacion,
+        'archived': instance.archivada,
+        # Lives on Cliente, not ConversacionWhatsApp — the change-detection above
+        # (CONVERSATION_SIGNIFICANT_FIELDS) can't see it, but every conversation.*
+        # event should still carry the current value for the bandeja filter.
+        'is_transportista': instance.cliente.es_transportista if instance.cliente else False,
     }
 
     if event_type == 'conversation.updated' and changed_fields:

@@ -9,7 +9,7 @@ def get_pizarra():
     from apps.campo.views import pizarra
     return pizarra
 
-from .views_whatsapp import whatsapp_conversacion_accion, whatsapp_conversaciones, conversation_messages, pause_bot, resume_bot, mark_conversation_read, api_active_conversations, api_unread_counts, api_events_stream, api_send_message
+from .views_whatsapp import whatsapp_conversacion_accion, whatsapp_conversaciones, conversation_messages, pause_bot, resume_bot, mark_conversation_read, api_active_conversations, api_unread_counts, api_events_stream, api_send_message, api_send_media_message, api_react_message, api_forward_message, api_hide_message, api_archive_conversation, api_unarchive_conversation, api_set_transportista, api_set_transportista_bot_pausado
 from .views_sse import sse_events_stream, debug_redis
 from .views_auth_api import api_login, api_logout, api_user, api_check_auth
 from apps.whatsapp.views_realtime import sse_conversation_updates
@@ -53,6 +53,7 @@ urlpatterns = [
     path("api/auth/user/", api_user, name="api-user"),
     path("api/auth/check/", api_check_auth, name="api-check-auth"),
     path("servicios/", include("apps.servicios.urls")),
+    path("tercerizacion/", include("apps.tercerizacion.urls")),
     path("clientes/", include("apps.clientes.urls_dashboard")),
     path("pizarra/", get_pizarra(), name="dashboard-pizarra"),
     path("campo/", include("apps.campo.urls")),
@@ -72,6 +73,14 @@ urlpatterns = [
     path("whatsapp/conversaciones/<int:conversation_id>/resume-bot/", resume_bot, name="resume-bot"),
     path("whatsapp/conversaciones/<int:conversation_id>/mark-read/", mark_conversation_read, name="mark-conversation-read"),
     path("whatsapp/conversaciones/<int:conversation_id>/enviar/", api_send_message, name="api-send-message"),
+    path("whatsapp/conversaciones/<int:conversation_id>/enviar-media/", api_send_media_message, name="api-send-media-message"),
+    path("whatsapp/conversaciones/<int:conversation_id>/mensajes/<int:message_id>/reaccionar/", api_react_message, name="api-react-message"),
+    path("whatsapp/conversaciones/<int:conversation_id>/mensajes/<int:message_id>/reenviar/", api_forward_message, name="api-forward-message"),
+    path("whatsapp/conversaciones/<int:conversation_id>/mensajes/<int:message_id>/ocultar/", api_hide_message, name="api-hide-message"),
+    path("whatsapp/conversaciones/<int:conversation_id>/archivar/", api_archive_conversation, name="api-archive-conversation"),
+    path("whatsapp/conversaciones/<int:conversation_id>/desarchivar/", api_unarchive_conversation, name="api-unarchive-conversation"),
+    path("whatsapp/conversaciones/<int:conversation_id>/transportista/", api_set_transportista, name="api-set-transportista"),
+    path("whatsapp/conversaciones/<int:conversation_id>/transportista-bot-pausado/", api_set_transportista_bot_pausado, name="api-set-transportista-bot-pausado"),
     path("whatsapp/conversaciones/<int:conversation_id>/sse/", sse_conversation_updates, name="sse-conversation-updates"),
     path("whatsapp/sse/", sse_global_updates, name="sse-global-updates"),
     path("whatsapp/por-cotizar/", whatsapp_por_cotizar, name="dashboard-whatsapp-por-cotizar"),

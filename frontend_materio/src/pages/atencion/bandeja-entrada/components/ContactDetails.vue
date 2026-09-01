@@ -4,8 +4,8 @@
     <div class="details-header">
       <h4>Información</h4>
       <button
-        v-if="mobileClose"
         class="close-btn"
+        title="Cerrar panel"
         @click="$emit('close')"
       >
         <i class="ri-close-line" />
@@ -30,6 +30,26 @@
       <h3>{{ contact.name }}</h3>
       <p class="phone">
         {{ contact.phone }}
+      </p>
+    </div>
+
+    <!-- Transportista: marcado automático por código OFERTA-<código> (o a
+         mano). Reversible aquí — vía obligatoria si se marcó por error. -->
+    <div class="details-section transportista-toggle">
+      <label class="transportista-check">
+        <input
+          type="checkbox"
+          :checked="contact.is_transportista"
+          :disabled="savingTransportista"
+          @change="handleToggleTransportista($event.target.checked)"
+        >
+        🚚 Es transportista
+      </label>
+      <p
+        v-if="contact.is_transportista"
+        class="transportista-hint"
+      >
+        Esta conversación no aparece en la bandeja de clientes — solo en "Transportistas".
       </p>
     </div>
 
@@ -125,7 +145,11 @@
 </template>
 
 <script setup>
-defineProps({
+import { ref } from 'vue'
+import { conversationService } from '@/services/conversationService'
+import { useConversationsStore } from '@/stores/conversationsStore'
+
+const props = defineProps({
   contact: {
     type: Object,
     required: true,
@@ -135,20 +159,66 @@ defineProps({
     default: () => ({}),
   },
   advisor: Object,
-  mobileClose: Boolean,
 })
 
 defineEmits(['close'])
 
+const conversationsStore = useConversationsStore()
+const savingTransportista = ref(false)
+
 const getInitials = name => {
   if (!name) return '?'
-  
+
   return name
     .split(' ')
     .map(n => n[0])
     .join('')
     .toUpperCase()
     .slice(0, 2)
+}
+
+/** Reversión manual de es_transportista — vía obligatoria (ver
+ * apps/tercerizacion/services.py: marcar_transportista es pegajoso a
+ * propósito, así que un marcado erróneo necesita una salida siempre
+ * disponible aquí). */
+const handleToggleTransportista = async checked => {
+  savingTransportista.value = true
+  try {
+    const response = await fetch(
+      `/dashboard/whatsapp/conversaciones/${props.contact.id}/transportista/`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': conversationService.getCsrfToken(),
+        },
+        credentials: 'include',
+        body: JSON.stringify({ es_transportista: checked }),
+      }
+    )
+
+    let data = null
+    try {
+      data = await response.json()
+    } catch {
+      data = null
+    }
+
+    if (data?.success) {
+      conversationsStore.updateConversationState(props.contact.id, {
+        is_transportista: data.es_transportista,
+      })
+
+      // selectedConversation in the parent is a snapshot reference, not
+      // guaranteed to stay in sync with the store's splice-replace — patch it
+      // directly too so the checkbox never silently reverts on next render.
+      props.contact.is_transportista = data.es_transportista
+    }
+  } catch (error) {
+    console.error('[ContactDetails] Failed to toggle transportista:', error)
+  } finally {
+    savingTransportista.value = false
+  }
 }
 </script>
 
@@ -158,7 +228,6 @@ const getInitials = name => {
   flex-direction: column;
   height: 100%;
   background: #fff;
-  border-left: 1px solid #e0e0e0;
   overflow-y: auto;
 }
 
@@ -279,6 +348,31 @@ const getInitials = name => {
 
 .empty-value {
   font-size: 12px;
+  color: #999;
+}
+
+.transportista-toggle {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.transportista-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #333;
+  cursor: pointer;
+}
+
+.transportista-check input {
+  cursor: pointer;
+}
+
+.transportista-hint {
+  margin: 6px 0 0 0;
+  font-size: 11px;
   color: #999;
 }
 

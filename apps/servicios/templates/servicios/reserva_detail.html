@@ -345,6 +345,41 @@
       </div>
     </div>
 
+    {% comment %}CARD: TERCERIZACIÓN{% endcomment %}
+    <div class="detail-card">
+      <div class="detail-card-header">
+        <span class="mdi mdi-truck-fast" style="color:#4F46E5;font-size:16px;"></span>
+        Tercerización
+      </div>
+      <div class="detail-card-body">
+        {% if s.es_tercerizada %}
+        <div style="padding:8px 10px;border-radius:6px;background:#DBEAFE;color:#1E40AF;font-size:12px;font-weight:600;margin-bottom:10px;">
+          ✓ Tercerizada a {{ s.transportista_asignado.display_name|default:s.transportista_asignado.nombre }}
+        </div>
+        {% endif %}
+
+        {% with publicacion_abierta=s.publicaciones_tercerizacion.all|first %}
+        {% if publicacion_abierta %}
+        <div class="field-group">
+          <div class="field-label">Última publicación</div>
+          <div class="field-value">
+            <a href="{% url 'tercerizacion-detail' publicacion_abierta.pk %}">
+              OFERTA-{{ publicacion_abierta.codigo }} ({{ publicacion_abierta.get_estado_display }})
+            </a>
+          </div>
+        </div>
+        {% endif %}
+        {% endwith %}
+
+        <form method="post" action="{% url 'tercerizacion-tercerizar' s.pk %}" style="margin-top:10px;">
+          {% csrf_token %}
+          <button type="submit" class="btn-outline" style="width:100%;">
+            🚚 Tercerizar carga
+          </button>
+        </form>
+      </div>
+    </div>
+
     {% comment %}CARD: INFORMACIÓN{% endcomment %}
     <div class="detail-card">
       <div class="detail-card-header">

@@ -108,6 +108,34 @@ def _normalize_ycloud_payload(event_type, payload):
     if event_type == "whatsapp.inbound_message.received":
         msg_data = payload.get("whatsappInboundMessage", {})
         if msg_data:
+            # Emoji reaction to a message (👍 long-press on WhatsApp) — has no 'text'
+            # field at all (only 'reaction': {message_id, emoji}). It doesn't create a
+            # new message; it UPDATES the reacted-to one. Handled separately by the
+            # view (handle_reaction_event), short-circuited BEFORE the normal
+            # client/conversation/message pipeline below — a reaction has no content
+            # type of its own to persist as a MensajeWhatsApp row.
+            if msg_data.get("type") == "reaction":
+                reaction = msg_data.get("reaction") or {}
+                canonical["is_reaction"] = True
+                canonical["reaction_target_wamid"] = reaction.get("message_id", "")
+                canonical["reaction_emoji"] = reaction.get("emoji", "")
+                canonical["wamid"] = msg_data.get("id")
+                canonical["from"] = msg_data.get("from")
+
+                return canonical
+
+            # Message revoked/deleted by the SENDER on their own side ("delete for
+            # everyone" from the customer's WhatsApp) — has no 'text' field at all,
+            # only 'revoke': {originalMessageId}. Falling through to the normal
+            # branch below created a blank text message (empty contenido) for each
+            # one, same bug class as reactions before those were handled. Discarded:
+            # we don't fabricate a "mensaje eliminado" placeholder here, same
+            # principle as not faking any action we don't fully support yet.
+            if msg_data.get("type") == "revoke":
+                original = (msg_data.get("revoke") or {}).get("originalMessageId", "")
+                logger.info(f"[YCloud] Message revoked by sender (original={original}), discarding event")
+                return None
+
             # Check if this is an EDIT event
             if msg_data.get("type") == "edit" and msg_data.get("edit"):
                 edit_data = msg_data.get("edit", {})
@@ -139,6 +167,11 @@ def _normalize_ycloud_payload(event_type, payload):
                 # to that message's wamid — used as an identity fallback when 'from' is absent.
                 canonical["reply_to_wamid"] = (msg_data.get("context") or {}).get("id", "")
                 canonical["wamid"] = msg_data.get("id")
+                # Real WhatsApp/Meta wamid ('wamid.XXXX') — distinct from the YCloud-internal
+                # 'id' above. Required for context.message_id when quoting this message later;
+                # the YCloud id above does NOT work for that (confirmed: YCloud silently accepts
+                # it but WhatsApp never renders the quote — see meta_message_id field docstring).
+                canonical["real_wamid"] = msg_data.get("wamid", "")
                 canonical["text"] = msg_data.get("text", {}).get("body", "")
                 canonical["image"] = msg_data.get("image")
                 canonical["audio"] = msg_data.get("audio")
@@ -158,18 +191,40 @@ def _normalize_ycloud_payload(event_type, payload):
     elif event_type == "whatsapp.smb.message.echoes":
         msg_data = payload.get("whatsappMessage", {})
         if msg_data:
+            # Advisor revoked/deleted their own message from the native WhatsApp
+            # Business app — same "revoke" shape and same fix as the inbound branch
+            # above (no 'text' field, would otherwise create a blank message).
+            if msg_data.get("type") == "revoke":
+                original = (msg_data.get("revoke") or {}).get("originalMessageId", "")
+                logger.info(f"[YCloud] Advisor revoked message via WhatsApp app (original={original}), discarding event")
+                return None
+
             # Echo: 'to' is customer, 'from' is business
             canonical["from"] = msg_data.get("from")
             canonical["to"] = msg_data.get("to")
+            # Some contacts never expose a phone number via the API at all (confirmed:
+            # same contact, same conversation, missing on BOTH inbound and echo/outbound
+            # events) — toUserId is the fallback identity, same idea as from_user_id on
+            # the inbound side.
+            canonical["to_user_id"] = msg_data.get("toUserId", "")
+            profile = msg_data.get("customerProfile") or {}
+            canonical["to_name"] = profile.get("name") or profile.get("username", "")
             canonical["wamid"] = msg_data.get("id")
+            canonical["real_wamid"] = msg_data.get("wamid", "")
             canonical["text"] = msg_data.get("text", {}).get("body", "")
             canonical["type"] = payload.get("type")
             canonical["timestamp"] = payload.get("timestamp")
 
     elif event_type == "whatsapp.message.updated":
-        # Status update
-        canonical["wamid"] = payload.get("id") or payload.get("wamid")
-        canonical["status"] = payload.get("status")
+        # Status update (sent/delivered/read/failed) for a message WE sent. The real
+        # data is nested under whatsappMessage — payload.get("id")/.get("status") at
+        # the top level (the old code here) read the EVENT's own id, not the
+        # message's, and there is no top-level "status" key at all: this branch
+        # always produced wamid=<event id> status=None, silently no-op forever.
+        msg_data = payload.get("whatsappMessage", {})
+        canonical["is_status_update"] = True
+        canonical["wamid"] = msg_data.get("id")
+        canonical["status"] = msg_data.get("status")
         canonical["type"] = "status"
 
     return canonical if canonical.get("wamid") or canonical.get("from") or canonical.get("status") else None
@@ -346,6 +401,22 @@ def ycloud_webhook(request):
         return JsonResponse({'status': 'ok'})
     trace.log(7, "PAYLOAD_NORMALIZED", f"from={canonical_payload.get('from')}, wamid={canonical_payload.get('wamid')}")
 
+    # 6B. REACCIÓN: actualiza un mensaje existente, no crea uno nuevo — short-circuit
+    # antes del pipeline normal de cliente/conversación/mensaje.
+    if canonical_payload.get("is_reaction"):
+        handle_reaction_event(canonical_payload)
+        trace.log(11, "HTTP_200_RETURNED", "reaction processed")
+        trace.summary()
+        return JsonResponse({'status': 'ok'})
+
+    # 6C. STATUS UPDATE (sent/delivered/read/failed): same short-circuit — updates
+    # an existing message's estado, never creates one.
+    if canonical_payload.get("is_status_update"):
+        handle_status_update_event(canonical_payload)
+        trace.log(11, "HTTP_200_RETURNED", "status update processed")
+        trace.summary()
+        return JsonResponse({'status': 'ok'})
+
     # 7. DELEGAR PERSISTENCIA AL PROCESADOR CANÓNICO
     try:
         logger.warning(f"[YCloud] Resolving channel for event {event_type}")
@@ -407,11 +478,6 @@ def process_bot_for_conversation_async(conversation, message):
 
     logger.info(f"[BotAsync] Processing conversation {conversation.id}, message {message.id}")
 
-    # Verificar si puede responder el bot
-    if not can_bot_respond(conversation.id):
-        logger.info(f"[BotAsync] Bot cannot respond for conversation {conversation.id}")
-        return
-
     # Solo procesar mensajes de cliente (ENTRANTE)
     if message.direccion != MensajeWhatsApp.ENTRANTE:
         logger.info(f"[BotAsync] Skipping non-inbound message {message.id}")
@@ -422,6 +488,33 @@ def process_bot_for_conversation_async(conversation, message):
         logger.info(f"[BotAsync] Skipping non-customer message {message.id}")
         return
 
+    # --- Tercerización de cargas: identifica y enruta ANTES del check de
+    # pausa del bot de clientes a propósito — es clasificación/etiquetado
+    # para la bandeja del CRM, no una respuesta del bot, así que debe
+    # funcionar aunque el bot esté pausado globalmente. Si esta conversación
+    # es (o se acaba de identificar como) transportista, el bot de CLIENTES
+    # nunca debe verla, ni ahora ni si se reanudara — solo el bot de
+    # transportistas (Fase 3, con su propio check de pausa y su propio flag
+    # TRANSPORTISTA_BOT_ENABLED) puede responderle.
+    try:
+        from apps.tercerizacion.services import identificar_posible_transportista
+        if identificar_posible_transportista(conversation, message):
+            logger.info(f"[BotAsync] Conversation {conversation.id} es transportista")
+            from apps.tercerizacion.bot_service import process_transportista_bot_response
+            try:
+                process_transportista_bot_response(conversation, message)
+            except Exception as e:
+                logger.error(f"[BotAsync] Error en bot de transportistas: {e}", exc_info=True)
+            return
+    except Exception as e:
+        logger.error(f"[BotAsync] Error identificando transportista: {e}", exc_info=True)
+        # No bloquear el flujo normal de cliente por un error aquí
+
+    # Verificar si puede responder el bot (de CLIENTES)
+    if not can_bot_respond(conversation.id):
+        logger.info(f"[BotAsync] Bot cannot respond for conversation {conversation.id}")
+        return
+
     try:
         process_bot_response(
             conversation.cliente.telefono.lstrip('+'),
@@ -430,6 +523,104 @@ def process_bot_for_conversation_async(conversation, message):
         )
     except Exception as e:
         logger.error(f"[BotAsync] Error processing bot response: {e}", exc_info=True)
+
+
+# YCloud's own status strings -> our estado choices. "accepted" (the very first
+# status, before "sent") intentionally maps to "enviado" too — same tick as sent.
+YCLOUD_STATUS_TO_ESTADO = {
+    "accepted": "enviado",
+    "sent": "enviado",
+    "delivered": "entregado",
+    "read": "leido",
+    "failed": "error",
+    "undelivered": "error",
+}
+ESTADO_TICK_RANK = {"enviado": 1, "entregado": 2, "leido": 3, "error": 0}
+
+
+def handle_status_update_event(canonical_payload):
+    """Update a sent message's estado (sent/delivered/read/failed — WhatsApp Web's
+    tick marks) from a whatsapp.message.updated webhook.
+
+    Correlates by meta_message_id — YCloud's own short id, the SAME id captured at
+    send time (send_via_ycloud's "wamid" key is actually this short id, an old
+    naming leftover; see MensajeWhatsApp.wamid's docstring for why that's a
+    DIFFERENT field from the real Meta wamid). Never regresses an already-more-
+    advanced status (e.g. a late "delivered" arriving after "read" was already seen).
+    """
+    correlation_id = canonical_payload.get("wamid", "")
+    ycloud_status = canonical_payload.get("status", "")
+    nuevo_estado = YCLOUD_STATUS_TO_ESTADO.get(ycloud_status)
+
+    if not correlation_id or not nuevo_estado:
+        logger.info(f"[YCloud] Status update ignored: id={correlation_id!r} status={ycloud_status!r}")
+        return
+
+    try:
+        message = MensajeWhatsApp.objects.get(meta_message_id=correlation_id)
+    except MensajeWhatsApp.DoesNotExist:
+        logger.info(f"[YCloud] Status update for unknown message meta_message_id={correlation_id}, ignoring")
+        return
+    except MensajeWhatsApp.MultipleObjectsReturned:
+        logger.error(f"[YCloud] Multiple messages share meta_message_id={correlation_id}, ignoring status update")
+        return
+
+    if ESTADO_TICK_RANK.get(nuevo_estado, 0) <= ESTADO_TICK_RANK.get(message.estado, 0):
+        return
+
+    update_fields = ["estado"]
+    message.estado = nuevo_estado
+    if nuevo_estado == "entregado" and not message.entregado_en:
+        message.entregado_en = timezone.now()
+        update_fields.append("entregado_en")
+    elif nuevo_estado == "leido" and not message.leido_en:
+        message.leido_en = timezone.now()
+        update_fields.append("leido_en")
+
+    message.save(update_fields=update_fields)
+    logger.info(f"[YCloud] Status: msg_id={message.id} -> {nuevo_estado} (ycloud_status={ycloud_status})")
+
+    from apps.whatsapp.signals import publish_message_media_ready
+    publish_message_media_ready(message)
+
+
+def handle_reaction_event(canonical_payload):
+    """Apply an incoming emoji reaction to the message it targets.
+
+    A reaction never creates a MensajeWhatsApp row — it updates the reaction_emoji
+    field on the message being reacted to (found by its real wamid) and republishes
+    it over SSE so the bubble updates live. An empty emoji means the reaction was
+    removed (WhatsApp sends '' explicitly for that) — cleared the same way.
+    """
+    target_wamid = canonical_payload.get("reaction_target_wamid", "")
+    emoji = canonical_payload.get("reaction_emoji", "")
+
+    if not target_wamid:
+        logger.warning("[YCloud] Reaction event missing target wamid, ignoring")
+        return
+
+    try:
+        message = MensajeWhatsApp.objects.get(wamid=target_wamid)
+    except MensajeWhatsApp.DoesNotExist:
+        logger.warning(f"[YCloud] Reaction target wamid={target_wamid} not found, ignoring")
+        return
+    except MensajeWhatsApp.MultipleObjectsReturned:
+        logger.error(f"[YCloud] Multiple messages share wamid={target_wamid}, ignoring reaction")
+        return
+
+    message.reaction_emoji = emoji
+    message.save(update_fields=["reaction_emoji"])
+    logger.info(f"[YCloud] Reaction {emoji!r} applied to msg_id={message.id} (wamid={target_wamid})")
+
+    from apps.whatsapp.signals import publish_message_media_ready
+    publish_message_media_ready(message)
+
+    # Bump conversation activity so the bandeja reorders and the SSE-connected
+    # frontend picks it up live — otherwise the conversation stays stuck at its old
+    # position/timestamp even though YCloud's own inbox treats a reaction as activity.
+    if message.conversacion_id:
+        message.conversacion.ultima_actividad = timezone.now()
+        message.conversacion.save(update_fields=["ultima_actividad"])
 
 
 def handle_inbound_message(data):
@@ -672,8 +863,11 @@ Ejemplo: Si asesor dice "pueden enviar fotos", NO digas "no es necesario". Conti
     )
 
 
-def send_via_ycloud(phone_number, message_text):
+def send_via_ycloud(phone_number, message_text, reply_to_wamid=None):
     """Enviar mensaje via YCloud API v2.
+
+    reply_to_wamid: optional wamid of a previous message to quote-reply to —
+    sent as context.message_id per docs.ycloud.com/reference/whatsapp_message-send.
 
     Returns a dict, never raises for HTTP/network failures:
       success -> {"success": True, "wamid": <id>, "raw": <response json>}
@@ -704,6 +898,9 @@ def send_via_ycloud(phone_number, message_text):
         }
     }
 
+    if reply_to_wamid:
+        payload['context'] = {'message_id': reply_to_wamid}
+
     logger.info(f"[YCloud] Sending to {recipient}: {message_text[:50]}")
 
     try:
@@ -728,6 +925,170 @@ def send_via_ycloud(phone_number, message_text):
     code = error_body.get("code") or f"http_{response.status_code}"
     message = error_body.get("message") or response.text[:300]
     logger.error(f"[YCloud] Error {response.status_code} ({code}): {message}")
+
+    return {
+        "success": False,
+        "code": code,
+        "message": message,
+        "status_code": response.status_code,
+        "raw": error_body,
+    }
+
+
+def send_reaction_via_ycloud(phone_number, target_wamid, emoji):
+    """Send an emoji reaction to a previous message via YCloud API v2.
+
+    target_wamid: the REAL WhatsApp/Meta wamid ('wamid.XXXX') of the message being
+    reacted to — same requirement as context.message_id for replies (YCloud's own
+    internal id does not work here).
+    emoji: '' removes an existing reaction (per docs.ycloud.com/reference/whatsapp_message-send).
+
+    Returns the same success/failure dict shape as send_via_ycloud.
+    """
+    import requests
+
+    url = "https://api.ycloud.com/v2/whatsapp/messages"
+
+    headers = {
+        'X-API-Key': settings.YCLOUD_API_KEY,
+        'Content-Type': 'application/json'
+    }
+
+    recipient = phone_number if phone_number.startswith('+') else f'+{phone_number}'
+    sender = settings.YCLOUD_SENDER_PHONE if settings.YCLOUD_SENDER_PHONE.startswith('+') else f'+{settings.YCLOUD_SENDER_PHONE}'
+
+    payload = {
+        'from': sender,
+        'to': recipient,
+        'type': 'reaction',
+        'reaction': {
+            'message_id': target_wamid,
+            'emoji': emoji,
+        },
+    }
+
+    logger.info(f"[YCloud] Sending reaction {emoji!r} to {recipient} (target={target_wamid})")
+
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=10)
+    except requests.RequestException as e:
+        logger.error(f"[YCloud] Reaction send request failed: {e}")
+        return {"success": False, "code": "network_error", "message": str(e), "status_code": None, "raw": {}}
+
+    logger.warning(f"[YCloud] REACTION STATUS: {response.status_code}")
+    logger.warning(f"[YCloud] REACTION RESPONSE: {response.text}")
+
+    if response.status_code in (200, 202):
+        data = response.json()
+        return {"success": True, "wamid": data.get("id", ""), "raw": data}
+
+    try:
+        error_body = response.json()
+    except ValueError:
+        error_body = {}
+
+    code = error_body.get("code") or f"http_{response.status_code}"
+    message = error_body.get("message") or response.text[:300]
+    logger.error(f"[YCloud] Reaction error {response.status_code} ({code}): {message}")
+
+    return {
+        "success": False,
+        "code": code,
+        "message": message,
+        "status_code": response.status_code,
+        "raw": error_body,
+    }
+
+
+def upload_media_to_ycloud(sender_phone, file_bytes, filename, content_type):
+    """Upload a file to YCloud so it can be referenced by id in a subsequent send.
+
+    Docs: POST /v2/whatsapp/media/{phoneNumber}/upload (multipart, field 'file').
+    Returns {"success": True, "media_id": str} or the same error shape as send_via_ycloud.
+    """
+    import requests
+
+    url = f"https://api.ycloud.com/v2/whatsapp/media/{sender_phone}/upload"
+    headers = {'X-API-Key': settings.YCLOUD_API_KEY}
+    files = {'file': (filename, file_bytes, content_type)}
+
+    try:
+        response = requests.post(url, headers=headers, files=files, timeout=30)
+    except requests.RequestException as e:
+        logger.error(f"[YCloud] Media upload request failed: {e}")
+        return {"success": False, "code": "network_error", "message": str(e), "status_code": None, "raw": {}}
+
+    if response.status_code in (200, 201):
+        data = response.json()
+        logger.info(f"[YCloud] Media uploaded: {data.get('id')}")
+        return {"success": True, "media_id": data.get("id", ""), "raw": data}
+
+    try:
+        error_body = response.json()
+    except ValueError:
+        error_body = {}
+
+    code = error_body.get("code") or f"http_{response.status_code}"
+    message = error_body.get("message") or response.text[:300]
+    logger.error(f"[YCloud] Media upload error {response.status_code} ({code}): {message}")
+
+    return {
+        "success": False,
+        "code": code,
+        "message": message,
+        "status_code": response.status_code,
+        "raw": error_body,
+    }
+
+
+def send_media_via_ycloud(sender_phone, recipient_phone, media_type, media_id, caption=None, filename=None):
+    """Send an already-uploaded media message via YCloud API v2.
+
+    media_type: 'image' | 'audio' | 'video' | 'document' (English, YCloud's own contract).
+    'audio' does not support caption or filename per YCloud docs.
+    """
+    import requests
+
+    url = "https://api.ycloud.com/v2/whatsapp/messages"
+    headers = {
+        'X-API-Key': settings.YCLOUD_API_KEY,
+        'Content-Type': 'application/json',
+    }
+
+    media_object = {"id": media_id}
+    if caption and media_type in ("image", "video", "document"):
+        media_object["caption"] = caption
+    if filename and media_type == "document":
+        media_object["filename"] = filename
+
+    payload = {
+        "from": sender_phone,
+        "to": recipient_phone,
+        "type": media_type,
+        media_type: media_object,
+    }
+
+    logger.info(f"[YCloud] Sending {media_type} (media_id={media_id}) to {recipient_phone}")
+
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=15)
+    except requests.RequestException as e:
+        logger.error(f"[YCloud] Media send request failed: {e}")
+        return {"success": False, "code": "network_error", "message": str(e), "status_code": None, "raw": {}}
+
+    if response.status_code in (200, 202):
+        data = response.json()
+        logger.info(f"[YCloud] Media message accepted: {data.get('id')}")
+        return {"success": True, "wamid": data.get("id", ""), "raw": data}
+
+    try:
+        error_body = response.json()
+    except ValueError:
+        error_body = {}
+
+    code = error_body.get("code") or f"http_{response.status_code}"
+    message = error_body.get("message") or response.text[:300]
+    logger.error(f"[YCloud] Media send error {response.status_code} ({code}): {message}")
 
     return {
         "success": False,

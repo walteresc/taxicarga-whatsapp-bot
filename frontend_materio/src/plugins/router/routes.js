@@ -20,6 +20,14 @@ export const routes = [
         path: 'atencion/leads',
         component: () => import('@/pages/atencion/leads/index.vue'),
       },
+      {
+        path: 'personal-campo/conductores',
+        component: () => import('@/pages/personal-campo/conductores.vue'),
+      },
+      {
+        path: 'personal-campo/ayudantes',
+        component: () => import('@/pages/personal-campo/ayudantes.vue'),
+      },
     ],
   },
   {

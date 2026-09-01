@@ -59,7 +59,10 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
       try {
         console.log('[REALTIME CP3] REST snapshot: GET /dashboard/whatsapp/conversaciones/api/active/')
 
-        const fetchUrl = '/dashboard/whatsapp/conversaciones/api/active/'
+        // limit=100 (the backend's own cap) — without it the endpoint defaults to 25
+        // and any conversation past that page silently never loads into the bandeja,
+        // since there's no pagination/infinite-scroll UI to fetch further pages.
+        const fetchUrl = '/dashboard/whatsapp/conversaciones/api/active/?limit=100'
         const fetchResponse = await fetch(fetchUrl)
 
         if (!fetchResponse.ok) {
@@ -108,8 +111,84 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
               lead_id: conv.lead_id,
               responsable: conv.responsable,
               service_data: conv.service_data,
+              archived: conv.archived || false,
+              is_transportista: conv.is_transportista || false,
             })
           })
+        }
+
+        // Archivadas: separadas del snapshot principal (el endpoint las excluye por
+        // defecto). Se cargan en el MISMO store — así la pestaña "Archivados" y el
+        // tiempo real (archivar/desarchivar) comparten una sola fuente de verdad,
+        // sin duplicar lógica de actualización en vivo.
+        try {
+          const archivedResponse = await fetch('/dashboard/whatsapp/conversaciones/api/active/?archived=true&limit=100')
+          if (archivedResponse.ok) {
+            const archivedData = await archivedResponse.json()
+            const archivedList = archivedData.conversations || []
+
+            archivedList.forEach(conv => {
+              conversationsStore.upsertConversation({
+                id: conv.id,
+                cliente_id: conv.cliente_id,
+                channel_id: conv.channel_id,
+                name: conv.name,
+                phone: conv.phone,
+                preview: conv.preview,
+                ultima_actividad: conv.ultima_actividad || conv.last_activity,
+                unread_count: conv.unread_count || 0,
+                estado_atencion: conv.estado_atencion,
+                avatar: conv.avatar,
+                channel: conv.channel,
+                estado_cotizacion: conv.estado_cotizacion,
+                lead_id: conv.lead_id,
+                responsable: conv.responsable,
+                service_data: conv.service_data,
+                archived: true,
+                is_transportista: conv.is_transportista || false,
+              })
+            })
+            console.log('[REALTIME CP6B] Upsert ' + archivedList.length + ' archived conversations')
+          }
+        } catch (archivedError) {
+          console.warn('[REALTIME CP6B] Failed to load archived conversations:', archivedError.message)
+        }
+
+        // Transportistas: separados del snapshot principal (el endpoint los excluye
+        // por defecto, igual que archivadas). Se cargan en el MISMO store — la
+        // pestaña "Transportistas" y el interruptor "Incluir transportistas" son
+        // puramente client-side sobre un store que ya tiene todo.
+        try {
+          const transportistasResponse = await fetch('/dashboard/whatsapp/conversaciones/api/active/?transportistas=true&limit=100')
+          if (transportistasResponse.ok) {
+            const transportistasData = await transportistasResponse.json()
+            const transportistasList = transportistasData.conversations || []
+
+            transportistasList.forEach(conv => {
+              conversationsStore.upsertConversation({
+                id: conv.id,
+                cliente_id: conv.cliente_id,
+                channel_id: conv.channel_id,
+                name: conv.name,
+                phone: conv.phone,
+                preview: conv.preview,
+                ultima_actividad: conv.ultima_actividad || conv.last_activity,
+                unread_count: conv.unread_count || 0,
+                estado_atencion: conv.estado_atencion,
+                avatar: conv.avatar,
+                channel: conv.channel,
+                estado_cotizacion: conv.estado_cotizacion,
+                lead_id: conv.lead_id,
+                responsable: conv.responsable,
+                service_data: conv.service_data,
+                archived: conv.archived || false,
+                is_transportista: true,
+              })
+            })
+            console.log('[REALTIME CP6C] Upsert ' + transportistasList.length + ' transportista conversations')
+          }
+        } catch (transportistasError) {
+          console.warn('[REALTIME CP6C] Failed to load transportista conversations:', transportistasError.message)
         }
 
         // PASO 2A: Set cursor en store
@@ -173,7 +252,7 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
   const loadInitialState = async (conversationsStore, messagesStore) => {
     try {
       // PRIORIDAD 7: Bandeja update from REST
-      const response = await fetch('/dashboard/whatsapp/conversaciones/api/active/')
+      const response = await fetch('/dashboard/whatsapp/conversaciones/api/active/?limit=100')
       const data = await response.json()
 
       // FASE 5B: Snapshot cursor para SSE (evita repetir historial)
@@ -242,6 +321,10 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
       // PRIORIDAD 7: Update bandeja/timeline based on event type
       switch (event.type) {
       case 'message.created':
+      case 'message.updated':
+        // message.updated: published once async media (download or CRM upload)
+        // finishes AFTER the message row was already created — same payload
+        // shape as message.created, handled identically (upsertMessage by id).
         handleMessageCreated({ ...event, data: eventData }, messagesStore, conversationsStore)
         break
 
@@ -272,7 +355,18 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
    */
   const handleMessageCreated = (event, messagesStore, conversationsStore) => {
     const eventData = (event.data && Object.keys(event.data).length > 0) ? event.data : event
-    const { message_id, conversation_id, content, direction, origen, content_type, timestamp, from, sender_type, event_id, replay_of, attachments, caption } = eventData
+    const { message_id, conversation_id, content, direction, origen, content_type, timestamp, from, sender_type, event_id, replay_of, attachments, caption, meta_message_id, reply_to, reaction_emoji, hidden, conversation: convMeta } = eventData
+
+    // 'Ocultar en el CRM' — drop it from this session's timeline too (shared inbox:
+    // whoever hid it, everyone stops seeing it, live, no reload). Never touches
+    // anything server-side beyond the flag already set before this event was sent.
+    if (hidden) {
+      if (messagesStore && messagesStore.removeMessage) {
+        messagesStore.removeMessage(conversation_id, message_id)
+      }
+
+      return
+    }
 
     console.log('[handleMessageCreated] EXEC: message_id=' + message_id + ', conversation_id=' + conversation_id + ', event_id=' + event_id + ', replay_of=' + (replay_of || 'N/A'))
 
@@ -310,25 +404,38 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
         sender_type,
         attachments,
         caption,
+        meta_message_id,
+        reply_to,
+        reaction_emoji,
       })
       console.log('[handleMessageCreated] upsertMessage called successfully')
     } else {
       console.warn('[handleMessageCreated] messagesStore or upsertMessage not available')
     }
 
-    // Update conversation in bandeja (increment unread counter)
-    if (conversationsStore && conversationsStore.upsertConversation) {
+    // Update conversation in bandeja (increment unread counter) — only for genuinely
+    // NEW messages. message.updated re-delivers an existing message (media became
+    // available after the fact) and must not count as a second unread arrival.
+    if (event.type !== 'message.updated' && conversationsStore && conversationsStore.upsertConversation) {
       const existingConv = conversationsStore.getConversation(conversation_id)
-      const currentUnread = existingConv?.unread_count || 0
+      const currentUnread = existingConv?.unread || 0
       const newUnread = currentUnread + 1  // Increment by 1 for new message
 
       console.log('[handleMessageCreated] Updating conversation: unread ' + currentUnread + ' -> ' + newUnread)
 
-      conversationsStore.upsertConversation({
+      // name/phone only included when present (backend now sends them) — never pass
+      // them as explicit `undefined`, which would clobber a name already loaded via
+      // REST. This is what fixes a brand-new conversation (first SSE event ever seen
+      // for it, not yet in the store) showing "Desconocido" until the next reload.
+      const convPatch = {
         id: conversation_id,
         ultima_actividad: new Date().toISOString(),
         unread_count: newUnread,
-      })
+      }
+      if (convMeta?.name) convPatch.name = convMeta.name
+      if (convMeta?.phone) convPatch.phone = convMeta.phone
+
+      conversationsStore.upsertConversation(convPatch)
     }
 
     // PRIORIDAD 7: Reorder bandeja by -ultima_actividad

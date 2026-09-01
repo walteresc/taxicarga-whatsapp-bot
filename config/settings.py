@@ -70,6 +70,7 @@ INSTALLED_APPS = [
     "apps.flota",
     "apps.integrations",
     "apps.whatsapp_bot_v4",
+    "apps.tercerizacion",
 ]
 
 LOGIN_URL = "/dashboard/login/"
@@ -144,7 +145,7 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
-        "rest_framework.permissions.IsAuthenticatedOrReadOnly",
+        "rest_framework.permissions.IsAuthenticated",
     ],
 }
 
@@ -181,6 +182,13 @@ YCLOUD_ENABLED = env_bool("YCLOUD_ENABLED", default=False)
 
 CHATWOOT_INTEGRATION_ENABLED = env_bool("CHATWOOT_INTEGRATION_ENABLED", default=False)
 CHATWOOT_SHADOW_SYNC_ENABLED = env_bool("CHATWOOT_SHADOW_SYNC_ENABLED", default=False)
+
+# Bot de transportistas (tercerización de cargas) — desactivado por defecto.
+# Separado de la pausa general del bot (bot_control_service.can_bot_respond):
+# este flag apaga SOLO este flujo sin afectar al bot de clientes, y viceversa
+# — la pausa general sigue aplicando también aquí (ver
+# apps/tercerizacion/bot_service.py).
+TRANSPORTISTA_BOT_ENABLED = env_bool("TRANSPORTISTA_BOT_ENABLED", default=False)
 CHATWOOT_AGENT_OUTBOUND_ENABLED = env_bool("CHATWOOT_AGENT_OUTBOUND_ENABLED", default=False)
 META_OUTBOX_ENABLED = env_bool("META_OUTBOX_ENABLED", default=False)
 BOT_GENERATION_LEASE_ENABLED = env_bool("BOT_GENERATION_LEASE_ENABLED", default=False)

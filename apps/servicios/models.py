@@ -137,6 +137,30 @@ class Servicio(models.Model):
     fecha_creacion = models.DateTimeField(auto_now_add=True)
     fecha_actualizacion = models.DateTimeField(auto_now=True)
 
+    # -- Tercerización --
+    es_tercerizada = models.BooleanField(default=False, db_index=True)
+    transportista_asignado = models.ForeignKey(
+        Cliente,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="servicios_como_transportista",
+        help_text="Cliente (con es_transportista=True) al que se adjudicó esta carga.",
+    )
+    oferta_ganadora = models.ForeignKey(
+        "tercerizacion.OfertaTransportista",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+    autoriza_compartir_fotos_transportistas = models.BooleanField(
+        default=False,
+        help_text="El cliente autorizó compartir las fotos de esta mudanza con el "
+                   "transportista que la ejecute. Una autorización por servicio, "
+                   "confirmada por el asesor antes de reenviar cualquier foto.",
+    )
+
     class Meta:
         ordering = ["-fecha_creacion"]
         verbose_name = "Reserva"
