@@ -6,7 +6,6 @@ import logo from '@images/logo.svg?raw'
 import VerticalNavLayout from '@layouts/components/VerticalNavLayout.vue'
 
 // Components
-import Footer from '@/layouts/components/Footer.vue'
 import NavbarThemeSwitcher from '@/layouts/components/NavbarThemeSwitcher.vue'
 import UserProfile from '@/layouts/components/UserProfile.vue'
 
@@ -18,7 +17,6 @@ import { useAuthGuard } from '@/composables/useAuthGuard'
 
 const route = useRoute()
 const { checkAuth } = useAuthGuard()
-const hideFooter = route.meta?.hideFooter ?? false
 const isInboxRoute = computed(() => route.path.includes('bandeja-entrada'))
 
 // Initialize real-time streaming
@@ -173,14 +171,6 @@ onUnmounted(() => {
 
     <!-- 👉 Pages -->
     <slot />
-
-    <!-- 👉 Footer -->
-    <template
-      v-if="!hideFooter"
-      #footer
-    >
-      <Footer />
-    </template>
   </VerticalNavLayout>
 </template>
 
