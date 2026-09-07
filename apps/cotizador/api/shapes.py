@@ -346,9 +346,27 @@ _PAYMENT_STATE_EN = {
 }
 
 
+def _booking_assignment(servicio):
+    """(assignmentState, executor) — quién ejecuta y en qué punto está.
+      sin_asignar → nadie todavía
+      publicado   → OFERTA abierta en el grupo de transportistas
+      asignado    → hay una programación con conductor (o transportista)
+    """
+    prog = servicio.programaciones.exclude(estado_operativo="cancelado").select_related("conductor").first()
+    if prog and prog.conductor_id:
+        return "asignado", prog.conductor.nombre
+    if servicio.publicaciones_tercerizacion.filter(estado="abierta").exists():
+        return "publicado", None
+    return "sin_asignar", None
+
+
 def booking_item(servicio):
     lead = servicio.lead_origen
     conv = lead.sesiones_whatsapp.order_by("-actualizada_en").first() if lead else None
+    from apps.servicios.utils import parse_horario
+    from apps.servicios.models import ConfiguracionOperaciones
+    hora = parse_horario(servicio.horario_servicio)
+    assignment, executor = _booking_assignment(servicio)
     return {
         "id": servicio.id,
         "code": servicio.codigo,
@@ -366,6 +384,10 @@ def booking_item(servicio):
         "paymentState": _PAYMENT_STATE_EN.get(servicio.estado_pago, servicio.estado_pago),
         "isInterprovincial": servicio.es_interprovincial,
         "hasTeam": servicio.programaciones.exists(),
+        "executionMode": servicio.modalidad_ejecucion,
+        "assignmentState": assignment,
+        "executor": executor,
+        "isNight": (hora is not None and ConfiguracionOperaciones.get_solo().es_nocturno(hora)),
         "advisor": _user(servicio.asesor),
         "createdAt": _d(servicio.fecha_creacion),
     }

@@ -50,4 +50,5 @@ urlpatterns = [
     path("pipeline/bookings/<int:pk>/payment", views.BookingPaymentView.as_view(), name="v2-booking-payment"),
     path("pipeline/bookings/<int:pk>/finalize", views.BookingFinalizeView.as_view(), name="v2-booking-finalize"),
     path("pipeline/bookings/<int:pk>/cancel", views.BookingCancelView.as_view(), name="v2-booking-cancel"),
+    path("pipeline/bookings/<int:pk>/set-mode", views.BookingSetModeView.as_view(), name="v2-booking-set-mode"),
 ]

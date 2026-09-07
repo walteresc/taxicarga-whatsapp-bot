@@ -8,6 +8,7 @@ from apps.leads.route import route_for_lead
 from apps.leads.cargo import effective_load_detail
 
 from .models import Servicio, ServicioUbicacion, SERVICIO_PENDIENTE
+from .utils import modalidad_por_horario as _modalidad_por_horario
 
 
 @transaction.atomic
@@ -68,6 +69,7 @@ def crear_servicio_desde_lead(lead, usuario=None, revision=None, *, require_acce
         volumen_carga_m3=lead.volumen_carga_m3,
         fecha_servicio=lead.fecha_servicio,
         horario_servicio=lead.horario_servicio,
+        modalidad_ejecucion=_modalidad_por_horario(lead.horario_servicio),
         tipo_embalaje=packaging,
         precio_cotizado=revision.precio_final if revision else lead.precio_cotizado,
         precio_final=revision.precio_final if revision else lead.precio_final,
@@ -186,6 +188,23 @@ def bookings_queryset(params):
         qs = qs.filter(estado=_state_es[state])
     elif params.get("active") == "1":
         qs = qs.exclude(estado__in=(SERVICIO_FINALIZADO, SERVICIO_CANCELADO))
+
+    mode = (params.get("mode") or "").strip()
+    if mode in (Servicio.MODALIDAD_PROPIO, Servicio.MODALIDAD_TERCERIZADO):
+        qs = qs.filter(modalidad_ejecucion=mode)
+
+    assignment = (params.get("assignment") or "").strip()
+    if assignment == "assigned":
+        qs = qs.filter(programaciones__conductor__isnull=False).distinct()
+    elif assignment == "published":
+        qs = qs.filter(publicaciones_tercerizacion__estado="abierta").exclude(
+            programaciones__conductor__isnull=False,
+        ).distinct()
+    elif assignment == "unassigned":
+        qs = qs.exclude(programaciones__conductor__isnull=False).exclude(
+            publicaciones_tercerizacion__estado="abierta",
+        ).exclude(estado__in=(SERVICIO_FINALIZADO, SERVICIO_CANCELADO)).distinct()
+
     qs = apply_ordering(
         qs, params.get("ordering"),
         {"code": "codigo", "serviceDate": "fecha_servicio", "createdAt": "fecha_creacion"},

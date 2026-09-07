@@ -4,7 +4,8 @@ import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import {
-  bookingAddPayment, bookingCancel, bookingDetail, bookingFinalize, bookingList, leadServiceData,
+  bookingAddPayment, bookingCancel, bookingDetail, bookingFinalize, bookingList,
+  bookingSetMode, leadServiceData,
 } from '@/services/commercialService'
 import { usePipelineStore } from '@/stores/pipelineStore'
 import ServiceViewDialog from '@/pages/atencion/bandeja-entrada/components/ServiceViewDialog.vue'
@@ -36,11 +37,25 @@ const CONCEPTS = [
   { title: 'Adelanto', value: 'adelanto' }, { title: 'Pago parcial', value: 'parcial' }, { title: 'Pago final', value: 'final' },
 ]
 
+const EXEC = {
+  propio: { label: 'Nuestro equipo', color: 'primary', icon: 'ri-team-line' },
+  tercerizado: { label: 'Transportistas', color: 'secondary', icon: 'ri-truck-line' },
+}
+// Filtro combinado modalidad + estado de asignación.
+const SEGMENTS = [
+  { value: '', label: 'Todas' },
+  { value: 'mode:propio', label: 'Nuestro equipo' },
+  { value: 'mode:tercerizado', label: 'Transportistas' },
+  { value: 'assign:unassigned', label: 'Sin asignar' },
+  { value: 'assign:published', label: 'Publicadas' },
+]
+
 const rows = ref([])
 const loading = ref(true)
 const error = ref('')
 const search = ref('')
 const stateFilter = ref('')
+const segment = ref('')
 let searchTimer
 
 const snackbar = reactive({ show: false, text: '', color: 'success' })
@@ -51,8 +66,25 @@ const load = async () => {
   loading.value = true
   error.value = ''
   try {
-    rows.value = (await bookingList({ search: search.value, state: stateFilter.value })).results
+    const [k, v] = segment.value.split(':')
+    rows.value = (await bookingList({
+      search: search.value,
+      state: stateFilter.value,
+      mode: k === 'mode' ? v : undefined,
+      assignment: k === 'assign' ? v : undefined,
+    })).results
   } catch (e) { error.value = e.message || 'No se pudo cargar.' } finally { loading.value = false }
+}
+
+const setMode = async (row, mode) => {
+  try {
+    await bookingSetMode(row.id, mode)
+    notify(mode === 'propio' ? 'Marcada para nuestro equipo.' : 'Marcada para transportistas.')
+    await load()
+    if (detail.value?.id === row.id) detail.value = await bookingDetail(row.id)
+  } catch (e) {
+    notify(e.message || 'No se pudo cambiar la modalidad.', 'error')
+  }
 }
 const onSearch = () => { clearTimeout(searchTimer); searchTimer = setTimeout(load, 350) }
 onMounted(load)
@@ -146,25 +178,22 @@ const submitCancel = async () => {
 
     <VCard>
       <VCardText class="d-flex flex-wrap align-center ga-4">
-        <VTextField v-model="search" prepend-inner-icon="ri-search-line" label="Buscar código, cliente o ruta" density="compact" hide-details clearable style="max-width: 340px;" @update:model-value="onSearch" />
+        <VTextField v-model="search" prepend-inner-icon="ri-search-line" label="Buscar código, cliente o ruta" density="compact" hide-details clearable style="max-width: 300px;" @update:model-value="onSearch" />
         <div class="d-flex flex-wrap ga-2">
           <VChip
-            :color="stateFilter === '' ? 'primary' : undefined"
-            :variant="stateFilter === '' ? 'flat' : 'tonal'"
-            @click="stateFilter = ''; load()"
-          >
-            Todas
-          </VChip>
-          <VChip
-            v-for="(s, value) in STATE"
-            :key="value"
-            :color="stateFilter === value ? 'primary' : undefined"
-            :variant="stateFilter === value ? 'flat' : 'tonal'"
-            @click="stateFilter = value; load()"
+            v-for="s in SEGMENTS" :key="s.value"
+            :color="segment === s.value ? 'primary' : undefined"
+            :variant="segment === s.value ? 'flat' : 'tonal'"
+            @click="segment = s.value; load()"
           >
             {{ s.label }}
           </VChip>
         </div>
+        <VSelect
+          v-model="stateFilter" label="Estado" density="compact" hide-details clearable style="max-width: 160px;"
+          :items="Object.entries(STATE).map(([value, s]) => ({ title: s.label, value }))"
+          @update:model-value="load"
+        />
       </VCardText>
       <VAlert v-if="error" type="error" variant="tonal" class="ma-4">{{ error }}</VAlert>
 
@@ -172,7 +201,7 @@ const submitCancel = async () => {
 
       <VTable>
         <thead>
-          <tr><th>Código</th><th>Cliente</th><th>Ruta</th><th>Fecha</th><th>Estado</th><th class="text-right">Precio</th><th class="text-right">Saldo</th><th>Pago</th><th>Equipo</th><th class="text-right">Acciones</th></tr>
+          <tr><th>Código</th><th>Cliente</th><th>Ruta</th><th>Fecha</th><th>Ejecuta</th><th>Estado</th><th class="text-right">Precio</th><th class="text-right">Saldo</th><th>Pago</th><th class="text-right">Acciones</th></tr>
         </thead>
         <tbody>
           <tr v-if="loading"><td colspan="10" class="text-center py-8"><VProgressCircular indeterminate /></td></tr>
@@ -183,12 +212,27 @@ const submitCancel = async () => {
             </td>
             <td>{{ row.customerName }}</td>
             <td>{{ row.route }}<VChip v-if="row.isInterprovincial" size="x-small" color="warning" class="ms-1">Fuera de Lima</VChip></td>
-            <td>{{ row.serviceDate || 'Por confirmar' }}</td>
+            <td>
+              {{ row.serviceDate || 'Por confirmar' }}
+              <VChip v-if="row.isNight" size="x-small" color="deep-purple" variant="tonal" class="ms-1" title="Ventana nocturna">
+                <VIcon start icon="ri-moon-line" size="12" /> noche
+              </VChip>
+            </td>
+            <td class="text-no-wrap">
+              <VChip size="small" :color="EXEC[row.executionMode]?.color" variant="tonal">
+                <VIcon start :icon="EXEC[row.executionMode]?.icon" size="14" />
+                {{ EXEC[row.executionMode]?.label }}
+              </VChip>
+              <div class="text-caption text-medium-emphasis mt-1">
+                <template v-if="row.assignmentState === 'asignado'">→ {{ row.executor }}</template>
+                <template v-else-if="row.assignmentState === 'publicado'">⏳ publicada</template>
+                <template v-else>sin asignar</template>
+              </div>
+            </td>
             <td><VChip size="small" :color="STATE[row.state]?.color">{{ STATE[row.state]?.label || row.state }}</VChip></td>
             <td class="text-right">{{ soles(row.price) }}</td>
             <td class="text-right">{{ soles(row.balance) }}</td>
             <td><VChip size="x-small" :color="PAY[row.paymentState]?.color">{{ PAY[row.paymentState]?.label }}</VChip></td>
-            <td>{{ row.hasTeam ? 'Sí' : '—' }}</td>
             <td class="text-right text-no-wrap">
               <VBtn size="small" variant="text" icon="ri-eye-line" title="Ver detalle del servicio" :disabled="!row.leadId" @click="openServiceView(row)" />
               <VBtn size="small" variant="text" icon="ri-chat-3-line" title="Abrir conversación" :disabled="!row.conversationId" @click="openConversation(row)" />
@@ -218,6 +262,23 @@ const submitCancel = async () => {
               <tr><td>Inventario</td><td style="white-space: pre-line">{{ detail.items || '—' }}</td></tr>
             </tbody>
           </VTable>
+
+          <div class="text-overline mb-1">Ejecuta</div>
+          <div class="d-flex flex-wrap align-center ga-2 mb-4">
+            <VChip :color="EXEC[detail.executionMode]?.color" variant="tonal">
+              <VIcon start :icon="EXEC[detail.executionMode]?.icon" size="16" /> {{ EXEC[detail.executionMode]?.label }}
+            </VChip>
+            <span v-if="detail.assignmentState === 'asignado'" class="text-body-2">→ {{ detail.executor }}</span>
+            <span v-else-if="detail.assignmentState === 'publicado'" class="text-body-2 text-medium-emphasis">⏳ publicada en el grupo</span>
+            <VBtn
+              v-if="detail.assignmentState !== 'asignado'"
+              size="small" variant="text"
+              :color="detail.executionMode === 'propio' ? 'secondary' : 'primary'"
+              @click="setMode(detail, detail.executionMode === 'propio' ? 'tercerizado' : 'propio')"
+            >
+              {{ detail.executionMode === 'propio' ? 'Pasar a transportistas' : 'Pasar a nuestro equipo' }}
+            </VBtn>
+          </div>
 
           <div class="text-overline mb-1">Pagos</div>
           <VTable v-if="detail.payments.length" density="compact">

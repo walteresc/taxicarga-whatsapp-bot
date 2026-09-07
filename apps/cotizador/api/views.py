@@ -734,3 +734,23 @@ class BookingCancelView(_Base):
         from apps.servicios.services import cancelar_servicio
         cancelar_servicio(_booking(pk), request.user, request.data.get("reason"))
         return Response(shapes.booking_detail(_booking(pk)))
+
+
+class BookingSetModeView(_Base):
+    """Cambia la modalidad de ejecución (nuestro equipo ↔ transportistas).
+    Solo mientras la reserva no esté asignada a un conductor."""
+    def post(self, request, pk):
+        from apps.servicios.models import Servicio
+
+        servicio = _booking(pk)
+        mode = (request.data.get("mode") or "").strip()
+        if mode not in (Servicio.MODALIDAD_PROPIO, Servicio.MODALIDAD_TERCERIZADO):
+            return Response({"error": "Modalidad no válida."}, status=400)
+        if servicio.programaciones.filter(conductor__isnull=False).exists():
+            return Response(
+                {"error": "Ya está asignada a un conductor; primero quitá la asignación."},
+                status=409,
+            )
+        servicio.modalidad_ejecucion = mode
+        servicio.save(update_fields=["modalidad_ejecucion"])
+        return Response(shapes.booking_detail(servicio))

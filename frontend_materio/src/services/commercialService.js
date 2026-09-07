@@ -50,3 +50,4 @@ export const bookingUpdate = (id, body) => apiClient.patch(`${P}/bookings/${id}/
 export const bookingAddPayment = (id, body) => apiClient.post(`${P}/bookings/${id}/payment`, body)
 export const bookingFinalize = id => apiClient.post(`${P}/bookings/${id}/finalize`)
 export const bookingCancel = (id, reason) => apiClient.post(`${P}/bookings/${id}/cancel`, { reason })
+export const bookingSetMode = (id, mode) => apiClient.post(`${P}/bookings/${id}/set-mode`, { mode })

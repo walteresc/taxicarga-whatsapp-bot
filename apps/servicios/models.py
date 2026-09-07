@@ -56,6 +56,19 @@ class Servicio(models.Model):
         related_name="servicios_asesorados",
     )
     codigo = models.CharField(max_length=20, unique=True, blank=True)
+
+    # Quién ejecuta el servicio. La regla de ventana horaria la fija al crearse
+    # (nocturno → tercerizado); el asesor puede cambiarla mientras no esté asignado.
+    MODALIDAD_PROPIO = "propio"
+    MODALIDAD_TERCERIZADO = "tercerizado"
+    MODALIDADES_EJECUCION = [
+        (MODALIDAD_PROPIO, "Nuestro equipo"),
+        (MODALIDAD_TERCERIZADO, "Transportistas"),
+    ]
+    modalidad_ejecucion = models.CharField(
+        max_length=12, choices=MODALIDADES_EJECUCION, default=MODALIDAD_PROPIO, db_index=True,
+    )
+
     estado = models.CharField(
         max_length=20, choices=ESTADOS_SERVICIO, default=SERVICIO_PENDIENTE
     )
@@ -315,3 +328,37 @@ class ServicioUbicacion(models.Model):
 
     def __str__(self):
         return f"{self.servicio_id}:{self.orden} {self.tipo} {self.distrito}"
+
+
+class ConfiguracionOperaciones(models.Model):
+    """Ajustes de operaciones (singleton). Ventana nocturna: los servicios en
+    ese rango se marcan 'tercerizado' automáticamente al crearse porque el
+    equipo propio no trabaja de noche."""
+
+    from datetime import time as _t
+
+    ventana_nocturna_inicio = models.TimeField(default=_t(17, 0))
+    ventana_nocturna_fin = models.TimeField(default=_t(7, 0))
+    actualizado_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Configuración de operaciones"
+        verbose_name_plural = "Configuración de operaciones"
+
+    def __str__(self):
+        return f"Ventana nocturna {self.ventana_nocturna_inicio:%H:%M}–{self.ventana_nocturna_fin:%H:%M}"
+
+    @classmethod
+    def get_solo(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    def es_nocturno(self, hora):
+        """True si `hora` (time) cae en la ventana nocturna. Maneja el cruce de
+        medianoche (17:00 → 07:00)."""
+        if hora is None:
+            return False
+        ini, fin = self.ventana_nocturna_inicio, self.ventana_nocturna_fin
+        if ini <= fin:
+            return ini <= hora < fin
+        return hora >= ini or hora < fin
