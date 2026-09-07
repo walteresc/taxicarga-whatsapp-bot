@@ -26,25 +26,13 @@ watch(() => route.path, newPath => {
 </template>
 
 <style>
-html:root {
-  height: 100%;
-}
-
-body {
-  height: 100%;
-}
-
-#app {
-  height: 100%;
-}
-
-/* Only for inbox route */
-html.inbox-route,
-html.inbox-route body {
-  overflow: hidden !important;
-}
-
+/* Solo la bandeja es una pantalla de altura fija sin scroll de documento.
+   El resto de pantallas usan el flujo normal (min-height) para que el
+   contenido y la paginación del final sean siempre alcanzables. */
+html.inbox-route:root,
+html.inbox-route body,
 html.inbox-route #app {
+  block-size: 100%;
   overflow: hidden !important;
 }
 
@@ -73,8 +61,8 @@ html.inbox-route .layout-content-wrapper {
 </style>
 
 <style scoped>
-.app-container {
-  height: 100dvh;
+html.inbox-route .app-container {
+  block-size: 100dvh;
   overflow: hidden;
 }
 </style>
