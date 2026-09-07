@@ -118,6 +118,8 @@ const openConversation = row => {
         <template #append><VBtn size="small" variant="text" @click="load">Reintentar</VBtn></template>
       </VAlert>
 
+      <VDivider />
+
       <VTable>
         <thead>
           <tr>

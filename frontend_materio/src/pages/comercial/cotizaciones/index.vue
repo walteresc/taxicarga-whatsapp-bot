@@ -155,6 +155,8 @@ const doAccept = async () => {
 
       <VAlert v-if="error" type="error" variant="tonal" class="ma-4">{{ error }}</VAlert>
 
+      <VDivider />
+
       <VTable>
         <thead>
           <tr><th>Código</th><th>Cliente</th><th>Ruta</th><th>Estado</th><th class="text-right">Precio</th><th>Origen</th><th class="text-right">Acciones</th></tr>

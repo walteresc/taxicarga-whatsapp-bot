@@ -154,6 +154,8 @@ const submitCancel = async () => {
       </VCardText>
       <VAlert v-if="error" type="error" variant="tonal" class="ma-4">{{ error }}</VAlert>
 
+      <VDivider />
+
       <VTable>
         <thead>
           <tr><th>Código</th><th>Cliente</th><th>Ruta</th><th>Fecha</th><th>Estado</th><th class="text-right">Precio</th><th class="text-right">Saldo</th><th>Pago</th><th>Equipo</th><th class="text-right">Acciones</th></tr>
