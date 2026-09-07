@@ -147,6 +147,7 @@ def _normalize_ycloud_payload(event_type, payload):
                 canonical["original_wamid"] = original_msg_id
                 canonical["from"] = msg_data.get("from")
                 canonical["from_name"] = (msg_data.get("customerProfile") or {}).get("name") or msg_data.get("fromName", "")
+                canonical["from_username"] = (msg_data.get("customerProfile") or {}).get("username", "")
                 canonical["from_user_id"] = msg_data.get("fromUserId", "")
                 canonical["reply_to_wamid"] = (msg_data.get("context") or {}).get("id", "")
                 canonical["wamid"] = original_msg_id  # Use ORIGINAL wamid for lookup
@@ -160,6 +161,10 @@ def _normalize_ycloud_payload(event_type, payload):
                 # Contact name: YCloud sends it under customerProfile.name (real field).
                 # fromName kept as legacy fallback in case older payload shapes use it.
                 canonical["from_name"] = (msg_data.get("customerProfile") or {}).get("name") or msg_data.get("fromName", "")
+                # WhatsApp username / handle ('@mitzi.vs') — YCloud lo manda en
+                # customerProfile.username. Es lo que muestra WhatsApp cuando el
+                # contacto no comparte su número y no puso un nombre de perfil útil.
+                canonical["from_username"] = (msg_data.get("customerProfile") or {}).get("username", "")
                 # fromUserId is YCloud's opaque persistent identity — present even when
                 # 'from' (the phone) is omitted, e.g. on reply/quote messages.
                 canonical["from_user_id"] = msg_data.get("fromUserId", "")
@@ -173,17 +178,20 @@ def _normalize_ycloud_payload(event_type, payload):
                 # it but WhatsApp never renders the quote — see meta_message_id field docstring).
                 canonical["real_wamid"] = msg_data.get("wamid", "")
                 canonical["text"] = msg_data.get("text", {}).get("body", "")
-                canonical["image"] = msg_data.get("image")
+                # Un sticker de WhatsApp es un webp — se trata igual que una imagen
+                # de acá en adelante (mismo objeto de media: id/link/mime_type),
+                # así se descarga y se muestra sin agregar un tipo nuevo end-to-end.
+                canonical["image"] = msg_data.get("image") or msg_data.get("sticker")
                 canonical["audio"] = msg_data.get("audio")
                 canonical["document"] = msg_data.get("document")
                 canonical["timestamp"] = payload.get("timestamp")
 
                 # Detect content type based on what's present
-                if msg_data.get("image"):
+                if canonical["image"]:
                     canonical["type"] = "image"
-                elif msg_data.get("audio"):
+                elif canonical["audio"]:
                     canonical["type"] = "audio"
-                elif msg_data.get("document"):
+                elif canonical["document"]:
                     canonical["type"] = "document"
                 else:
                     canonical["type"] = "text"
@@ -209,10 +217,15 @@ def _normalize_ycloud_payload(event_type, payload):
             canonical["to_user_id"] = msg_data.get("toUserId", "")
             profile = msg_data.get("customerProfile") or {}
             canonical["to_name"] = profile.get("name") or profile.get("username", "")
+            canonical["to_username"] = profile.get("username", "")
             canonical["wamid"] = msg_data.get("id")
             canonical["real_wamid"] = msg_data.get("wamid", "")
             canonical["text"] = msg_data.get("text", {}).get("body", "")
-            canonical["type"] = payload.get("type")
+            canonical["image"] = msg_data.get("image") or msg_data.get("sticker")
+            canonical["audio"] = msg_data.get("audio")
+            canonical["document"] = msg_data.get("document")
+            # Sticker saliente (el asesor lo mandó desde la app de WhatsApp) → imagen.
+            canonical["type"] = "image" if canonical["image"] else payload.get("type")
             canonical["timestamp"] = payload.get("timestamp")
 
     elif event_type == "whatsapp.message.updated":
@@ -863,6 +876,25 @@ Ejemplo: Si asesor dice "pueden enviar fotos", NO digas "no es necesario". Conti
     )
 
 
+def _ycloud_recipient_field(phone_number):
+    """Devuelve (clave, valor) para el destinatario en el payload de YCloud.
+
+    Contacto normal            -> ('to', '+51987654321')
+    Contacto sin número        -> ('recipient', '<BSUID>')
+
+    Algunos contactos no exponen su teléfono en ninguna parte de la API (confirmado:
+    falta en el inbound Y en el echo). Para esos, services_ycloud._create_cliente_without_phone
+    guarda Cliente.telefono con el prefijo 'YCID:<user_id>'. YCloud acepta
+    'recipient' (WhatsApp Business-scoped user id) como alternativa a 'to' — "Provide
+    exactly one of to or recipient". Sin esto, responderles daba
+    PARAM_INVALID: 'Invalid E.164 phone number: +YCID:...'.
+    """
+    pn = (phone_number or "").strip()
+    if pn.startswith("YCID:"):
+        return "recipient", pn[len("YCID:"):]
+    return "to", (pn if pn.startswith("+") else f"+{pn}")
+
+
 def send_via_ycloud(phone_number, message_text, reply_to_wamid=None):
     """Enviar mensaje via YCloud API v2.
 
@@ -884,14 +916,14 @@ def send_via_ycloud(phone_number, message_text, reply_to_wamid=None):
         'Content-Type': 'application/json'
     }
 
-    # Normalizar números (asegurar E.164 format: +XXXXXXXXXXX)
-    recipient = phone_number if phone_number.startswith('+') else f'+{phone_number}'
+    # Destinatario: 'to' (E.164) o 'recipient' (BSUID) para contactos sin número.
+    recip_key, recip_val = _ycloud_recipient_field(phone_number)
     sender = settings.YCLOUD_SENDER_PHONE if settings.YCLOUD_SENDER_PHONE.startswith('+') else f'+{settings.YCLOUD_SENDER_PHONE}'
 
     # PAYLOAD CORRECTO (text debe ser objeto con body)
     payload = {
         'from': sender,
-        'to': recipient,
+        recip_key: recip_val,
         'type': 'text',
         'text': {
             'body': message_text
@@ -901,7 +933,7 @@ def send_via_ycloud(phone_number, message_text, reply_to_wamid=None):
     if reply_to_wamid:
         payload['context'] = {'message_id': reply_to_wamid}
 
-    logger.info(f"[YCloud] Sending to {recipient}: {message_text[:50]}")
+    logger.info(f"[YCloud] Sending to {recip_val} (via {recip_key}): {message_text[:50]}")
 
     try:
         response = requests.post(url, json=payload, headers=headers, timeout=10)
@@ -954,12 +986,12 @@ def send_reaction_via_ycloud(phone_number, target_wamid, emoji):
         'Content-Type': 'application/json'
     }
 
-    recipient = phone_number if phone_number.startswith('+') else f'+{phone_number}'
+    recip_key, recip_val = _ycloud_recipient_field(phone_number)
     sender = settings.YCLOUD_SENDER_PHONE if settings.YCLOUD_SENDER_PHONE.startswith('+') else f'+{settings.YCLOUD_SENDER_PHONE}'
 
     payload = {
         'from': sender,
-        'to': recipient,
+        recip_key: recip_val,
         'type': 'reaction',
         'reaction': {
             'message_id': target_wamid,
@@ -967,7 +999,7 @@ def send_reaction_via_ycloud(phone_number, target_wamid, emoji):
         },
     }
 
-    logger.info(f"[YCloud] Sending reaction {emoji!r} to {recipient} (target={target_wamid})")
+    logger.info(f"[YCloud] Sending reaction {emoji!r} to {recip_val} (target={target_wamid})")
 
     try:
         response = requests.post(url, json=payload, headers=headers, timeout=10)
@@ -1061,14 +1093,15 @@ def send_media_via_ycloud(sender_phone, recipient_phone, media_type, media_id, c
     if filename and media_type == "document":
         media_object["filename"] = filename
 
+    recip_key, recip_val = _ycloud_recipient_field(recipient_phone)
     payload = {
         "from": sender_phone,
-        "to": recipient_phone,
+        recip_key: recip_val,
         "type": media_type,
         media_type: media_object,
     }
 
-    logger.info(f"[YCloud] Sending {media_type} (media_id={media_id}) to {recipient_phone}")
+    logger.info(f"[YCloud] Sending {media_type} (media_id={media_id}) to {recip_val} (via {recip_key})")
 
     try:
         response = requests.post(url, json=payload, headers=headers, timeout=15)

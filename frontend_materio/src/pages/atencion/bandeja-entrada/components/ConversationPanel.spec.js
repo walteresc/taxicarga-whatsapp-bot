@@ -238,4 +238,59 @@ describe('ConversationPanel integration', () => {
 
     expect(messages).toHaveLength(6)
   })
+
+  it('pendingTemplate is false once a client message exists', async () => {
+    const vuetify = createVuetify()
+
+    const wrapper = mount(ConversationPanel, {
+      props: {
+        conversationId: 1,
+        conversation: { id: 1, cliente: { nombre: 'Walter' }, responsable: { nombre: 'Asesor' } },
+      },
+      global: {
+        plugins: [pinia, vuetify],
+        stubs: {
+          EmptyConversationState: true,
+          ConversationHeader: true,
+          MessageTimeline: true,
+          ChatComposer: true,
+        },
+      },
+    })
+
+    await new Promise(resolve => setTimeout(resolve, 200))
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.vm.pendingTemplate).toBe(false)
+  })
+
+  it('pendingTemplate is true for a manually-started conversation with no messages yet', async () => {
+    const vuetify = createVuetify()
+    global.fetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ messages: [], total: 0, conversation_id: 99 }),
+    }))
+
+    const wrapper = mount(ConversationPanel, {
+      props: {
+        conversationId: 99,
+        conversation: { id: 99, cliente: { nombre: '+51900111222' }, responsable: null },
+      },
+      global: {
+        plugins: [pinia, vuetify],
+        stubs: {
+          EmptyConversationState: true,
+          ConversationHeader: true,
+          MessageTimeline: true,
+          ChatComposer: true,
+        },
+      },
+    })
+
+    await new Promise(resolve => setTimeout(resolve, 200))
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.vm.pendingTemplate).toBe(true)
+  })
 })

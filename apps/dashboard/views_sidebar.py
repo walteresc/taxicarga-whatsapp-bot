@@ -22,7 +22,6 @@ def sidebar(request):
         {"path": "/dashboard/whatsapp/por-cotizar/", "icon": "mdi-clock-alert-outline", "title": "Por cotizar", "roles": ["Administrador", "Supervisor", "Asesor de Ventas"]},
         {"path": "/dashboard/whatsapp/cotizaciones/", "icon": "mdi-file-document-outline", "title": "Cotizaciones", "roles": ["Administrador", "Supervisor", "Asesor de Ventas"]},
         {"path": "/dashboard/whatsapp/configuracion/", "icon": "mdi-robot-outline", "title": "Configuración del bot", "roles": ["Administrador"]},
-        {"path": "/dashboard/reportes/", "icon": "mdi-chart-bar", "title": "Reportes", "roles": ["Administrador", "Supervisor"]},
         {"path": "/dashboard/mis-servicios/", "icon": "mdi-truck-delivery", "title": "Mis Servicios", "roles": ["Conductor", "Ayudante"]},
         {"path": "/dashboard/mi-programacion/", "icon": "mdi-calendar-clock", "title": "Mi Programación", "roles": ["Conductor", "Ayudante"]}
     ]

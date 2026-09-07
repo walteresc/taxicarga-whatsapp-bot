@@ -26,6 +26,12 @@ const normalizeAttentionMode = raw => {
 export const useConversationsStore = defineStore('conversations', () => {
   const conversations = ref([])
 
+  // Conversación abierta ahora mismo en el panel de chat. La usa el handler de
+  // SSE para NO sumar al badge un mensaje que llega mientras el asesor la está
+  // mirando (lo está leyendo / respondiendo).
+  const activeConversationId = ref(null)
+  const setActiveConversation = id => { activeConversationId.value = id }
+
   /**
    * Insert or update conversation.
    * Normalizes field names from backend (snake_case → camelCase)
@@ -38,16 +44,36 @@ export const useConversationsStore = defineStore('conversations', () => {
       return
     }
 
-    // Normalize field names
-    const normalized = {
-      ...conv,
-      unread: conv.unread_count ?? conv.unread ?? 0,
-      attentionMode: normalizeAttentionMode(conv.estado_atencion) ?? conv.attentionMode,
-      estadoCotizacion: conv.estado_cotizacion ?? conv.estadoCotizacion,
-      lastActivity: conv.ultima_actividad ?? conv.last_activity ?? conv.lastActivity,
+    const existing = conversations.value.findIndex(c => c.id === conv.id)
+    const isNew = existing < 0
+
+    // Normalize field names — SOLO incluir un campo derivado si el input trae la
+    // fuente. `handleMessageCreated` (SSE) llama con un patch parcial (id +
+    // unread_count + ultima_actividad, sin estado_atencion): antes esto ponía
+    // attentionMode=undefined y pisaba el modo real ("asesor" → "Asignarme").
+    const normalized = { ...conv }
+
+    if (conv.unread_count !== undefined || conv.unread !== undefined) {
+      normalized.unread = conv.unread_count ?? conv.unread ?? 0
+    } else if (isNew) {
+      normalized.unread = 0
     }
 
-    const existing = conversations.value.findIndex(c => c.id === normalized.id)
+    if (conv.estado_atencion !== undefined) {
+      normalized.attentionMode = normalizeAttentionMode(conv.estado_atencion)
+    } else if (conv.attentionMode !== undefined) {
+      normalized.attentionMode = conv.attentionMode
+    }
+
+    if (conv.estado_cotizacion !== undefined) {
+      normalized.estadoCotizacion = conv.estado_cotizacion
+    } else if (conv.estadoCotizacion !== undefined) {
+      normalized.estadoCotizacion = conv.estadoCotizacion
+    }
+
+    if (conv.ultima_actividad !== undefined || conv.last_activity !== undefined || conv.lastActivity !== undefined) {
+      normalized.lastActivity = conv.ultima_actividad ?? conv.last_activity ?? conv.lastActivity
+    }
 
     if (existing >= 0) {
       // CRITICAL: Use splice for Vue 3 reactivity — array[i] = value does NOT trigger updates
@@ -101,7 +127,11 @@ export const useConversationsStore = defineStore('conversations', () => {
    */
   const loadInitial = async () => {
     try {
-      const response = await fetch('/dashboard/whatsapp/conversaciones/api/active/')
+      // limit=100 (tope del backend) + transportistas=all: trae también los
+      // contactos de Transportistas para que la partición client-side de la
+      // bandeja los pueda mostrar. Sin esto, agregar un transportista y
+      // refrescar no lo mostraba (el endpoint los excluye por defecto).
+      const response = await fetch('/dashboard/whatsapp/conversaciones/api/active/?limit=100&transportistas=all')
       const data = await response.json()
 
       let loaded = []
@@ -132,6 +162,8 @@ export const useConversationsStore = defineStore('conversations', () => {
 
   return {
     conversations,
+    activeConversationId,
+    setActiveConversation,
     upsertConversation,
     reorderConversations,
     updateConversationState,

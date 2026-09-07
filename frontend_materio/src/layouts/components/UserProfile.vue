@@ -1,41 +1,29 @@
 <script setup>
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
 import avatar1 from '@images/avatars/avatar-1.png'
+import { useAuthStore } from '@/stores/authStore'
 
-const router = useRouter()
+const auth = useAuthStore()
 const isLoggingOut = ref(false)
 
 const handleLogout = async () => {
   if (isLoggingOut.value) return
+  isLoggingOut.value = true
 
   try {
-    isLoggingOut.value = true
-
-    // Call logout endpoint to clean session
-    const response = await fetch('/dashboard/api/auth/logout/', {
+    await fetch('/dashboard/api/auth/logout/', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-CSRFToken': getCsrfToken(),
-      },
+      headers: { 'X-CSRFToken': getCsrfToken() },
       credentials: 'include',
     })
-
-    if (!response.ok) {
-      console.error('Logout failed:', response.status)
-    }
-
-    // Navigate to login
-    await router.replace('/dashboard/login/')
   } catch (error) {
     console.error('Logout error:', error)
-
-    // Still try to navigate to login on error
-    await router.replace('/dashboard/login/')
-  } finally {
-    isLoggingOut.value = false
   }
+
+  // Recarga completa a /login: deja limpios el store de sesión y los de la
+  // bandeja (SSE, conversaciones), que si no seguirían con una sesión muerta.
+  auth.clear()
+  window.location.assign('/login')
 }
 
 function getCsrfToken() {

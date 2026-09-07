@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 from apps.clientes.models import Cliente
 from apps.leads.models import Lead
@@ -115,6 +116,20 @@ class Servicio(models.Model):
         max_length=20, choices=TIPO_COMPROBANTE_CHOICES, default="ninguno"
     )
 
+    # -- Hitos comerciales (para reportes de ventas) --
+    fecha_confirmacion = models.DateField(
+        null=True, blank=True,
+        help_text="Fecha en que la venta se confirmó (se creó la reserva desde un lead aceptado).",
+    )
+    fecha_finalizacion = models.DateField(
+        null=True, blank=True,
+        help_text="Fecha en que el servicio se marcó como finalizado.",
+    )
+    es_interprovincial = models.BooleanField(
+        default=False,
+        help_text="Ruta fuera de Lima Metropolitana. Heredado del lead de origen.",
+    )
+
     # -- Fecha / Hora / Precio --
     fecha_servicio = models.DateField(null=True, blank=True)
     horario_servicio = models.CharField(max_length=80, blank=True, default="")
@@ -176,6 +191,13 @@ class Servicio(models.Model):
             )
             next_id = (last.id + 1) if last else 1
             self.codigo = f"SVC-{next_id:04d}"
+        # Sella la fecha de finalización la primera vez que el servicio llega a
+        # ese estado, sea cual sea la vista que lo cambie.
+        if self.estado == SERVICIO_FINALIZADO and self.fecha_finalizacion is None:
+            self.fecha_finalizacion = timezone.localdate()
+            update_fields = kwargs.get("update_fields")
+            if update_fields is not None and "fecha_finalizacion" not in update_fields:
+                kwargs["update_fields"] = list(update_fields) + ["fecha_finalizacion"]
         super().save(*args, **kwargs)
 
     @property

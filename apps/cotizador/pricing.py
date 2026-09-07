@@ -10,6 +10,21 @@ BASE_PRICES = {
 }
 
 
+def panel_prices(lead):
+    """(sugerido, cotizado) para el panel derecho de la bandeja y el modal de
+    Cotizar. Una sola definición para que ambos muestren exactamente el mismo
+    número. `sugerido` sale del motor (fallback); `cotizado` es lo que ya se le
+    envió al cliente, si existe."""
+    if lead is None:
+        return None, None
+    quoted = lead.precio_cotizado or lead.precio_final or None
+    try:
+        suggested = fallback_price_for_lead(lead)[2]
+    except Exception:
+        suggested = lead.precio_recomendado or None
+    return suggested, quoted
+
+
 def fallback_price_for_lead(lead):
     base = BASE_PRICES.get((lead.tipo_servicio or "").lower(), Decimal("220.00"))
     price = base

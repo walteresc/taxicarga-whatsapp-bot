@@ -58,6 +58,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "django.contrib.humanize",
     "rest_framework",
     "apps.clientes",
     "apps.leads",
@@ -71,6 +72,7 @@ INSTALLED_APPS = [
     "apps.integrations",
     "apps.whatsapp_bot_v4",
     "apps.tercerizacion",
+    "apps.grupos_internos",
 ]
 
 LOGIN_URL = "/dashboard/login/"

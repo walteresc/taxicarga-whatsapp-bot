@@ -1785,7 +1785,19 @@ def api_asignar_servicio_pizarra(request):
         servicio.estado = SERVICIO_ASIGNADO
         servicio.save(update_fields=["estado"])
 
-    return JsonResponse({"status": "ok", "ps_id": programacion.pk})
+    # Enviar el WhatsApp del conductor DESPUÉS de que la transacción cerró —
+    # es un efecto externo irreversible, no debe intentarse si algo de arriba
+    # llegara a revertirse.
+    from apps.campo.services_notificacion import notificar_conductor_asignacion
+    notificacion = notificar_conductor_asignacion(programacion, request.user)
+
+    return JsonResponse({
+        "status": "ok",
+        "ps_id": programacion.pk,
+        "whatsapp_enviado": notificacion["enviado"],
+        "whatsapp_mensaje": notificacion["mensaje"],
+        "whatsapp_alerta": notificacion["motivo"],
+    })
 
 
 @login_required

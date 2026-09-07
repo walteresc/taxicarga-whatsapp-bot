@@ -8,10 +8,15 @@ from rest_framework import status
 from django.utils import timezone
 from datetime import datetime
 
+from apps.api.permissions import HasAnyRole
 from apps.whatsapp.models import ConversacionWhatsApp
 from .models import ConversationOwnership, BotGlobalConfig
 
 logger = logging.getLogger(__name__)
+
+# Pausar/activar el bot afecta a TODAS las conversaciones a la vez — mismo
+# criterio de rol que el resto del pipeline comercial (ver apps/api/permissions.py).
+_BOT_CONTROL_ROLES = ("Administrador", "Supervisor", "Asesor de Ventas")
 
 
 @api_view(['POST'])
@@ -278,7 +283,7 @@ def transaction_cancelled(request):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([HasAnyRole(*_BOT_CONTROL_ROLES)])
 def pause_global(request):
     """Control global: Pausar bot en TODAS las conversaciones.
 
@@ -306,7 +311,7 @@ def pause_global(request):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([HasAnyRole(*_BOT_CONTROL_ROLES)])
 def activate_global(request):
     """Control global: Activar bot en TODAS las conversaciones.
 
@@ -348,7 +353,7 @@ def activate_global(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([HasAnyRole(*_BOT_CONTROL_ROLES)])
 def get_bot_status(request):
     """GET: Estado global del bot y estado de conversación específica.
 

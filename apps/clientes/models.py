@@ -4,6 +4,12 @@ from django.utils import timezone
 from apps.clientes.phone_normalizer import normalize_phone
 
 
+def _contar_alfanumericos(texto):
+    """Nº de caracteres alfanuméricos (Unicode) en el texto. Emojis y signos de
+    puntuación no cuentan — str.isalnum() ya los excluye."""
+    return sum(1 for c in (texto or "") if c.isalnum())
+
+
 class Cliente(models.Model):
     SOURCE_MANUAL = "manual"
     SOURCE_CRM = "crm"
@@ -93,6 +99,19 @@ class Cliente(models.Model):
     )
     es_transportista_marcado_en = models.DateTimeField(null=True, blank=True)
 
+    # Personal de oficina (asesores/administración) que escribe por WhatsApp —
+    # partición de la bandeja igual que Transportistas. A mano porque, a
+    # diferencia de "Campo" (Conductor/Ayudante ya tienen teléfono guardado),
+    # no hay hoy una lista de teléfonos de oficina de la que auto-detectar.
+    es_oficina = models.BooleanField(default=False, db_index=True)
+
+    # Refuerzo manual de "Campo" — la detección automática (teléfono contra
+    # Conductor/Ayudante activo, ver api_active_conversations) sigue siendo la
+    # vía principal y NO se toca; esto es solo para agregar a alguien a mano
+    # desde "Gestionar Campo" cuando todavía no está registrado como personal
+    # de campo con ese mismo teléfono.
+    es_campo = models.BooleanField(default=False, db_index=True)
+
     class Meta:
         ordering = ["-ultima_interaccion"]
         indexes = [
@@ -118,6 +137,60 @@ class Cliente(models.Model):
 
     def __str__(self):
         return self.display_name or self.nombre or self.telefono
+
+    @property
+    def profile_name(self):
+        """Nombre que se muestra del contacto (el editado en el CRM o, si no, el
+        de perfil de WhatsApp), sin juzgar si es útil."""
+        return (self.display_name or self.nombre or "").strip()
+
+    @property
+    def name_is_manual(self):
+        """El nombre lo fijó un asesor en el CRM (tiene prioridad sobre el de
+        WhatsApp y no se sobrescribe al llegar mensajes nuevos)."""
+        return self.name_source == self.SOURCE_MANUAL
+
+    @property
+    def profile_name_usable(self):
+        """False cuando el nombre de perfil no sirve para identificar al contacto:
+        vacío, solo emojis, solo signos de puntuación, con menos de 2 caracteres
+        alfanuméricos, o cuando el "nombre" es en realidad el propio teléfono
+        (fallback). En ese caso el CRM muestra solo el teléfono.
+
+        Un nombre puesto a mano por un asesor SIEMPRE se considera utilizable
+        (aunque escriba "🏪 cliente difícil"): fue una decisión humana."""
+        name = self.profile_name
+        if not name:
+            return False
+        if self.name_is_manual:
+            return True
+        # "nombre" que coincide con el teléfono → no identifica, mostrar solo el número
+        name_digits = "".join(c for c in name if c.isdigit())
+        phone_digits = "".join(c for c in self.contact_phone if c.isdigit())
+        if name_digits and phone_digits and name_digits == phone_digits:
+            return False
+        return _contar_alfanumericos(name) >= 2
+
+    @property
+    def has_real_phone(self):
+        """False para contactos que no exponen número — su Cliente.telefono lleva
+        el prefijo 'YCID:' (identidad opaca de YCloud, no un E.164)."""
+        return not (self.telefono or "").startswith("YCID:")
+
+    @property
+    def contact_phone(self):
+        """Identificador de contacto para mostrar/buscar.
+
+        Contacto normal      -> teléfono E.164 (telefono ya se normaliza en save()).
+        Contacto sin número  -> el user id de WhatsApp (BSUID, p.ej. 'PE.1041501801847001'),
+                                que es como YCloud identifica y direcciona a ese contacto.
+                                NUNCA vacío: el asesor necesita un identificador estable
+                                (y puede renombrarlo a mano). El front lo marca como
+                                "ID de WhatsApp", no como teléfono."""
+        tel = (self.telefono or "").strip()
+        if tel.startswith("YCID:"):
+            return self.ycloud_user_id or tel[len("YCID:"):]
+        return tel or self.phone_e164 or ""
 
 
 class Conversacion(models.Model):

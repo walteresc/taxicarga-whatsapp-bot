@@ -1,284 +1,105 @@
 <script setup>
-import VerticalNavSectionTitle from '@/@layouts/components/VerticalNavSectionTitle.vue'
-import VerticalNavGroup from '@layouts/components/VerticalNavGroup.vue'
+import { computed, onMounted, onUnmounted } from 'vue'
+import { useRoute } from 'vue-router'
+
 import VerticalNavLink from '@layouts/components/VerticalNavLink.vue'
+import VerticalNavSectionTitle from '@/@layouts/components/VerticalNavSectionTitle.vue'
+import { useAuthStore } from '@/stores/authStore'
+import { usePipelineStore } from '@/stores/pipelineStore'
+
+const auth = useAuthStore()
+const pipeline = usePipelineStore()
+const route = useRoute()
+
+onMounted(() => pipeline.start())
+onUnmounted(() => pipeline.stop())
+
+const COMMERCIAL_ROLES = ['Administrador', 'Supervisor', 'Asesor de Ventas']
+
+// Menú declarativo. `ready:false` = la sección aún vive solo en el panel Django.
+// `badge` = clave de pipelineStore.counts; el número solo se muestra si es > 0.
+const MENU = [
+  { heading: 'Atención' },
+  { title: 'Bandeja de entrada', icon: 'ri-inbox-line', to: '/atencion/bandeja-entrada', ready: true },
+  { title: 'Leads', icon: 'ri-user-add-line', to: '/atencion/leads', ready: false },
+
+  { heading: 'Comercial' },
+  { title: 'Oportunidades', icon: 'ri-user-star-line', to: '/comercial/potenciales', ready: true, roles: COMMERCIAL_ROLES, badge: 'potentials' },
+  { title: 'Para revisión', icon: 'ri-eye-line', to: '/comercial/para-revision', ready: true, roles: COMMERCIAL_ROLES, badge: 'review' },
+  { title: 'Por cotizar', icon: 'ri-price-tag-3-line', to: '/comercial/por-cotizar', ready: true, roles: COMMERCIAL_ROLES, badge: 'quoting' },
+  { title: 'Cotizaciones', icon: 'ri-file-text-line', to: '/comercial/cotizaciones', ready: true, roles: COMMERCIAL_ROLES, badge: 'quotes' },
+  { title: 'Reservas', icon: 'ri-calendar-check-line', to: '/comercial/reservas', ready: true, roles: COMMERCIAL_ROLES, badge: 'bookings' },
+  { title: 'Perdidos', icon: 'ri-close-circle-line', to: '/comercial/perdidos', ready: true, roles: COMMERCIAL_ROLES },
+  { title: 'Clientes', icon: 'ri-user-line', to: '/comercial/clientes', ready: true, roles: COMMERCIAL_ROLES },
+
+  { heading: 'Operaciones' },
+  { title: 'Pizarra', icon: 'ri-layout-grid-line', to: '/operaciones/pizarra', ready: false },
+  { title: 'Programación', icon: 'ri-calendar-line', to: '/operaciones/programacion', ready: false },
+
+  { heading: 'Personal de campo' },
+  { title: 'Conductores', icon: 'ri-steering-line', to: '/personal-campo/conductores', ready: true, roles: COMMERCIAL_ROLES },
+  { title: 'Ayudantes', icon: 'ri-user-2-line', to: '/personal-campo/ayudantes', ready: true, roles: COMMERCIAL_ROLES },
+  { title: 'Equipos', icon: 'ri-group-line', to: '/personal-campo/equipos', ready: false },
+
+  { heading: 'Flota' },
+  { title: 'Vehículos', icon: 'ri-truck-line', to: '/flota/vehiculos', ready: true, roles: COMMERCIAL_ROLES },
+  { title: 'Mantenimientos', icon: 'ri-tools-line', to: '/flota/mantenimientos', ready: true, roles: COMMERCIAL_ROLES },
+
+  { heading: 'Analítica' },
+  { title: 'Ventas vivas', icon: 'ri-line-chart-line', to: '/analitica/ventas', ready: true, roles: ['Administrador', 'Supervisor'] },
+  { title: 'Benchmark histórico', icon: 'ri-bar-chart-box-line', to: '/analitica/benchmark', ready: true, roles: ['Administrador', 'Supervisor'] },
+
+  { heading: 'Sistema' },
+  { title: 'Configuración del bot', icon: 'ri-robot-line', to: '/sistema/bot', ready: true, roles: COMMERCIAL_ROLES },
+  { title: 'Administración', icon: 'ri-settings-line', to: '/sistema/config', ready: false },
+]
+
+const visibleFor = item => {
+  if (!item.ready) return false
+  if (!item.roles?.length) return true
+  return auth.hasAnyRole(...item.roles)
+}
+
+const items = computed(() => {
+  const out = []
+  MENU.forEach(entry => {
+    if (entry.heading) {
+      out.push({ ...entry, _links: [] })
+    } else if (visibleFor(entry)) {
+      const last = out[out.length - 1]
+      if (last?.heading) last._links.push(entry)
+    }
+  })
+  return out.filter(entry => entry._links.length)
+})
+
+const navItem = link => {
+  const item = { title: link.title, icon: link.icon, to: link.to }
+  const n = link.badge ? (pipeline.counts.unseen?.[link.badge] ?? 0) : 0
+  if (n > 0) item.badge = { content: n, color: link.badge === 'review' ? 'error' : 'primary' }
+
+  return item
+}
+
+// Clic en el link de la página en la que ya estás: Vue Router no re-navega
+// (misma ruta), así que sin esto la bandeja queda atascada en el filtro/
+// partición donde se haya quedado el usuario. La bandeja escucha este evento
+// y vuelve a "Todas".
+const handleNavClick = link => {
+  if (link.to === '/atencion/bandeja-entrada' && route.path === link.to) {
+    window.dispatchEvent(new Event('bandeja:reset-view'))
+  }
+}
 </script>
 
 <template>
-  <!-- 👉 PRINCIPAL -->
-  <VerticalNavLink
-    :item="{
-      title: 'Dashboard',
-      icon: 'ri-home-smile-line',
-      to: '/dashboard',
-    }"
-  />
-
-  <!-- 👉 ATENCIÓN -->
-  <VerticalNavSectionTitle
-    :item="{
-      heading: 'ATENCIÓN',
-    }"
-  />
-  <VerticalNavLink
-    :item="{
-      title: 'Bandeja de entrada',
-      icon: 'ri-inbox-line',
-      to: '/atencion/bandeja-entrada',
-      badge: { content: 18, color: 'error' },
-    }"
-  />
-
-  <VerticalNavLink
-    :item="{
-      title: 'Leads',
-      icon: 'ri-user-add-line',
-      to: '/atencion/leads',
-      badge: { content: 7, color: 'warning' },
-    }"
-  />
-
-  <!-- 👉 COMERCIAL -->
-  <VerticalNavSectionTitle
-    :item="{
-      heading: 'COMERCIAL',
-    }"
-  />
-  <VerticalNavGroup
-    :item="{
-      title: 'Por Cotizar',
-      icon: 'ri-file-list-line',
-    }"
-  >
+  <template v-for="section in items" :key="section.heading">
+    <VerticalNavSectionTitle :item="{ heading: section.heading }" />
     <VerticalNavLink
-      :item="{
-        title: 'Lista',
-        to: '/comercial/por-cotizar',
-      }"
+      v-for="link in section._links"
+      :key="link.to"
+      :item="navItem(link)"
+      @click="handleNavClick(link)"
     />
-  </VerticalNavGroup>
-
-  <VerticalNavGroup
-    :item="{
-      title: 'Cotizaciones',
-      icon: 'ri-file-text-line',
-    }"
-  >
-    <VerticalNavLink
-      :item="{
-        title: 'Historial',
-        to: '/comercial/cotizaciones',
-      }"
-    />
-  </VerticalNavGroup>
-
-  <VerticalNavLink
-    :item="{
-      title: 'Clientes',
-      icon: 'ri-user-line',
-      to: '/comercial/clientes',
-    }"
-  />
-
-  <VerticalNavLink
-    :item="{
-      title: 'Reservas',
-      icon: 'ri-calendar-check-line',
-      to: '/comercial/reservas',
-    }"
-  />
-
-  <!-- 👉 OPERACIONES -->
-  <VerticalNavSectionTitle
-    :item="{
-      heading: 'OPERACIONES',
-    }"
-  />
-  <VerticalNavGroup
-    :item="{
-      title: 'Pizarra',
-      icon: 'ri-layout-grid-line',
-    }"
-  >
-    <VerticalNavLink
-      :item="{
-        title: 'Programación Visual',
-        to: '/operaciones/pizarra',
-      }"
-    />
-  </VerticalNavGroup>
-
-  <VerticalNavLink
-    :item="{
-      title: 'Programación',
-      icon: 'ri-calendar-line',
-      to: '/operaciones/programacion',
-    }"
-  />
-
-  <VerticalNavLink
-    :item="{
-      title: 'Servicios',
-      icon: 'ri-service-line',
-      to: '/operaciones/servicios',
-    }"
-  />
-
-  <!-- 👉 PERSONAL DE CAMPO -->
-  <VerticalNavSectionTitle
-    :item="{
-      heading: 'PERSONAL DE CAMPO',
-    }"
-  />
-  <VerticalNavGroup
-    :item="{
-      title: 'Personal',
-      icon: 'ri-team-line',
-    }"
-  >
-    <VerticalNavLink
-      :item="{
-        title: 'Conductores',
-        to: '/personal-campo/conductores',
-      }"
-    />
-    <VerticalNavLink
-      :item="{
-        title: 'Ayudantes',
-        to: '/personal-campo/ayudantes',
-      }"
-    />
-  </VerticalNavGroup>
-
-  <VerticalNavLink
-    :item="{
-      title: 'Equipos',
-      icon: 'ri-group-line',
-      to: '/personal-campo/equipos',
-    }"
-  />
-
-  <!-- 👉 FLOTA -->
-  <VerticalNavSectionTitle
-    :item="{
-      heading: 'FLOTA',
-    }"
-  />
-  <VerticalNavGroup
-    :item="{
-      title: 'Vehículos',
-      icon: 'ri-truck-line',
-    }"
-  >
-    <VerticalNavLink
-      :item="{
-        title: 'Inventario',
-        to: '/flota/vehiculos',
-      }"
-    />
-  </VerticalNavGroup>
-
-  <VerticalNavLink
-    :item="{
-      title: 'Mantenimientos',
-      icon: 'ri-tools-line',
-      to: '/flota/mantenimientos',
-    }"
-  />
-
-  <!-- 👉 AUTOMATIZACIÓN -->
-  <VerticalNavSectionTitle
-    :item="{
-      heading: 'AUTOMATIZACIÓN',
-    }"
-  />
-  <VerticalNavGroup
-    :item="{
-      title: 'Bot WhatsApp',
-      icon: 'ri-robot-line',
-    }"
-  >
-    <VerticalNavLink
-      :item="{
-        title: 'Bots',
-        to: '/automatizacion/bots',
-      }"
-    />
-    <VerticalNavLink
-      :item="{
-        title: 'Flujos',
-        to: '/automatizacion/flujos',
-      }"
-    />
-    <VerticalNavLink
-      :item="{
-        title: 'Respuestas',
-        to: '/automatizacion/respuestas',
-      }"
-    />
-    <VerticalNavLink
-      :item="{
-        title: 'Canales',
-        to: '/automatizacion/canales',
-      }"
-    />
-  </VerticalNavGroup>
-
-  <!-- 👉 ANALÍTICA -->
-  <VerticalNavSectionTitle
-    :item="{
-      heading: 'ANALÍTICA',
-    }"
-  />
-  <VerticalNavGroup
-    :item="{
-      title: 'Reportes',
-      icon: 'ri-bar-chart-line',
-    }"
-  >
-    <VerticalNavLink
-      :item="{
-        title: 'Reportes',
-        to: '/analitica/reportes',
-      }"
-    />
-    <VerticalNavLink
-      :item="{
-        title: 'Rendimiento',
-        to: '/analitica/rendimiento',
-      }"
-    />
-  </VerticalNavGroup>
-
-  <!-- 👉 SISTEMA -->
-  <VerticalNavSectionTitle
-    :item="{
-      heading: 'SISTEMA',
-    }"
-  />
-  <VerticalNavGroup
-    :item="{
-      title: 'Administración',
-      icon: 'ri-settings-line',
-    }"
-  >
-    <VerticalNavLink
-      :item="{
-        title: 'Usuarios',
-        to: '/sistema/usuarios',
-      }"
-    />
-    <VerticalNavLink
-      :item="{
-        title: 'Integraciones',
-        to: '/sistema/integraciones',
-      }"
-    />
-    <VerticalNavLink
-      :item="{
-        title: 'Configuración',
-        to: '/sistema/config',
-      }"
-    />
-  </VerticalNavGroup>
+  </template>
 </template>

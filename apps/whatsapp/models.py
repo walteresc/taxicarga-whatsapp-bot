@@ -313,6 +313,22 @@ class ConversacionWhatsApp(models.Model):
     resumen = models.TextField(blank=True)
     datos_faltantes = models.JSONField(default=list, blank=True)
     porcentaje_informacion = models.PositiveSmallIntegerField(default=0)
+    datos_extraidos = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Datos de servicio detectados por la extracción NLU antes de que "
+                  "exista un Lead (tipo_servicio, distrito_origen/destino, pisos, "
+                  "ascensor, objetos, fecha…). Cuando alcanza el mínimo para cotizar "
+                  "se crea el Lead y a partir de ahí la extracción llena el Lead "
+                  "directamente. El panel de la bandeja lee de aquí o del Lead.",
+    )
+    ultima_extraccion_en = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Última vez que el barrido de extracción procesó esta conversación. "
+                  "El barrido se salta las conversaciones sin mensajes entrantes "
+                  "nuevos desde esta marca.",
+    )
     motivo_derivacion = models.TextField(blank=True)
     ultima_actividad = models.DateTimeField(null=True, blank=True)
     ultimo_mensaje_cliente = models.DateTimeField(null=True, blank=True)
@@ -695,4 +711,42 @@ class MensajeAdjunto(models.Model):
 
     def __str__(self):
         return f"{self.formato}: {self.filename} ({self.ycloud_media_id})"
+
+
+class RespuestaRapida(models.Model):
+    """Mensaje predefinido del composer. Por asesor — cada uno arma su propia
+    lista (editar/agregar/quitar desde la bandeja).
+
+    tipo='respuesta'  -> el rayo del composer.
+    tipo='cotizacion' -> el diálogo "Cotizar"; se le inserta el precio donde
+                         diga {precio}.
+    """
+    TIPO_RESPUESTA = "respuesta"
+    TIPO_COTIZACION = "cotizacion"
+    TIPO_RECOTIZACION = "recotizacion"
+    TIPOS = [
+        (TIPO_RESPUESTA, "Respuesta rápida"),
+        (TIPO_COTIZACION, "Mensaje de cotización (nueva)"),
+        (TIPO_RECOTIZACION, "Mensaje de re-cotización"),
+    ]
+
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="respuestas_rapidas",
+    )
+    tipo = models.CharField(max_length=20, choices=TIPOS, default=TIPO_RESPUESTA, db_index=True)
+    texto = models.TextField()
+    orden = models.PositiveSmallIntegerField(default=0)
+    creada_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["orden", "id"]
+        verbose_name = "Respuesta rápida"
+        verbose_name_plural = "Respuestas rápidas"
+
+    def __str__(self):
+        return f"{self.usuario_id}/{self.tipo}: {self.texto[:40]}"
+
+
 from .models_read_state import ConversationReadState  # noqa

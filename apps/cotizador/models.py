@@ -90,6 +90,20 @@ class SolicitudCotizacion(models.Model):
         (CANCELADA, "Cancelada"),
     ]
 
+    # Dos carriles de la misma cola:
+    #  - "revision":   caso que el bot no pudo resolver, necesita mirada humana
+    #                  ANTES de cotizarse (interprovincial, datos incompletos, fuera
+    #                  de estándar). Aparece en la bandeja "Para revisión".
+    #  - "cotizacion": listo para ponerle precio. Aparece en "Por cotizar".
+    # El asesor resuelve una revisión pasándola a "cotizacion" (misma solicitud).
+    TIPO_REVISION = "revision"
+    TIPO_COTIZACION = "cotizacion"
+    TIPOS = [
+        (TIPO_REVISION, "Revisión"),
+        (TIPO_COTIZACION, "Cotización"),
+    ]
+    tipo = models.CharField(max_length=20, choices=TIPOS, default=TIPO_COTIZACION, db_index=True)
+
     lead = models.ForeignKey(
         Lead,
         on_delete=models.CASCADE,
@@ -319,4 +333,26 @@ class EnvioCotizacion(models.Model):
     def __str__(self):
         return f"Envio {self.revision} - {self.estado}"
 
-# Create your models here.
+
+class PipelineVisto(models.Model):
+    """Marca de que alguien ya abrió el detalle de una oportunidad mientras
+    estaba en una etapa dada. Sirve para el badge de "no visto" del menú y de
+    las tablas. Es global al equipo: si cualquiera lo abre, deja de estar nuevo.
+    Al cambiar de etapa (otra fila `etapa`) vuelve a contar como no visto."""
+
+    etapa = models.CharField(max_length=20)  # potentials | review | quoting | quotes | bookings
+    lead = models.ForeignKey(Lead, on_delete=models.CASCADE, related_name="vistas_pipeline")
+    visto_en = models.DateTimeField(auto_now=True)
+    visto_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["etapa", "lead"], name="cotizador_pipelinevisto_etapa_lead"),
+        ]
+        indexes = [models.Index(fields=["etapa", "lead"])]
+
+    def __str__(self):
+        return f"{self.etapa} · lead {self.lead_id} visto {self.visto_en:%Y-%m-%d %H:%M}"
+

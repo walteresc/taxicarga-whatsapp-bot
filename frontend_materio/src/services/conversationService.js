@@ -13,6 +13,54 @@ const mapAttentionMode = conv => {
 }
 
 export const conversationService = {
+  // Iniciar una conversación desde un número que nunca escribió (no llegó por
+  // webhook). El backend crea Cliente/Lead/Conversación; el composer queda
+  // bloqueado hasta que el cliente responda (ver ChatComposer pendingTemplate).
+  async createManualConversation(telefono, nombre = '') {
+    const response = await fetch(`${DASHBOARD_BASE}/nueva/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': this.getCsrfToken(),
+      },
+      credentials: 'include',
+      body: JSON.stringify({ telefono, nombre }),
+    })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`)
+
+    return data
+  },
+
+  // Marcar/quitar de las particiones Oficina/Transportistas/Campo — Oficina
+  // es siempre manual; Transportistas y Campo también admiten esto como
+  // refuerzo manual además de su detección automática/histórica, que sigue
+  // corriendo igual (ver apps/dashboard/views_whatsapp.py::api_active_conversations).
+  async setOficina(conversationId, esOficina) {
+    return this._setCategoria(conversationId, 'oficina', 'es_oficina', esOficina)
+  },
+  async setTransportista(conversationId, esTransportista) {
+    return this._setCategoria(conversationId, 'transportista', 'es_transportista', esTransportista)
+  },
+  async setCampo(conversationId, esCampo) {
+    return this._setCategoria(conversationId, 'campo', 'es_campo', esCampo)
+  },
+  async _setCategoria(conversationId, urlSegment, bodyKey, value) {
+    const response = await fetch(`${DASHBOARD_BASE}/${conversationId}/${urlSegment}/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': this.getCsrfToken(),
+      },
+      credentials: 'include',
+      body: JSON.stringify({ [bodyKey]: value }),
+    })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok || !data.success) throw new Error(data.error || `HTTP ${response.status}`)
+
+    return data
+  },
+
   // Obtener conversaciones activas con filtros
   async getActiveConversations(filters = {}) {
     try {
@@ -38,7 +86,9 @@ export const conversationService = {
       return {
         conversations: data.conversations.map(conv => ({
           id: conv.id,
-          name: conv.name || 'Desconocido',
+          name: conv.name || conv.phone || 'Desconocido',
+          profile_name: conv.profile_name,
+          name_usable: conv.name_usable,
           phone: conv.phone,
           channel: conv.channel.name,
           channelIcon: conv.channel.icon,
@@ -205,6 +255,23 @@ export const conversationService = {
       console.error('Error closing conversation:', error)
       throw error
     }
+  },
+
+  // Editar a mano el nombre del contacto (prioridad sobre el de WhatsApp).
+  // name vacío => vuelve al nombre de perfil de WhatsApp.
+  async setContactName(conversationId, name) {
+    const response = await fetch(`${DASHBOARD_BASE}/${conversationId}/contacto/nombre/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': this.getCsrfToken(),
+      },
+      credentials: 'include',
+      body: JSON.stringify({ name }),
+    })
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+
+    return response.json()
   },
 
   // Obtener estado global del bot

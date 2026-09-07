@@ -3,9 +3,22 @@
     ref="composerRoot"
     class="chat-composer"
   >
+    <!-- Sin plantilla: número iniciado a mano, el cliente aún no respondió.
+         Tiene prioridad sobre cualquier otro estado — no se puede escribir
+         texto libre aunque haya un asesor asignado. -->
+    <div
+      v-if="pendingTemplate"
+      class="closed-state"
+    >
+      <div class="closed-message">
+        <i class="ri-lock-line" />
+        <span>Disponible cuando se configuren las plantillas de marketing para contactar clientes nuevos, o cuando el cliente responda</span>
+      </div>
+    </div>
+
     <!-- Estado bot pausado (no mostrar "atendiendo" si pausado) -->
     <div
-      v-if="attentionMode === 'bot' && effectiveBotPaused"
+      v-else-if="attentionMode === 'bot' && effectiveBotPaused"
       class="bot-paused-state"
     >
       <div class="bot-message paused">
@@ -76,13 +89,59 @@
           <i class="ri-whatsapp-line" />
           <span>WhatsApp</span>
         </div>
-        <div class="advisor-info">
-          <span>Respondiendo como {{ advisorName }}</span>
+        <div
+          class="advisor-info"
+          :title="`Respondiendo como ${advisorName}`"
+        >
+          <VIcon
+            icon="ri-quill-pen-line"
+            size="14"
+          />
+          <span>{{ advisorName }}</span>
         </div>
-        <div class="status-badge">
-          <span class="status-dot" />
-          Disponible
+
+        <div class="pipeline-progress">
+          <VChip
+            v-if="quoted"
+            size="small"
+            color="primary"
+            variant="tonal"
+            prepend-icon="ri-price-tag-3-line"
+          >
+            {{ quoteState || 'Cotizado' }}
+          </VChip>
+          <template v-else>
+            <div
+              class="pipeline-bar"
+              :title="`Datos del servicio: ${infoPct}%`"
+            >
+              <div
+                class="pipeline-bar-fill"
+                :style="{ width: Math.min(100, Math.max(0, infoPct)) + '%' }"
+              />
+            </div>
+            <span class="pipeline-bar-pct">{{ Math.min(100, Math.max(0, Math.round(infoPct))) }}%</span>
+          </template>
         </div>
+
+        <VBtn
+          size="small"
+          variant="tonal"
+          color="default"
+          prepend-icon="ri-eye-line"
+          @click="$emit('view-request')"
+        >
+          Ver detalles
+        </VBtn>
+        <VBtn
+          size="small"
+          variant="flat"
+          color="primary"
+          prepend-icon="ri-price-tag-3-line"
+          @click="$emit('quote-request')"
+        >
+          {{ quoted ? 'Volver a cotizar' : 'Cotizar' }}
+        </VBtn>
       </div>
 
       <!-- Respuesta citada -->
@@ -225,13 +284,27 @@
               v-if="showQuickReplies"
               class="popover quick-replies"
             >
+              <div class="quick-replies-list">
+                <button
+                  v-for="(reply, idx) in quickReplies"
+                  :key="idx"
+                  class="quick-reply-btn"
+                  @click="selectQuickReply(reply)"
+                >
+                  {{ reply }}
+                </button>
+                <div
+                  v-if="!quickReplies.length"
+                  class="quick-reply-empty"
+                >
+                  Sin mensajes predefinidos todavía
+                </div>
+              </div>
               <button
-                v-for="(reply, idx) in quickReplies"
-                :key="idx"
-                class="quick-reply-btn"
-                @click="selectQuickReply(reply)"
+                class="quick-reply-manage"
+                @click="showQuickReplies = false; showQuickRepliesManager = true"
               >
-                {{ reply }}
+                <i class="ri-settings-3-line" /> Personalizar
               </button>
             </div>
           </div>
@@ -250,6 +323,7 @@
               @keydown.ctrl.b.exact="handleBold"
               @keydown.ctrl.i.exact="handleItalic"
               @keydown.ctrl.shift.x="handleStrikethrough"
+              @paste="handlePaste"
             />
             <!-- Preview Markdown en tiempo real -->
             <div
@@ -282,11 +356,20 @@
         </button>
       </div>
     </div>
+
+    <QuickRepliesManager
+      v-if="showQuickRepliesManager"
+      :items="quickReplies"
+      @close="showQuickRepliesManager = false"
+      @saved="quickReplies = $event"
+    />
   </div>
 </template>
 
 <script setup>
 import { ref, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
+
+import QuickRepliesManager from './QuickRepliesManager.vue'
 
 const props = defineProps({
   replyingTo: Object,
@@ -303,6 +386,12 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  // Conversación iniciada a mano, el cliente todavía no respondió nada — no
+  // hay plantilla de marketing aprobada, así que no se puede mandar texto libre.
+  pendingTemplate: {
+    type: Boolean,
+    default: false,
+  },
   // Parent-controlled: true while a send request is in flight (disables input)
   sending: {
     type: Boolean,
@@ -313,9 +402,23 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  // % de datos del servicio capturados (barra de progreso del composer).
+  infoPct: {
+    type: Number,
+    default: 0,
+  },
+  // Estado de la cotización cuando ya se cotizó (reemplaza la barra).
+  quoted: {
+    type: Boolean,
+    default: false,
+  },
+  quoteState: {
+    type: String,
+    default: '',
+  },
 })
 
-const emit = defineEmits(['send-message', 'clear-reply', 'take-control', 'assign-me', 'reopen'])
+const emit = defineEmits(['send-message', 'clear-reply', 'take-control', 'assign-me', 'reopen', 'view-request', 'quote-request'])
 
 const messageText = ref('')
 const textareaEl = ref(null)
@@ -360,14 +463,16 @@ onBeforeUnmount(() => {
   document.removeEventListener('mousedown', closePopoversIfOutside, true)
 })
 
-const quickReplies = [
-  'Entendido, en breve me comunico',
-  'Gracias por tu consulta',
-  'Te envío la cotización al WhatsApp',
-  'Necesito confirmar algunos datos',
-  'La cotización está lista',
-  '¿En qué te puedo ayudar?',
-]
+const showQuickRepliesManager = ref(false)
+const quickReplies = ref([])
+
+const loadQuickReplies = async () => {
+  try {
+    const r = await fetch('/dashboard/whatsapp/respuestas-rapidas/', { credentials: 'include' })
+    if (r.ok) quickReplies.value = (await r.json()).items || []
+  } catch { /* deja la lista vacía; el botón Personalizar sigue disponible */ }
+}
+onMounted(loadQuickReplies)
 
 const emojis = ['👍', '😊', '❤️', '🎉', '✨', '👏', '🙏', '🚀', '😂', '🙌', '💪', '⭐']
 
@@ -520,6 +625,24 @@ const emitFile = (file, tipo) => {
     file,
     clientMsgId: `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
   })
+}
+
+// Pegar una captura de pantalla (Ctrl+V) desde el portapapeles adjunta la
+// imagen igual que el botón de adjuntar. Si el portapapeles no trae imagen
+// (es texto normal), no se toca nada — el pegado de texto sigue igual.
+const handlePaste = event => {
+  const items = event.clipboardData?.items
+  if (!items) return
+  for (const item of items) {
+    if (item.type?.startsWith('image/')) {
+      const file = item.getAsFile()
+      if (file) {
+        event.preventDefault()
+        emitFile(file, 'imagen')
+      }
+      return
+    }
+  }
 }
 
 const handleFileSelect = event => {
@@ -739,25 +862,42 @@ const insertEmoji = emoji => {
 
 .advisor-info {
   flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
   color: #666;
   font-size: 11px;
 }
 
-.status-badge {
+.pipeline-progress {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 6px;
-  color: #10b981;
-  font-weight: 600;
-  font-size: 11px;
+  gap: 8px;
 }
 
-.status-dot {
-  display: inline-block;
-  width: 6px;
+.pipeline-bar {
+  flex-shrink: 0;
+  width: 120px;
   height: 6px;
-  border-radius: 50%;
-  background: #10b981;
+  border-radius: 4px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+
+.pipeline-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: #8b5cf6;
+  transition: width 0.4s ease;
+}
+
+.pipeline-bar-pct {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  font-variant-numeric: tabular-nums;
 }
 
 .reply-preview {
@@ -1000,11 +1140,20 @@ const insertEmoji = emoji => {
 .quick-replies {
   display: flex;
   flex-direction: column;
+  padding: 0;
+  width: 240px;
+  max-height: 280px;
+  overflow: hidden;
+}
+
+.quick-replies-list {
+  display: flex;
+  flex-direction: column;
   gap: 2px;
   padding: 8px;
-  width: 240px;
-  max-height: 260px;
   overflow-y: auto;
+  flex: 1;
+  min-height: 0;
 }
 
 .quick-reply-btn {
@@ -1022,6 +1171,33 @@ const insertEmoji = emoji => {
 
 .quick-reply-btn:hover {
   background: #f0f2f5;
+}
+
+.quick-reply-empty {
+  padding: 12px 10px;
+  color: #999;
+  font-style: italic;
+  font-size: 12px;
+}
+
+.quick-reply-manage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 10px;
+  border: none;
+  border-top: 1px solid #e8e8e8;
+  background: #fafafa;
+  font-size: 12px;
+  font-weight: 700;
+  color: #ff6b3d;
+  cursor: pointer;
+}
+
+.quick-reply-manage:hover {
+  background: #fff3ee;
 }
 
 .emoji-picker {

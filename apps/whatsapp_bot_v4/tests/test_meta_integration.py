@@ -1,4 +1,5 @@
 from pathlib import Path
+from unittest.mock import patch
 
 from django.test import TestCase
 
@@ -22,6 +23,12 @@ class MetaFixtureIntegrationTests(TestCase):
             nombre="Channel TEST V4 integration", phone_number_id="meta-v4-test", activo=True
         )
         V4ChannelRoute.objects.create(channel=self.channel, enabled=True)
+        # ALLOWED_NUMBERS es un whitelist real de producción (solo el número de
+        # pruebas del usuario) — no un artefacto de test. Se desactiva aquí para
+        # poder ejercitar el flujo con números sintéticos, sin tocar el gate.
+        patcher = patch("apps.whatsapp_bot_v4.services.meta_webhook_service.ALLOWED_NUMBERS", [])
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def build(self, outputs, *, chatwoot=None):
         agent = ScriptedAgent(outputs)

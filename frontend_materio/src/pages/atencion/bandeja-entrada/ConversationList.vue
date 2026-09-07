@@ -2,14 +2,68 @@
   <div class="conversation-sidebar">
     <!-- FILA 1: BUSCADOR -->
     <div class="conversation-search">
-      <i class="ri-search-line search-icon" />
-      <input
-        v-model="searchPhone"
-        type="text"
-        placeholder="Buscar por nombre, teléfono o mensaje"
-        class="search-input"
-      >
+      <div class="search-box">
+        <i class="ri-search-line search-icon" />
+        <input
+          v-model="searchPhone"
+          type="text"
+          placeholder="Buscar por nombre, teléfono o mensaje"
+          class="search-input"
+        >
+        <button
+          v-if="searchPhone"
+          class="search-clear-btn"
+          title="Limpiar búsqueda"
+          @click="searchPhone = ''"
+        >
+          <i class="ri-close-line" />
+        </button>
+      </div>
     </div>
+
+    <!-- Menú "más opciones" — teletransportado a <body> (igual que el menú de
+         clic derecho): el sidebar recorta cualquier popover posicionado dentro,
+         sin importar el z-index, así que se posiciona con coordenadas fijas. -->
+    <Teleport to="body">
+      <div
+        v-if="showNewMenu"
+        ref="newMenuRef"
+        class="popover new-menu"
+        :style="newMenuStyle"
+      >
+        <button
+          class="menu-item"
+          @click="showNewMenu = false; showCreateGroupDialog = true"
+        >
+          <i class="ri-team-line" /> Crear grupo
+        </button>
+        <button
+          class="menu-item"
+          @click="showNewMenu = false; manageCategoryOpen = 'oficina'"
+        >
+          <i class="ri-building-line" /> Gestionar Oficina
+        </button>
+        <button
+          class="menu-item"
+          @click="showNewMenu = false; manageCategoryOpen = 'transportista'"
+        >
+          <i class="ri-truck-line" /> Gestionar Transportistas
+        </button>
+        <button
+          class="menu-item"
+          @click="showNewMenu = false; manageCategoryOpen = 'campo'"
+        >
+          <i class="ri-tools-line" /> Gestionar Campo
+        </button>
+      </div>
+    </Teleport>
+
+    <ManageCategoryDialog
+      v-if="manageCategoryOpen"
+      :category="manageCategoryOpen"
+      @close="manageCategoryOpen = null"
+      @changed="loadConversations"
+    />
 
     <!-- FILA 2: FILTROS (oculta dentro de Archivados — no aplican ahí) -->
     <div
@@ -23,38 +77,21 @@
       <button
         v-for="tag in filterTabs"
         :key="tag"
-        class="filter-tab"
-        :class="[{ active: activeFilters.includes(tag) && !showTransportistas }]"
+        class="filter-tab transportistas-tab"
+        :class="[{ active: activeFilters.includes(tag) && !showTransportistas && !showOficina && !showCampo }]"
         :title="tag"
         @click="toggleFilter(tag)"
       >
         {{ tag }}
-      </button>
-
-      <!-- Transportistas: partición separada (como Archivados), no un filtro
-           aditivo más — un contacto es transportista o no, es otro eje. -->
-      <button
-        class="filter-tab transportistas-tab"
-        :class="[{ active: showTransportistas }]"
-        title="Transportistas"
-        @click="showTransportistas = !showTransportistas"
-      >
-        🚚 Transportistas
         <span
-          v-if="transportistasUnreadCount > 0"
+          v-if="tag === 'Todas' && todasUnreadCount > 0"
           class="tab-badge"
-        >{{ transportistasUnreadCount }}</span>
+        >{{ todasUnreadCount }}</span>
       </button>
-
-      <!-- Channel dropdown -->
-      <ChannelDropdown
-        :active-channels="activeChannels"
-        @update:active-channels="activeChannels = $event"
-        @open-dropdown="showFilterMenu = false"
-      />
 
       <!-- Advanced filters button -->
       <button
+        ref="filterBtnRef"
         class="filter-btn"
         :title="activeFiltersCount > 0 ? `${activeFiltersCount} filtro(s) activo(s)` : 'Filtros avanzados'"
         @click="toggleFilterMenu"
@@ -69,6 +106,7 @@
       <!-- Advanced filter menu (positioned absolutely) -->
       <div
         v-if="showFilterMenu"
+        ref="filterMenuRef"
         class="filter-menu"
       >
         <div class="filter-group">
@@ -84,21 +122,82 @@
             {{ tag }}
           </button>
         </div>
+        <div class="filter-group">
+          <label class="group-title">Canal</label>
+          <ChannelDropdown
+            :active-channels="activeChannels"
+            @update:active-channels="activeChannels = $event"
+          />
+        </div>
         <div
-          v-if="!showTransportistas"
+          v-if="activeFiltersCount > 0"
           class="filter-group"
         >
-          <label class="group-title">Transportistas</label>
           <button
-            class="menu-item"
-            :class="[{ active: includeTransportistas }]"
-            @click="includeTransportistas = !includeTransportistas"
+            class="menu-item clear-filters-item"
+            @click="clearFilters"
           >
-            <i class="ri-checkbox-blank-circle-line" />
-            Incluir transportistas en Todas
+            <i class="ri-close-circle-line" />
+            Limpiar filtros
           </button>
         </div>
       </div>
+    </div>
+
+    <!-- FILA 3: PARTICIONES (Transportistas/Oficina/Campo) — un contacto vive
+         en una de estas categorías o en la bandeja normal, no es un filtro
+         aditivo como Todas/Mías/No leídas, por eso van en su propia fila. -->
+    <div
+      v-if="!showArchived"
+      class="conversation-categories"
+    >
+      <button
+        class="filter-tab transportistas-tab"
+        :class="[{ active: showTransportistas }]"
+        title="Transportistas"
+        @click="setCategoryView('transportistas')"
+      >
+        🚚 Transportistas
+        <span
+          v-if="transportistasUnreadCount > 0"
+          class="tab-badge"
+        >{{ transportistasUnreadCount }}</span>
+      </button>
+
+      <button
+        class="filter-tab transportistas-tab"
+        :class="[{ active: showOficina }]"
+        title="Oficina"
+        @click="setCategoryView('oficina')"
+      >
+        🏢 Oficina
+        <span
+          v-if="oficinaUnreadCount > 0"
+          class="tab-badge"
+        >{{ oficinaUnreadCount }}</span>
+      </button>
+
+      <button
+        class="filter-tab transportistas-tab"
+        :class="[{ active: showCampo }]"
+        title="Campo"
+        @click="setCategoryView('campo')"
+      >
+        🚛 Campo
+        <span
+          v-if="campoUnreadCount > 0"
+          class="tab-badge"
+        >{{ campoUnreadCount }}</span>
+      </button>
+
+      <button
+        ref="newMenuAnchor"
+        class="new-menu-btn categories-new-menu-btn"
+        title="Más opciones"
+        @click="toggleNewMenu"
+      >
+        <i class="ri-more-2-fill" />
+      </button>
     </div>
 
     <!-- Entrada "Archivados" (estilo WhatsApp) -->
@@ -168,6 +267,43 @@
         </div>
       </div>
 
+      <!-- NÚMERO NUEVO: la búsqueda parece un teléfono y no hay coincidencias -->
+      <div
+        v-else-if="filteredConversations.length === 0 && looksLikeNewPhone"
+        class="state-container"
+      >
+        <div class="empty-state">
+          <i class="ri-add-circle-line empty-icon" />
+          <p class="empty-title">
+            No hay conversación con {{ newPhoneDigits }}
+          </p>
+          <p class="empty-text">
+            Puedes iniciar una nueva conversación con este número
+          </p>
+          <input
+            v-model="newContactName"
+            type="text"
+            placeholder="Nombre del contacto (opcional, si ya lo tienes guardado)"
+            class="search-input"
+            style="margin-bottom: 12px; max-width: 280px;"
+          >
+          <button
+            class="clear-btn"
+            :disabled="creatingConversation"
+            @click="createNewConversation"
+          >
+            {{ creatingConversation ? 'Creando...' : `Crear conversación con ${newPhoneDigits}` }}
+          </button>
+          <p
+            v-if="createError"
+            class="empty-text"
+            style="color: #d32f2f; margin-top: 8px;"
+          >
+            {{ createError }}
+          </p>
+        </div>
+      </div>
+
       <!-- NO RESULTS STATE -->
       <div
         v-else-if="filteredConversations.length === 0 && hasActiveFilters"
@@ -211,13 +347,19 @@
         v-for="conv in filteredConversations"
         :key="conv.id"
         class="conversation-item"
-        :class="[{ active: props.selectedConversationId === conv.id }]"
-        @click="selectConversation(conv)"
-        @contextmenu.prevent="openContextMenu($event, conv)"
+        :class="[{ active: conv.isGroup ? props.selectedGroupId === conv.groupId : props.selectedConversationId === conv.id }]"
+        @click="conv.isGroup ? selectGroup(conv) : selectConversation(conv)"
+        @contextmenu.prevent="!conv.isGroup && openContextMenu($event, conv)"
       >
         <div class="avatar">
+          <div
+            v-if="conv.isGroup"
+            class="avatar-placeholder group-avatar"
+          >
+            <i class="ri-team-line" />
+          </div>
           <img
-            v-if="conv.avatar"
+            v-else-if="conv.avatar"
             :src="conv.avatar"
             :alt="conv.name"
           >
@@ -236,7 +378,7 @@
         <div class="content">
           <div class="header">
             <h4 class="name">
-              {{ conv.name || formatPhone(conv.phone) }}
+              {{ contactPrimary(conv) }}
             </h4>
             <span class="time">{{ formatTime(conv.lastActivity) }}</span>
             <button
@@ -298,15 +440,73 @@
           <i :class="contextMenuFor.archived ? 'ri-inbox-unarchive-line' : 'ri-archive-line'" />
           {{ contextMenuFor.archived ? 'Desarchivar' : 'Archivar' }}
         </button>
+        <button
+          v-if="contextMenuFor.is_oficina"
+          class="context-menu-item"
+          @click="handleContextRemoveCategory('oficina')"
+        >
+          <i class="ri-close-circle-line" /> Quitar de Oficina
+        </button>
+        <button
+          v-if="contextMenuFor.is_transportista"
+          class="context-menu-item"
+          @click="handleContextRemoveCategory('transportista')"
+        >
+          <i class="ri-close-circle-line" /> Quitar de Transportistas
+        </button>
+        <button
+          v-if="contextMenuFor.is_campo"
+          class="context-menu-item"
+          @click="handleContextRemoveCategory('campo')"
+        >
+          <i class="ri-close-circle-line" /> Quitar de Campo
+        </button>
       </div>
     </Teleport>
+
+    <!-- Crear grupo -->
+    <VDialog
+      v-model="showCreateGroupDialog"
+      max-width="420"
+    >
+      <VCard>
+        <VCardTitle>Nuevo grupo</VCardTitle>
+        <VCardText>
+          <VTextField
+            v-model="newGroupName"
+            label="Nombre del grupo"
+            autofocus
+            @keydown.enter="createGroup"
+          />
+        </VCardText>
+        <VCardActions>
+          <VSpacer />
+          <VBtn
+            variant="text"
+            @click="showCreateGroupDialog = false"
+          >
+            Cancelar
+          </VBtn>
+          <VBtn
+            color="primary"
+            :loading="creatingGroup"
+            :disabled="!newGroupName.trim()"
+            @click="createGroup"
+          >
+            Crear
+          </VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
   </div>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { conversationService } from '@/services/conversationService'
+import { groupsService } from '@/services/groupsService'
 import ChannelDropdown from './components/ChannelDropdown.vue'
+import ManageCategoryDialog from './components/ManageCategoryDialog.vue'
 
 import { useConversationsStore } from '@/stores/conversationsStore'
 
@@ -315,23 +515,124 @@ const props = defineProps({
     type: Number,
     default: null,
   },
+  selectedGroupId: {
+    type: Number,
+    default: null,
+  },
 })
 
-const emit = defineEmits(['conversation-selected', 'update-count', 'update-view'])
+const emit = defineEmits(['conversation-selected', 'group-selected', 'update-count', 'update-view'])
 
 const conversationsStore = useConversationsStore()
+
+// Grupos internos: se mezclan como un contacto más en la lista principal (no
+// son ConversacionWhatsApp, viven en su propio modelo apps/grupos_internos).
+// Se refrescan por polling, igual de simple que el resto de la bandeja.
+const groups = ref([])
+let groupsPollTimer = null
+
+const loadGroups = async () => {
+  try {
+    groups.value = await groupsService.listGroups()
+  } catch (err) {
+    console.error('[ConversationList] Failed to load groups:', err)
+  }
+}
+
+const selectGroup = g => {
+  emit('group-selected', { id: g.groupId ?? g.id })
+}
+
+// Crear grupo (menú de 3 puntos junto al buscador)
+const showNewMenu = ref(false)
+const newMenuAnchor = ref(null)
+const newMenuRef = ref(null)
+const newMenuStyle = ref({})
+const showCreateGroupDialog = ref(false)
+const manageCategoryOpen = ref(null) // null | 'oficina' | 'transportista' | 'campo'
+const newGroupName = ref('')
+const creatingGroup = ref(false)
+
+const toggleNewMenu = () => {
+  if (showNewMenu.value) {
+    showNewMenu.value = false
+
+    return
+  }
+  const rect = newMenuAnchor.value?.getBoundingClientRect()
+  if (rect) {
+    newMenuStyle.value = {
+      position: 'fixed',
+      top: `${rect.bottom + 4}px`,
+      left: `${rect.right}px`,
+      transform: 'translateX(-100%)',
+    }
+  }
+  showNewMenu.value = true
+}
+
+const closeNewMenuIfOutside = event => {
+  if (
+    showNewMenu.value
+    && !newMenuRef.value?.contains(event.target)
+    && !newMenuAnchor.value?.contains(event.target)
+  ) {
+    showNewMenu.value = false
+  }
+}
+
+const createGroup = async () => {
+  const name = newGroupName.value.trim()
+  if (!name) return
+  creatingGroup.value = true
+  try {
+    const group = await groupsService.createGroup(name)
+    newGroupName.value = ''
+    showCreateGroupDialog.value = false
+    await loadGroups()
+    selectGroup(group)
+  } finally {
+    creatingGroup.value = false
+  }
+}
 const loading = ref(false)
 const error = ref(false)
 const searchPhone = ref('')
 const activeFilters = ref(['Todas'])
 const activeChannels = ref(['Todos'])
 const showFilterMenu = ref(false)
+const filterBtnRef = ref(null)
+const filterMenuRef = ref(null)
+
+const closeFilterMenuIfOutside = event => {
+  if (
+    showFilterMenu.value
+    && !filterMenuRef.value?.contains(event.target)
+    && !filterBtnRef.value?.contains(event.target)
+  ) {
+    showFilterMenu.value = false
+  }
+}
 const showArchived = ref(false)
 const showTransportistas = ref(false)
-const includeTransportistas = ref(false)
+const showOficina = ref(false)
+const showCampo = ref(false)
 
-const filterTabs = ['Todas', 'Mías', 'No leídas']
-const advancedFilterTags = ['Sin asignar', 'Bot atendiendo', 'Asesor atendiendo', 'Cerradas']
+// Transportistas/Oficina/Campo son mutuamente excluyentes entre sí (un
+// contacto vive en una sola de estas particiones a la vez).
+const setCategoryView = category => {
+  showTransportistas.value = category === 'transportistas' ? !showTransportistas.value : false
+  showOficina.value = category === 'oficina' ? !showOficina.value : false
+  showCampo.value = category === 'campo' ? !showCampo.value : false
+  // Entrar a una partición = "muéstrame TODOS los de esta categoría". Si quedaba
+  // un filtro tipo "Bot"/"No leídas" activo de antes, escondía contactos de la
+  // partición sin que se note (los tabs de filtro no se ven marcados aquí).
+  if (showTransportistas.value || showOficina.value || showCampo.value) {
+    activeFilters.value = ['Todas']
+  }
+}
+const filterTabs = ['Todas', 'No leídas', 'Bot', 'Asesor']
+const advancedFilterTags = ['Mías', 'Sin asignar', 'Cerradas']
 
 const totalCount = computed(() => conversationsStore.conversations.filter(c => !c.archived).length)
 const archivedCount = computed(() => conversationsStore.conversations.filter(c => c.archived).length)
@@ -342,6 +643,24 @@ const archivedCount = computed(() => conversationsStore.conversations.filter(c =
 const transportistasUnreadCount = computed(() =>
   conversationsStore.conversations
     .filter(conv => conv.is_transportista && !conv.archived)
+    .reduce((sum, conv) => sum + (conv.unread || 0), 0)
+)
+const oficinaUnreadCount = computed(() =>
+  conversationsStore.conversations
+    .filter(conv => conv.is_oficina && !conv.archived)
+    .reduce((sum, conv) => sum + (conv.unread || 0), 0)
+)
+const campoUnreadCount = computed(() =>
+  conversationsStore.conversations
+    .filter(conv => conv.is_campo && !conv.archived)
+    .reduce((sum, conv) => sum + (conv.unread || 0), 0)
+)
+// "Todas" = bandeja normal de clientes (sin transportistas/oficina/campo, que
+// tienen su propio badge). Se descuenta solo al abrir la conversación (ver
+// ConversationPanel: updateConversationState(..., { unread: 0 })).
+const todasUnreadCount = computed(() =>
+  conversationsStore.conversations
+    .filter(conv => !conv.archived && !conv.is_transportista && !conv.is_oficina && !conv.is_campo)
     .reduce((sum, conv) => sum + (conv.unread || 0), 0)
 )
 
@@ -356,6 +675,8 @@ const activeFiltersCount = computed(() => {
 const emptyStateTitle = computed(() => {
   if (showArchived.value) return 'No hay conversaciones archivadas'
   if (showTransportistas.value) return 'Aún no hay transportistas'
+  if (showOficina.value) return 'Aún no hay contactos de Oficina'
+  if (showCampo.value) return 'Aún no hay contactos de Campo'
 
   return 'Aún no hay conversaciones'
 })
@@ -363,9 +684,43 @@ const emptyStateTitle = computed(() => {
 const emptyStateText = computed(() => {
   if (showArchived.value) return 'Las que archives aparecerán aquí'
   if (showTransportistas.value) return 'Aparecerán aquí cuando un transportista responda a una publicación'
+  if (showOficina.value) return 'Marca un contacto como Oficina desde el menú de la conversación'
+  if (showCampo.value) return 'Aparecen solo si el número coincide con un Conductor o Ayudante registrado y activo'
 
   return 'Las nuevas conversaciones aparecerán aquí'
 })
+
+// Número nuevo: la búsqueda son puros dígitos (con o sin +/espacios/guiones)
+// y tiene largo de teléfono real — evita disparar el CTA con nombres cortos
+// o texto que solo por casualidad tiene algún dígito.
+const newPhoneDigits = computed(() => searchPhone.value.replace(/\D/g, ''))
+const looksLikeNewPhone = computed(() => {
+  const text = searchPhone.value.trim()
+  if (!text) return false
+
+  return newPhoneDigits.value.length >= 8 && /^[+\d\s()-]+$/.test(text)
+})
+
+const creatingConversation = ref(false)
+const createError = ref('')
+const newContactName = ref('')
+
+const createNewConversation = async () => {
+  createError.value = ''
+  creatingConversation.value = true
+  try {
+    const data = await conversationService.createManualConversation(newPhoneDigits.value, newContactName.value)
+    searchPhone.value = ''
+    newContactName.value = ''
+    await conversationsStore.loadInitial()
+    const conv = conversationsStore.getConversation(data.conversation_id)
+    if (conv) selectConversation(conv)
+  } catch (error) {
+    createError.value = error.message || 'No se pudo crear la conversación.'
+  } finally {
+    creatingConversation.value = false
+  }
+}
 
 const hasActiveFilters = computed(() => {
   return searchPhone.value.trim() !== '' ||
@@ -373,39 +728,73 @@ const hasActiveFilters = computed(() => {
     !activeChannels.value.includes('Todos')
 })
 
+// Grupos internos mezclados como un contacto más (tipo WhatsApp) — no son
+// ConversacionWhatsApp, se adaptan a la misma forma para reusar la fila,
+// el buscador y el archivado. Se distinguen por `isGroup` + `groupId`.
+const mappedGroups = computed(() => groups.value.map(g => ({
+  id: `group-${g.id}`,
+  isGroup: true,
+  groupId: g.id,
+  name: g.name,
+  archived: g.archived,
+  is_transportista: false,
+  is_oficina: false,
+  is_campo: false,
+  lastActivity: g.lastMessageAt,
+  preview: g.lastMessagePreview
+    ? (g.lastMessageAuthor ? `${g.lastMessageAuthor}: ${g.lastMessagePreview}` : g.lastMessagePreview)
+    : `${g.memberCount} miembro${g.memberCount === 1 ? '' : 's'}`,
+})))
+
 const filteredConversations = computed(() => {
-  // Archivadas y Transportistas: dos particiones independientes del resto de
-  // filtros (no son "Mías"/"No leídas" — son otro eje: dónde vive la
-  // conversación, y quién es el contacto). Archivados manda primero (una
-  // conversación archivada nunca se ve en Todas ni en Transportistas).
-  let filtered = conversationsStore.conversations.filter(conv => {
+  const merged = [...conversationsStore.conversations, ...mappedGroups.value]
+    .sort((a, b) => new Date(b.lastActivity || 0) - new Date(a.lastActivity || 0))
+
+  // Archivadas, Transportistas, Oficina y Campo: particiones independientes
+  // del resto de filtros (no son "Mías"/"No leídas" — son otro eje: dónde
+  // vive la conversación, y quién es el contacto). Archivados manda primero
+  // (una conversación archivada nunca se ve en ninguna otra vista).
+  const inAnyCategoryView = showTransportistas.value || showOficina.value || showCampo.value
+  let filtered = merged.filter(conv => {
     if (showArchived.value) return conv.archived
     if (conv.archived) return false
+    if (conv.isGroup) return !inAnyCategoryView
     if (showTransportistas.value) return conv.is_transportista
-    if (includeTransportistas.value) return true
+    if (showOficina.value) return conv.is_oficina
+    if (showCampo.value) return conv.is_campo
 
-    return !conv.is_transportista
+    return !conv.is_transportista && !conv.is_oficina && !conv.is_campo
   })
 
   if (searchPhone.value) {
-    const query = searchPhone.value.toLowerCase()
+    const query = searchPhone.value.toLowerCase().trim()
+    // Buscar por número aunque el asesor escriba espacios/guiones/+: se compara
+    // solo dígito contra dígito.
+    const queryDigits = query.replace(/\D/g, '')
 
-    filtered = filtered.filter(
-      conv =>
-        conv.name.toLowerCase().includes(query) ||
-        conv.phone.toLowerCase().includes(query) ||
+    filtered = filtered.filter(conv => {
+      const name = (conv.profile_name || conv.name || '').toLowerCase()
+      const phone = (conv.phone || '').toLowerCase()
+      const phoneDigits = phone.replace(/\D/g, '')
+
+      return name.includes(query) ||
+        phone.includes(query) ||
+        (queryDigits.length >= 3 && phoneDigits.includes(queryDigits)) ||
         (conv.preview && conv.preview.toLowerCase().includes(query)) ||
-        (conv.resumen && conv.resumen.toLowerCase().includes(query)),
-    )
+        (conv.resumen && conv.resumen.toLowerCase().includes(query))
+    })
   }
 
   if (!activeFilters.value.includes('Todas')) {
     filtered = filtered.filter(conv => {
+      // Los filtros Mías/No leídas/etc. son conceptos de conversación de
+      // cliente (responsable, attentionMode) — un grupo siempre pasa.
+      if (conv.isGroup) return true
       if (activeFilters.value.includes('Mías') && (!conv.responsable || !conv.responsable.id)) return false
       if (activeFilters.value.includes('No leídas') && conv.unread === 0) return false
       if (activeFilters.value.includes('Sin asignar') && conv.responsable && conv.responsable.id) return false
-      if (activeFilters.value.includes('Bot atendiendo') && conv.attentionMode !== 'bot') return false
-      if (activeFilters.value.includes('Asesor atendiendo') && conv.attentionMode !== 'advisor') return false
+      if (activeFilters.value.includes('Bot') && conv.attentionMode !== 'bot') return false
+      if (activeFilters.value.includes('Asesor') && conv.attentionMode !== 'advisor') return false
       if (activeFilters.value.includes('Cerradas') && conv.attentionMode !== 'closed') return false
       
       return true
@@ -414,6 +803,7 @@ const filteredConversations = computed(() => {
 
   if (!activeChannels.value.includes('Todos')) {
     filtered = filtered.filter(conv => {
+      if (conv.isGroup) return true
       const channelId = conv.channel?.id || conv.channel_id
       return activeChannels.value.includes(String(channelId))
     })
@@ -431,25 +821,19 @@ const toggleFilterMenu = () => {
 
 const toggleFilter = tag => {
   if (tag === 'Todas') {
-    activeFilters.value = ['Todas']
-
     // "Todas" es la salida universal a la vista normal — el usuario espera
-    // que lo saque de Transportistas, no solo que limpie Mías/No leídas.
+    // que lo saque de Transportistas/Oficina/Campo, no solo que limpie
+    // Mías/No leídas.
+    activeFilters.value = ['Todas']
     showTransportistas.value = false
+    showOficina.value = false
+    showCampo.value = false
+  } else if (activeFilters.value.includes(tag)) {
+    // Clic en el filtro ya activo → vuelve a "Todas".
+    activeFilters.value = ['Todas']
   } else {
-    const index = activeFilters.value.indexOf(tag)
-    if (index > -1) {
-      activeFilters.value.splice(index, 1)
-    } else {
-      const todasIndex = activeFilters.value.indexOf('Todas')
-      if (todasIndex > -1) {
-        activeFilters.value.splice(todasIndex, 1)
-      }
-      activeFilters.value.push(tag)
-    }
-    if (activeFilters.value.length === 0) {
-      activeFilters.value = ['Todas']
-    }
+    // Selección única: un solo filtro a la vez, reemplaza al anterior.
+    activeFilters.value = [tag]
   }
 
   // Close filter menu after selection
@@ -480,6 +864,18 @@ const clearFilters = () => {
   searchPhone.value = ''
   activeFilters.value = ['Todas']
   activeChannels.value = ['Todos']
+}
+
+// Clic en "Bandeja de entrada" del menú lateral estando ya en esta página: Vue
+// Router no re-navega (misma ruta), así que sin esto el usuario queda atascado
+// en la partición/filtro donde se haya quedado. NavItems.vue dispara este
+// evento cuando detecta que ya estás en /atencion/bandeja-entrada.
+const resetToTodas = () => {
+  showArchived.value = false
+  showTransportistas.value = false
+  showOficina.value = false
+  showCampo.value = false
+  clearFilters()
 }
 
 const selectConversation = conv => {
@@ -565,12 +961,31 @@ const getAvatarStyle = contactId => {
 }
 
 const formatPhone = phone => {
-  if (!phone) return 'Desconocido'
+  if (!phone) return ''
   if (phone.startsWith('+')) {
     return phone.slice(0, 3) + ' ' + phone.slice(3)
   }
-  
+
   return phone
+}
+
+// La lista muestra UNA sola línea de identificación + el preview del mensaje. El
+// teléfono / ID de WhatsApp vive en el panel de info de la derecha, no aquí (no
+// saturar la lista). Nombre de perfil si identifica; si no, @username de
+// WhatsApp; si no, el número; si no, el ID de WhatsApp.
+const isNameUsable = conv => {
+  if (conv.name_usable === false) return false
+  if (conv.name_usable === true) return true
+
+  return Boolean(conv.name || conv.profile_name) // compat: eventos viejos sin el flag
+}
+
+const contactPrimary = conv => {
+  if (conv.isGroup) return conv.name
+  if (isNameUsable(conv)) return conv.profile_name || conv.name
+  if (!conv.phone) return 'Contacto sin identificar'
+
+  return conv.phone_is_id ? conv.phone : formatPhone(conv.phone)
 }
 
 /** Archive/unarchive — CRM-only state, no confirmation (low-risk, reversible).
@@ -579,6 +994,21 @@ const formatPhone = phone => {
  * the open chat closes it). Live for other sessions via the conversation.updated
  * SSE event (archivada is a significant field — see signals.py). */
 const setArchived = async (conv, archived) => {
+  if (conv.isGroup) {
+    try {
+      const updated = await groupsService.setGroupArchived(conv.groupId, archived)
+      const idx = groups.value.findIndex(g => g.id === conv.groupId)
+      if (idx >= 0) groups.value[idx] = updated
+      if (archived && props.selectedGroupId === conv.groupId) {
+        emit('group-selected', null)
+      }
+    } catch (err) {
+      console.error('[ConversationList] Failed to archive group:', err)
+    }
+
+    return
+  }
+
   const action = archived ? 'archivar' : 'desarchivar'
 
   try {
@@ -621,6 +1051,36 @@ const handleContextArchive = () => {
   contextMenuFor.value = null
 }
 
+// Quitar de Oficina/Transportistas/Campo desde el clic derecho — al sacarlo,
+// la conversación cae sola en "Todos" (misma partición client-side que ya
+// usan las pestañas, ver filteredConversations). Los setters van envueltos en
+// arrow: conversationService.setX usa `this` internamente y se perdería si se
+// referencia el método suelto.
+const CATEGORY_SETTERS = {
+  oficina: { setter: (id, v) => conversationService.setOficina(id, v), field: 'is_oficina' },
+  transportista: { setter: (id, v) => conversationService.setTransportista(id, v), field: 'is_transportista' },
+  campo: { setter: (id, v) => conversationService.setCampo(id, v), field: 'is_campo' },
+}
+
+const handleContextRemoveCategory = async category => {
+  const conv = contextMenuFor.value
+  contextMenuFor.value = null
+  if (!conv) return
+  const { setter, field } = CATEGORY_SETTERS[category]
+  try {
+    await setter(conv.id, false)
+    conversationsStore.updateConversationState(conv.id, { [field]: false })
+    // Campo se auto-detecta por teléfono: si el número coincide con un
+    // Conductor/Ayudante activo el backend lo vuelve a marcar en la próxima
+    // recarga aunque el flag manual quede en false — recargar deja ver el
+    // estado real en vez del optimista.
+    await loadConversations()
+  } catch (err) {
+    console.error(`[ConversationList] Failed to remove from ${category}:`, err)
+  }
+}
+
+
 // mousedown + capture (same pattern used for the message menu/other popovers in
 // this app): closes on any click outside — including right-clicking a DIFFERENT
 // row, which should move the menu, not leave two open.
@@ -648,11 +1108,21 @@ onMounted(async () => {
   // useWhatsAppRealtime already handles SSE updates to conversationsStore
   await loadConversations()
   document.addEventListener('mousedown', closeContextMenuIfOutside, true)
+  document.addEventListener('mousedown', closeNewMenuIfOutside, true)
+  document.addEventListener('mousedown', closeFilterMenuIfOutside, true)
+  window.addEventListener('bandeja:reset-view', resetToTodas)
+
+  await loadGroups()
+  groupsPollTimer = setInterval(loadGroups, 5000)
 })
 
 onUnmounted(() => {
   // Cleanup: store handles its own lifecycle
   document.removeEventListener('mousedown', closeContextMenuIfOutside, true)
+  document.removeEventListener('mousedown', closeNewMenuIfOutside, true)
+  document.removeEventListener('mousedown', closeFilterMenuIfOutside, true)
+  window.removeEventListener('bandeja:reset-view', resetToTodas)
+  if (groupsPollTimer) clearInterval(groupsPollTimer)
 })
 
 // Emit count update whenever filtered results change
@@ -660,11 +1130,19 @@ watch(() => filteredConversations.value.length, newCount => {
   emit('update-count', newCount)
 })
 
-// So the page header can say "Archivados" instead of "Bandeja de entrada" (and not
-// show a confusing "0" while viewing an empty Archivados tab).
-watch(showArchived, isArchived => {
-  emit('update-view', isArchived ? 'archived' : 'inbox')
-}, { immediate: true })
+// Vista actual — la cabecera la usa para el título y para mostrar el control del
+// bot que corresponde (clientes vs transportistas). Prioridad: archivados manda,
+// luego transportistas, luego la bandeja normal de clientes.
+const currentViewName = computed(() => {
+  if (showArchived.value) return 'archived'
+  if (showTransportistas.value) return 'transportistas'
+  if (showOficina.value) return 'oficina'
+  if (showCampo.value) return 'campo'
+
+  return 'inbox'
+})
+
+watch(currentViewName, v => emit('update-view', v), { immediate: true })
 </script>
 
 <style scoped>
@@ -687,13 +1165,21 @@ watch(showArchived, isArchived => {
 /* FILA 1: BUSCADOR */
 .conversation-search {
   padding: 8px 12px;
-  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   flex-shrink: 0;
+}
+
+.search-box {
+  position: relative;
+  flex: 1;
+  min-width: 0;
 }
 
 .search-icon {
   position: absolute;
-  left: 20px;
+  left: 8px;
   top: 50%;
   transform: translateY(-50%);
   color: #999;
@@ -703,13 +1189,36 @@ watch(showArchived, isArchived => {
 
 .search-input {
   width: 100%;
-  padding: 6px 12px 6px 32px;
+  padding: 6px 32px 6px 32px;
   border: 1px solid #e0e0e0;
   border-radius: 4px;
   font-size: 12px;
   height: 42px;
   background: #fff;
   transition: border-color 0.2s;
+}
+
+.search-clear-btn {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: #999;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.search-clear-btn:hover {
+  background: #f0f0f0;
+  color: #666;
 }
 
 .search-input:focus {
@@ -726,13 +1235,22 @@ watch(showArchived, isArchived => {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 12px 8px;
+  padding: 6px 12px 4px;
   min-height: auto;
   flex-shrink: 0;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
   position: relative;
-  flex-shrink: 0;
   z-index: 100;
+}
+
+/* FILA 3: PARTICIONES (Transportistas/Oficina/Campo) */
+.conversation-categories {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px 8px;
+  flex-shrink: 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  flex-wrap: wrap;
 }
 
 .filter-tab {
@@ -831,6 +1349,42 @@ watch(showArchived, isArchived => {
   border-radius: 4px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   min-width: 180px;
+}
+
+.new-menu-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  color: #666;
+  font-size: 18px;
+}
+
+.new-menu-btn:hover {
+  background: #f0f0f0;
+}
+
+.categories-new-menu-btn {
+  margin-left: auto;
+}
+
+.clear-filters-item {
+  color: #d32f2f;
+}
+
+/* Posición real la da :style (fixed, calculada del botón) — Teleported a
+   <body> para no quedar recortado por el overflow del sidebar. */
+.new-menu {
+  z-index: 10000;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  min-width: 180px;
+  padding: 4px;
 }
 
 .filter-group {
@@ -1042,6 +1596,10 @@ watch(showArchived, isArchived => {
   font-size: 16px;
   color: #fff;
   text-transform: uppercase;
+}
+
+.avatar-placeholder.group-avatar {
+  background: #6d5dfc;
 }
 
 .avatar-placeholder i {

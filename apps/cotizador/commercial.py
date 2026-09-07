@@ -150,7 +150,10 @@ def crear_cotizacion_automatica(conversacion, cotizacion_tecnica, mensaje, *, so
 
 def marcar_revision_enviada(revision):
     with transaction.atomic():
-        revision = RevisionCotizacion.objects.select_for_update().select_related(
+        # of=("self",): bloquea solo la revisión. Sin esto, Postgres rechaza el
+        # FOR UPDATE porque `cotizacion__solicitud__conversacion` (FK nullable)
+        # entra como outer join.
+        revision = RevisionCotizacion.objects.select_for_update(of=("self",)).select_related(
             "cotizacion__solicitud__conversacion", "cotizacion__lead"
         ).get(pk=revision.pk)
         if revision.enviada:
@@ -185,6 +188,49 @@ def marcar_revision_enviada(revision):
             from apps.integrations.services.commercial_labels import queue_commercial_label_projection
             transaction.on_commit(lambda: queue_commercial_label_projection(conversacion.id))
         return revision
+
+
+def registrar_cotizacion_desde_chat(conversacion, precio_final, *, condiciones="",
+                                    observacion="", source_key=""):
+    """El asesor ya negoció el precio por WhatsApp a mano y la IA lo detectó en
+    el chat. Lo dejamos registrado como cotización ENVIADA — SIN mandar ningún
+    mensaje (ya se habló) — para que el lead entre a 'Cotizaciones' con su
+    precio. Idempotente por source_key. Devuelve la RevisionCotizacion o None."""
+    with transaction.atomic():
+        from apps.whatsapp.models import ConversacionWhatsApp
+        conv = (ConversacionWhatsApp.objects
+                .select_for_update(of=("self",))
+                .select_related("lead", "channel")
+                .get(pk=conversacion.pk))
+        if not conv.lead_id:
+            return None
+        if source_key:
+            existing = (RevisionCotizacion.objects
+                        .filter(source_key=source_key)
+                        .select_related("cotizacion").first())
+            if existing:
+                return existing
+        cotizacion = (CotizacionComercial.objects
+                      .filter(lead=conv.lead,
+                              estado__in=("borrador", "enviada", "entregada", "en_negociacion"))
+                      .order_by("-actualizada_en").first())
+        if cotizacion is None:
+            cotizacion = CotizacionComercial.objects.create(
+                codigo=_nuevo_codigo(), lead=conv.lead,
+                channel=conv.channel or conv.lead.whatsapp_channel,
+                origen="asesor", moneda="PEN",
+            )
+            numero = 1
+        else:
+            ultima = cotizacion.revisiones.order_by("-numero").first()
+            numero = (ultima.numero if ultima else 0) + 1
+        revision = _crear_revision(
+            cotizacion, None, precio_final, numero,
+            source_key=source_key, condiciones=condiciones,
+            observacion_interna=observacion,
+        )
+    marcar_revision_enviada(revision)
+    return revision
 
 
 def _crear_revision(cotizacion, actor, precio_final, numero, **datos):

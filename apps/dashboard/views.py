@@ -441,6 +441,7 @@ def export_leads_csv(request):
             "precio_final",
             "fecha_cierre",
             "motivo_perdida",
+            "motivo_perdida_detalle",
             "proximo_seguimiento",
             "ultimo_seguimiento",
             "atencion_humana",
@@ -467,6 +468,7 @@ def export_leads_csv(request):
                 lead.precio_final or "",
                 _datetime_label(lead.fecha_cierre),
                 lead.motivo_perdida,
+                lead.motivo_perdida_detalle,
                 _datetime_label(lead.fecha_proximo_seguimiento),
                 _datetime_label(lead.fecha_ultimo_seguimiento),
                 "si" if lead.atencion_humana else "no",
@@ -563,7 +565,8 @@ def _lead_payload(lead, channel_id=None):
         "precioFinal": str(lead.precio_final or ""),
         "precioEstimadoMin": str(lead.precio_estimado_min or ""),
         "precioEstimadoMax": str(lead.precio_estimado_max or ""),
-        "motivoPerdida": lead.motivo_perdida or "",
+        "motivoPerdida": lead.get_motivo_perdida_display() if lead.motivo_perdida else "",
+        "motivoPerdidaDetalle": lead.motivo_perdida_detalle or "",
         "fechaCierre": _datetime_label(lead.fecha_cierre),
         "ultimaCotizacion": _latest_quote_payload(lead),
         "requiereAsesor": lead.requiere_asesor,
@@ -905,13 +908,18 @@ def _close_lost(lead, reason, user):
     reason = reason.strip()
     if not reason:
         return False
-    lead.motivo_perdida = reason
+    # `reason` puede venir como código canónico o como frase libre. Guardamos el
+    # código para reportes y conservamos el texto original en el detalle.
+    lead.motivo_perdida = Lead.map_motivo_perdida(reason)
+    if reason.lower() not in {c for c, _ in Lead.MOTIVOS_PERDIDA}:
+        lead.motivo_perdida_detalle = reason
     lead.estado = Lead.PERDIDO
     lead.fecha_cierre = timezone.now()
     lead.fecha_ultimo_seguimiento = timezone.now()
     lead.atencion_humana = True
     update_fields = [
         "motivo_perdida",
+        "motivo_perdida_detalle",
         "estado",
         "fecha_cierre",
         "fecha_ultimo_seguimiento",

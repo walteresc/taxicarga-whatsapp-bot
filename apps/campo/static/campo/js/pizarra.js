@@ -1294,8 +1294,20 @@
       equipo_id: parseInt(equipoId),
     }).then(function (res) {
       if (res.ok) {
-        showSnack('Reserva asignada al equipo', 'ok');
-        setTimeout(function () { window.location.reload(); }, 300);
+        if (res.data.whatsapp_enviado) {
+          showSnack('Reserva asignada — WhatsApp enviado al conductor', 'ok');
+          setTimeout(function () { window.location.reload(); }, 300);
+        } else {
+          // Ventana de 24h de WhatsApp cerrada (o el conductor no tiene
+          // conversación todavía): no se intenta el envío automático — el
+          // prompt deja el texto seleccionado y listo para copiar a mano.
+          window.prompt(
+            (res.data.whatsapp_alerta || 'No se pudo enviar por WhatsApp automáticamente.') +
+              '\nCopia este mensaje y envíalo por WhatsApp Web al conductor:',
+            res.data.whatsapp_mensaje || ''
+          );
+          window.location.reload();
+        }
         return true;
       }
       showSnack(res.data.error || 'Error al asignar', 'error');

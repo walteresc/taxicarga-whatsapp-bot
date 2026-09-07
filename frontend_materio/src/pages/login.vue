@@ -1,11 +1,24 @@
 <script setup>
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { authService } from '@/services/authService'
+import { useAuthStore } from '@/stores/authStore'
 
 const router = useRouter()
+const route = useRoute()
+const auth = useAuthStore()
 const loading = ref(false)
 const error = ref('')
+
+// Destino tras el login: ?next= si es una ruta interna segura, si no la bandeja.
+const resolveNext = () => {
+  const next = route.query.next
+  if (typeof next === 'string' && next.startsWith('/') && !next.startsWith('//')) {
+    return next
+  }
+
+  return '/atencion/bandeja-entrada'
+}
 
 const form = ref({
   username: '',
@@ -21,7 +34,11 @@ const handleLogin = async () => {
   try {
     const response = await authService.login(form.value.username, form.value.password)
     if (response.status === 'ok') {
-      router.push('/atencion/bandeja-entrada')
+      // La sesión ya cambió en el servidor: refresca el store (user + roles)
+      // ANTES de navegar, si no el guard del router ve el estado anónimo viejo
+      // y rebota a /login.
+      await auth.reload()
+      await router.replace(resolveNext())
     }
   } catch (err) {
     error.value = err.message || 'Error al iniciar sesión'
@@ -93,14 +110,6 @@ const handleLogin = async () => {
               <span v-if="!loading">Iniciar sesión</span>
               <span v-else>Iniciando sesión...</span>
             </VBtn>
-
-            <!-- Demo info -->
-            <VAlert
-              type="info"
-              class="mt-4"
-            >
-              <strong>Demo:</strong> testadmin / testpass123
-            </VAlert>
           </VForm>
         </VCardText>
       </VCard>

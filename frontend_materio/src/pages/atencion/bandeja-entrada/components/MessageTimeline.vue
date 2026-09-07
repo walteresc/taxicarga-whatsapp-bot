@@ -104,25 +104,40 @@ const messageGroups = computed(() => {
 
 const timelineEl = ref(null)
 
+const pinToBottom = () => {
+  const el = timelineEl.value
+  if (el) el.scrollTop = el.scrollHeight
+}
+
 const scrollToBottom = () => {
   nextTick(() => {
-    if (!timelineEl.value) return
-    timelineEl.value.scrollTop = timelineEl.value.scrollHeight
-
-    // Images load asynchronously and grow the container AFTER this scroll runs,
-    // leaving the view stuck partway up. Re-adjust once each one finishes loading.
-    const images = timelineEl.value.querySelectorAll('img')
-
-    images.forEach(img => {
-      if (!img.complete) {
-        img.addEventListener('load', () => {
-          if (timelineEl.value) {
-            timelineEl.value.scrollTop = timelineEl.value.scrollHeight
-          }
-        }, { once: true })
-      }
+    // Varias pasadas: la burbuja nueva entra con la animación `slideIn` y el
+    // reflow de fuentes/altura puede dejar el scroll corto en el primer intento
+    // (se quedaba mostrando el penúltimo mensaje). rAF x2 + un timeout de red de
+    // seguridad cubren el layout tardío.
+    pinToBottom()
+    requestAnimationFrame(() => {
+      pinToBottom()
+      requestAnimationFrame(pinToBottom)
     })
+    setTimeout(pinToBottom, 150)
+
+    // Imágenes: crecen el contenedor recién al cargar, después de todo lo anterior.
+    if (timelineEl.value) {
+      timelineEl.value.querySelectorAll('img').forEach(img => {
+        if (!img.complete) img.addEventListener('load', pinToBottom, { once: true })
+      })
+    }
   })
+}
+
+// ¿El asesor ya estaba mirando lo último? (medido ANTES de que Vue pinte el
+// mensaje nuevo — el watcher corre pre-render).
+const wasNearBottom = () => {
+  const el = timelineEl.value
+  if (!el) return true
+
+  return el.scrollHeight - el.scrollTop - el.clientHeight < 150
 }
 
 // New conversation opened or messages array replaced (covers both cases even when
@@ -131,8 +146,12 @@ watch(() => props.loading, (isLoading, wasLoading) => {
   if (wasLoading && !isLoading) scrollToBottom()
 })
 
-// New message appended (SSE) while already viewing this conversation.
-watch(() => props.messages.length, scrollToBottom)
+// New message appended (SSE) while already viewing this conversation. Solo baja
+// solo si el asesor ya estaba abajo — si subió a leer historial no lo arrastra.
+watch(() => props.messages.length, (len, prevLen) => {
+  if (len > prevLen && !wasNearBottom()) return
+  scrollToBottom()
+})
 </script>
 
 <style scoped>

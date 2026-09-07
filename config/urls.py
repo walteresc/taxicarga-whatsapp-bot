@@ -2,6 +2,7 @@ from django.contrib import admin
 from django.urls import include, path, re_path
 from apps.whatsapp.views import bot_schedules, bot_schedule_detail, bot_settings, whatsapp_channels, whatsapp_channel_detail, whatsapp_channel_asesores
 from apps.whatsapp.views_media import media_proxy
+from apps.grupos_internos.views_media import group_media_proxy
 from django.shortcuts import redirect
 from django.conf import settings
 from django.views.decorators.cache import never_cache
@@ -21,6 +22,7 @@ urlpatterns = [
     path("health/ready", ready, name="health-ready"),
     path("admin/", admin.site.urls),
     path("dashboard/", include("apps.dashboard.urls")),
+    path("api/v2/", include("apps.api.urls")),
     path("api/clientes/", include("apps.clientes.urls")),
     path("api/leads/", include("apps.leads.urls")),
     path("api/cotizador/", include("apps.cotizador.urls")),
@@ -32,6 +34,7 @@ urlpatterns = [
     path("api/whatsapp-channels/<int:channel_id>/", whatsapp_channel_detail, name="api-whatsapp-channel-detail"),
     path("webhook/whatsapp/", include("apps.whatsapp.urls")),
     path("media/proxy/<str:media_id>/", media_proxy, name="media-proxy"),
+    path("media/grupos/<int:message_id>/", group_media_proxy, name="group-media-proxy"),
     path("webhooks/chatwoot/", include("apps.integrations.urls")),
     path("webhooks/", include("apps.whatsapp_bot_v4.urls")),
 

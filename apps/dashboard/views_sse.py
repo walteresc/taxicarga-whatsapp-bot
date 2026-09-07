@@ -8,7 +8,7 @@ Applies authorization: only authenticated users in WhatsApp group can receive ev
 import sys
 import logging
 import json
-from django.contrib.auth.decorators import login_required
+from django.contrib.auth.decorators import login_required, user_passes_test
 from django.core.exceptions import PermissionDenied
 from django.http import StreamingHttpResponse, JsonResponse
 from django.views.decorators.http import require_http_methods
@@ -36,9 +36,11 @@ class SSEStreamingHttpResponse(StreamingHttpResponse):
             return default
 
 
+@login_required
+@user_passes_test(lambda u: u.is_superuser)
 @require_http_methods(["GET"])
 def debug_redis(request):
-    """Endpoint de debug para verificar Redis en Gunicorn."""
+    """Endpoint de debug para verificar Redis en Gunicorn. Solo superusuario."""
     import os
     import threading
     import redis

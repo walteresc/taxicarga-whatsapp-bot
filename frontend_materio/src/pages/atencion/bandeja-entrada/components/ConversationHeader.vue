@@ -15,13 +15,21 @@
           v-else
           class="avatar-placeholder"
         >
-          {{ getInitials(conversation.name) }}
+          <span v-if="isNameUsable">{{ getInitials(contactPrimary) }}</span>
+          <i
+            v-else
+            class="ri-account-circle-line"
+          />
         </div>
       </div>
 
       <div class="contact-info">
-        <h3>{{ conversation.name }}</h3>
+        <h3>{{ contactPrimary }}</h3>
         <div class="contact-meta">
+          <template v-if="contactPhoneLine">
+            <span class="contact-phone">{{ contactPhoneLine }}</span>
+            <span class="separator">·</span>
+          </template>
           <i
             :class="`ri-${getChannelIcon(conversation.channel.name)}`"
             class="channel-icon"
@@ -34,6 +42,13 @@
     </div>
 
     <div class="header-actions">
+      <!-- Etapa del pipeline: muestra en qué está la conversación y deja
+           moverla a mano (Potencial / Para revisión / Por cotizar). -->
+      <PipelineStageCombo
+        :lead-id="leadId"
+        @changed="$emit('stage-changed', $event)"
+      />
+
       <!-- Action button (dynamic based on attention mode) -->
       <button
         v-if="conversation.attentionMode === 'bot'"
@@ -84,19 +99,23 @@
         <i class="ri-notification-line" />
       </button>
 
-      <!-- Menu button -->
-      <button
-        class="menu-btn"
-        @click="showMenu = !showMenu"
+      <!-- Menu button + dropdown, agrupados solo para detectar clic afuera -->
+      <span
+        ref="menuRef"
+        style="display: contents;"
       >
-        <i class="ri-more-2-fill" />
-      </button>
+        <button
+          class="menu-btn"
+          @click="showMenu = !showMenu"
+        >
+          <i class="ri-more-2-fill" />
+        </button>
 
-      <!-- Dropdown menu -->
-      <div
-        v-if="showMenu"
-        class="dropdown-menu"
-      >
+        <!-- Dropdown menu -->
+        <div
+          v-if="showMenu"
+          class="dropdown-menu"
+        >
         <button class="menu-item">
           <i class="ri-mail-open-line" />
           Marcar como no leída
@@ -114,15 +133,18 @@
           <i class="ri-forbid-line" />
           Bloquear contacto
         </button>
-      </div>
+        </div>
+      </span>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 
-defineProps({
+import PipelineStageCombo from './PipelineStageCombo.vue'
+
+const props = defineProps({
   conversation: {
     type: Object,
     required: true,
@@ -137,11 +159,58 @@ defineProps({
   },
 })
 
-defineEmits(['take-conversation', 'return-bot', 'assign-me', 'reopen', 'show-info'])
+defineEmits(['take-conversation', 'return-bot', 'assign-me', 'reopen', 'show-info', 'stage-changed'])
+
+const leadId = computed(() => props.conversation?.lead_id ?? props.conversation?.leadId ?? null)
 
 const showMenu = ref(false)
+const menuRef = ref(null)
+
+const closeMenuIfOutside = event => {
+  if (showMenu.value && !menuRef.value?.contains(event.target)) {
+    showMenu.value = false
+  }
+}
+
+onMounted(() => document.addEventListener('mousedown', closeMenuIfOutside, true))
+onUnmounted(() => document.removeEventListener('mousedown', closeMenuIfOutside, true))
+
+const formatPhone = phone => {
+  if (!phone) return ''
+  if (phone.startsWith('+')) return phone.slice(0, 3) + ' ' + phone.slice(3)
+
+  return phone
+}
+
+// Mismo criterio que la lista: si el nombre de perfil no identifica al contacto
+// (name_usable=false), el teléfono es el título y no se repite en la metalínea.
+const isNameUsable = computed(() => {
+  const c = props.conversation
+  if (c.name_usable === false) return false
+  if (c.name_usable === true) return true
+
+  return Boolean(c.name || c.profile_name)
+})
+
+const contactPrimary = computed(() => {
+  const c = props.conversation
+  if (isNameUsable.value) return c.profile_name || c.name
+  if (!c.phone) return 'Contacto sin identificar'
+
+  return c.phone_is_id ? c.phone : formatPhone(c.phone)
+})
+
+const contactPhoneLine = computed(() => {
+  const c = props.conversation
+  if (!c.phone || !isNameUsable.value) return ''
+  if (c.phone_is_id && String(c.profile_name || c.name).startsWith('@')) return ''
+
+  return c.phone_is_id ? `ID WhatsApp: ${c.phone}` : formatPhone(c.phone)
+})
 
 const getInitials = name => {
+  if (!name) return ''
+
   return name
     .split(' ')
     .map(n => n[0])
@@ -235,6 +304,15 @@ const getStatus = (conversation, effectiveBotPaused) => {
   font-weight: 600;
   font-size: 14px;
   color: #666;
+}
+
+.avatar-placeholder i {
+  font-size: 22px;
+  color: #999;
+}
+
+.contact-phone {
+  font-variant-numeric: tabular-nums;
 }
 
 .contact-info {

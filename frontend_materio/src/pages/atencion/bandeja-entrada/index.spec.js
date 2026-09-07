@@ -29,7 +29,7 @@ describe('BandejaEntrada Bot Status', () => {
     vi.clearAllMocks()
   })
 
-  it('should display "Bot global activo" when is_paused=false', async () => {
+  it('should display "Bot clientes activo" when is_paused=false', async () => {
     conversationService.getBotStatus.mockResolvedValue({
       is_paused: false,
     })
@@ -49,10 +49,10 @@ describe('BandejaEntrada Bot Status', () => {
 
     const statusText = wrapper.find('.status-text')
 
-    expect(statusText.text()).toContain('Bot global activo')
+    expect(statusText.text()).toContain('Bot clientes activo')
   })
 
-  it('should display "Bot global pausado" when is_paused=true', async () => {
+  it('should display "Bot clientes pausado" when is_paused=true', async () => {
     conversationService.getBotStatus.mockResolvedValue({
       is_paused: true,
     })
@@ -72,7 +72,7 @@ describe('BandejaEntrada Bot Status', () => {
 
     const statusText = wrapper.find('.status-text')
 
-    expect(statusText.text()).toContain('Bot global pausado')
+    expect(statusText.text()).toContain('Bot clientes pausado')
   })
 
   it('should show "Pausar bot" button when bot is active', async () => {

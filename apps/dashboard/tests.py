@@ -319,7 +319,9 @@ class DashboardTests(TestCase):
         self.lead.refresh_from_db()
         self.assertEqual(response.status_code, 302)
         self.assertEqual(self.lead.estado, Lead.PERDIDO)
-        self.assertEqual(self.lead.motivo_perdida, "Cliente eligio otro proveedor")
+        # El texto libre se mapea a un motivo canónico y el original se conserva.
+        self.assertEqual(self.lead.motivo_perdida, Lead.MOTIVO_PERDIDA_COMPETENCIA)
+        self.assertEqual(self.lead.motivo_perdida_detalle, "Cliente eligio otro proveedor")
         self.assertTrue(self.lead.atencion_humana)
         self.assertIsNotNone(self.lead.fecha_cierre)
         self.assertIsNotNone(self.lead.fecha_ultimo_seguimiento)
@@ -409,12 +411,8 @@ class DashboardTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Pizarra")
 
-    def test_placeholder_reportes(self):
-        self.client.force_login(self.user)
-        response = self.client.get(reverse("dashboard-reportes"))
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Reportes")
-        self.assertContains(response, "Módulo en construcción")
+    # Reportes: migrado al panel Vue (/analitica/*, API /api/v2/reports/).
+    # Las rutas Django dashboard-reportes* se retiraron.
 
     def test_placeholder_admin(self):
         self.client.force_login(self.user)
@@ -424,7 +422,7 @@ class DashboardTests(TestCase):
         self.assertContains(response, "Módulo en construcción")
 
     def test_placeholders_requieren_login(self):
-        for name in ["dashboard-campo", "dashboard-pizarra", "dashboard-reportes", "dashboard-admin-placeholder"]:
+        for name in ["dashboard-campo", "dashboard-pizarra", "dashboard-admin-placeholder"]:
             response = self.client.get(reverse(name))
             self.assertEqual(response.status_code, 302)
             self.assertIn("/dashboard/login/", response["Location"])
@@ -437,11 +435,12 @@ class DashboardTests(TestCase):
         self.assertContains(response, "Cerrar sesión")
 
     def test_sidebar_visible_en_placeholder(self):
+        group, _ = Group.objects.get_or_create(name="Administrador")
+        self.user.groups.add(group)
         self.client.force_login(self.user)
-        for name in ["dashboard-reportes", "dashboard-admin-placeholder"]:
-            response = self.client.get(reverse(name))
-            self.assertContains(response, "sidebar")
-            self.assertContains(response, "Panel Comercial")
+        response = self.client.get(reverse("dashboard-admin-placeholder"))
+        self.assertContains(response, "sidebar")
+        self.assertContains(response, "Panel Comercial")
 
     def test_sidebar_visible_en_servicios(self):
         self.client.force_login(self.user)

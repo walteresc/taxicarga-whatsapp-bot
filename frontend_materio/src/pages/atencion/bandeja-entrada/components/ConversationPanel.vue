@@ -42,14 +42,20 @@
         :attention-mode="conversation?.attentionMode || 'unassigned'"
         :advisor-name="conversation?.responsable?.nombre || 'Walter Escobar'"
         :effective-bot-paused="effectiveBotPaused"
+        :pending-template="pendingTemplate"
         :sending="sendingMessage"
         :send-error="sendError"
         :replying-to="replyingTo"
+        :info-pct="serviceInfoPct"
+        :quoted="isQuoted"
+        :quote-state="quoteStateLabel"
         @send-message="handleSendMessage"
         @take-control="handleTakeControl"
         @assign-me="handleAssignMe"
         @reopen="handleReopen"
         @clear-reply="clearReply"
+        @view-request="openView"
+        @quote-request="openQuoteStandalone"
       />
     </div>
 
@@ -62,17 +68,46 @@
       :conversation-id="conversationId"
       @close="forwardingMessage = null"
     />
+
+    <QuickQuoteDialog
+      v-if="quoteOpen && pipelineLeadId"
+      :lead-id="pipelineLeadId"
+      :initial-message="quoteInitialMessage"
+      :service-data="conversation?.serviceData || conversation?.service_data || {}"
+      :draggable="quoteDraggable"
+      @close="quoteOpen = false; quoteDraggable = false"
+      @done="afterPipelineAction"
+    />
+    <QuickBookingDialog
+      v-if="bookingOpen && pipelineLeadId"
+      :lead-id="pipelineLeadId"
+      :service-data="conversation?.serviceData || conversation?.service_data || {}"
+      :draggable="bookingDraggable"
+      @close="bookingOpen = false; bookingDraggable = false"
+      @done="afterPipelineAction"
+    />
+    <ServiceViewDialog
+      v-if="viewOpen && pipelineLeadId"
+      :lead-id="pipelineLeadId"
+      :service-data="conversation?.serviceData || conversation?.service_data || {}"
+      @close="viewOpen = false"
+      @quote="quoteFromView"
+      @book="bookFromView"
+    />
   </div>
 </template>
 
 <script setup>
-import { ref, watch, onMounted, nextTick, computed } from 'vue'
+import { ref, watch, onMounted, onUnmounted, nextTick, computed } from 'vue'
 import EmptyConversationState from './EmptyConversationState.vue'
 import ImageViewer from './ImageViewer.vue'
 import ConversationHeader from './ConversationHeader.vue'
 import MessageTimeline from './MessageTimeline.vue'
 import ChatComposer from './ChatComposer.vue'
 import ForwardMessageModal from './ForwardMessageModal.vue'
+import QuickQuoteDialog from './QuickQuoteDialog.vue'
+import QuickBookingDialog from './QuickBookingDialog.vue'
+import ServiceViewDialog from './ServiceViewDialog.vue'
 import { conversationService } from '@/services/conversationService'
 import { useMessagesStore } from '@/stores/messagesStore'
 import { useConversationsStore } from '@/stores/conversationsStore'
@@ -129,6 +164,40 @@ const messages = computed(() => {
   return result
 })
 
+// Conversación iniciada a mano (número que nunca escribió) y el cliente
+// todavía no respondió nada: WhatsApp no permite texto libre fuera de la
+// ventana de 24h / sin plantilla aprobada, así que el composer queda
+// bloqueado hasta que llegue el primer mensaje entrante real.
+const pendingTemplate = computed(() => {
+  if (loadingMessages.value) return false
+
+  return !messages.value.some(m => m.senderType === 'customer')
+})
+
+// Marca la conversación como leída en el servidor y limpia el badge al toque.
+// Se llama al abrir la conversación Y cada vez que llega un mensaje nuevo
+// mientras la tengo abierta (la estoy leyendo, no debe volver a contar).
+const markRead = async convId => {
+  if (!convId) return
+  try {
+    const response = await fetch(`/dashboard/whatsapp/conversaciones/${convId}/mark-read/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': conversationService.getCsrfToken(),
+      },
+      credentials: 'include',
+    })
+    if (response.ok) {
+      conversationsStore.updateConversationState(convId, { unread: 0 })
+    } else {
+      console.warn('[ConversationPanel] mark-read HTTP ' + response.status)
+    }
+  } catch (error) {
+    console.warn('[ConversationPanel] Error marking read:', error)
+  }
+}
+
 const loadMessages = async () => {
   if (!props.conversationId) {
     return
@@ -142,27 +211,7 @@ const loadMessages = async () => {
     await messagesStore.loadConversationMessages(props.conversationId)
     console.log('[ConversationPanel] Messages loaded, count=' + messages.value.length)
 
-    // Mark conversation as read when opened
-    try {
-      const response = await fetch(`/dashboard/whatsapp/conversaciones/${props.conversationId}/mark-read/`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRFToken': conversationService.getCsrfToken(),
-        },
-        credentials: 'include',
-      })
-
-      if (response.ok) {
-        // Clear the badge immediately — don't wait for the next /api/active/ reload
-        conversationsStore.updateConversationState(props.conversationId, { unread: 0 })
-        console.log('[ConversationPanel] Marked as read: ' + props.conversationId)
-      } else {
-        console.warn('[ConversationPanel] mark-read HTTP ' + response.status)
-      }
-    } catch (error) {
-      console.warn('[ConversationPanel] Error marking read:', error)
-    }
+    await markRead(props.conversationId)
   } catch (error) {
     console.error('Error loading messages:', error)
   } finally {
@@ -175,6 +224,62 @@ const sendingMessage = ref(false)
 const sendError = ref('')
 const replyingTo = ref(null)
 const forwardingMessage = ref(null)
+
+// Cotizar / Reservar rápido desde el composer.
+const pipelineLeadId = computed(() => props.conversation?.lead_id ?? props.conversation?.leadId ?? null)
+const quoteOpen = ref(false)
+const quoteDraggable = ref(false)
+const bookingOpen = ref(false)
+const bookingDraggable = ref(false)
+const viewOpen = ref(false)
+const quoteInitialMessage = ref('')
+const openView = () => {
+  if (!pipelineLeadId.value) { sendError.value = 'Esta conversación no tiene lead asociado todavía.'; return }
+  viewOpen.value = true
+}
+
+// Barra de progreso / estado en el composer.
+const _svcData = computed(() => props.conversation?.serviceData || props.conversation?.service_data || {})
+const serviceInfoPct = computed(() => Number(_svcData.value.information_pct) || 0)
+const isQuoted = computed(() => {
+  const s = _svcData.value
+  return Boolean(s.quoted_price) || ['precio_enviado', 'cerrada'].includes(s.estado_cotizacion || props.conversation?.estado_cotizacion)
+})
+const quoteStateLabel = computed(() => _svcData.value.status || '')
+const quoteFromView = () => {
+  // El modal Ver queda abierto detrás; Cotizar sale como panel arrastrable
+  // al costado para ver el detalle y cotizar a la vez.
+  quoteInitialMessage.value = ''
+  quoteDraggable.value = true
+  quoteOpen.value = true
+}
+// Cotizar desde el composer → abre Ver detalles + el panel Cotizar al frente.
+const openQuoteStandalone = () => {
+  if (!pipelineLeadId.value) { sendError.value = 'Esta conversación no tiene lead asociado todavía.'; return }
+  quoteInitialMessage.value = ''
+  quoteDraggable.value = true
+  viewOpen.value = true
+  quoteOpen.value = true
+}
+const bookFromView = () => {
+  bookingDraggable.value = true
+  bookingOpen.value = true
+}
+// Tras cotizar/reservar, el backend deja la conversación asignada al asesor
+// (modo asesor) para que pueda seguir chateando — reflejarlo ya en el store
+// y recargar los mensajes para ver la cotización enviada.
+const afterPipelineAction = () => {
+  // Cerrar todos los modales (Ver detalles + panel Cotizar/Reservar) tras enviar.
+  quoteOpen.value = false
+  quoteDraggable.value = false
+  bookingOpen.value = false
+  bookingDraggable.value = false
+  viewOpen.value = false
+  if (props.conversationId) {
+    conversationsStore.updateConversationState(props.conversationId, { attentionMode: 'advisor', estado_atencion: 'asesor' })
+    messagesStore.loadConversationMessages(props.conversationId)
+  }
+}
 
 /**
  * Send a text message to the backend and reconcile the optimistic bubble.
@@ -513,16 +618,34 @@ const handleReactToMessage = async ({ message, emoji }) => {
 // Watch para cuando cambia el conversationId
 watch(() => props.conversationId, (newId, oldId) => {
   console.log('[ConversationPanel watch] conversationId changed from ' + oldId + ' to ' + newId)
+  conversationsStore.setActiveConversation(newId)
   loadMessages()
   nextTick(() => composerRef.value?.focus())
 }, { immediate: false })
 
+// Llega un mensaje nuevo mientras tengo la conversación abierta: si es del
+// cliente, marcarla leída de nuevo en el servidor (el badge ya se mantiene en
+// 0 vía activeConversationId, pero esto evita que reaparezca al recargar).
+watch(() => messages.value.length, (len, prevLen) => {
+  if (len > prevLen && !loadingMessages.value && props.conversationId) {
+    const last = messages.value[len - 1]
+    if (last && (last.senderType === 'customer' || last.direction === 'entrante')) {
+      markRead(props.conversationId)
+    }
+  }
+})
+
 // Cargar mensajes al montar si hay conversationId
 onMounted(() => {
   if (props.conversationId) {
+    conversationsStore.setActiveConversation(props.conversationId)
     loadMessages()
     nextTick(() => composerRef.value?.focus())
   }
+})
+
+onUnmounted(() => {
+  conversationsStore.setActiveConversation(null)
 })
 </script>
 

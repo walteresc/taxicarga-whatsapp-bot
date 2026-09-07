@@ -6,7 +6,21 @@ from django.views.decorators.csrf import csrf_exempt, csrf_protect, ensure_csrf_
 import json
 import logging
 
+from apps.api.permissions import role_names
+
 logger = logging.getLogger(__name__)
+
+
+def _user_payload(user):
+    return {
+        'id': user.id,
+        'username': user.username,
+        'email': user.email,
+        'full_name': user.get_full_name() or user.username,
+        'is_staff': user.is_staff,
+        'is_superuser': user.is_superuser,
+        'roles': role_names(user),
+    }
 
 
 @csrf_exempt
@@ -33,17 +47,7 @@ def api_login(request):
         login(request, user)
 
         # Return user info
-        return JsonResponse({
-            'status': 'ok',
-            'user': {
-                'id': user.id,
-                'username': user.username,
-                'email': user.email,
-                'full_name': user.get_full_name() or user.username,
-                'is_staff': user.is_staff,
-                'is_superuser': user.is_superuser,
-            }
-        })
+        return JsonResponse({'status': 'ok', 'user': _user_payload(user)})
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
     except Exception as e:
@@ -54,18 +58,7 @@ def api_login(request):
 @login_required
 def api_user(request):
     """Get current user info"""
-    user = request.user
-    return JsonResponse({
-        'status': 'ok',
-        'user': {
-            'id': user.id,
-            'username': user.username,
-            'email': user.email,
-            'full_name': user.get_full_name() or user.username,
-            'is_staff': user.is_staff,
-            'is_superuser': user.is_superuser,
-        }
-    })
+    return JsonResponse({'status': 'ok', 'user': _user_payload(request.user)})
 
 
 @csrf_exempt
@@ -84,12 +77,5 @@ def api_logout(request):
 def api_check_auth(request):
     """Check if user is authenticated"""
     if request.user.is_authenticated:
-        return JsonResponse({
-            'authenticated': True,
-            'user': {
-                'id': request.user.id,
-                'username': request.user.username,
-                'full_name': request.user.get_full_name() or request.user.username,
-            }
-        })
+        return JsonResponse({'authenticated': True, 'user': _user_payload(request.user)})
     return JsonResponse({'authenticated': False})

@@ -3,56 +3,66 @@
     <!-- Cabecera principal -->
     <div class="page-header">
       <div class="header-left">
-        <h1>{{ currentView === 'archived' ? 'Archivados' : 'Bandeja de entrada' }} <span class="count-badge">{{ conversationCount }}</span></h1>
+        <h1>{{ headerTitle }} <span class="count-badge">{{ conversationCount }}</span></h1>
       </div>
       <div class="header-right">
-        <div class="status-indicator">
-          <span
-            class="dot"
-            :class="[botGlobalPaused ? 'inactive' : 'active']"
-          />
-          <span class="status-text">{{ botGlobalPaused ? 'Bot global pausado' : 'Bot global activo' }}</span>
-        </div>
-        <button
-          v-if="botGlobalPaused"
-          class="activate-btn"
-          @click="activateBot"
-        >
-          <i class="ri-play-line" />
-          Reanudar bot
-        </button>
-        <button
-          v-else
-          class="pause-btn"
-          @click="pauseBot"
-        >
-          <i class="ri-pause-line" />
-          Pausar bot
-        </button>
-        <div class="status-indicator transportistas-indicator">
-          <span
-            class="dot"
-            :class="[transportistasBotPaused ? 'inactive' : 'active']"
-          />
-          <span class="status-text">🚚 {{ transportistasBotPaused ? 'Bot transportistas pausado' : 'Bot transportistas activo' }}</span>
-        </div>
-        <button
-          v-if="transportistasBotPaused"
-          class="activate-btn"
-          :title="!transportistasBotFlagHabilitado ? 'TRANSPORTISTA_BOT_ENABLED está en false — no responderá aunque actives esto' : ''"
-          @click="activateTransportistasBot"
-        >
-          <i class="ri-play-line" />
-          Reanudar
-        </button>
-        <button
-          v-else
-          class="pause-btn"
-          @click="pauseTransportistasBot"
-        >
-          <i class="ri-pause-line" />
-          Pausar
-        </button>
+        <!-- Control del BOT DE TRANSPORTISTAS: solo en la pestaña Transportistas -->
+        <template v-if="currentView === 'transportistas'">
+          <div class="status-indicator transportistas-indicator">
+            <span
+              class="dot"
+              :class="[transportistasBotPaused ? 'inactive' : 'active']"
+            />
+            <span class="status-text">🚚 {{ transportistasBotPaused ? 'Bot transportistas pausado' : 'Bot transportistas activo' }}</span>
+          </div>
+          <button
+            v-if="transportistasBotPaused"
+            class="activate-btn"
+            :title="!transportistasBotFlagHabilitado ? 'TRANSPORTISTA_BOT_ENABLED está en false — no responderá aunque actives esto' : ''"
+            @click="activateTransportistasBot"
+          >
+            <i class="ri-play-line" />
+            Reanudar bot transportistas
+          </button>
+          <button
+            v-else
+            class="pause-btn"
+            @click="pauseTransportistasBot"
+          >
+            <i class="ri-pause-line" />
+            Pausar bot transportistas
+          </button>
+        </template>
+
+        <!-- Control del BOT DE CLIENTES: en el resto de vistas (Todas, Mías, No leídas, Archivados) -->
+        <template v-else>
+          <div class="status-indicator">
+            <span
+              class="dot"
+              :class="[botGlobalPaused ? 'inactive' : 'active']"
+            />
+            <span class="status-text">{{ botGlobalPaused ? 'Bot clientes pausado' : 'Bot clientes activo' }}</span>
+          </div>
+          <template v-if="canControlBot">
+            <button
+              v-if="botGlobalPaused"
+              class="activate-btn"
+              @click="activateBot"
+            >
+              <i class="ri-play-line" />
+              Reanudar bot clientes
+            </button>
+            <button
+              v-else
+              class="pause-btn"
+              @click="pauseBot"
+            >
+              <i class="ri-pause-line" />
+              Pausar bot clientes
+            </button>
+          </template>
+        </template>
+
         <button class="settings-btn">
           <i class="ri-settings-3-line" />
         </button>
@@ -68,7 +78,9 @@
       <div class="left-panel">
         <ConversationListComponent
           :selected-conversation-id="selectedConversationId"
+          :selected-group-id="selectedGroupId"
           @conversation-selected="selectConversation"
+          @group-selected="selectGroup"
           @update-count="conversationCount = $event"
           @update-view="currentView = $event"
         />
@@ -76,7 +88,12 @@
 
       <!-- Panel central: Chat -->
       <div class="center-panel">
+        <GroupChatPanelComponent
+          v-if="selectedGroupId"
+          :group-id="selectedGroupId"
+        />
         <ConversationPanelComponent
+          v-else
           :conversation-id="selectedConversationId"
           :conversation="selectedConversation"
           :bot-global-paused="botGlobalPaused"
@@ -92,7 +109,7 @@
       >
         <ContactDetailsComponent
           :contact="selectedConversation"
-          :service="selectedConversation.serviceData"
+          :service="selectedConversation.service_data"
           :advisor="selectedConversation.responsable"
           @close="infoPanelOpen = false"
         />
@@ -109,7 +126,7 @@
         <div class="info-modal-panel">
           <ContactDetailsComponent
             :contact="selectedConversation"
-            :service="selectedConversation.serviceData"
+            :service="selectedConversation.service_data"
             :advisor="selectedConversation.responsable"
             @close="infoModalOpen = false"
           />
@@ -120,20 +137,47 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useDisplay } from 'vuetify'
 import ConversationListComponent from './ConversationList.vue'
 import ConversationPanelComponent from './components/ConversationPanel.vue'
+import GroupChatPanelComponent from './components/GroupChatPanel.vue'
 import ContactDetailsComponent from './components/ContactDetails.vue'
 import { conversationService } from '@/services/conversationService'
 import { useAuthGuard } from '@/composables/useAuthGuard'
+import { useAuthStore } from '@/stores/authStore'
+import { useConversationsStore } from '@/stores/conversationsStore'
 
 const { checkAuth } = useAuthGuard()
+const route = useRoute()
 const { width } = useDisplay()
 
-// Estado único para la conversación seleccionada
+// Deep-link: /atencion/bandeja-entrada?conversation=123 abre esa conversación
+// (se usa desde las pantallas del pipeline con el ícono de chat).
+const applyRouteConversation = () => {
+  const id = Number(route.query.conversation)
+  if (id) selectedConversationId.value = id
+}
+watch(() => route.query.conversation, applyRouteConversation)
+const conversationsStore = useConversationsStore()
+const auth = useAuthStore()
+
+// Pausar/activar el bot clientes afecta a TODAS las conversaciones a la vez —
+// mismo criterio de rol que el resto del pipeline comercial. El backend ya lo
+// exige (apps/whatsapp_bot_v4/api_conversation_control.py); esto solo evita
+// mostrar un botón que fallaría en silencio para quien no tiene el rol.
+const canControlBot = computed(() => auth.hasAnyRole('Administrador', 'Supervisor', 'Asesor de Ventas'))
+
+// Estado único para la conversación seleccionada. selectedConversation se deriva
+// del store: así el encabezado y el panel de info reflejan en vivo los cambios
+// (nombre editado, transportista, estado del bot) sin re-seleccionar.
 const selectedConversationId = ref(null)
-const selectedConversation = ref(null)
+const selectedConversation = computed(() =>
+  selectedConversationId.value
+    ? conversationsStore.getConversation(selectedConversationId.value) || null
+    : null,
+)
 const botGlobalPaused = ref(false)  // true = paused, false = active
 
 // Bot de transportistas — interruptor INDEPENDIENTE del bot de clientes de
@@ -152,6 +196,15 @@ const infoModalOpen = ref(false)
 
 // Computed
 const isNarrowForPanel = computed(() => width.value < 1440)
+
+const headerTitle = computed(() => {
+  if (currentView.value === 'archived') return 'Archivados'
+  if (currentView.value === 'transportistas') return 'Transportistas'
+  if (currentView.value === 'oficina') return 'Oficina'
+  if (currentView.value === 'campo') return 'Campo'
+
+  return 'Bandeja de entrada'
+})
 
 // Whether the inline right-panel column should exist at all — used both to render
 // it and to collapse the grid track so the chat reclaims that width when closed.
@@ -179,9 +232,17 @@ const effectiveBotPaused = computed(() => {
 const selectConversation = conversation => {
   // null: the open conversation was archived (or otherwise closed) — clear the panel.
   selectedConversationId.value = conversation?.id || null
-  selectedConversation.value = conversation || null
+  selectedGroupId.value = null
 
   // Never carry a floating info modal over to a different conversation.
+  infoModalOpen.value = false
+}
+
+// Grupos internos: partición separada, sin relación con ConversacionWhatsApp.
+const selectedGroupId = ref(null)
+const selectGroup = group => {
+  selectedGroupId.value = group?.id || null
+  selectedConversationId.value = null
   infoModalOpen.value = false
 }
 
@@ -256,6 +317,15 @@ const activateTransportistasBot = async () => {
   }
 }
 
+// Estado de ambos bots en "tiempo real": no hay evento SSE de pausa/reanudación,
+// así que se refresca por sondeo cada 7 s. Si otro asesor pausa/reanuda, el
+// cambio se ve sin recargar. Barato: son dos endpoints diminutos. NO toca la
+// lógica de pausa ni los flags — solo relee el estado.
+const BOT_STATUS_POLL_MS = 7000
+let botStatusTimer = null
+
+const refreshBotStatuses = () => Promise.all([loadBotStatus(), loadTransportistasBotStatus()])
+
 // Lifecycle
 onMounted(async () => {
   // Verificar autenticación
@@ -263,7 +333,14 @@ onMounted(async () => {
   if (!isAuth) return
 
   // Cargar estado de ambos bots — independientes
-  await Promise.all([loadBotStatus(), loadTransportistasBotStatus()])
+  await refreshBotStatuses()
+  botStatusTimer = setInterval(refreshBotStatuses, BOT_STATUS_POLL_MS)
+
+  applyRouteConversation()
+})
+
+onUnmounted(() => {
+  if (botStatusTimer) clearInterval(botStatusTimer)
 })
 </script>
 

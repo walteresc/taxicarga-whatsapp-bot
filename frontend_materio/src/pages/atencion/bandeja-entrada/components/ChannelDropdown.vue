@@ -1,5 +1,8 @@
 <template>
-  <div class="channel-dropdown-wrapper">
+  <div
+    ref="wrapperRef"
+    class="channel-dropdown-wrapper"
+  >
     <button
       class="channel-btn"
       :title="`Filtrar por ${selectedLabel}`"
@@ -38,7 +41,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 
 const props = defineProps({
   activeChannels: {
@@ -50,12 +53,22 @@ const props = defineProps({
 const emit = defineEmits(['update:activeChannels', 'open-dropdown'])
 
 const isOpen = ref(false)
+const wrapperRef = ref(null)
 
 watch(isOpen, newVal => {
   if (newVal) {
     emit('open-dropdown')
   }
 })
+
+const closeIfOutside = event => {
+  if (isOpen.value && !wrapperRef.value?.contains(event.target)) {
+    isOpen.value = false
+  }
+}
+
+onMounted(() => document.addEventListener('mousedown', closeIfOutside, true))
+onUnmounted(() => document.removeEventListener('mousedown', closeIfOutside, true))
 
 const channels = ['Todos', 'WhatsApp', 'Correo', 'Instagram', 'Facebook', 'Chat web', 'TikTok', 'Otros']
 
@@ -89,26 +102,11 @@ const getChannelIcon = channel => {
 }
 
 const toggleChannel = channel => {
-  let newChannels = [...props.activeChannels]
-
-  if (channel === 'Todos') {
-    newChannels = ['Todos']
-  } else {
-    const index = newChannels.indexOf(channel)
-    if (index > -1) {
-      newChannels.splice(index, 1)
-    } else {
-      const todoIndex = newChannels.indexOf('Todos')
-      if (todoIndex > -1) {
-        newChannels.splice(todoIndex, 1)
-      }
-      newChannels.push(channel)
-    }
-
-    if (newChannels.length === 0) {
-      newChannels = ['Todos']
-    }
-  }
+  // Selección única: un canal a la vez. Clic en el que ya está activo o en
+  // "Todos" → vuelve a "Todos".
+  const newChannels = (channel === 'Todos' || props.activeChannels.includes(channel))
+    ? ['Todos']
+    : [channel]
 
   emit('update:activeChannels', newChannels)
   isOpen.value = false

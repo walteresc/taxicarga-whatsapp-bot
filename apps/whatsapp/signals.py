@@ -169,8 +169,14 @@ def build_message_event_data(instance):
             # Needed so the bandeja can render a brand-new conversation (first SSE
             # event ever seen for it, not yet in the frontend store from a REST
             # load) without showing "Desconocido" until the next full page reload.
-            'name': (conv.cliente.display_name or conv.cliente.nombre or conv.cliente.telefono) if conv.cliente else None,
-            'phone': conv.cliente.telefono if conv.cliente else None,
+            # Mismo contrato que api_active_conversations: 'name' vacío si el
+            # nombre de perfil no es utilizable -> el front cae al teléfono.
+            'name': (conv.cliente.profile_name if (conv.cliente and conv.cliente.profile_name_usable) else '') if conv.cliente else None,
+            'profile_name': conv.cliente.profile_name if conv.cliente else None,
+            'name_usable': bool(conv.cliente and conv.cliente.profile_name_usable),
+            'name_is_manual': bool(conv.cliente and conv.cliente.name_is_manual),
+            'phone': (conv.cliente.contact_phone or None) if conv.cliente else None,
+            'phone_is_id': bool(conv.cliente and not conv.cliente.has_real_phone),
         }
     }
 
@@ -194,6 +200,35 @@ def publish_transportista_state_change(conversation):
     except Exception as e:
         logger.error(
             f"Failed to publish transportista state change for conv {conversation.id}: {e}"
+        )
+
+
+def publish_contact_name_change(conversation):
+    """Publica conversation.updated con el nombre/teléfono al editar a mano el
+    nombre del contacto en el CRM. El nombre vive en Cliente, no en la
+    conversación, así que el post_save de abajo no lo ve — se llama explícito,
+    mismo patrón que publish_transportista_state_change. La bandeja y el
+    encabezado se actualizan en vivo en todas las sesiones abiertas."""
+    cli = conversation.cliente
+    if not cli:
+        return
+    try:
+        event_data = {
+            'conversation_id': conversation.id,
+            'cliente_id': conversation.cliente_id,
+            'channel_id': conversation.channel_id,
+            'name': cli.profile_name if cli.profile_name_usable else '',
+            'profile_name': cli.profile_name,
+            'name_usable': cli.profile_name_usable,
+            'name_source': cli.name_source,
+            'name_is_manual': cli.name_is_manual,
+            'phone': cli.contact_phone,
+            'phone_is_id': not cli.has_real_phone,
+        }
+        publish_event('conversation.updated', event_data)
+    except Exception as e:
+        logger.error(
+            f"Failed to publish contact name change for conv {conversation.id}: {e}"
         )
 
 

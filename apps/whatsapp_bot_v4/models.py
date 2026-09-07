@@ -131,6 +131,16 @@ class BotGlobalConfig(models.Model):
     transportistas_paused = models.BooleanField(default=True)
     transportistas_paused_at = models.DateTimeField(null=True, blank=True)
 
+    # Interruptor del bot OPERATIVO: captura de datos (NLU), creación/
+    # actualización de Lead y derivación automática a "Para revisión".
+    # Independiente de `is_paused` a propósito — `is_paused` solo controla si
+    # el bot RESPONDE al cliente por WhatsApp; este controla si el bot sigue
+    # trabajando puertas adentro sobre las conversaciones (capturar no es
+    # responder). Puede haber bot de clientes pausado con operativo activo,
+    # o viceversa. Ver apps/whatsapp/services_extraccion.py.
+    operativo_paused = models.BooleanField(default=False)
+    operativo_paused_at = models.DateTimeField(null=True, blank=True)
+
     class Meta:
         verbose_name_plural = "Bot Global Config"
 

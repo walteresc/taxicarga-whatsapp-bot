@@ -45,14 +45,57 @@ class Lead(models.Model):
         (PRIORIDAD_URGENTE, "Urgente"),
     ]
 
+    MOTIVO_PERDIDA_PRECIO = "precio"
+    MOTIVO_PERDIDA_TIEMPO = "tiempo_respuesta"
+    MOTIVO_PERDIDA_COMPETENCIA = "competencia"
+    MOTIVO_PERDIDA_NO_RESPONDE = "no_responde"
+    MOTIVO_PERDIDA_FUERA_COBERTURA = "fuera_cobertura"
+    MOTIVO_PERDIDA_OTRO = "otro"
+
+    MOTIVOS_PERDIDA = [
+        (MOTIVO_PERDIDA_PRECIO, "Precio"),
+        (MOTIVO_PERDIDA_TIEMPO, "Tiempo de respuesta"),
+        (MOTIVO_PERDIDA_COMPETENCIA, "Competencia"),
+        (MOTIVO_PERDIDA_NO_RESPONDE, "No responde"),
+        (MOTIVO_PERDIDA_FUERA_COBERTURA, "Fuera de cobertura"),
+        (MOTIVO_PERDIDA_OTRO, "Otro"),
+    ]
+
+    # Palabras clave -> motivo canónico, para mapear texto libre heredado o de
+    # formularios que aún mandan una frase. El detalle original se conserva
+    # siempre en `motivo_perdida_detalle`.
+    _MOTIVO_PERDIDA_KEYWORDS = (
+        (MOTIVO_PERDIDA_PRECIO, ("precio", "caro", "presupuesto", "costo", "barato", "economic")),
+        (MOTIVO_PERDIDA_TIEMPO, ("tiempo", "demor", "tard", "respuesta lenta", "lento", "muy tarde", "rapidez")),
+        (MOTIVO_PERDIDA_COMPETENCIA, ("competencia", "otro proveedor", "otra empresa", "eligio a otro", "eligió a otro", "contrato a otro")),
+        (MOTIVO_PERDIDA_NO_RESPONDE, ("no responde", "no contesta", "no contestó", "dejo de responder", "dejó de responder", "sin respuesta", "no volvio", "no volvió")),
+        (MOTIVO_PERDIDA_FUERA_COBERTURA, ("cobertura", "no llegamos", "muy lejos", "fuera de zona", "no cubrimos")),
+    )
+
+    @classmethod
+    def map_motivo_perdida(cls, texto):
+        """Devuelve un código de MOTIVOS_PERDIDA a partir de texto libre.
+        Si ya es un código válido, lo devuelve tal cual. Si no reconoce nada,
+        devuelve 'otro' (nunca None)."""
+        valor = (texto or "").strip().lower()
+        if not valor:
+            return ""
+        codigos = {c for c, _ in cls.MOTIVOS_PERDIDA}
+        if valor in codigos:
+            return valor
+        for codigo, claves in cls._MOTIVO_PERDIDA_KEYWORDS:
+            if any(clave in valor for clave in claves):
+                return codigo
+        return cls.MOTIVO_PERDIDA_OTRO
+
     cliente = models.ForeignKey(Cliente, on_delete=models.CASCADE, related_name="leads")
     tipo_servicio = models.CharField(max_length=80, blank=True)
     distrito_origen = models.CharField(max_length=120, blank=True)
     distrito_destino = models.CharField(max_length=120, blank=True)
     direccion_origen = models.CharField(max_length=255, blank=True)
     direccion_destino = models.CharField(max_length=255, blank=True)
-    piso_origen = models.PositiveSmallIntegerField(null=True, blank=True)
-    piso_destino = models.PositiveSmallIntegerField(null=True, blank=True)
+    piso_origen = models.SmallIntegerField(null=True, blank=True)
+    piso_destino = models.SmallIntegerField(null=True, blank=True)
     ascensor_origen = models.BooleanField(null=True, blank=True)
     ascensor_destino = models.BooleanField(null=True, blank=True)
     lista_objetos = models.TextField(blank=True)
@@ -82,6 +125,10 @@ class Lead(models.Model):
         default=ETAPA_COTIZACION,
     )
     dni_reserva = models.CharField(max_length=20, blank=True)
+    # Persona de contacto para la reserva (opcional): a veces el cliente reserva
+    # pero el que recibe/coordina en el sitio es otra persona.
+    persona_contacto = models.CharField(max_length=160, blank=True)
+    telefono_contacto = models.CharField(max_length=30, blank=True)
     estado = models.CharField(max_length=30, choices=ESTADOS, default=NUEVO)
     prioridad = models.CharField(max_length=20, choices=PRIORIDADES, default=PRIORIDAD_MEDIA)
     atencion_humana = models.BooleanField(default=False)
@@ -99,12 +146,24 @@ class Lead(models.Model):
     precio_final = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     esperando_motivo_no_reserva = models.BooleanField(default=False)
     requiere_asesor = models.BooleanField(default=False)
+    es_interprovincial = models.BooleanField(
+        default=False,
+        help_text="Ruta fuera de Lima Metropolitana (interprovincial o de provincia). "
+                  "La marca la extracción NLU; el cotizador automático no cubre estas rutas.",
+    )
     motivo_derivacion = models.TextField(blank=True, null=True)
     bot_pausado = models.BooleanField(default=False)
     fecha_derivacion = models.DateTimeField(null=True, blank=True)
     observaciones = models.TextField(blank=True)
     nota_interna = models.TextField(blank=True)
-    motivo_perdida = models.CharField(max_length=255, blank=True)
+    motivo_perdida = models.CharField(
+        max_length=255, blank=True, choices=MOTIVOS_PERDIDA,
+        help_text="Motivo canónico de pérdida (para reportes).",
+    )
+    motivo_perdida_detalle = models.TextField(
+        blank=True,
+        help_text="Detalle libre del motivo de pérdida, tal como lo escribió el asesor.",
+    )
     fecha_creacion = models.DateTimeField(auto_now_add=True)
     fecha_ultimo_seguimiento = models.DateTimeField(null=True, blank=True)
     fecha_proximo_seguimiento = models.DateTimeField(null=True, blank=True)

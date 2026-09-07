@@ -34,6 +34,29 @@ def _mark_event_discarded(event_id, reason, payload_full):
         logger.error(f"[YCloud] Error marking event {event_id} discarded: {e}", exc_info=True)
 
 
+def _nombre_de_canal(from_name, from_username, tiene_telefono=True):
+    """Nombre a guardar del contacto según lo que manda WhatsApp/YCloud.
+
+    Contacto SIN número (tiene_telefono=False): el username/handle de WhatsApp
+    ('@AlanAtoche') es el identificador canónico — es lo que muestra la propia app
+    de WhatsApp para estos contactos, aunque tengan un "nombre de perfil" (que
+    suele ser un alias/broma poco útil). Solo si no hay username se usa el nombre.
+
+    Contacto CON número: se prioriza el nombre de perfil si identifica (>= 2
+    caracteres alfanuméricos, mismo criterio que Cliente.profile_name_usable);
+    si no, el @username; si no, el nombre tal cual.
+    """
+    name = (from_name or "").strip()
+    uname = (from_username or "").strip().lstrip("@")
+    if not tiene_telefono and uname:
+        return f"@{uname}"
+    if sum(1 for c in name if c.isalnum()) >= 2:
+        return name
+    if uname:
+        return f"@{uname}"
+    return name
+
+
 class YCloudMessageProcessor:
     """Process WhatsApp events from YCloud webhook with canonical message contract."""
 
@@ -128,7 +151,10 @@ class YCloudMessageProcessor:
             # Fallback: minimal normalization (just add + if missing)
             phone_for_lookup = f'+{phone}' if phone and not phone.startswith('+') else phone
 
-        default_name = event_data.get("from_name") or phone
+        default_name = _nombre_de_canal(
+            event_data.get("from_name") or event_data.get("to_name"),
+            event_data.get("from_username") or event_data.get("to_username"),
+        ) or phone
         cliente, _created = Cliente.objects.get_or_create(
             telefono=phone_for_lookup,
             defaults={"nombre": default_name}
@@ -169,7 +195,7 @@ class YCloudMessageProcessor:
             )
         return cliente
 
-    def _create_cliente_without_phone(self, user_id, display_name):
+    def _create_cliente_without_phone(self, user_id, display_name, username=None):
         """Identity fallback of last resort — absolute last resort: a real phone
         number for this contact isn't available ANYWHERE via the API, not just
         omitted from this one webhook (confirmed: same contact, missing on BOTH
@@ -194,7 +220,7 @@ class YCloudMessageProcessor:
             return None
 
         placeholder_phone = f"YCID:{user_id}"[:30]
-        display_name = display_name or "Contacto sin número"
+        display_name = _nombre_de_canal(display_name, username, tiene_telefono=False) or "Contacto sin número"
 
         cliente, created = Cliente.objects.get_or_create(
             telefono=placeholder_phone,
@@ -278,7 +304,9 @@ class YCloudMessageProcessor:
                         cliente = (
                             (Cliente.objects.filter(ycloud_user_id=to_user_id).first() if to_user_id else None)
                             or self._create_cliente_without_phone(
-                                to_user_id or event_data.get("wamid"), event_data.get("to_name")
+                                to_user_id or event_data.get("wamid"),
+                                event_data.get("to_name"),
+                                username=event_data.get("to_username"),
                             )
                         )
                         if not cliente:
@@ -306,6 +334,7 @@ class YCloudMessageProcessor:
                             or self._create_cliente_without_phone(
                                 event_data.get("from_user_id") or event_data.get("wamid"),
                                 event_data.get("from_name"),
+                                username=event_data.get("from_username"),
                             )
                         )
                         if not cliente:
@@ -325,19 +354,32 @@ class YCloudMessageProcessor:
             cliente.ultima_interaccion = timezone.now()
             update_fields = ["ultima_interaccion"]
 
-            from_name = (event_data.get("from_name") or "").strip()
-            if from_name:
-                if cliente.channel_profile_name != from_name:
-                    cliente.channel_profile_name = from_name
+            # Nombre de canal = nombre de perfil si identifica, si no el @username
+            # de WhatsApp, si no lo que haya (ver _nombre_de_canal). Para contactos
+            # sin número el @username manda sobre el nombre de perfil.
+            canal_name = _nombre_de_canal(
+                event_data.get("from_name") or event_data.get("to_name"),
+                event_data.get("from_username") or event_data.get("to_username"),
+                tiene_telefono=not (cliente.telefono or "").startswith("YCID:"),
+            )
+            if canal_name:
+                if cliente.channel_profile_name != canal_name:
+                    if (cliente.telefono or "").startswith("YCID:"):
+                        logger.info(
+                            "[YCloud] Contacto sin número %s: nombre '%s' -> '%s' (username=%s)",
+                            cliente.id, cliente.channel_profile_name, canal_name,
+                            event_data.get("from_username") or event_data.get("to_username"),
+                        )
+                    cliente.channel_profile_name = canal_name
                     update_fields.append("channel_profile_name")
-                # Keep nombre/display_name in sync with the WhatsApp profile name as it
+                # Keep nombre/display_name in sync with the WhatsApp name/handle as it
                 # changes over time (e.g. "firme" -> "Rodrigo") — but never overwrite a
                 # name a human has set manually in the CRM (name_source == MANUAL).
-                if cliente.name_source != Cliente.SOURCE_MANUAL and cliente.nombre != from_name:
-                    cliente.nombre = from_name
+                if cliente.name_source != Cliente.SOURCE_MANUAL and cliente.nombre != canal_name:
+                    cliente.nombre = canal_name
                     update_fields.append("nombre")
-                    if cliente.display_name != from_name:
-                        cliente.display_name = from_name
+                    if cliente.display_name != canal_name:
+                        cliente.display_name = canal_name
                         update_fields.append("display_name")
                     if cliente.name_source != Cliente.SOURCE_CHANNEL:
                         cliente.name_source = Cliente.SOURCE_CHANNEL

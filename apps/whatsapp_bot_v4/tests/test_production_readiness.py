@@ -1,4 +1,5 @@
 """Pre-production integration tests."""
+from unittest.mock import patch
 
 from django.test import TestCase
 from django.utils import timezone
@@ -27,6 +28,12 @@ class ProductionReadinessTests(TestCase):
         )
         V4ChannelRoute.objects.create(channel=self.channel, enabled=True)
         self.repo = DjangoBotStateRepository()
+        # ALLOWED_NUMBERS es un whitelist real de producción (solo el número de
+        # pruebas del usuario) — no un artefacto de test. Se desactiva aquí para
+        # poder ejercitar el flujo con números sintéticos, sin tocar el gate.
+        patcher = patch("apps.whatsapp_bot_v4.services.meta_webhook_service.ALLOWED_NUMBERS", [])
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def build_service(self, outputs):
         agent = ScriptedAgent(outputs)

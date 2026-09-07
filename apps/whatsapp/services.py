@@ -32,6 +32,20 @@ MAX_IMAGE_BYTES = 10 * 1024 * 1024
 MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
 
 
+def _ycloud_destinatario(cliente):
+    """Valor a pasar a las funciones send_*_via_ycloud como destinatario.
+
+    Contacto normal -> su teléfono E.164.
+    Contacto sin número (Cliente.telefono con prefijo 'YCID:') -> el mismo prefijo
+    pero con el user id COMPLETO de ycloud_user_id (telefono está limitado a 30
+    chars y podría venir truncado). send_via_ycloud lo traduce a 'recipient'/BSUID.
+    """
+    tel = (cliente.telefono or "").strip()
+    if tel.startswith("YCID:") and cliente.ycloud_user_id:
+        return f"YCID:{cliente.ycloud_user_id}"
+    return tel
+
+
 def send_whatsapp_message(
     to, body, channel=None, *, author_type=None, conversation_id=None
 ):
@@ -395,7 +409,7 @@ def send_crm_message(conversacion, actor, contenido, reply_to=None):
         }
     else:
         from apps.whatsapp_bot_v4.services.ycloud_webhook_service import send_via_ycloud
-        result = send_via_ycloud(conversacion.cliente.telefono, contenido, reply_to_wamid=reply_to_wamid)
+        result = send_via_ycloud(_ycloud_destinatario(conversacion.cliente), contenido, reply_to_wamid=reply_to_wamid)
 
     if result.get("success"):
         estado = "enviado"
@@ -410,6 +424,12 @@ def send_crm_message(conversacion, actor, contenido, reply_to=None):
         if "balance" in combined or "insufficient" in combined:
             error_codigo = "insufficient_balance"
             error_detalle = "Saldo insuficiente en la cuenta de YCloud para enviar mensajes."
+        elif "e.164" in combined or "param_invalid" in combined:
+            error_codigo = "contacto_sin_numero"
+            error_detalle = (
+                "Este contacto no tiene un número de teléfono válido registrado, "
+                "así que no se le puede responder por aquí."
+            )
         meta_message_id = ""
 
     mensaje = MensajeWhatsApp.objects.create(
@@ -466,7 +486,7 @@ def send_crm_reaction(conversacion, target_message, emoji):
         }
 
     from apps.whatsapp_bot_v4.services.ycloud_webhook_service import send_reaction_via_ycloud
-    result = send_reaction_via_ycloud(conversacion.cliente.telefono, target_message.wamid, emoji)
+    result = send_reaction_via_ycloud(_ycloud_destinatario(conversacion.cliente), target_message.wamid, emoji)
 
     if not result.get("success"):
         error_detalle = result.get("message") or "No se pudo enviar la reacción."
@@ -574,7 +594,7 @@ def _send_crm_media_bytes(conversacion, actor, tipo, content, filename, mime_typ
     from apps.whatsapp_bot_v4.services.ycloud_webhook_service import upload_media_to_ycloud, send_media_via_ycloud
 
     sender_phone = settings.YCLOUD_SENDER_PHONE if settings.YCLOUD_SENDER_PHONE.startswith('+') else f'+{settings.YCLOUD_SENDER_PHONE}'
-    recipient_phone = conversacion.cliente.telefono
+    recipient_phone = _ycloud_destinatario(conversacion.cliente)
 
     upload_result = upload_media_to_ycloud(sender_phone, content, filename, mime_type)
 

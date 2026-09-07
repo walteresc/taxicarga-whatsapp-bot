@@ -9,7 +9,7 @@ def get_pizarra():
     from apps.campo.views import pizarra
     return pizarra
 
-from .views_whatsapp import whatsapp_conversacion_accion, whatsapp_conversaciones, conversation_messages, pause_bot, resume_bot, mark_conversation_read, api_active_conversations, api_unread_counts, api_events_stream, api_send_message, api_send_media_message, api_react_message, api_forward_message, api_hide_message, api_archive_conversation, api_unarchive_conversation, api_set_transportista, api_set_transportista_bot_pausado
+from .views_whatsapp import whatsapp_conversacion_accion, whatsapp_conversaciones, conversation_messages, pause_bot, resume_bot, mark_conversation_read, api_active_conversations, api_unread_counts, api_events_stream, api_send_message, api_send_media_message, api_react_message, api_forward_message, api_hide_message, api_archive_conversation, api_unarchive_conversation, api_set_transportista, api_set_transportista_bot_pausado, api_set_contact_name, api_crear_conversacion_manual, api_set_oficina, api_set_campo, api_respuestas_rapidas
 from .views_sse import sse_events_stream, debug_redis
 from .views_auth_api import api_login, api_logout, api_user, api_check_auth
 from apps.whatsapp.views_realtime import sse_conversation_updates
@@ -59,10 +59,12 @@ urlpatterns = [
     path("campo/", include("apps.campo.urls")),
     path("flota/", include("apps.flota.urls")),
     path("exportar/leads.csv", export_leads_csv, name="dashboard-leads-export"),
-    path("reportes/", placeholder_reportes, name="dashboard-reportes"),
+    # Reportes: migrados al panel Vue (/analitica/*). API en /api/v2/reports/.
     path("whatsapp/", placeholder_whatsapp, name="dashboard-whatsapp"),
     path("whatsapp/conversaciones/", whatsapp_conversaciones, name="dashboard-whatsapp-conversaciones"),
     path("whatsapp/conversaciones/api/active/", api_active_conversations, name="api-active-conversations"),
+    path("whatsapp/conversaciones/nueva/", api_crear_conversacion_manual, name="api-crear-conversacion-manual"),
+    path("whatsapp/respuestas-rapidas/", api_respuestas_rapidas, name="api-respuestas-rapidas"),
     path("whatsapp/conversaciones/api/unread-counts/", api_unread_counts, name="api-unread-counts"),
     path("whatsapp/api/events/stream/", sse_events_stream, name="sse-events-stream"),
     path("whatsapp/api/debug-redis/", debug_redis, name="debug-redis"),
@@ -80,6 +82,9 @@ urlpatterns = [
     path("whatsapp/conversaciones/<int:conversation_id>/archivar/", api_archive_conversation, name="api-archive-conversation"),
     path("whatsapp/conversaciones/<int:conversation_id>/desarchivar/", api_unarchive_conversation, name="api-unarchive-conversation"),
     path("whatsapp/conversaciones/<int:conversation_id>/transportista/", api_set_transportista, name="api-set-transportista"),
+    path("whatsapp/conversaciones/<int:conversation_id>/oficina/", api_set_oficina, name="api-set-oficina"),
+    path("whatsapp/conversaciones/<int:conversation_id>/campo/", api_set_campo, name="api-set-campo"),
+    path("whatsapp/conversaciones/<int:conversation_id>/contacto/nombre/", api_set_contact_name, name="api-set-contact-name"),
     path("whatsapp/conversaciones/<int:conversation_id>/transportista-bot-pausado/", api_set_transportista_bot_pausado, name="api-set-transportista-bot-pausado"),
     path("whatsapp/conversaciones/<int:conversation_id>/sse/", sse_conversation_updates, name="sse-conversation-updates"),
     path("whatsapp/sse/", sse_global_updates, name="sse-global-updates"),

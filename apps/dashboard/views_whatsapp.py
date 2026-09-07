@@ -1,6 +1,7 @@
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
+from django.db import transaction
 from django.db.models import Q, Prefetch
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -10,6 +11,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST, require_http_methods
 import json
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +113,10 @@ def _filtrar_conversaciones(queryset, request):
     channel = request.GET.get("channel", "")
     advisor = request.GET.get("advisor", "")
     archived = request.GET.get("archived", "false").lower() == "true"
-    transportistas = request.GET.get("transportistas", "false").lower() == "true"
+    # transportistas: "true" solo transportistas · "false" (default) los excluye ·
+    # "all" no filtra (el frontend particiona client-side — lo usa la bandeja Vue
+    # y los diálogos "Gestionar", que necesitan ver TODOS los contactos).
+    transportistas_param = request.GET.get("transportistas", "false").lower()
 
     # Remove 24h filter - show ALL conversations
     # Frontend polls every 5 seconds anyway
@@ -128,23 +133,31 @@ def _filtrar_conversaciones(queryset, request):
 
     # Archivadas: estado del CRM, no de WhatsApp. La bandeja principal las excluye
     # por defecto; ?archived=true trae solo las archivadas (pestaña "Archivados").
-    queryset = queryset.filter(archivada=archived)
+    # Si el asesor busca algo desde la bandeja principal (sin pedir la pestaña
+    # Archivados), la búsqueda SÍ alcanza a las archivadas — "ocultar" un contacto
+    # no debe volverlo imposible de encontrar, solo sacarlo de la vista por defecto.
+    if archived or not search:
+        queryset = queryset.filter(archivada=archived)
 
-    # Transportistas: contacto (Cliente.es_transportista), no conversación. La
-    # bandeja principal los excluye por defecto (?transportistas=false, default);
-    # ?transportistas=true trae solo esas (pestaña "Transportistas"). El
-    # interruptor "Incluir transportistas" es puramente client-side (mismo
-    # patrón que Archivados: el frontend carga ambos lotes y particiona ahí).
-    queryset = queryset.filter(cliente__es_transportista=transportistas)
+    # Transportistas: contacto (Cliente.es_transportista), no conversación.
+    if transportistas_param != "all":
+        queryset = queryset.filter(cliente__es_transportista=transportistas_param == "true")
 
     if search:
-        queryset = queryset.filter(
+        search_digits = re.sub(r"\D", "", search)
+        filtro = (
             Q(cliente__nombre__icontains=search)
+            | Q(cliente__display_name__icontains=search)
+            | Q(cliente__channel_profile_name__icontains=search)
             | Q(cliente__telefono__icontains=search)
             | Q(cliente__phone_e164__icontains=search)
             | Q(resumen__icontains=search)
             | Q(motivo_derivacion__icontains=search)
         )
+        # Buscar por número aunque el asesor escriba espacios/guiones/+
+        if len(search_digits) >= 3:
+            filtro |= Q(cliente__phone_e164__icontains=search_digits) | Q(cliente__telefono__icontains=search_digits)
+        queryset = queryset.filter(filtro)
     state_filters = {
         "new": Q(estado_recopilacion=ConversacionWhatsApp.RECOPILACION_NUEVA),
         "bot": Q(estado_atencion=ConversacionWhatsApp.ATENCION_BOT),
@@ -272,6 +285,19 @@ def api_active_conversations(request):
         end_idx = start_idx + page_size
         conversaciones_page = conversaciones[start_idx:end_idx]
 
+        # "Campo" (conductores/ayudantes) se auto-detecta por teléfono contra
+        # Personal de campo ya registrado — no es un campo guardado en Cliente,
+        # así que se calcula una vez por página, no por fila.
+        from apps.campo.models import Ayudante, Conductor
+        from apps.clientes.phone_identity import normalize_phone_identity
+
+        campo_phones = {
+            normalize_phone_identity(t) for t in
+            list(Conductor.objects.filter(activo=True).values_list("telefono", flat=True))
+            + list(Ayudante.objects.filter(activo=True).values_list("telefono", flat=True))
+            if t
+        }
+
         data = []
         for conv in conversaciones_page:
             # Obtener último mensaje eficientemente — excluye ocultos en el CRM: si el
@@ -288,20 +314,28 @@ def api_active_conversations(request):
             # Obtener información del lead para resumen
             lead = conv.lead
 
-            # Get display name (prefer display_name, then nombre, then phone)
-            cliente_name = 'Sin nombre'
+            # Nombre de contacto para la bandeja. El CRM de atención necesita
+            # identificar al cliente: si el nombre de perfil de WhatsApp no sirve
+            # (un emoji, un ".", "R4", vacío) se manda 'name' vacío y el front
+            # muestra solo el teléfono. 'profile_name' lleva siempre el nombre
+            # crudo (para la búsqueda y para poder mostrarlo si el asesor quiere).
             if conv.cliente:
-                cliente_name = (
-                    conv.cliente.display_name or
-                    conv.cliente.nombre or
-                    conv.cliente.telefono or
-                    'Sin nombre'
-                )
+                profile_name = conv.cliente.profile_name
+                name_usable = conv.cliente.profile_name_usable
+                name_is_manual = conv.cliente.name_is_manual
+                phone = conv.cliente.contact_phone
+                phone_is_id = not conv.cliente.has_real_phone
+            else:
+                profile_name, name_usable, name_is_manual, phone, phone_is_id = '', False, False, '', False
 
             data.append({
                 'id': conv.id,
-                'name': cliente_name,
-                'phone': conv.cliente.telefono if conv.cliente else 'N/A',
+                'name': profile_name if name_usable else '',
+                'profile_name': profile_name,
+                'name_usable': name_usable,
+                'name_is_manual': name_is_manual,
+                'phone': phone,
+                'phone_is_id': phone_is_id,
                 'avatar': None,  # Se genera con iniciales en el front
                 'channel': {
                     'id': conv.channel.id if conv.channel else None,
@@ -312,6 +346,11 @@ def api_active_conversations(request):
                 'estado_cotizacion': conv.estado_cotizacion,
                 'archived': conv.archivada,
                 'is_transportista': conv.cliente.es_transportista if conv.cliente else False,
+                'is_oficina': conv.cliente.es_oficina if conv.cliente else False,
+                'is_campo': bool(conv.cliente and (
+                    conv.cliente.es_campo
+                    or normalize_phone_identity(conv.cliente.telefono) in campo_phones
+                )),
                 'preview': preview,
                 'unread_count': unread_count,
                 'last_activity': conv.ultima_actividad.isoformat() if conv.ultima_actividad else conv.actualizada_en.isoformat(),
@@ -320,12 +359,7 @@ def api_active_conversations(request):
                     'id': conv.responsable.id if conv.responsable else None,
                     'nombre': conv.responsable.get_full_name() or conv.responsable.username if conv.responsable else None,
                 },
-                'service_data': {
-                    'origin': lead.distrito_origen if lead and lead.distrito_origen else None,
-                    'destination': lead.distrito_destino if lead and lead.distrito_destino else None,
-                    'status': _get_cotizacion_status(conv.estado_cotizacion),
-                    'price': lead.precio_recomendado if lead and lead.precio_recomendado else None,
-                } if lead else None,
+                'service_data': _service_data(conv),
             })
 
         # Response with pagination metadata and snapshot cursor for SSE coherence
@@ -448,6 +482,104 @@ def _get_channel_icon(channel_name):
         "TikTok": "tiktok-line",
     }
     return channel_map.get(channel_name, "global-line")
+
+
+def _service_data(conv):
+    """Datos de servicio para el panel derecho de la bandeja.
+
+    Se lee del Lead si existe; si aún no hay Lead, de conversacion.datos_extraidos
+    (lo que la extracción NLU haya detectado). Así el panel muestra origen/destino
+    en cuanto se detectan, sin esperar a que se cree el Lead."""
+    lead = conv.lead
+    ex = conv.datos_extraidos or {}
+    if not lead and not ex:
+        return None
+
+    def _texto(attr, ex_key=None):
+        if lead:
+            v = getattr(lead, attr, None)
+            if v not in (None, ""):
+                return v
+        return ex.get(ex_key or attr) or None
+
+    def _num(attr):
+        if lead and getattr(lead, attr, None) is not None:
+            return getattr(lead, attr)
+        v = ex.get(attr)
+        return v if isinstance(v, int) else None
+
+    def _bool(attr):
+        if lead and getattr(lead, attr, None) is not None:
+            return getattr(lead, attr)
+        v = ex.get(attr)
+        return v if isinstance(v, bool) else None
+
+    fecha = None
+    if lead and lead.fecha_servicio:
+        fecha = lead.fecha_servicio.isoformat()
+    else:
+        fecha = ex.get("fecha_servicio") or ex.get("fecha_texto") or None
+
+    def _numish(attr):
+        if lead and getattr(lead, attr, None) is not None:
+            return getattr(lead, attr)
+        v = ex.get(attr)
+        return v if isinstance(v, (int, float)) else None
+
+    # Servicios extra contratados (personal, embalaje, desarmado/armado).
+    extra_services = []
+    if lead:
+        if lead.incluye_personal_carga:
+            n = lead.cantidad_operarios
+            extra_services.append(f"Personal de carga ({n})" if n else "Personal de carga")
+        if lead.modalidad_servicio:
+            extra_services.append(f"Embalaje: {lead.modalidad_servicio}")
+        if lead.requiere_desarmado:
+            extra_services.append("Desarmado de muebles")
+        if lead.requiere_armado:
+            extra_services.append("Armado de muebles")
+
+    # Precio sugerido (motor) + precio cotizado (lo ya enviado al cliente).
+    # Misma función que usa el modal de Cotizar → los dos muestran igual número.
+    from apps.cotizador.pricing import panel_prices
+    suggested, quoted = panel_prices(lead)
+
+    cli = conv.cliente
+    return {
+        "customer_name": (cli.nombre or cli.profile_name or "") if cli else "",
+        "customer_phone": (cli.contact_phone or "") if cli else "",
+        "contact_name": (lead.persona_contacto or "") if lead else "",
+        "contact_phone": (lead.telefono_contacto or "") if lead else "",
+        "type": _texto("tipo_servicio"),
+        "origin": _texto("distrito_origen"),
+        "destination": _texto("distrito_destino"),
+        "address_origin": _texto("direccion_origen"),
+        "address_destination": _texto("direccion_destino"),
+        "floor_origin": _num("piso_origen"),
+        "floor_destination": _num("piso_destino"),
+        "elevator_origin": _bool("ascensor_origen"),
+        "elevator_destination": _bool("ascensor_destino"),
+        "items": _texto("lista_objetos"),
+        "heavy_items": _texto("objetos_pesados"),
+        "weight_kg": _numish("peso_carga_kg"),
+        "volume_m3": _numish("volumen_carga_m3"),
+        "extra_services": extra_services,
+        "date": fecha,
+        "schedule": _texto("horario_servicio"),
+        "status": _get_cotizacion_status(conv.estado_cotizacion),
+        "estado_cotizacion": conv.estado_cotizacion,
+        "information_pct": conv.porcentaje_informacion or 0,
+        "is_interprovincial": bool(lead.es_interprovincial) if lead else bool(ex.get("es_interprovincial")),
+        "price": quoted or suggested or None,
+        "suggested_price": suggested,
+        "quoted_price": quoted,
+        # Precio negociado que la IA detectó en el chat (referencia, editable).
+        "chat_price": ex.get("precio_chat"),
+        "chat_price_accepted": bool(ex.get("precio_chat_aceptado")),
+        "chat_price_includes": ex.get("precio_chat_incluye"),
+        "chat_price_note": ex.get("precio_chat_condiciones"),
+        "has_lead": bool(lead),
+    }
 
 
 def _get_cotizacion_status(estado_cotizacion):
@@ -648,6 +780,29 @@ def resume_bot(request, conversation_id):
     ownership.save()
     logger.info(f"Bot reactivated for conversation {conversation_id}")
     return JsonResponse({'status': 'active'})
+
+
+@login_required
+@whatsapp_required
+@require_http_methods(["POST"])
+def api_crear_conversacion_manual(request):
+    """El asesor escribe un número que nunca contactó y arranca la conversación
+    desde cero — no viene de un webhook. Ver crear_conversacion_manual()."""
+    from apps.whatsapp.domain import TransicionConversacionInvalida, crear_conversacion_manual
+
+    try:
+        body = json.loads(request.body or b"{}")
+    except json.JSONDecodeError:
+        body = {}
+    telefono = body.get("telefono") or request.POST.get("telefono", "")
+    nombre = body.get("nombre") or request.POST.get("nombre", "")
+
+    try:
+        conversacion = crear_conversacion_manual(telefono, request.user, nombre=nombre)
+    except TransicionConversacionInvalida as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+
+    return JsonResponse({"status": "ok", "conversation_id": conversacion.id})
 
 
 @login_required
@@ -897,6 +1052,194 @@ def api_set_transportista(request, conversation_id):
     publish_transportista_state_change(conversation)
 
     return JsonResponse({"success": True, "es_transportista": conversation.cliente.es_transportista})
+
+
+@login_required
+@whatsapp_required
+@require_http_methods(["POST"])
+def api_set_oficina(request, conversation_id):
+    """Marcar/desmarcar a mano que este contacto es personal de oficina (para
+    la partición 'Oficina' de la bandeja) — siempre manual, a diferencia de
+    'Campo' que se auto-detecta por teléfono contra Conductor/Ayudante.
+
+    Contract:
+      POST body (JSON): {"es_oficina": bool}
+      200 -> {"success": true, "es_oficina": bool}
+    """
+    conversation = get_object_or_404(
+        ConversacionWhatsApp.objects.select_related("cliente"), pk=conversation_id
+    )
+    if not conversation.cliente:
+        return JsonResponse({"success": False, "error": "Conversación sin cliente."}, status=409)
+
+    try:
+        payload = json.loads(request.body or "{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"success": False, "error": "JSON inválido."}, status=400)
+
+    conversation.cliente.es_oficina = bool(payload.get("es_oficina"))
+    conversation.cliente.save(update_fields=["es_oficina"])
+
+    return JsonResponse({"success": True, "es_oficina": conversation.cliente.es_oficina})
+
+
+@login_required
+@whatsapp_required
+@require_http_methods(["POST"])
+def api_set_campo(request, conversation_id):
+    """Marcar/desmarcar a mano que este contacto es personal de campo, además
+    de la detección automática por teléfono (Conductor/Ayudante activo) que
+    sigue corriendo igual — esto es un refuerzo manual para el caso de
+    alguien que todavía no está registrado con ese teléfono exacto.
+
+    Contract:
+      POST body (JSON): {"es_campo": bool}
+      200 -> {"success": true, "es_campo": bool}
+    """
+    conversation = get_object_or_404(
+        ConversacionWhatsApp.objects.select_related("cliente"), pk=conversation_id
+    )
+    if not conversation.cliente:
+        return JsonResponse({"success": False, "error": "Conversación sin cliente."}, status=409)
+
+    try:
+        payload = json.loads(request.body or "{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"success": False, "error": "JSON inválido."}, status=400)
+
+    conversation.cliente.es_campo = bool(payload.get("es_campo"))
+    conversation.cliente.save(update_fields=["es_campo"])
+
+    return JsonResponse({"success": True, "es_campo": conversation.cliente.es_campo})
+
+
+@login_required
+@whatsapp_required
+@require_http_methods(["POST"])
+def api_set_contact_name(request, conversation_id):
+    """Editar a mano el nombre del contacto en el CRM, como en la agenda del
+    teléfono. El nombre manual tiene prioridad sobre el de perfil de WhatsApp y
+    NO se sobrescribe al llegar mensajes nuevos (services_ycloud.py ya respeta
+    name_source != 'manual' antes de pisar el nombre).
+
+    Contract:
+      POST body (JSON): {"name": str}   — vacío o solo espacios => vuelve al
+                                          nombre de perfil de WhatsApp
+      200 -> {"success": true, "name": str, "profile_name": str,
+              "name_usable": bool, "name_source": str}
+      409 -> conversación sin cliente
+    """
+    conversation = get_object_or_404(
+        ConversacionWhatsApp.objects.select_related("cliente"), pk=conversation_id
+    )
+    cliente = conversation.cliente
+    if not cliente:
+        return JsonResponse({"success": False, "error": "Conversación sin cliente."}, status=409)
+
+    try:
+        payload = json.loads(request.body or "{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"success": False, "error": "JSON inválido."}, status=400)
+
+    nuevo_nombre = (payload.get("name") or "").strip()[:160]
+
+    if nuevo_nombre:
+        # Conserva el nombre anterior (de WhatsApp) como alias, para poder
+        # seguir encontrando el contacto buscando por él.
+        anterior = (cliente.channel_profile_name or cliente.display_name or "").strip()
+        if anterior and anterior != nuevo_nombre and anterior not in (cliente.aliases or []):
+            cliente.aliases = (cliente.aliases or []) + [anterior]
+        cliente.display_name = nuevo_nombre
+        cliente.name_source = cliente.SOURCE_MANUAL
+    else:
+        # Revertir al nombre de perfil de WhatsApp
+        cliente.display_name = (cliente.channel_profile_name or "").strip()
+        cliente.name_source = cliente.SOURCE_CHANNEL if cliente.channel_profile_name else cliente.SOURCE_FALLBACK
+
+    cliente.save(update_fields=["display_name", "name_source", "aliases"])
+
+    from apps.whatsapp.signals import publish_contact_name_change
+    publish_contact_name_change(conversation)
+
+    return JsonResponse({
+        "success": True,
+        "name": cliente.profile_name if cliente.profile_name_usable else "",
+        "profile_name": cliente.profile_name,
+        "name_usable": cliente.profile_name_usable,
+        "name_source": cliente.name_source,
+    })
+
+
+_RESPUESTAS_RAPIDAS_DEFAULT = {
+    "respuesta": [
+        "Entendido, en breve me comunico",
+        "Gracias por tu consulta",
+        "Te envío la cotización al WhatsApp",
+        "Necesito confirmar algunos datos",
+        "La cotización está lista",
+        "¿En qué te puedo ayudar?",
+    ],
+    "cotizacion": [
+        "El costo de su servicio es de S/ {precio}. Incluye transporte, carga y descarga.",
+        "Su cotización: S/ {precio} (transporte + carga + descarga). Válida por 7 días.",
+        "El precio del servicio es S/ {precio}, todo incluido. ¿Confirmamos la reserva?",
+    ],
+    "recotizacion": [
+        "Le ajusto el precio: ahora queda en S/ {precio}, todo incluido (transporte, carga y descarga).",
+        "Revisé su caso y le puedo dejar el servicio en S/ {precio}. ¿Lo confirmamos?",
+        "Nuevo precio: S/ {precio}. Incluye transporte, carga y descarga.",
+    ],
+}
+
+
+@login_required
+@whatsapp_required
+@require_http_methods(["GET", "POST"])
+@csrf_exempt
+def api_respuestas_rapidas(request):
+    """Mensajes predefinidos — propios de cada asesor.
+
+    ?tipo=respuesta (default) -> rayo del composer.
+    ?tipo=cotizacion          -> diálogo "Cotizar" (se le inserta el precio en {precio}).
+
+    GET  -> {"items": ["texto", ...]}  (si nunca configuró ese tipo, siembra los default)
+    POST {"items": [...], "tipo": "..."} -> reemplaza toda la lista de ese tipo (máx 40, 500 c/u)
+    """
+    from apps.whatsapp.models import RespuestaRapida
+
+    if request.method == "GET":
+        tipo = request.GET.get("tipo", "respuesta")
+        if tipo not in _RESPUESTAS_RAPIDAS_DEFAULT:
+            tipo = "respuesta"
+        qs = list(
+            RespuestaRapida.objects.filter(usuario=request.user, tipo=tipo)
+            .values_list("texto", flat=True)
+        )
+        if not qs:
+            defaults = _RESPUESTAS_RAPIDAS_DEFAULT[tipo]
+            RespuestaRapida.objects.bulk_create([
+                RespuestaRapida(usuario=request.user, tipo=tipo, texto=t, orden=i)
+                for i, t in enumerate(defaults)
+            ])
+            qs = list(defaults)
+        return JsonResponse({"items": qs})
+
+    try:
+        payload = json.loads(request.body or "{}")
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "JSON inválido."}, status=400)
+
+    tipo = payload.get("tipo", "respuesta")
+    if tipo not in _RESPUESTAS_RAPIDAS_DEFAULT:
+        tipo = "respuesta"
+    items = [str(t).strip()[:500] for t in (payload.get("items") or []) if str(t).strip()][:40]
+    with transaction.atomic():
+        RespuestaRapida.objects.filter(usuario=request.user, tipo=tipo).delete()
+        RespuestaRapida.objects.bulk_create([
+            RespuestaRapida(usuario=request.user, tipo=tipo, texto=t, orden=i)
+            for i, t in enumerate(items)
+        ])
+    return JsonResponse({"items": items})
 
 
 @login_required

@@ -1,5 +1,6 @@
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.utils import timezone
 
 from apps.cotizador.models import RevisionCotizacion
 from apps.ia.conversation_policy import booking_missing_fields, effective_quote_values
@@ -44,13 +45,16 @@ def crear_servicio_desde_lead(lead, usuario=None, revision=None, *, require_acce
         whatsapp_channel=lead.whatsapp_channel,
         asesor=usuario or lead.vendedor_asignado,
         estado=SERVICIO_PENDIENTE,
+        fecha_confirmacion=timezone.localdate(),
+        es_interprovincial=lead.es_interprovincial,
         tipo_servicio=lead.tipo_servicio,
         distrito_origen=lead.distrito_origen,
         distrito_destino=lead.distrito_destino,
         direccion_origen=lead.direccion_origen,
         direccion_destino=lead.direccion_destino,
-        piso_origen=lead.piso_origen,
-        piso_destino=lead.piso_destino,
+        # Lead.piso_* es entero-o-null; Servicio.piso_* es CharField NOT NULL.
+        piso_origen="" if lead.piso_origen is None else str(lead.piso_origen),
+        piso_destino="" if lead.piso_destino is None else str(lead.piso_destino),
         acceso_origen=lead.acceso_origen,
         acceso_destino=lead.acceso_destino,
         lista_objetos=lead.lista_objetos,
@@ -87,3 +91,104 @@ def crear_servicio_desde_lead(lead, usuario=None, revision=None, *, require_acce
         for order, location in enumerate(route_for_lead(lead))
     ])
     return servicio, True
+
+
+# ---------------------------------------------------------------------------
+# Operaciones sobre una reserva (extraídas de servicios/views.py para que las
+# compartan el panel viejo y la API v2). Sin acoplamiento a request/template.
+# ---------------------------------------------------------------------------
+from decimal import Decimal, InvalidOperation  # noqa: E402
+
+from .models import (  # noqa: E402
+    PagoReserva, SERVICIO_CANCELADO, SERVICIO_FINALIZADO,
+)
+
+CONCEPTOS_PAGO_REAL = ("adelanto", "parcial", "final")
+
+
+def registrar_pago(servicio, *, concepto, metodo_pago, monto, usuario=None,
+                   fecha_pago=None, observaciones=""):
+    try:
+        monto = Decimal(str(monto))
+    except (InvalidOperation, TypeError):
+        raise ValidationError({"amount": "Monto inválido."})
+    if monto <= 0:
+        raise ValidationError({"amount": "El monto debe ser mayor que cero."})
+    if concepto not in dict(PagoReserva._meta.get_field("concepto").choices):
+        raise ValidationError({"concept": "Concepto no reconocido."})
+    if metodo_pago not in dict(PagoReserva._meta.get_field("metodo_pago").choices):
+        raise ValidationError({"method": "Método de pago no reconocido."})
+    return PagoReserva.objects.create(
+        servicio=servicio, concepto=concepto, metodo_pago=metodo_pago,
+        monto=monto, fecha_pago=fecha_pago or timezone.now(),
+        observaciones=observaciones or "", usuario_registro=usuario,
+    )
+
+
+def finalizar_servicio(servicio, actor, *, monto_final=None, metodo_final="yape",
+                       observaciones=""):
+    """Marca la reserva como finalizada. Si se pasa `monto_final`, registra el
+    pago final (no puede exceder el saldo; si es menor exige motivo)."""
+    with transaction.atomic():
+        if monto_final not in (None, ""):
+            try:
+                monto = Decimal(str(monto_final))
+            except (InvalidOperation, TypeError):
+                raise ValidationError({"finalAmount": "Monto inválido."})
+            saldo = servicio.saldo_pendiente
+            if monto > saldo:
+                raise ValidationError({"finalAmount": "El monto no puede exceder el saldo pendiente."})
+            if monto < saldo and not (observaciones or "").strip():
+                raise ValidationError({"note": "Indica el motivo cuando el pago es menor al saldo."})
+            registrar_pago(
+                servicio, concepto="final", metodo_pago=metodo_final, monto=monto,
+                usuario=actor, observaciones=observaciones,
+            )
+        servicio.estado = SERVICIO_FINALIZADO
+        servicio.atendido_por = actor
+        servicio.usuario_actualizacion = actor
+        servicio.fecha_actualizacion_estado = timezone.now()
+        servicio.save(update_fields=[
+            "estado", "atendido_por", "usuario_actualizacion", "fecha_actualizacion_estado",
+        ])
+        return servicio
+
+
+def cancelar_servicio(servicio, actor, motivo):
+    motivo = (motivo or "").strip()
+    if not motivo:
+        raise ValidationError({"reason": "Indica el motivo de la cancelación."})
+    servicio.estado = SERVICIO_CANCELADO
+    servicio.motivo_cancelacion = motivo
+    servicio.atendido_por = actor
+    servicio.usuario_actualizacion = actor
+    servicio.fecha_actualizacion_estado = timezone.now()
+    servicio.save(update_fields=[
+        "estado", "motivo_cancelacion", "atendido_por",
+        "usuario_actualizacion", "fecha_actualizacion_estado",
+    ])
+    return servicio
+
+
+def bookings_queryset(params):
+    from apps.api.filters import apply_ordering, apply_search
+
+    qs = Servicio.objects.select_related("cliente", "asesor", "lead_origen").prefetch_related(
+        "lead_origen__sesiones_whatsapp")
+    qs = apply_search(qs, params.get("search"),
+                      ("codigo", "cliente__nombre", "distrito_origen", "distrito_destino"))
+    state = (params.get("state") or "").strip()
+    _state_es = {
+        "pending": "pendiente", "scheduled": "programado", "assigned": "asignado",
+        "on_route": "en_ruta", "completed": "finalizado", "cancelled": "cancelado",
+    }
+    if state in _state_es:
+        qs = qs.filter(estado=_state_es[state])
+    elif params.get("active") == "1":
+        qs = qs.exclude(estado__in=(SERVICIO_FINALIZADO, SERVICIO_CANCELADO))
+    qs = apply_ordering(
+        qs, params.get("ordering"),
+        {"code": "codigo", "serviceDate": "fecha_servicio", "createdAt": "fecha_creacion"},
+        ("-fecha_creacion", "-id"),
+    )
+    return qs

@@ -100,7 +100,10 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
               cliente_id: conv.cliente_id,
               channel_id: conv.channel_id,
               name: conv.name,
+              profile_name: conv.profile_name,
+              name_usable: conv.name_usable,
               phone: conv.phone,
+              phone_is_id: conv.phone_is_id,
               preview: conv.preview,
               ultima_actividad: conv.ultima_actividad || conv.last_activity,
               unread_count: conv.unread_count || 0,
@@ -133,7 +136,10 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
                 cliente_id: conv.cliente_id,
                 channel_id: conv.channel_id,
                 name: conv.name,
+                profile_name: conv.profile_name,
+                name_usable: conv.name_usable,
                 phone: conv.phone,
+                phone_is_id: conv.phone_is_id,
                 preview: conv.preview,
                 ultima_actividad: conv.ultima_actividad || conv.last_activity,
                 unread_count: conv.unread_count || 0,
@@ -170,7 +176,10 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
                 cliente_id: conv.cliente_id,
                 channel_id: conv.channel_id,
                 name: conv.name,
+                profile_name: conv.profile_name,
+                name_usable: conv.name_usable,
                 phone: conv.phone,
+                phone_is_id: conv.phone_is_id,
                 preview: conv.preview,
                 ultima_actividad: conv.ultima_actividad || conv.last_activity,
                 unread_count: conv.unread_count || 0,
@@ -413,15 +422,22 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
       console.warn('[handleMessageCreated] messagesStore or upsertMessage not available')
     }
 
-    // Update conversation in bandeja (increment unread counter) — only for genuinely
-    // NEW messages. message.updated re-delivers an existing message (media became
-    // available after the fact) and must not count as a second unread arrival.
+    // Update conversation in bandeja (increment unread counter) — solo para
+    // mensajes ENTRANTES nuevos del cliente. Nunca por:
+    //  - message.updated (re-entrega de un mensaje ya visto: media que llegó tarde)
+    //  - mensajes salientes (los que manda el asesor/bot desde el CRM)
+    //  - la conversación que el asesor tiene abierta ahora mismo (la está leyendo)
+    const isInbound = direction === 'entrante' || sender_type === 'customer'
+    const isActiveConv = conversationsStore?.activeConversationId === conversation_id
+
     if (event.type !== 'message.updated' && conversationsStore && conversationsStore.upsertConversation) {
       const existingConv = conversationsStore.getConversation(conversation_id)
       const currentUnread = existingConv?.unread || 0
-      const newUnread = currentUnread + 1  // Increment by 1 for new message
+      let newUnread = currentUnread
+      if (isActiveConv) newUnread = 0
+      else if (isInbound) newUnread = currentUnread + 1
 
-      console.log('[handleMessageCreated] Updating conversation: unread ' + currentUnread + ' -> ' + newUnread)
+      console.log('[handleMessageCreated] Updating conversation: unread ' + currentUnread + ' -> ' + newUnread + ' (inbound=' + isInbound + ', active=' + isActiveConv + ')')
 
       // name/phone only included when present (backend now sends them) — never pass
       // them as explicit `undefined`, which would clobber a name already loaded via
@@ -432,8 +448,11 @@ export function useWhatsAppRealtime(conversationsStore, messagesStore) {
         ultima_actividad: new Date().toISOString(),
         unread_count: newUnread,
       }
-      if (convMeta?.name) convPatch.name = convMeta.name
+      if (convMeta?.name !== undefined && convMeta?.name !== null) convPatch.name = convMeta.name
       if (convMeta?.phone) convPatch.phone = convMeta.phone
+      if (convMeta?.profile_name !== undefined && convMeta?.profile_name !== null) convPatch.profile_name = convMeta.profile_name
+      if (convMeta?.name_usable !== undefined) convPatch.name_usable = convMeta.name_usable
+      if (convMeta?.phone_is_id !== undefined) convPatch.phone_is_id = convMeta.phone_is_id
 
       conversationsStore.upsertConversation(convPatch)
     }
