@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 
+import VerticalNavGroup from '@layouts/components/VerticalNavGroup.vue'
 import VerticalNavLink from '@layouts/components/VerticalNavLink.vue'
 import VerticalNavSectionTitle from '@/@layouts/components/VerticalNavSectionTitle.vue'
 import { useAuthStore } from '@/stores/authStore'
@@ -14,80 +15,117 @@ const route = useRoute()
 onMounted(() => pipeline.start())
 onUnmounted(() => pipeline.stop())
 
-const COMMERCIAL_ROLES = ['Administrador', 'Supervisor', 'Asesor de Ventas']
+const OPS = ['Administrador', 'Supervisor', 'Asesor de Ventas']
+const ADMIN_SUP = ['Administrador', 'Supervisor']
+const ADMIN = ['Administrador']
 
-// Menú declarativo. `ready:false` = la sección aún vive solo en el panel Django.
-// `badge` = clave de pipelineStore.counts; el número solo se muestra si es > 0.
+// Menú declarativo.
+//  - `to`        : ruta (VerticalNavLink)
+//  - `children`  : grupo colapsable (VerticalNavGroup)
+//  - `roles`     : si falta, visible para cualquier autenticado
+//  - `soon: true`: ítem planificado, sin construir → se muestra gris, va a "Próximamente"
+//  - `badge`     : clave de pipeline.counts.unseen (el número solo si > 0)
 const MENU = [
   { heading: 'Atención' },
-  { title: 'Bandeja de entrada', icon: 'ri-inbox-line', to: '/atencion/bandeja-entrada', ready: true },
-  { title: 'Leads', icon: 'ri-user-add-line', to: '/atencion/leads', ready: false },
+  { title: 'Bandeja de entrada', icon: 'ri-inbox-line', to: '/atencion/bandeja-entrada' },
 
-  { heading: 'Comercial' },
-  { title: 'Oportunidades', icon: 'ri-user-star-line', to: '/comercial/potenciales', ready: true, roles: COMMERCIAL_ROLES, badge: 'potentials' },
-  { title: 'Para revisión', icon: 'ri-eye-line', to: '/comercial/para-revision', ready: true, roles: COMMERCIAL_ROLES, badge: 'review' },
-  { title: 'Por cotizar', icon: 'ri-price-tag-3-line', to: '/comercial/por-cotizar', ready: true, roles: COMMERCIAL_ROLES, badge: 'quoting' },
-  { title: 'Cotizaciones', icon: 'ri-file-text-line', to: '/comercial/cotizaciones', ready: true, roles: COMMERCIAL_ROLES, badge: 'quotes' },
-  { title: 'Reservas', icon: 'ri-calendar-check-line', to: '/comercial/reservas', ready: true, roles: COMMERCIAL_ROLES, badge: 'bookings' },
-  { title: 'Perdidos', icon: 'ri-close-circle-line', to: '/comercial/perdidos', ready: true, roles: COMMERCIAL_ROLES },
-  { title: 'Clientes', icon: 'ri-user-line', to: '/comercial/clientes', ready: true, roles: COMMERCIAL_ROLES },
+  { heading: 'Comercial', roles: OPS },
+  { title: 'Oportunidades', icon: 'ri-user-star-line', to: '/comercial/potenciales', roles: OPS, badge: 'potentials' },
+  { title: 'Para revisión', icon: 'ri-eye-line', to: '/comercial/para-revision', roles: OPS, badge: 'review' },
+  { title: 'Por cotizar', icon: 'ri-price-tag-3-line', to: '/comercial/por-cotizar', roles: OPS, badge: 'quoting' },
+  { title: 'Cotizaciones', icon: 'ri-file-text-line', to: '/comercial/cotizaciones', roles: OPS, badge: 'quotes' },
+  { title: 'Perdidos', icon: 'ri-close-circle-line', to: '/comercial/perdidos', roles: OPS },
+  { title: 'Clientes', icon: 'ri-group-line', to: '/comercial/clientes', roles: OPS },
 
-  { heading: 'Operaciones' },
-  { title: 'Pizarra', icon: 'ri-layout-grid-line', to: '/operaciones/pizarra', ready: false },
-  { title: 'Programación', icon: 'ri-calendar-line', to: '/operaciones/programacion', ready: false },
+  { heading: 'Operaciones', roles: OPS },
+  { title: 'Reservas', icon: 'ri-calendar-check-line', to: '/operaciones/reservas', roles: OPS, badge: 'bookings' },
+  { title: 'Programación', icon: 'ri-calendar-todo-line', to: '/operaciones/programacion', roles: OPS, soon: true },
+  { title: 'Pizarra', icon: 'ri-layout-grid-line', to: '/operaciones/pizarra', roles: OPS, soon: true },
 
-  { heading: 'Campo · Nuestro equipo' },
-  { title: 'Conductores', icon: 'ri-steering-line', to: '/personal-campo/conductores', ready: true, roles: COMMERCIAL_ROLES },
-  { title: 'Ayudantes', icon: 'ri-user-2-line', to: '/personal-campo/ayudantes', ready: true, roles: COMMERCIAL_ROLES },
-  { title: 'Equipos', icon: 'ri-group-line', to: '/personal-campo/equipos', ready: false },
+  { heading: 'Mi equipo', roles: OPS },
+  {
+    title: 'Planilla', icon: 'ri-team-line', roles: OPS, children: [
+      { title: 'Personal', icon: 'ri-id-card-line', to: '/mi-equipo/personal' },
+      { title: 'Horas extras', icon: 'ri-time-line', to: '/mi-equipo/horas-extras', soon: true },
+      { title: 'Compensaciones', icon: 'ri-hand-coin-line', to: '/mi-equipo/compensaciones', soon: true },
+      { title: 'Pagos', icon: 'ri-bank-card-line', to: '/mi-equipo/pagos', soon: true },
+    ],
+  },
+  {
+    title: 'Mi flota', icon: 'ri-truck-line', roles: OPS, children: [
+      { title: 'Vehículos', icon: 'ri-truck-line', to: '/flota/vehiculos' },
+      { title: 'Mantenimientos', icon: 'ri-tools-line', to: '/flota/mantenimientos' },
+    ],
+  },
 
-  { heading: 'Campo · Transportistas' },
-  { title: 'Afiliados', icon: 'ri-team-line', to: '/campo/transportistas/afiliados', ready: true, roles: COMMERCIAL_ROLES },
-  { title: 'Vehículos', icon: 'ri-truck-line', to: '/campo/transportistas/vehiculos', ready: true, roles: COMMERCIAL_ROLES },
-  { title: 'Catálogo de vehículos', icon: 'ri-list-settings-line', to: '/configuracion/catalogo-vehiculos', ready: true, roles: ['Administrador', 'Supervisor'] },
+  { heading: 'Transportistas', roles: OPS },
+  { title: 'Afiliados', icon: 'ri-team-line', to: '/transportistas/afiliados', roles: OPS },
+  { title: 'Vehículos', icon: 'ri-truck-line', to: '/transportistas/vehiculos', roles: OPS },
 
-  { heading: 'Flota' },
-  { title: 'Vehículos', icon: 'ri-truck-line', to: '/flota/vehiculos', ready: true, roles: COMMERCIAL_ROLES },
-  { title: 'Mantenimientos', icon: 'ri-tools-line', to: '/flota/mantenimientos', ready: true, roles: COMMERCIAL_ROLES },
+  { heading: 'Analítica', roles: ADMIN_SUP },
+  { title: 'Ventas vivas', icon: 'ri-line-chart-line', to: '/analitica/ventas', roles: ADMIN_SUP },
+  { title: 'Histórico', icon: 'ri-bar-chart-box-line', to: '/analitica/benchmark', roles: ADMIN_SUP },
 
-  { heading: 'Analítica' },
-  { title: 'Ventas vivas', icon: 'ri-line-chart-line', to: '/analitica/ventas', ready: true, roles: ['Administrador', 'Supervisor'] },
-  { title: 'Benchmark histórico', icon: 'ri-bar-chart-box-line', to: '/analitica/benchmark', ready: true, roles: ['Administrador', 'Supervisor'] },
-
-  { heading: 'Configuración' },
-  { title: 'Catálogo de vehículos', icon: 'ri-list-settings-line', to: '/configuracion/catalogo-vehiculos', ready: true, roles: ['Administrador', 'Supervisor'] },
-
-  { heading: 'Sistema' },
-  { title: 'Configuración del bot', icon: 'ri-robot-line', to: '/sistema/bot', ready: true, roles: COMMERCIAL_ROLES },
-  { title: 'Administración', icon: 'ri-settings-line', to: '/sistema/config', ready: false },
+  { heading: 'Configuración', roles: ADMIN_SUP },
+  { title: 'BOT', icon: 'ri-robot-line', to: '/configuracion/bot', roles: ADMIN_SUP },
+  {
+    title: 'Operaciones', icon: 'ri-settings-3-line', roles: ADMIN_SUP, children: [
+      { title: 'Catálogo de vehículos', icon: 'ri-list-settings-line', to: '/configuracion/catalogo-vehiculos', roles: ADMIN_SUP },
+      { title: 'Precios y comisiones', icon: 'ri-percent-line', to: '/configuracion/precios-comisiones', roles: ADMIN_SUP, soon: true },
+    ],
+  },
+  { title: 'Usuarios y permisos', icon: 'ri-shield-user-line', to: '/configuracion/usuarios', roles: ADMIN, soon: true },
 ]
 
 const visibleFor = item => {
-  if (!item.ready) return false
   if (!item.roles?.length) return true
   return auth.hasAnyRole(...item.roles)
+}
+
+const navItem = link => {
+  // Ítem "próximamente": sin ruta (inerte) + gris.
+  const item = link.soon
+    ? { title: `${link.title}`, icon: link.icon, disable: true }
+    : { title: link.title, icon: link.icon, to: link.to }
+  const n = link.badge ? (pipeline.counts.unseen?.[link.badge] ?? 0) : 0
+  if (n > 0) {
+    item.badgeContent = n
+    item.badgeClass = link.badge === 'review' ? 'bg-error' : 'bg-primary'
+  }
+
+  return item
 }
 
 const items = computed(() => {
   const out = []
   MENU.forEach(entry => {
     if (entry.heading) {
-      out.push({ ...entry, _links: [] })
-    } else if (visibleFor(entry)) {
-      const last = out[out.length - 1]
-      if (last?.heading) last._links.push(entry)
+      if (visibleFor(entry)) out.push({ type: 'heading', heading: entry.heading, _links: [] })
+
+      return
     }
+    const last = out[out.length - 1]
+    if (!last?._links) return
+
+    if (entry.children) {
+      const kids = entry.children.filter(visibleFor)
+      if (kids.length) {
+        last._links.push({
+          type: 'group',
+          key: entry.title,
+          nav: { title: entry.title, icon: entry.icon },
+          children: kids,
+          defaultOpen: kids.some(k => route.path.startsWith(k.to)),
+        })
+      }
+
+      return
+    }
+    if (visibleFor(entry)) last._links.push({ type: 'link', key: entry.to, link: entry })
   })
+
   return out.filter(entry => entry._links.length)
 })
-
-const navItem = link => {
-  const item = { title: link.title, icon: link.icon, to: link.to }
-  const n = link.badge ? (pipeline.counts.unseen?.[link.badge] ?? 0) : 0
-  if (n > 0) item.badge = { content: n, color: link.badge === 'review' ? 'error' : 'primary' }
-
-  return item
-}
 
 // Clic en el link de la página en la que ya estás: Vue Router no re-navega
 // (misma ruta), así que sin esto la bandeja queda atascada en el filtro/
@@ -103,11 +141,22 @@ const handleNavClick = link => {
 <template>
   <template v-for="section in items" :key="section.heading">
     <VerticalNavSectionTitle :item="{ heading: section.heading }" />
-    <VerticalNavLink
-      v-for="link in section._links"
-      :key="link.to"
-      :item="navItem(link)"
-      @click="handleNavClick(link)"
-    />
+    <template v-for="row in section._links" :key="row.key">
+      <VerticalNavGroup
+        v-if="row.type === 'group'"
+        :item="{ ...row.nav, defaultOpen: row.defaultOpen }"
+      >
+        <VerticalNavLink
+          v-for="child in row.children"
+          :key="child.to"
+          :item="navItem(child)"
+        />
+      </VerticalNavGroup>
+      <VerticalNavLink
+        v-else
+        :item="navItem(row.link)"
+        @click="handleNavClick(row.link)"
+      />
+    </template>
   </template>
 </template>

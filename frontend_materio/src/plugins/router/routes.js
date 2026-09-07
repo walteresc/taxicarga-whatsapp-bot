@@ -31,7 +31,12 @@ export const routes = [
         component: () => import('@/pages/atencion/leads/index.vue'),
       },
 
-      // PERSONAL DE CAMPO
+      // MI EQUIPO
+      {
+        path: 'mi-equipo/personal',
+        component: () => import('@/pages/mi-equipo/personal/index.vue'),
+        meta: { roles: PERSONAL_ROLES },
+      },
       {
         path: 'personal-campo/conductores',
         component: () => import('@/pages/personal-campo/conductores.vue'),
@@ -42,16 +47,20 @@ export const routes = [
         component: () => import('@/pages/personal-campo/ayudantes.vue'),
         meta: { roles: PERSONAL_ROLES },
       },
+
+      // TRANSPORTISTAS
       {
-        path: 'campo/transportistas/afiliados',
+        path: 'transportistas/afiliados',
         component: () => import('@/pages/campo/transportistas/afiliados/index.vue'),
         meta: { roles: PERSONAL_ROLES },
       },
       {
-        path: 'campo/transportistas/vehiculos',
+        path: 'transportistas/vehiculos',
         component: () => import('@/pages/campo/transportistas/vehiculos/index.vue'),
         meta: { roles: PERSONAL_ROLES },
       },
+      { path: 'campo/transportistas/afiliados', redirect: '/transportistas/afiliados' },
+      { path: 'campo/transportistas/vehiculos', redirect: '/transportistas/vehiculos' },
 
       // CONFIGURACIÓN
       {
@@ -59,6 +68,12 @@ export const routes = [
         component: () => import('@/pages/configuracion/catalogo-vehiculos/index.vue'),
         meta: { roles: ['Administrador', 'Supervisor'] },
       },
+      {
+        path: 'configuracion/bot',
+        component: () => import('@/pages/sistema/bot.vue'),
+        meta: { roles: ['Administrador', 'Supervisor'] },
+      },
+      { path: 'sistema/bot', redirect: '/configuracion/bot' },
 
       // COMERCIAL
       {
@@ -81,11 +96,7 @@ export const routes = [
         component: () => import('@/pages/comercial/cotizaciones/index.vue'),
         meta: { roles: OPERATIONS_ROLES },
       },
-      {
-        path: 'comercial/reservas',
-        component: () => import('@/pages/comercial/reservas/index.vue'),
-        meta: { roles: OPERATIONS_ROLES },
-      },
+      { path: 'comercial/reservas', redirect: '/operaciones/reservas' },
       {
         path: 'comercial/perdidos',
         component: () => import('@/pages/comercial/perdidos/index.vue'),
@@ -97,7 +108,14 @@ export const routes = [
         meta: { roles: OPERATIONS_ROLES },
       },
 
-      // FLOTA
+      // OPERACIONES
+      {
+        path: 'operaciones/reservas',
+        component: () => import('@/pages/comercial/reservas/index.vue'),
+        meta: { roles: OPERATIONS_ROLES },
+      },
+
+      // FLOTA (Mi flota)
       {
         path: 'flota/vehiculos',
         component: () => import('@/pages/flota/vehiculos.vue'),
@@ -119,13 +137,6 @@ export const routes = [
         path: 'analitica/benchmark',
         component: () => import('@/pages/analitica/benchmark.vue'),
         meta: { roles: ANALYTICS_ROLES },
-      },
-
-      // SISTEMA
-      {
-        path: 'sistema/bot',
-        component: () => import('@/pages/sistema/bot.vue'),
-        meta: { roles: OPERATIONS_ROLES },
       },
 
       {

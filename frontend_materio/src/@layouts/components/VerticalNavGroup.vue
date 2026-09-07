@@ -1,4 +1,6 @@
 <script setup>
+import { ref, watch } from 'vue'
+
 const props = defineProps({
   item: {
     type: Object,
@@ -6,7 +8,9 @@ const props = defineProps({
   },
 })
 
-const isOpen = ref(false)
+// `item.defaultOpen` lo pone NavItems cuando la ruta activa cae dentro del grupo.
+const isOpen = ref(!!props.item.defaultOpen)
+watch(() => props.item.defaultOpen, v => { if (v) isOpen.value = true })
 </script>
 
 <template>

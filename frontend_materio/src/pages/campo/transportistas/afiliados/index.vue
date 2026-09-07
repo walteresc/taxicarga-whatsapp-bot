@@ -41,7 +41,7 @@ const fields = [
         text="Los vehículos de cada transportista se cargan desde Transportistas → Vehículos."
       >
         <template #append>
-          <VBtn size="small" variant="text" @click="router.push('/campo/transportistas/vehiculos')">
+          <VBtn size="small" variant="text" @click="router.push('/transportistas/vehiculos')">
             Ir a Vehículos
           </VBtn>
         </template>
