@@ -70,8 +70,19 @@ const counts = computed(() => rows.value.reduce((acc, r) => { acc[r.type] = (acc
           Directorio de nuestro equipo: conductores, ayudantes y asesores.
         </p>
       </div>
-      <VBtn prepend-icon="ri-add-line" @click="router.push('/personal-campo/conductores')">
-        Nuevo conductor
+      <VBtn prepend-icon="ri-add-line" append-icon="ri-arrow-down-s-line">
+        Nuevo personal
+        <VMenu activator="parent">
+          <VList>
+            <VListItem prepend-icon="ri-steering-line" title="Conductor" @click="router.push('/personal-campo/conductores?new=1')" />
+            <VListItem prepend-icon="ri-user-2-line" title="Ayudante" @click="router.push('/personal-campo/ayudantes?new=1')" />
+            <VListItem
+              prepend-icon="ri-briefcase-line" title="Asesor"
+              subtitle="Desde Usuarios y permisos"
+              :disabled="true"
+            />
+          </VList>
+        </VMenu>
       </VBtn>
     </div>
 

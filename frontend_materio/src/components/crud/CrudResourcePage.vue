@@ -10,7 +10,8 @@
  * Todas las claves (columns[].key, fields[].key, payload) son inglés canónico:
  * lo que devuelve y espera la API. Este componente no traduce nada.
  */
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 
 import { ApiError } from '@/services/apiClient'
 import { useAuthStore } from '@/stores/authStore'
@@ -119,6 +120,10 @@ const openCreate = () => {
   fieldErrors.value = {}
   dialog.value = true
 }
+
+// Deep-link `?new=1` → abre el alta al entrar (viene de un menú "Nuevo …").
+const route = useRoute()
+onMounted(() => { if (route.query.new && canWrite.value) openCreate() })
 const openEdit = row => {
   editing.value = row
   Object.assign(form, blankForm())
