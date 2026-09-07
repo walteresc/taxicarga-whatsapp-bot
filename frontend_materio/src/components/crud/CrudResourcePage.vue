@@ -213,15 +213,17 @@ const fieldError = key => fieldErrors.value[key]?.[0]
           density="compact"
           style="max-width: 340px;"
         />
-        <VBtnToggle
-          v-if="segments.length"
-          v-model="segment"
-          density="comfortable" color="primary" variant="outlined" divided
-        >
-          <VBtn v-for="s in segments" :key="s.value" :value="s.value" size="small">
+        <div v-if="segments.length" class="d-flex flex-wrap ga-2">
+          <VChip
+            v-for="s in segments"
+            :key="s.value"
+            :color="segment === s.value ? 'primary' : undefined"
+            :variant="segment === s.value ? 'flat' : 'tonal'"
+            @click="segment = s.value"
+          >
             {{ s.label }}
-          </VBtn>
-        </VBtnToggle>
+          </VChip>
+        </div>
         <VSelect
           v-if="toggleField"
           v-model="status"

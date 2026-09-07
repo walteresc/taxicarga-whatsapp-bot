@@ -82,9 +82,17 @@ const counts = computed(() => rows.value.reduce((acc, r) => { acc[r.type] = (acc
           label="Buscar por nombre, documento o teléfono"
           density="compact" hide-details clearable style="max-width: 340px;"
         />
-        <VBtnToggle v-model="type" density="comfortable" color="primary" variant="outlined" divided>
-          <VBtn v-for="f in FILTERS" :key="f.value" :value="f.value" size="small">{{ f.label }}</VBtn>
-        </VBtnToggle>
+        <div class="d-flex flex-wrap ga-2">
+          <VChip
+            v-for="f in FILTERS"
+            :key="f.value"
+            :color="type === f.value ? 'primary' : undefined"
+            :variant="type === f.value ? 'flat' : 'tonal'"
+            @click="type = f.value"
+          >
+            {{ f.label }}
+          </VChip>
+        </div>
         <VSwitch v-model="onlyActive" label="Solo activos" color="primary" hide-details density="compact" />
       </VCardText>
 

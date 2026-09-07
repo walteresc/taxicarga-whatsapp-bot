@@ -147,13 +147,24 @@ const submitCancel = async () => {
     <VCard>
       <VCardText class="d-flex flex-wrap align-center ga-4">
         <VTextField v-model="search" prepend-inner-icon="ri-search-line" label="Buscar código, cliente o ruta" density="compact" hide-details clearable style="max-width: 340px;" @update:model-value="onSearch" />
-        <VBtnToggle
-          v-model="stateFilter" density="comfortable" color="primary" variant="outlined" divided
-          @update:model-value="load"
-        >
-          <VBtn value="" size="small">Todas</VBtn>
-          <VBtn v-for="(s, value) in STATE" :key="value" :value="value" size="small">{{ s.label }}</VBtn>
-        </VBtnToggle>
+        <div class="d-flex flex-wrap ga-2">
+          <VChip
+            :color="stateFilter === '' ? 'primary' : undefined"
+            :variant="stateFilter === '' ? 'flat' : 'tonal'"
+            @click="stateFilter = ''; load()"
+          >
+            Todas
+          </VChip>
+          <VChip
+            v-for="(s, value) in STATE"
+            :key="value"
+            :color="stateFilter === value ? 'primary' : undefined"
+            :variant="stateFilter === value ? 'flat' : 'tonal'"
+            @click="stateFilter = value; load()"
+          >
+            {{ s.label }}
+          </VChip>
+        </div>
       </VCardText>
       <VAlert v-if="error" type="error" variant="tonal" class="ma-4">{{ error }}</VAlert>
 
