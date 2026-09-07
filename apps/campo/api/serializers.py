@@ -6,7 +6,7 @@ ida y vuelta en tests_api.py verifica que serializer y mapa no se desincronizan.
 """
 from rest_framework import serializers
 
-from apps.campo.models import Ayudante, Conductor
+from apps.campo.models import Ayudante, Conductor, ProgramacionServicio
 
 from .mappers import LICENSE_CATEGORY
 
@@ -66,3 +66,34 @@ class AssistantSerializer(serializers.ModelSerializer):
         if qs.exists():
             raise serializers.ValidationError("Ya existe un ayudante con este documento.")
         return value
+
+
+class ScheduleSerializer(serializers.ModelSerializer):
+    date = serializers.DateField(source="fecha", read_only=True)
+    startTime = serializers.TimeField(source="hora_inicio", format="%H:%M", read_only=True)
+    endTime = serializers.TimeField(source="hora_fin", format="%H:%M", read_only=True)
+    amount = serializers.DecimalField(source="monto", max_digits=10, decimal_places=2, read_only=True)
+    state = serializers.CharField(source="estado_operativo", read_only=True)
+    serviceCode = serializers.CharField(source="servicio.codigo", read_only=True)
+    serviceId = serializers.IntegerField(source="servicio_id", read_only=True)
+    customerName = serializers.SerializerMethodField()
+    plate = serializers.CharField(source="vehiculo.placa", read_only=True)
+    driverName = serializers.CharField(source="conductor.nombre", read_only=True)
+    helpers = serializers.SerializerMethodField()
+    teamId = serializers.IntegerField(source="equipo_dia_id", read_only=True)
+    notes = serializers.CharField(source="observaciones", read_only=True)
+
+    class Meta:
+        model = ProgramacionServicio
+        fields = (
+            "id", "date", "startTime", "endTime", "amount", "state",
+            "serviceId", "serviceCode", "customerName", "plate", "driverName",
+            "helpers", "teamId", "notes",
+        )
+
+    def get_customerName(self, obj):
+        cli = getattr(obj.servicio, "cliente", None)
+        return (cli.nombre or cli.profile_name) if cli else "Sin cliente"
+
+    def get_helpers(self, obj):
+        return [a.nombre for a in obj.ayudantes.all()]

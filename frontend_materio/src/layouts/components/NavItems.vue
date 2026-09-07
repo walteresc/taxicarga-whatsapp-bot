@@ -39,7 +39,7 @@ const MENU = [
 
   { heading: 'Operaciones', roles: OPS },
   { title: 'Reservas', icon: 'ri-calendar-check-line', to: '/operaciones/reservas', roles: OPS, badge: 'bookings' },
-  { title: 'Programación', icon: 'ri-calendar-todo-line', to: '/operaciones/programacion', roles: OPS, soon: true },
+  { title: 'Programación', icon: 'ri-calendar-todo-line', to: '/operaciones/programacion', roles: OPS },
   { title: 'Pizarra', icon: 'ri-layout-grid-line', to: '/operaciones/pizarra', roles: OPS, soon: true },
 
   { heading: 'Mi equipo', roles: OPS },

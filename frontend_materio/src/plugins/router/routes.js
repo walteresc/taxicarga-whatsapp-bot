@@ -114,6 +114,11 @@ export const routes = [
         component: () => import('@/pages/comercial/reservas/index.vue'),
         meta: { roles: OPERATIONS_ROLES },
       },
+      {
+        path: 'operaciones/programacion',
+        component: () => import('@/pages/operaciones/programacion/index.vue'),
+        meta: { roles: OPERATIONS_ROLES },
+      },
 
       // FLOTA (Mi flota)
       {

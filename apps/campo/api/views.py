@@ -105,3 +105,58 @@ class PersonnelDirectoryView(APIView):
         paginator = StandardPagination()
         page = paginator.paginate_queryset(rows, request, view=self)
         return paginator.get_paginated_response(page)
+
+
+class ScheduleViewSet(V2ModelViewSet):
+    """Programaciones de servicio (asignación equipo↔servicio con fecha/hora).
+    La creación/movimiento se hace en la Pizarra; acá solo lectura + cambio de
+    estado operativo.
+
+        GET  /api/v2/schedule/?date=YYYY-MM-DD&from=&to=&state=&search=
+        POST /api/v2/schedule/{id}/set-state/  { state }
+    """
+    permission_classes = [HasAnyRole(*_ROLES)]
+    http_method_names = ["get", "post", "head", "options"]
+
+    def get_serializer_class(self):
+        from .serializers import ScheduleSerializer
+        return ScheduleSerializer
+
+    def create(self, request, *args, **kwargs):
+        from rest_framework.exceptions import MethodNotAllowed
+        raise MethodNotAllowed("POST", detail="Las programaciones se crean desde la Pizarra.")
+
+    def get_queryset(self):
+        from apps.campo.models import ProgramacionServicio
+        from apps.api.filters import apply_ordering, apply_search
+
+        p = self.request.query_params
+        qs = (ProgramacionServicio.objects
+              .select_related("servicio", "servicio__cliente", "vehiculo", "conductor", "equipo_dia")
+              .prefetch_related("ayudantes"))
+        if p.get("date"):
+            qs = qs.filter(fecha=p["date"])
+        if p.get("from"):
+            qs = qs.filter(fecha__gte=p["from"])
+        if p.get("to"):
+            qs = qs.filter(fecha__lte=p["to"])
+        state = (p.get("state") or "").strip()
+        if state:
+            qs = qs.filter(estado_operativo=state)
+        qs = apply_search(qs, p.get("search"),
+                          ("servicio__codigo", "servicio__cliente__nombre", "vehiculo__placa", "conductor__nombre"))
+        return apply_ordering(qs, p.get("ordering"),
+                              {"date": "fecha", "time": "hora_inicio"}, ("fecha", "hora_inicio"))
+
+    @action(detail=True, methods=["post"], url_path="set-state")
+    def set_state(self, request, pk=None):
+        from apps.campo.models import ProgramacionServicio
+
+        obj = self.get_object()
+        state = (request.data.get("state") or "").strip()
+        valid = {s for s, _ in ProgramacionServicio.ESTADOS_OPERATIVOS}
+        if state not in valid:
+            return Response({"error": "Estado no válido."}, status=400)
+        obj.estado_operativo = state
+        obj.save(update_fields=["estado_operativo"])
+        return Response(self.get_serializer(obj).data)
