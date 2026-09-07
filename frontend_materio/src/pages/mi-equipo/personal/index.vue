@@ -1,10 +1,8 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { onMounted, reactive, ref, watch } from 'vue'
 
-import { apiClient } from '@/services/apiClient'
-
-const router = useRouter()
+import { ApiError, apiClient } from '@/services/apiClient'
+import { assistantsService, driversService, LICENSE_CATEGORIES } from '@/services/personnelService'
 
 const TYPE = {
   conductor: { label: 'Conductor', color: 'primary', icon: 'ri-steering-line' },
@@ -17,6 +15,7 @@ const FILTERS = [
   { value: 'ayudante', label: 'Ayudantes' },
   { value: 'asesor', label: 'Asesores' },
 ]
+const SVC = { conductor: driversService, ayudante: assistantsService }
 
 const rows = ref([])
 const loading = ref(true)
@@ -28,6 +27,9 @@ const page = ref(1)
 const pages = ref(1)
 const total = ref(0)
 let searchTimer
+
+const snackbar = reactive({ show: false, text: '', color: 'success' })
+const notify = (text, color = 'success') => Object.assign(snackbar, { show: true, text, color })
 
 const load = async () => {
   loading.value = true
@@ -54,11 +56,71 @@ onMounted(load)
 watch([type, onlyActive, page], load)
 watch(search, () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { page.value = 1; load() }, 350) })
 
-const editRoute = row => (row.type === 'asesor'
-  ? null
-  : `/personal-campo/${row.type === 'conductor' ? 'conductores' : 'ayudantes'}`)
+// ── Alta / edición inline ────────────────────────────────────────────────
+const dialog = ref(false)
+const formType = ref('conductor')
+const editId = ref(null)
+const saving = ref(false)
+const errs = ref({})
+const blank = () => ({
+  name: '', documentId: '', phone: '', active: true,
+  licenseNumber: '', licenseCategory: '', licenseExpiresOn: '',
+})
+const form = reactive(blank())
 
-const counts = computed(() => rows.value.reduce((acc, r) => { acc[r.type] = (acc[r.type] || 0) + 1; return acc }, {}))
+const openCreate = t => {
+  formType.value = t
+  editId.value = null
+  Object.assign(form, blank())
+  errs.value = {}
+  dialog.value = true
+}
+const openEdit = async row => {
+  if (row.type === 'asesor') return
+  formType.value = row.type
+  editId.value = row.sourceId
+  errs.value = {}
+  Object.assign(form, blank())
+  dialog.value = true
+  try {
+    const full = await SVC[row.type].get(row.sourceId)
+    Object.assign(form, {
+      name: full.name || '', documentId: full.documentId || '', phone: full.phone || '',
+      active: full.active ?? true,
+      licenseNumber: full.licenseNumber || '', licenseCategory: full.licenseCategory || '',
+      licenseExpiresOn: full.licenseExpiresOn || '',
+    })
+  } catch (e) {
+    notify(e.message || 'No se pudo cargar el registro.', 'error')
+  }
+}
+
+const submit = async () => {
+  saving.value = true
+  errs.value = {}
+  const base = { name: form.name, documentId: form.documentId, phone: form.phone, active: form.active }
+  const payload = formType.value === 'conductor'
+    ? {
+      ...base,
+      licenseNumber: form.licenseNumber,
+      licenseCategory: form.licenseCategory || '',
+      licenseExpiresOn: form.licenseExpiresOn || null,
+    }
+    : base
+  try {
+    const svc = SVC[formType.value]
+    if (editId.value) await svc.update(editId.value, payload)
+    else await svc.create(payload)
+    dialog.value = false
+    notify(editId.value ? 'Cambios guardados.' : `${TYPE[formType.value].label} creado.`)
+    await load()
+  } catch (e) {
+    if (e instanceof ApiError && Object.keys(e.fields).length) errs.value = e.fields
+    else notify(e.message || 'No se pudo guardar.', 'error')
+  } finally {
+    saving.value = false
+  }
+}
 </script>
 
 <template>
@@ -74,12 +136,11 @@ const counts = computed(() => rows.value.reduce((acc, r) => { acc[r.type] = (acc
         Nuevo personal
         <VMenu activator="parent">
           <VList>
-            <VListItem prepend-icon="ri-steering-line" title="Conductor" @click="router.push('/personal-campo/conductores?new=1')" />
-            <VListItem prepend-icon="ri-user-2-line" title="Ayudante" @click="router.push('/personal-campo/ayudantes?new=1')" />
+            <VListItem prepend-icon="ri-steering-line" title="Conductor" @click="openCreate('conductor')" />
+            <VListItem prepend-icon="ri-user-2-line" title="Ayudante" @click="openCreate('ayudante')" />
             <VListItem
               prepend-icon="ri-briefcase-line" title="Asesor"
-              subtitle="Desde Usuarios y permisos"
-              :disabled="true"
+              subtitle="Desde Usuarios y permisos" :disabled="true"
             />
           </VList>
         </VMenu>
@@ -95,8 +156,7 @@ const counts = computed(() => rows.value.reduce((acc, r) => { acc[r.type] = (acc
         />
         <div class="d-flex flex-wrap ga-2">
           <VChip
-            v-for="f in FILTERS"
-            :key="f.value"
+            v-for="f in FILTERS" :key="f.value"
             :color="type === f.value ? 'primary' : undefined"
             :variant="type === f.value ? 'flat' : 'tonal'"
             @click="type = f.value"
@@ -137,8 +197,8 @@ const counts = computed(() => rows.value.reduce((acc, r) => { acc[r.type] = (acc
             <td><VChip size="small" :color="row.active ? 'success' : 'secondary'">{{ row.active ? 'Activo' : 'Inactivo' }}</VChip></td>
             <td class="text-right text-no-wrap">
               <VBtn
-                v-if="editRoute(row)" size="small" variant="text" icon="ri-external-link-line"
-                title="Ver en su módulo" @click="router.push(editRoute(row))"
+                v-if="row.type !== 'asesor'" size="small" variant="text" icon="ri-edit-line"
+                title="Editar" @click="openEdit(row)"
               />
               <span v-else class="text-caption text-disabled">Usuarios y permisos</span>
             </td>
@@ -151,5 +211,34 @@ const counts = computed(() => rows.value.reduce((acc, r) => { acc[r.type] = (acc
         <VPagination v-model="page" :length="pages" :total-visible="5" density="comfortable" />
       </div>
     </VCard>
+
+    <!-- Alta / edición -->
+    <VDialog v-model="dialog" max-width="520" persistent>
+      <VCard>
+        <VCardTitle>
+          {{ editId ? 'Editar' : 'Nuevo' }} {{ TYPE[formType].label.toLowerCase() }}
+        </VCardTitle>
+        <VCardText>
+          <VRow>
+            <VCol cols="12"><VTextField v-model="form.name" label="Nombre completo" :error-messages="errs.name" /></VCol>
+            <VCol cols="12" sm="6"><VTextField v-model="form.documentId" label="Documento (DNI)" :error-messages="errs.documentId" /></VCol>
+            <VCol cols="12" sm="6"><VTextField v-model="form.phone" label="Teléfono" :error-messages="errs.phone" /></VCol>
+            <template v-if="formType === 'conductor'">
+              <VCol cols="12" sm="6"><VTextField v-model="form.licenseNumber" label="N° de licencia" :error-messages="errs.licenseNumber" /></VCol>
+              <VCol cols="12" sm="6"><VSelect v-model="form.licenseCategory" :items="LICENSE_CATEGORIES" label="Categoría" clearable :error-messages="errs.licenseCategory" /></VCol>
+              <VCol cols="12" sm="6"><VTextField v-model="form.licenseExpiresOn" type="date" label="Vencimiento de licencia" :error-messages="errs.licenseExpiresOn" /></VCol>
+            </template>
+            <VCol cols="12"><VSwitch v-model="form.active" label="Activo" color="primary" /></VCol>
+          </VRow>
+        </VCardText>
+        <VCardActions>
+          <VSpacer />
+          <VBtn variant="text" :disabled="saving" @click="dialog = false">Cancelar</VBtn>
+          <VBtn :loading="saving" @click="submit">Guardar</VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
+
+    <VSnackbar v-model="snackbar.show" :color="snackbar.color" timeout="3500">{{ snackbar.text }}</VSnackbar>
   </section>
 </template>
