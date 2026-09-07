@@ -31,9 +31,9 @@ const MENU = [
 
   { heading: 'Comercial', roles: OPS },
   { title: 'Oportunidades', icon: 'ri-user-star-line', to: '/comercial/potenciales', roles: OPS, badge: 'potentials' },
-  { title: 'Para revisión', icon: 'ri-eye-line', to: '/comercial/para-revision', roles: OPS, badge: 'review' },
+  { title: 'Estancados', icon: 'ri-error-warning-line', to: '/comercial/para-revision', roles: OPS, badge: 'review' },
   { title: 'Por cotizar', icon: 'ri-price-tag-3-line', to: '/comercial/por-cotizar', roles: OPS, badge: 'quoting' },
-  { title: 'Cotizaciones', icon: 'ri-file-text-line', to: '/comercial/cotizaciones', roles: OPS, badge: 'quotes' },
+  { title: 'Cotizados', icon: 'ri-file-text-line', to: '/comercial/cotizaciones', roles: OPS, badge: 'quotes' },
   { title: 'Perdidos', icon: 'ri-close-circle-line', to: '/comercial/perdidos', roles: OPS },
   { title: 'Clientes', icon: 'ri-group-line', to: '/comercial/clientes', roles: OPS },
 

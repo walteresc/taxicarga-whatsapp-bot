@@ -13,9 +13,9 @@ const pipelineStore = usePipelineStore()
 
 const STAGES = {
   potentials: { label: 'Oportunidad', color: '#607d8b' },
-  review: { label: 'Para revisión', color: '#f59e0b' },
+  review: { label: 'Estancados', color: '#f59e0b' },
   quoting: { label: 'Por cotizar', color: '#8b5cf6' },
-  quotes: { label: 'Cotización enviada', color: '#14b8a6' },
+  quotes: { label: 'Cotizados', color: '#14b8a6' },
   bookings: { label: 'Reserva', color: '#22c55e' },
   lost: { label: 'Perdido', color: '#ef4444' },
 }

@@ -249,9 +249,9 @@ ETAPAS_MANUALES = ("potentials", "review", "quoting")
 
 ETAPA_LABEL = {
     "potentials": "Oportunidad",
-    "review": "Para revisión",
+    "review": "Estancados",
     "quoting": "Por cotizar",
-    "quotes": "Cotización enviada",
+    "quotes": "Cotizados",
     "bookings": "Reserva",
     "lost": "Perdido",
 }

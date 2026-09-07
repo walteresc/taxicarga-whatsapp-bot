@@ -56,7 +56,7 @@ const confirmReactivate = async () => {
   reactivateBusy.value = true
   try {
     const res = await reactivateLead(row.leadId)
-    const dest = res.stage === 'review' ? 'Para revisión' : 'Oportunidades'
+    const dest = res.stage === 'review' ? 'Estancados' : 'Oportunidades'
     notify(`Lead reactivado (${dest}).`)
     pipeline.bump()
     reactivateTarget.value = null
@@ -145,7 +145,7 @@ const openConversation = row => {
         <VCardText>
           <p>
             <strong>{{ reactivateTarget.customerName }}</strong> volverá al pipeline
-            (Oportunidades, o Para revisión si necesita asesor). Se descartó por:
+            (Oportunidades, o Estancados si necesita asesor). Se descartó por:
             <em>{{ reactivateTarget.reason }}</em>.
           </p>
         </VCardText>

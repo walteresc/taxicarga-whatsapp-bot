@@ -137,7 +137,7 @@ const doAccept = async () => {
 <template>
   <section>
     <h1 class="text-h4 font-weight-bold mb-1">
-      Cotizaciones
+      Cotizados
     </h1>
     <p class="text-body-2 text-medium-emphasis mb-4">
       Precios enviados al cliente. Cuando acepte (por WhatsApp), márcala aceptada aquí para crear la reserva.

@@ -110,7 +110,7 @@ const openConversation = row => {
 <template>
   <section>
     <h1 class="text-h4 font-weight-bold mb-1">
-      Para revisión
+      Estancados
     </h1>
     <p class="text-body-2 text-medium-emphasis mb-4">
       Casos que el bot no pudo resolver solo. Revísalos y pásalos a cotizar, o descártalos.
