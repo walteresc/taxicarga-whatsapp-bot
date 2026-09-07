@@ -106,28 +106,40 @@ const onBarMove = e => {
 const onBarUp = async () => {
   window.removeEventListener('pointermove', onBarMove)
   window.removeEventListener('pointerup', onBarUp)
-  const { bar } = dragStart
+  const ds = dragStart
   const dx = drag.dx
   const dy = drag.dy
   dragStart = null
   drag.id = null
+  drag.dx = 0
+  drag.dy = 0
+  if (!ds) return
+  const { bar } = ds
   if (Math.abs(dx) < 6 && Math.abs(dy) < 6) { openPanel(bar); return }
 
   const deltaMin = Math.round((dx / PX_PER_MIN) / SNAP) * SNAP
-  let newStart = Math.max(0, Math.min(24 * 60 - bar.dur, bar.start + deltaMin))
+  const newStart = Math.max(0, Math.min(24 * 60 - bar.dur, bar.start + deltaMin))
   const resources = board.value.resources
   const idx = resources.findIndex(r => r.id === bar.resourceId)
   const rowDelta = Math.round(dy / ROW_H)
   const newIdx = Math.max(0, Math.min(resources.length - 1, idx + rowDelta))
   const newResourceId = resources[newIdx].id
-
   if (newStart === bar.start && newResourceId === bar.resourceId) return
+
+  // Actualización optimista: la barra se queda donde la soltaste. Si el server
+  // rechaza (choque), se revierte.
+  const a = board.value.assignments.find(x => x.id === bar.id)
+  if (!a) return
+  const prev = { start: a.start, end: a.end, resourceId: a.resourceId }
+  a.start = toHHMM(newStart)
+  a.end = toHHMM(newStart + bar.dur)
+  a.resourceId = newResourceId
+
   try {
     await pizarraMove({ assignmentId: bar.id, resourceId: newResourceId, start: toHHMM(newStart) })
-    await load()
   } catch (e) {
+    Object.assign(a, prev)
     notify(e.message || 'No se pudo mover.', 'error')
-    await load()
   }
 }
 const barLiveStyle = bar => {
