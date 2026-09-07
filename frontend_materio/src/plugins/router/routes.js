@@ -119,6 +119,11 @@ export const routes = [
         component: () => import('@/pages/operaciones/programacion/index.vue'),
         meta: { roles: OPERATIONS_ROLES },
       },
+      {
+        path: 'operaciones/pizarra',
+        component: () => import('@/pages/operaciones/pizarra/index.vue'),
+        meta: { roles: OPERATIONS_ROLES },
+      },
 
       // FLOTA (Mi flota)
       {

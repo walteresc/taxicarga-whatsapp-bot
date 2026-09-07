@@ -45,6 +45,8 @@ class AssistantViewSet(_PersonnelViewSet):
 
 
 from rest_framework.views import APIView  # noqa: E402
+from django.db import models  # noqa: E402
+from django.shortcuts import get_object_or_404  # noqa: E402
 
 from apps.api.exceptions import api_exception_handler  # noqa: E402
 
@@ -160,3 +162,229 @@ class ScheduleViewSet(V2ModelViewSet):
         obj.estado_operativo = state
         obj.save(update_fields=["estado_operativo"])
         return Response(self.get_serializer(obj).data)
+
+
+class PizarraView(APIView):
+    """Tablero visual del día: recursos (vehículos propios), servicios asignados
+    (ProgramacionServicio) y servicios de ese día todavía sin asignar.
+
+        GET /api/v2/pizarra/?date=YYYY-MM-DD
+    """
+    permission_classes = [HasAnyRole(*_ROLES)]
+
+    def get_exception_handler(self):
+        return api_exception_handler
+
+    def get(self, request):
+        from datetime import date as _date
+
+        from apps.campo.models import ProgramacionServicio, Vehiculo
+        from apps.servicios.models import Servicio
+        from apps.servicios.utils import parse_horario
+
+        raw = (request.query_params.get("date") or "").strip()
+        try:
+            day = _date.fromisoformat(raw) if raw else _date.today()
+        except ValueError:
+            day = _date.today()
+
+        progs = list(
+            ProgramacionServicio.objects
+            .filter(fecha=day).exclude(estado_operativo="cancelado")
+            .select_related("servicio", "servicio__cliente", "vehiculo", "conductor")
+            .prefetch_related("ayudantes")
+        )
+
+        # Recursos = vehículos propios activos + los que tengan una programación ese día.
+        veh_ids = {p.vehiculo_id for p in progs if p.vehiculo_id}
+        vehiculos = list(
+            Vehiculo.objects.filter(models.Q(activo=True) | models.Q(id__in=veh_ids))
+            .order_by("placa")
+        )
+        # conductor "típico" del vehículo ese día (el de su última programación)
+        driver_by_veh = {}
+        for p in sorted(progs, key=lambda x: x.hora_inicio):
+            if p.vehiculo_id and p.conductor_id:
+                driver_by_veh[p.vehiculo_id] = (p.conductor_id, p.conductor.nombre)
+
+        resources = [
+            {
+                "id": f"v{v.id}", "kind": "propio", "vehicleId": v.id,
+                "label": f"{v.placa}", "sublabel": f"{v.marca} {v.modelo}".strip(),
+                "driverId": driver_by_veh.get(v.id, (None, None))[0],
+                "driverName": driver_by_veh.get(v.id, (None, None))[1],
+            }
+            for v in vehiculos
+        ]
+
+        def _hhmm(t):
+            return t.strftime("%H:%M") if t else None
+
+        assignments = []
+        for p in progs:
+            s = p.servicio
+            assignments.append({
+                "id": p.id,
+                "resourceId": f"v{p.vehiculo_id}" if p.vehiculo_id else None,
+                "serviceId": s.id if s else None,
+                "serviceCode": s.codigo if s else "—",
+                "customer": (s.cliente.nombre or s.cliente.profile_name) if s and s.cliente else "Sin cliente",
+                "route": f"{s.distrito_origen or '?'} → {s.distrito_destino or '?'}" if s else "",
+                "start": _hhmm(p.hora_inicio),
+                "end": _hhmm(p.hora_fin),
+                "state": p.estado_operativo,
+                "price": float(p.monto) if p.monto is not None else None,
+                "mode": s.modalidad_ejecucion if s else "propio",
+                "driverName": p.conductor.nombre if p.conductor_id else None,
+                "helpers": [a.nombre for a in p.ayudantes.all()],
+            })
+
+        asignados_ids = {p.servicio_id for p in progs}
+        sin_asignar = (
+            Servicio.objects
+            .filter(fecha_servicio=day)
+            .exclude(id__in=asignados_ids)
+            .exclude(estado__in=("finalizado", "cancelado"))
+            .select_related("cliente")
+        )
+        unassigned = []
+        for s in sin_asignar:
+            publicado = s.publicaciones_tercerizacion.filter(estado="abierta").exists()
+            unassigned.append({
+                "serviceId": s.id,
+                "serviceCode": s.codigo,
+                "customer": (s.cliente.nombre or s.cliente.profile_name) if s.cliente else "Sin cliente",
+                "route": f"{s.distrito_origen or '?'} → {s.distrito_destino or '?'}",
+                "start": _hhmm(parse_horario(s.horario_servicio)),
+                "scheduleText": s.horario_servicio or "",
+                "mode": s.modalidad_ejecucion,
+                "published": publicado,
+                "price": float(s.precio) if s.precio is not None else None,
+            })
+
+        return Response({
+            "date": day.isoformat(),
+            "resources": resources,
+            "assignments": assignments,
+            "unassigned": unassigned,
+        })
+
+
+def _pizarra_resource(resource_id):
+    """resourceId 'v<id>' → Vehiculo. (transportistas: Fase 2b)"""
+    from apps.campo.models import Vehiculo
+    if not resource_id or not resource_id.startswith("v"):
+        return None
+    try:
+        return Vehiculo.objects.get(pk=int(resource_id[1:]))
+    except (Vehiculo.DoesNotExist, ValueError):
+        return None
+
+
+def _pizarra_conflicto(vehiculo, fecha, hora_ini, hora_fin, exclude_id=None):
+    from apps.campo.models import ProgramacionServicio
+    qs = ProgramacionServicio.objects.filter(
+        vehiculo=vehiculo, fecha=fecha,
+    ).exclude(estado_operativo="cancelado")
+    if exclude_id:
+        qs = qs.exclude(pk=exclude_id)
+    qs = qs.filter(
+        models.Q(hora_fin__isnull=True) | models.Q(hora_fin__gt=hora_ini),
+    )
+    if hora_fin:
+        qs = qs.filter(hora_inicio__lt=hora_fin)
+    return qs.select_related("servicio").first()
+
+
+class PizarraMutationView(APIView):
+    """Acciones de la Pizarra sin recargar:
+      POST /api/v2/pizarra/assign     {serviceId, resourceId, start}
+      POST /api/v2/pizarra/move       {assignmentId, resourceId, start}
+      POST /api/v2/pizarra/unassign   {assignmentId}
+      POST /api/v2/pizarra/edit       {assignmentId, driverId?, helperIds?, start?, end?, state?}
+    """
+    permission_classes = [HasAnyRole("Administrador", "Supervisor", "Asesor de Ventas")]
+
+    def get_exception_handler(self):
+        return api_exception_handler
+
+    def post(self, request, action):
+        from datetime import datetime, timedelta
+
+        from apps.campo.models import Ayudante, Conductor, ProgramacionServicio
+        from apps.servicios.models import Servicio
+        from apps.servicios.utils import parse_horario
+
+        d = request.data
+
+        def _time(v):
+            try:
+                return datetime.strptime(v, "%H:%M").time()
+            except (ValueError, TypeError):
+                return None
+
+        if action == "unassign":
+            ps = get_object_or_404(ProgramacionServicio, pk=d.get("assignmentId"))
+            ps.delete()
+            return Response({"ok": True})
+
+        if action == "assign":
+            servicio = get_object_or_404(Servicio, pk=d.get("serviceId"))
+            veh = _pizarra_resource(d.get("resourceId"))
+            if not veh:
+                return Response({"error": "Vehículo no encontrado."}, status=404)
+            if ProgramacionServicio.objects.filter(servicio=servicio).exclude(estado_operativo="cancelado").exists():
+                return Response({"error": "El servicio ya está asignado."}, status=409)
+            hora_ini = _time(d.get("start")) or parse_horario(servicio.horario_servicio)
+            if not servicio.fecha_servicio or not hora_ini:
+                return Response({"error": "El servicio necesita fecha y hora."}, status=409)
+            hora_fin = (datetime.combine(servicio.fecha_servicio, hora_ini) + timedelta(hours=1)).time()
+            c = _pizarra_conflicto(veh, servicio.fecha_servicio, hora_ini, hora_fin)
+            if c:
+                return Response({"error": f"Choca con {c.servicio.codigo if c.servicio else 'otra'} ({c.hora_inicio:%H:%M})"}, status=409)
+            ProgramacionServicio.objects.create(
+                servicio=servicio, vehiculo=veh, conductor=None,
+                fecha=servicio.fecha_servicio, hora_inicio=hora_ini, hora_fin=hora_fin,
+                monto=servicio.precio or 0,
+            )
+            return Response({"ok": True})
+
+        ps = get_object_or_404(ProgramacionServicio.objects.select_related("servicio"), pk=d.get("assignmentId"))
+
+        if action == "move":
+            veh = _pizarra_resource(d.get("resourceId")) or ps.vehiculo
+            hora_ini = _time(d.get("start")) or ps.hora_inicio
+            dur = timedelta(hours=1)
+            if ps.hora_fin:
+                dur = datetime.combine(ps.fecha, ps.hora_fin) - datetime.combine(ps.fecha, ps.hora_inicio)
+            hora_fin = (datetime.combine(ps.fecha, hora_ini) + dur).time()
+            c = _pizarra_conflicto(veh, ps.fecha, hora_ini, hora_fin, exclude_id=ps.pk)
+            if c:
+                return Response({"error": f"Choca con {c.servicio.codigo if c.servicio else 'otra'} ({c.hora_inicio:%H:%M})"}, status=409)
+            ps.vehiculo = veh
+            ps.hora_inicio = hora_ini
+            ps.hora_fin = hora_fin
+            ps.save(update_fields=["vehiculo", "hora_inicio", "hora_fin"])
+            return Response({"ok": True})
+
+        if action == "edit":
+            fields = []
+            if "driverId" in d:
+                ps.conductor = Conductor.objects.filter(pk=d["driverId"]).first()
+                fields.append("conductor")
+            if "start" in d and _time(d["start"]):
+                ps.hora_inicio = _time(d["start"])
+                fields.append("hora_inicio")
+            if "end" in d:
+                ps.hora_fin = _time(d["end"])
+                fields.append("hora_fin")
+            if "state" in d and d["state"] in {s for s, _ in ProgramacionServicio.ESTADOS_OPERATIVOS}:
+                ps.estado_operativo = d["state"]
+                fields.append("estado_operativo")
+            if fields:
+                ps.save(update_fields=fields)
+            if "helperIds" in d:
+                ps.ayudantes.set(Ayudante.objects.filter(pk__in=d["helperIds"] or []))
+            return Response({"ok": True})
+
+        return Response({"error": "Acción desconocida."}, status=400)
