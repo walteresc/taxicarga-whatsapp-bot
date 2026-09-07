@@ -16,13 +16,17 @@ import { ApiError } from '@/services/apiClient'
 import { useAuthStore } from '@/stores/authStore'
 
 const props = defineProps({
-  title: { type: String, required: true },
+  title: { type: String, default: '' },
   subtitle: { type: String, default: '' },
+  hideHeader: { type: Boolean, default: false }, // true = sin h1/subtítulo (uso dentro de pestañas)
   singular: { type: String, required: true }, // "conductor"
   service: { type: Object, required: true },
   columns: { type: Array, required: true }, // [{ key, label, format?, align? }]
   fields: { type: Array, required: true }, // [{ key, label, type, options?, required?, cols? }]
   searchLabel: { type: String, default: 'Buscar' },
+  // Filtros de botones extra. [{ value, label }]. El primero (value falsy) = "Todos".
+  // Se pasa como `segment` a service.list().
+  segments: { type: Array, default: () => [] },
   toggleField: { type: String, default: 'active' }, // habilita estado + activar/desactivar
   deletable: { type: Boolean, default: true }, // false = sin borrado duro (solo desactivar)
   labelField: { type: String, default: 'name' }, // para los mensajes ("<X> guardado")
@@ -40,6 +44,7 @@ const loading = ref(false)
 const loadError = ref('')
 const search = ref('')
 const status = ref('all')
+const segment = ref('')
 const ordering = ref('')
 const page = ref(1)
 const pageSize = 20
@@ -56,6 +61,7 @@ const load = async () => {
     const data = await props.service.list({
       search: search.value,
       status: props.toggleField ? status.value : undefined,
+      segment: segment.value || undefined,
       ordering: ordering.value || undefined,
       page: page.value,
       pageSize,
@@ -87,6 +93,7 @@ watch(search, () => {
   searchTimer = setTimeout(() => { page.value = 1; load() }, 350)
 })
 watch(status, () => { page.value = 1; load() })
+watch(segment, () => { page.value = 1; load() })
 watch(page, load)
 
 load()
@@ -179,7 +186,7 @@ const fieldError = key => fieldErrors.value[key]?.[0]
 <template>
   <section>
     <div class="d-flex flex-wrap align-center justify-space-between ga-4 mb-6">
-      <div>
+      <div v-if="!hideHeader">
         <h1 class="text-h4 font-weight-bold mb-1">
           {{ title }}
         </h1>
@@ -187,6 +194,7 @@ const fieldError = key => fieldErrors.value[key]?.[0]
           {{ subtitle }}
         </p>
       </div>
+      <VSpacer v-else />
       <VBtn v-if="canWrite" prepend-icon="ri-add-line" @click="openCreate">
         Nuevo {{ singular }}
       </VBtn>
@@ -195,7 +203,7 @@ const fieldError = key => fieldErrors.value[key]?.[0]
     <slot name="before-table" />
 
     <VCard>
-      <VCardText class="d-flex flex-wrap ga-4">
+      <VCardText class="d-flex flex-wrap align-center ga-4">
         <VTextField
           v-model="search"
           prepend-inner-icon="ri-search-line"
@@ -205,6 +213,15 @@ const fieldError = key => fieldErrors.value[key]?.[0]
           density="compact"
           style="max-width: 340px;"
         />
+        <VBtnToggle
+          v-if="segments.length"
+          v-model="segment"
+          density="comfortable" color="primary" variant="outlined" divided
+        >
+          <VBtn v-for="s in segments" :key="s.value" :value="s.value" size="small">
+            {{ s.label }}
+          </VBtn>
+        </VBtnToggle>
         <VSelect
           v-if="toggleField"
           v-model="status"
@@ -259,7 +276,15 @@ const fieldError = key => fieldErrors.value[key]?.[0]
           </tr>
           <tr v-for="row in rows" v-else :key="row.id">
             <td v-for="col in columns" :key="col.key" :class="col.align === 'end' ? 'text-right' : ''">
-              {{ cellValue(row, col) }}
+              <VChip
+                v-if="col.chip"
+                size="small"
+                :color="col.chip(row)?.color || 'default'"
+                variant="tonal"
+              >
+                {{ col.chip(row)?.text ?? cellValue(row, col) }}
+              </VChip>
+              <template v-else>{{ cellValue(row, col) }}</template>
             </td>
             <td v-if="toggleField">
               <VChip size="small" :color="row[toggleField] ? 'success' : 'secondary'">

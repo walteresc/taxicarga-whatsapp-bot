@@ -145,12 +145,15 @@ const submitCancel = async () => {
     </p>
 
     <VCard>
-      <VCardText class="d-flex flex-wrap ga-3">
+      <VCardText class="d-flex flex-wrap align-center ga-4">
         <VTextField v-model="search" prepend-inner-icon="ri-search-line" label="Buscar código, cliente o ruta" density="compact" hide-details clearable style="max-width: 340px;" @update:model-value="onSearch" />
-        <VSelect
-          v-model="stateFilter" label="Estado" density="compact" hide-details clearable style="max-width: 200px;"
-          :items="Object.entries(STATE).map(([value, s]) => ({ title: s.label, value }))" @update:model-value="load"
-        />
+        <VBtnToggle
+          v-model="stateFilter" density="comfortable" color="primary" variant="outlined" divided
+          @update:model-value="load"
+        >
+          <VBtn value="" size="small">Todas</VBtn>
+          <VBtn v-for="(s, value) in STATE" :key="value" :value="value" size="small">{{ s.label }}</VBtn>
+        </VBtnToggle>
       </VCardText>
       <VAlert v-if="error" type="error" variant="tonal" class="ma-4">{{ error }}</VAlert>
 

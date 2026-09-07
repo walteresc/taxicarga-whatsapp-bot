@@ -17,7 +17,10 @@ class MapperRoundTripTests(APITestCase):
         self.assertEqual(model_to_api(CUSTOMER_FIELDS, api_to_model(CUSTOMER_FIELDS, api)), api)
 
     def test_serializer_expone_las_claves_del_mapa_mas_las_de_solo_lectura(self):
-        ro = {"id", "displayName", "contactId", "hasRealPhone", "isTransportista", "createdAt"}
+        ro = {
+            "id", "displayName", "contactId", "hasRealPhone", "isTransportista",
+            "createdAt", "serviceCount", "segment",
+        }
         self.assertEqual(set(CustomerSerializer().fields) - ro, set(CUSTOMER_FIELDS))
 
 

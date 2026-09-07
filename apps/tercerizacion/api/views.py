@@ -11,9 +11,11 @@ from rest_framework.response import Response
 from apps.api.filters import apply_active_filter, apply_ordering, apply_search
 from apps.api.permissions import HasAnyRole
 from apps.api.views import V2ModelViewSet
-from apps.tercerizacion.models import Transportista, TransportistaVehiculo
+from apps.tercerizacion.models import (
+    Transportista, TransportistaConductor, TransportistaVehiculo,
+)
 
-from .serializers import CarrierSerializer, CarrierVehicleSerializer
+from .serializers import CarrierDriverSerializer, CarrierSerializer, CarrierVehicleSerializer
 
 _ROLES = ("Administrador", "Supervisor", "Asesor de Ventas")
 
@@ -60,4 +62,28 @@ class CarrierVehicleViewSet(V2ModelViewSet):
         obj = self.get_object()
         obj.activo = not obj.activo
         obj.save()
+        return Response(self.get_serializer(obj).data)
+
+
+_DRIVER_ORDER = {"name": "nombre", "documentId": "dni", "carrier": "transportista__nombre"}
+
+
+class CarrierDriverViewSet(V2ModelViewSet):
+    serializer_class = CarrierDriverSerializer
+    permission_classes = [HasAnyRole(*_ROLES)]
+
+    def get_queryset(self):
+        p = self.request.query_params
+        qs = TransportistaConductor.objects.select_related("transportista")
+        if p.get("carrierId"):
+            qs = qs.filter(transportista_id=p["carrierId"])
+        qs = apply_search(qs, p.get("search"), ("nombre", "dni", "telefono", "transportista__nombre"))
+        qs = apply_active_filter(qs, p.get("status"))
+        return apply_ordering(qs, p.get("ordering"), _DRIVER_ORDER, ("nombre", "id"))
+
+    @action(detail=True, methods=["post"], url_path="toggle-active")
+    def toggle_active(self, request, pk=None):
+        obj = self.get_object()
+        obj.activo = not obj.activo
+        obj.save(update_fields=["activo"])
         return Response(self.get_serializer(obj).data)

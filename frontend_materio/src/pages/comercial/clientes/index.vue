@@ -2,6 +2,22 @@
 import CrudResourcePage from '@/components/crud/CrudResourcePage.vue'
 import { customersService } from '@/services/customersService'
 
+const SEGMENT = {
+  empresa: { text: 'Empresa / PYME', color: 'primary' },
+  frecuente: { text: 'Frecuente', color: 'success' },
+  ocasional: { text: 'Ocasional', color: 'info' },
+  inactivo: { text: 'Inactivo', color: 'secondary' },
+  nuevo: { text: 'Nuevo', color: 'default' },
+}
+
+const segments = [
+  { value: '', label: 'Todos' },
+  { value: 'frecuente', label: 'Frecuentes' },
+  { value: 'empresa', label: 'Empresas / PYMES' },
+  { value: 'ocasional', label: 'Ocasionales' },
+  { value: 'inactivo', label: 'Inactivos' },
+]
+
 const columns = [
   { key: 'name', label: 'Nombre', format: r => r.displayName || r.name || '—' },
   {
@@ -9,7 +25,8 @@ const columns = [
     label: 'Contacto',
     format: r => (r.hasRealPhone ? r.contactId : `ID WhatsApp: ${r.contactId}`),
   },
-  { key: 'documentId', label: 'Documento', format: r => r.documentId || '—' },
+  { key: 'segment', label: 'Segmento', chip: r => SEGMENT[r.segment] || SEGMENT.nuevo },
+  { key: 'serviceCount', label: 'Servicios', align: 'end', format: r => r.serviceCount ?? 0 },
   { key: 'businessName', label: 'Razón social', format: r => r.businessName || '—' },
   { key: 'email', label: 'Correo', format: r => r.email || '—' },
 ]
@@ -33,6 +50,7 @@ const fields = [
     :service="customersService"
     :columns="columns"
     :fields="fields"
+    :segments="segments"
     :deletable="false"
     search-label="Buscar por nombre, teléfono, documento, correo o razón social"
     label-field="name"

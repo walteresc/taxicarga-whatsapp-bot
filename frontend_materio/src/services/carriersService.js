@@ -4,6 +4,11 @@ import { createResource } from './createResource'
 
 export const carriersService = createResource('carriers')
 export const carrierVehiclesService = createResource('carrier-vehicles')
+export const carrierDriversService = createResource('carrier-drivers')
+
+export const LICENSE_CATEGORIES = [
+  'A-I', 'A-II-a', 'A-II-b', 'A-III-a', 'A-III-b', 'A-III-c', 'B-I', 'B-II-a', 'B-II-b', 'B-II-c',
+]
 
 // Catálogo para los selects del alta de vehículos.
 export const fetchVehicleCatalog = async () => {

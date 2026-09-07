@@ -27,14 +27,21 @@ class CustomerSerializer(serializers.ModelSerializer):
     hasRealPhone = serializers.BooleanField(source="has_real_phone", read_only=True)
     isTransportista = serializers.BooleanField(source="es_transportista", read_only=True)
     createdAt = serializers.DateTimeField(source="fecha_creacion", read_only=True)
+    serviceCount = serializers.IntegerField(source="n_servicios", read_only=True, default=0)
+    segment = serializers.SerializerMethodField()
 
     class Meta:
         model = Cliente
         fields = (
             "id", "name", "phone", "documentId", "email", "taxId", "businessName",
             "active", "displayName", "contactId", "hasRealPhone", "isTransportista",
-            "createdAt",
+            "createdAt", "serviceCount", "segment",
         )
+
+    def get_segment(self, obj):
+        from apps.clientes.services import segmento_cliente
+        n = getattr(obj, "n_servicios", None)
+        return segmento_cliente(obj, n_servicios=n)
 
     def validate_phone(self, value):
         raw = (value or "").strip()

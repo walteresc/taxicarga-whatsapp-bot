@@ -2,7 +2,9 @@
 from rest_framework import serializers
 
 from apps.catalogo.models import TipoCarroceria, TipoVehiculo
-from apps.tercerizacion.models import Transportista, TransportistaVehiculo
+from apps.tercerizacion.models import (
+    Transportista, TransportistaConductor, TransportistaVehiculo,
+)
 
 
 class CarrierSerializer(serializers.ModelSerializer):
@@ -81,3 +83,33 @@ class CarrierVehicleSerializer(serializers.ModelSerializer):
         if qs.exists():
             raise serializers.ValidationError("Ya existe un vehículo con esta placa.")
         return value
+
+
+class CarrierDriverSerializer(serializers.ModelSerializer):
+    carrierId = serializers.PrimaryKeyRelatedField(source="transportista", queryset=Transportista.objects.all())
+    carrierName = serializers.CharField(source="transportista.nombre", read_only=True)
+    name = serializers.CharField(source="nombre", max_length=160)
+    documentId = serializers.CharField(source="dni", max_length=20)
+    phone = serializers.CharField(source="telefono", max_length=30, required=False, allow_blank=True, default="")
+    licenseNumber = serializers.CharField(source="numero_licencia", max_length=40, required=False, allow_blank=True, default="")
+    licenseCategory = serializers.CharField(source="categoria_licencia", max_length=20, required=False, allow_blank=True, default="")
+    licenseExpiresOn = serializers.DateField(source="fecha_vencimiento_licencia", required=False, allow_null=True, default=None)
+    isOwner = serializers.BooleanField(source="es_titular", required=False, default=False)
+    active = serializers.BooleanField(source="activo", required=False, default=True)
+
+    class Meta:
+        model = TransportistaConductor
+        fields = (
+            "id", "carrierId", "carrierName", "name", "documentId", "phone",
+            "licenseNumber", "licenseCategory", "licenseExpiresOn", "isOwner", "active",
+        )
+
+    def validate(self, attrs):
+        transportista = attrs.get("transportista") or getattr(self.instance, "transportista", None)
+        dni = attrs.get("dni") or getattr(self.instance, "dni", None)
+        qs = TransportistaConductor.objects.filter(transportista=transportista, dni=dni)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError({"documentId": "Este transportista ya tiene un conductor con ese DNI."})
+        return attrs
