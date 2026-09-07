@@ -143,7 +143,10 @@ class ProgramacionServicio(models.Model):
         related_name="servicios",
     )
     vehiculo = models.ForeignKey(Vehiculo, on_delete=models.PROTECT, related_name="programaciones")
-    conductor = models.ForeignKey(Conductor, on_delete=models.PROTECT, related_name="programaciones")
+    conductor = models.ForeignKey(
+        Conductor, on_delete=models.PROTECT, related_name="programaciones",
+        null=True, blank=True,
+    )
     ayudantes = models.ManyToManyField(Ayudante, blank=True, related_name="programaciones")
     fecha = models.DateField()
     hora_inicio = models.TimeField()
@@ -151,6 +154,13 @@ class ProgramacionServicio(models.Model):
     monto = models.DecimalField(max_digits=10, decimal_places=2)
     estado_operativo = models.CharField(
         max_length=20, choices=ESTADOS_OPERATIVOS, default=ESTADO_PROGRAMADO,
+    )
+    ORIGEN_MANUAL = "manual"
+    ORIGEN_AUTO = "auto"
+    origen_asignacion = models.CharField(
+        max_length=10,
+        choices=[(ORIGEN_MANUAL, "Asignado por un asesor"), (ORIGEN_AUTO, "Asignación automática")],
+        default=ORIGEN_MANUAL,
     )
     observaciones = models.TextField(blank=True)
 

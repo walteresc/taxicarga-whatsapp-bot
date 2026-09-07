@@ -191,7 +191,7 @@ class PizarraView(APIView):
         progs = list(
             ProgramacionServicio.objects
             .filter(fecha=day).exclude(estado_operativo="cancelado")
-            .select_related("servicio", "servicio__cliente", "vehiculo", "conductor")
+            .select_related("servicio", "servicio__cliente", "servicio__lead_origen", "vehiculo", "conductor")
             .prefetch_related("ayudantes")
         )
 
@@ -227,14 +227,18 @@ class PizarraView(APIView):
                 "id": p.id,
                 "resourceId": f"v{p.vehiculo_id}" if p.vehiculo_id else None,
                 "serviceId": s.id if s else None,
+                "leadId": s.lead_origen_id if s else None,
                 "serviceCode": s.codigo if s else "—",
                 "customer": (s.cliente.nombre or s.cliente.profile_name) if s and s.cliente else "Sin cliente",
+                "originDistrict": s.distrito_origen if s else "",
+                "destDistrict": s.distrito_destino if s else "",
                 "route": f"{s.distrito_origen or '?'} → {s.distrito_destino or '?'}" if s else "",
                 "start": _hhmm(p.hora_inicio),
                 "end": _hhmm(p.hora_fin),
                 "state": p.estado_operativo,
                 "price": float(p.monto) if p.monto is not None else None,
                 "mode": s.modalidad_ejecucion if s else "propio",
+                "assignedAuto": p.origen_asignacion == "auto",
                 "driverName": p.conductor.nombre if p.conductor_id else None,
                 "helpers": [a.nombre for a in p.ayudantes.all()],
             })
@@ -245,15 +249,18 @@ class PizarraView(APIView):
             .filter(fecha_servicio=day)
             .exclude(id__in=asignados_ids)
             .exclude(estado__in=("finalizado", "cancelado"))
-            .select_related("cliente")
+            .select_related("cliente", "lead_origen")
         )
         unassigned = []
         for s in sin_asignar:
             publicado = s.publicaciones_tercerizacion.filter(estado="abierta").exists()
             unassigned.append({
                 "serviceId": s.id,
+                "leadId": s.lead_origen_id,
                 "serviceCode": s.codigo,
                 "customer": (s.cliente.nombre or s.cliente.profile_name) if s.cliente else "Sin cliente",
+                "originDistrict": s.distrito_origen or "",
+                "destDistrict": s.distrito_destino or "",
                 "route": f"{s.distrito_origen or '?'} → {s.distrito_destino or '?'}",
                 "start": _hhmm(parse_horario(s.horario_servicio)),
                 "scheduleText": s.horario_servicio or "",
