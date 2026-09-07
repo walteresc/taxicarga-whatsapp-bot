@@ -359,6 +359,32 @@ const onMinimapClick = e => {
   const frac = (e.clientX - el.getBoundingClientRect().left) / el.clientWidth
   scrollToMin(Math.min(1440, Math.max(0, frac)) * 1440)
 }
+// Arrastrar el tablero (zona vacía) para navegar.
+const panning = ref(false)
+let panStart = null
+const onBoardDown = e => {
+  if (e.button !== 0 || e.target.closest('.pz-bar, .pz-chip, .v-btn, button, a, input')) return
+  const el = scroller.value
+  if (!el) return
+  e.preventDefault()
+  panStart = { px: e.clientX, py: e.clientY, sl: el.scrollLeft, st: el.scrollTop }
+  panning.value = true
+  window.addEventListener('pointermove', onBoardPan)
+  window.addEventListener('pointerup', onBoardPanUp)
+}
+const onBoardPan = e => {
+  const el = scroller.value
+  if (!panStart || !el) return
+  el.scrollLeft = panStart.sl - (e.clientX - panStart.px)
+  el.scrollTop = panStart.st - (e.clientY - panStart.py)
+}
+const onBoardPanUp = () => {
+  window.removeEventListener('pointermove', onBoardPan)
+  window.removeEventListener('pointerup', onBoardPanUp)
+  panning.value = false
+  panStart = null
+}
+
 let mmDrag = null
 const onMmRectDown = e => {
   e.stopPropagation()
@@ -462,7 +488,10 @@ const onMmRectUp = () => {
       <div v-else class="pz-boardwrap">
         <div v-if="rowsAbove" class="pz-vedge pz-vedge--t" @click="scrollTop">▲ {{ rowsAbove }} vehículo(s)</div>
         <div v-if="rowsBelow" class="pz-vedge pz-vedge--b" @click="scrollBottom">▼ {{ rowsBelow }} vehículo(s)</div>
-        <div ref="scroller" class="pz-board" @scroll="syncView">
+        <div
+          ref="scroller" class="pz-board" :class="{ 'pz-board--pan': panning }"
+          @scroll="syncView" @pointerdown="onBoardDown"
+        >
         <div class="pz-inner">
           <!-- carril de vehículos (fijo a la izquierda) -->
           <div class="pz-rail">
@@ -681,7 +710,11 @@ const onMmRectUp = () => {
   max-block-size: 72vh;
   overflow: auto;
   overscroll-behavior: contain;
+  cursor: grab;
 }
+.pz-board--pan { cursor: grabbing; user-select: none; }
+.pz-board--pan .pz-bar,
+.pz-board--pan .pz-chip { cursor: grabbing; }
 .pz-inner { display: flex; inline-size: min-content; }
 
 .pz-rail {
