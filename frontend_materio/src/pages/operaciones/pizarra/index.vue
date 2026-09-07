@@ -7,10 +7,13 @@ import {
 } from '@/services/pizarraService'
 import ServiceViewDialog from '@/pages/atencion/bandeja-entrada/components/ServiceViewDialog.vue'
 
-const PX_PER_MIN = 2.2
-const ROW_H = 76
+const PX_PER_MIN = 2.4
+const ROW_H = 84
 const SNAP = 15
 const HOURS = Array.from({ length: 25 }, (_, i) => i)
+const HOURS_H = 28
+const CHIP_W = 160
+const CHIP_H = 58
 
 const STATE = {
   programado: { label: 'Programado', color: '#3b82f6' },
@@ -51,8 +54,7 @@ const toMin = hhmm => {
 }
 const toHHMM = min => `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`
 const soles = n => (n == null ? '—' : `S/ ${Math.round(n).toLocaleString('es-PE')}`)
-const routeOf = x => (x.originDistrict || x.destDistrict
-  ? `${x.originDistrict || '?'} → ${x.destDistrict || '?'}` : (x.route || ''))
+const routeOf = x => `${x.originDistrict || '?'} → ${x.destDistrict || '?'}`
 
 const load = async () => {
   loading.value = true
@@ -70,7 +72,7 @@ onMounted(async () => {
   try { drivers.value = (await driversService.list({ pageSize: 200, status: 'active' })).results } catch { /* */ }
   await load()
   await nextTick()
-  if (scroller.value) scroller.value.scrollLeft = 6 * 60 * PX_PER_MIN
+  if (scroller.value) scroller.value.scrollLeft = 5.5 * 60 * PX_PER_MIN
 })
 
 const shiftDay = n => {
@@ -98,13 +100,34 @@ const barsByResource = computed(() => {
   return map
 })
 
+// Servicios sin asignar, ubicados sobre la línea de tiempo por su hora + apilados si chocan.
+const unassignedPlaced = computed(() => {
+  const maxLeft = 24 * 60 * PX_PER_MIN - CHIP_W
+  const items = board.value.unassigned
+    .map(s => ({ ...s, _left: Math.min(maxLeft, Math.max(0, (toMin(s.start) ?? 0) * PX_PER_MIN)) }))
+    .sort((a, b) => a._left - b._left)
+  const rowRight = []
+  for (const it of items) {
+    let r = rowRight.findIndex(right => right <= it._left)
+    if (r === -1) { r = rowRight.length; rowRight.push(0) }
+    rowRight[r] = it._left + CHIP_W
+    it._row = r
+  }
+  return items
+})
+const unassignedRows = computed(() =>
+  Math.max(1, ...unassignedPlaced.value.map(i => i._row + 1)))
+const unLaneH = computed(() =>
+  (board.value.unassigned.length ? unassignedRows.value * (CHIP_H + 6) + 8 : 0))
+const headH = computed(() => HOURS_H + unLaneH.value)
+
 const nowLeft = computed(() => {
   const now = new Date()
   if (date.value !== now.toISOString().slice(0, 10)) return null
   return (now.getHours() * 60 + now.getMinutes()) * PX_PER_MIN
 })
 
-// ── Drag de una barra ────────────────────────────────────────────────────
+// ── Drag de una barra asignada ──────────────────────────────────────────
 const drag = reactive({ id: null, dx: 0, dy: 0 })
 let dragStart = null
 const onBarDown = (e, bar) => {
@@ -159,6 +182,46 @@ const onBarUp = async () => {
 const barLiveStyle = bar => (drag.id === bar.id
   ? { transform: `translate(${drag.dx}px, ${drag.dy}px)`, zIndex: 30, opacity: 0.92 } : {})
 
+// ── Drag de un servicio sin asignar → soltar sobre la fila de un vehículo ─
+const chipDrag = reactive({ item: null, x: 0, y: 0 })
+let chipStart = null
+const onChipDown = (e, s) => {
+  if (e.button !== 0 || s.published) return
+  e.preventDefault()
+  chipStart = { px: e.clientX, py: e.clientY, s }
+  Object.assign(chipDrag, { item: s, x: e.clientX, y: e.clientY })
+  window.addEventListener('pointermove', onChipMove)
+  window.addEventListener('pointerup', onChipUp)
+}
+const onChipMove = e => {
+  if (!chipStart) return
+  chipDrag.x = e.clientX
+  chipDrag.y = e.clientY
+}
+const onChipUp = async e => {
+  window.removeEventListener('pointermove', onChipMove)
+  window.removeEventListener('pointerup', onChipUp)
+  const st = chipStart
+  chipStart = null
+  chipDrag.item = null
+  if (!st) return
+  if (Math.abs(e.clientX - st.px) + Math.abs(e.clientY - st.py) < 6) { openDetail(st.s.leadId); return }
+
+  const lane = document.elementFromPoint(e.clientX, e.clientY)?.closest('.pz-lane')
+  if (!lane) { notify('Soltá el servicio sobre la fila de un vehículo.', 'warning'); return }
+  const rid = lane.dataset.resourceId
+  const rect = lane.getBoundingClientRect()
+  let mins = Math.round(((e.clientX - rect.left) / PX_PER_MIN) / SNAP) * SNAP
+  mins = Math.max(0, Math.min(23 * 60 + 45, mins))
+  try {
+    await pizarraAssign({ serviceId: st.s.serviceId, resourceId: rid, start: toHHMM(mins) })
+    notify(`${st.s.serviceCode} asignado a las ${toHHMM(mins)}.`)
+    await load()
+  } catch (err) {
+    notify(err.message || 'No se pudo asignar.', 'error')
+  }
+}
+
 // ── Panel de edición rápida ─────────────────────────────────────────────
 const panel = ref(false)
 const sel = ref(null)
@@ -208,7 +271,7 @@ const openCtx = (e, kind, item) => {
   nextTick(() => { ctx.show = true })
 }
 
-// ── Asignar un servicio sin asignar ────────────────────────────────────
+// ── Asignar un servicio sin asignar (diálogo) ──────────────────────────
 const assignDialog = ref(false)
 const assignForm = reactive({ service: null, resourceId: null, start: '' })
 const openAssign = svc => {
@@ -244,7 +307,7 @@ const hiddenResources = computed(() =>
       <div>
         <h1 class="text-h4 font-weight-bold mb-1">Pizarra</h1>
         <p class="text-body-1 text-medium-emphasis mb-0">
-          Servicios del día por vehículo. Arrastrá una barra para cambiar hora o vehículo · clic edita · clic derecho más opciones.
+          Arrastrá un servicio sin asignar hasta la fila del vehículo · arrastrá una barra para cambiar hora o vehículo · clic edita · clic derecho más opciones.
         </p>
       </div>
       <div class="d-flex align-center ga-1">
@@ -260,61 +323,79 @@ const hiddenResources = computed(() =>
       <template #append><VBtn size="small" variant="text" @click="load">Reintentar</VBtn></template>
     </VAlert>
 
-    <!-- Sin asignar -->
-    <VCard v-if="board.unassigned.length" class="mb-4">
-      <VCardText class="d-flex flex-wrap align-center ga-2">
-        <span class="text-overline text-medium-emphasis me-2">Sin asignar</span>
-        <VChip
-          v-for="s in board.unassigned" :key="s.serviceId"
-          :color="s.published ? 'warning' : (MODE[s.mode]?.color ? undefined : 'primary')"
-          :style="!s.published && MODE[s.mode] ? { borderInlineStart: `3px solid ${MODE[s.mode].color}` } : {}"
-          variant="tonal"
-          @click="openDetail(s.leadId)"
-          @contextmenu.prevent="openCtx($event, 'unassigned', s)"
-        >
-          <VIcon start :icon="s.published ? 'ri-loader-4-line' : 'ri-time-line'" size="14" />
-          {{ s.serviceCode }} · {{ routeOf(s) }} · {{ s.start || s.scheduleText || 's/h' }}
-          <span v-if="s.published" class="ms-1 text-caption">(publicada)</span>
-        </VChip>
-      </VCardText>
-    </VCard>
-
     <VCard>
       <div class="d-flex align-center justify-space-between px-4 py-2">
-        <span class="text-caption text-medium-emphasis">{{ resources.length }} vehículo(s) en pizarra</span>
+        <span class="text-caption text-medium-emphasis">
+          {{ resources.length }} vehículo(s) · {{ board.unassigned.length }} sin asignar
+        </span>
         <VBtn v-if="hiddenResources.length" size="small" variant="tonal" prepend-icon="ri-add-line" @click="addDialog = true">
           Agregar vehículo
         </VBtn>
       </div>
       <VDivider />
+
       <div v-if="loading" class="text-center py-12"><VProgressCircular indeterminate color="primary" /></div>
       <div v-else-if="!resources.length" class="text-center text-medium-emphasis py-12">
         No hay vehículos en la pizarra.
         <VBtn v-if="hiddenResources.length" variant="text" @click="addDialog = true">Agregar</VBtn>
       </div>
-      <div v-else class="pz-wrap">
-        <div class="pz-rail">
-          <div class="pz-rail-head" />
-          <div
-            v-for="r in resources" :key="r.id" class="pz-rail-row" :style="{ height: ROW_H + 'px' }"
-            @contextmenu.prevent="openCtx($event, 'resource', r)"
-          >
-            <div class="font-weight-medium text-truncate">{{ r.label }}</div>
-            <div class="text-caption text-medium-emphasis text-truncate">
-              {{ r.driverName || 'sin conductor' }}<span v-if="r.sublabel"> · {{ r.sublabel }}</span>
-            </div>
-          </div>
-        </div>
 
-        <div ref="scroller" class="pz-scroll">
-          <div class="pz-grid" :style="{ width: (24 * 60 * PX_PER_MIN) + 'px' }">
-            <div class="pz-hours">
-              <div v-for="h in HOURS" :key="h" class="pz-hour" :style="{ left: (h * 60 * PX_PER_MIN) + 'px' }">
-                {{ String(h).padStart(2, '0') }}:00
+      <div v-else ref="scroller" class="pz-board">
+        <div class="pz-inner">
+          <!-- carril de vehículos (fijo a la izquierda) -->
+          <div class="pz-rail">
+            <div class="pz-rail-head" :style="{ height: headH + 'px' }">
+              <span class="text-caption text-medium-emphasis">Sin asignar</span>
+            </div>
+            <div
+              v-for="r in resources" :key="r.id" class="pz-rail-row" :style="{ height: ROW_H + 'px' }"
+              @contextmenu.prevent="openCtx($event, 'resource', r)"
+            >
+              <div class="font-weight-medium text-truncate">{{ r.label }}</div>
+              <div class="text-caption text-medium-emphasis text-truncate">
+                {{ r.driverName || 'sin conductor' }}<span v-if="r.sublabel"> · {{ r.sublabel }}</span>
               </div>
             </div>
+          </div>
+
+          <!-- línea de tiempo -->
+          <div class="pz-grid" :style="{ width: (24 * 60 * PX_PER_MIN) + 'px' }">
+            <div class="pz-head" :style="{ height: headH + 'px' }">
+              <div class="pz-hours" :style="{ height: HOURS_H + 'px' }">
+                <div v-for="h in HOURS" :key="h" class="pz-hour" :style="{ left: (h * 60 * PX_PER_MIN) + 'px' }">
+                  {{ String(h).padStart(2, '0') }}:00
+                </div>
+              </div>
+              <div class="pz-unassigned" :style="{ height: unLaneH + 'px' }">
+                <div
+                  v-for="s in unassignedPlaced" :key="s.serviceId"
+                  class="pz-chip" :class="{ 'pz-chip--pub': s.published }"
+                  :style="{
+                    left: s._left + 'px',
+                    top: (s._row * (CHIP_H + 6) + 4) + 'px',
+                    width: CHIP_W + 'px',
+                    borderInlineStartColor: (MODE[s.mode]?.color || '#64748b'),
+                  }"
+                  @pointerdown="onChipDown($event, s)"
+                  @contextmenu.prevent="openCtx($event, 'unassigned', s)"
+                >
+                  <div class="pz-l1 text-truncate">
+                    {{ s.serviceCode }}<span v-if="s.published" class="text-caption"> · publicada</span>
+                  </div>
+                  <div class="pz-l2 text-truncate">{{ routeOf(s) }}</div>
+                  <div class="pz-l3 text-truncate">
+                    <strong>{{ s.start || s.scheduleText || 's/h' }}</strong> · <strong>{{ soles(s.price) }}</strong>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div v-if="nowLeft != null" class="pz-now" :style="{ left: nowLeft + 'px' }" />
-            <div v-for="r in resources" :key="r.id" class="pz-lane" :style="{ height: ROW_H + 'px' }">
+
+            <div
+              v-for="r in resources" :key="r.id" class="pz-lane"
+              :data-resource-id="r.id" :style="{ height: ROW_H + 'px' }"
+            >
               <div v-for="h in HOURS" :key="h" class="pz-tick" :style="{ left: (h * 60 * PX_PER_MIN) + 'px' }" />
               <div
                 v-for="bar in (barsByResource[r.id] || [])" :key="bar.id"
@@ -328,14 +409,15 @@ const hiddenResources = computed(() =>
                 @pointerdown="onBarDown($event, bar)"
                 @contextmenu.prevent="openCtx($event, 'bar', bar)"
               >
-                <div class="pz-bar-title text-truncate">
+                <div class="pz-l1 text-truncate">
                   <span class="pz-state-dot" :style="{ background: STATE[bar.state]?.color }" />
-                  {{ bar.serviceCode }} · {{ routeOf(bar) }}
+                  {{ bar.serviceCode }}
+                  <span v-if="bar.assignedAuto" title="Asignación automática">⚡</span>
                 </div>
-                <div class="pz-bar-sub text-truncate">
-                  {{ toHHMM(bar.start) }}<span v-if="bar.end">–{{ toHHMM(bar.end) }}</span>
-                  · {{ soles(bar.price) }}
-                  <span v-if="bar.assignedAuto" title="Asignación automática"> · ⚡</span>
+                <div class="pz-l2 text-truncate">{{ routeOf(bar) }}</div>
+                <div class="pz-l3 text-truncate">
+                  <strong>{{ toHHMM(bar.start) }}</strong><span v-if="bar.end" class="pz-dim">–{{ toHHMM(bar.end) }}</span>
+                  · <strong>{{ soles(bar.price) }}</strong>
                 </div>
               </div>
             </div>
@@ -360,6 +442,19 @@ const hiddenResources = computed(() =>
         <span class="text-medium-emphasis">⚡ = asignación automática</span>
       </VCardText>
     </VCard>
+
+    <!-- servicio sin asignar "fantasma" mientras se arrastra -->
+    <div
+      v-if="chipDrag.item" class="pz-chip pz-chip--ghost"
+      :style="{ left: chipDrag.x + 'px', top: chipDrag.y + 'px', width: CHIP_W + 'px' }"
+    >
+      <div class="pz-l1 text-truncate">{{ chipDrag.item.serviceCode }}</div>
+      <div class="pz-l2 text-truncate">{{ routeOf(chipDrag.item) }}</div>
+      <div class="pz-l3 text-truncate">
+        <strong>{{ chipDrag.item.start || chipDrag.item.scheduleText || 's/h' }}</strong> ·
+        <strong>{{ soles(chipDrag.item.price) }}</strong>
+      </div>
+    </div>
 
     <!-- menú contextual -->
     <VMenu v-model="ctx.show" :target="[ctx.x, ctx.y]" location="bottom start">
@@ -410,7 +505,7 @@ const hiddenResources = computed(() =>
       </div>
     </VNavigationDrawer>
 
-    <!-- asignar servicio -->
+    <!-- asignar servicio (diálogo) -->
     <VDialog v-model="assignDialog" max-width="440">
       <VCard v-if="assignForm.service">
         <VCardTitle>Asignar {{ assignForm.service.serviceCode }}</VCardTitle>
@@ -432,10 +527,7 @@ const hiddenResources = computed(() =>
       <VCard>
         <VCardTitle>Agregar vehículo a la pizarra</VCardTitle>
         <VList>
-          <VListItem
-            v-for="r in hiddenResources" :key="r.id"
-            :title="r.label" :subtitle="r.sublabel"
-          >
+          <VListItem v-for="r in hiddenResources" :key="r.id" :title="r.label" :subtitle="r.sublabel">
             <template #append>
               <VBtn size="small" variant="tonal" @click="showResource(r.id)">Agregar</VBtn>
             </template>
@@ -461,35 +553,117 @@ const hiddenResources = computed(() =>
 </template>
 
 <style scoped>
-.pz-wrap { display: flex; }
-.pz-rail { flex: 0 0 200px; border-inline-end: 1px solid rgb(var(--v-border-color), var(--v-border-opacity)); }
-.pz-rail-head { height: 32px; border-block-end: 1px solid rgb(var(--v-border-color), var(--v-border-opacity)); }
+.pz-board {
+  position: relative;
+  max-block-size: 72vh;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.pz-inner { display: flex; inline-size: min-content; }
+
+.pz-rail {
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: 4;
+  flex: 0 0 190px;
+  background: rgb(var(--v-theme-surface));
+  border-inline-end: 1px solid rgb(var(--v-border-color), var(--v-border-opacity));
+}
+.pz-rail-head {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 5;
+  display: flex;
+  align-items: flex-end;
+  padding: 6px 12px;
+  background: rgb(var(--v-theme-surface));
+  border-block-end: 1px solid rgb(var(--v-border-color), var(--v-border-opacity));
+}
 .pz-rail-row {
-  display: flex; flex-direction: column; justify-content: center;
-  padding-inline: 12px; border-block-end: 1px solid rgb(var(--v-border-color), var(--v-border-opacity));
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding-inline: 12px;
+  background: rgb(var(--v-theme-surface));
+  border-block-end: 1px solid rgb(var(--v-border-color), var(--v-border-opacity));
   cursor: context-menu;
 }
-.pz-scroll { flex: 1 1 auto; overflow-x: auto; }
+
 .pz-grid { position: relative; }
-.pz-hours { height: 32px; position: relative; border-block-end: 1px solid rgb(var(--v-border-color), var(--v-border-opacity)); }
+.pz-head {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 3;
+  background: rgb(var(--v-theme-surface));
+  border-block-end: 1px solid rgb(var(--v-border-color), var(--v-border-opacity));
+}
+.pz-hours { position: relative; }
 .pz-hour {
-  position: absolute; top: 8px; font-size: 11px; color: rgb(var(--v-theme-on-surface), 0.6);
+  position: absolute;
+  inset-block-start: 7px;
+  font-size: 11px;
+  color: rgb(var(--v-theme-on-surface), 0.6);
   transform: translateX(-50%);
 }
+.pz-unassigned { position: relative; }
+
 .pz-lane { position: relative; border-block-end: 1px solid rgb(var(--v-border-color), var(--v-border-opacity)); }
-.pz-tick { position: absolute; top: 0; bottom: 0; width: 1px; background: rgb(var(--v-border-color), 0.5); }
-.pz-now { position: absolute; top: 32px; bottom: 0; width: 2px; background: rgb(var(--v-theme-error)); z-index: 5; }
+.pz-tick { position: absolute; inset-block: 0; inline-size: 1px; background: rgb(var(--v-border-color), 0.5); }
+.pz-now { position: absolute; inset-block: 0; inline-size: 2px; background: rgb(var(--v-theme-error)); z-index: 1; }
+
 .pz-bar {
-  position: absolute; top: 6px; bottom: 6px;
+  position: absolute;
+  inset-block: 5px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  padding: 4px 8px;
+  overflow: hidden;
   background: rgb(var(--v-theme-surface));
   border: 1px solid rgb(var(--v-border-color), var(--v-border-opacity));
   border-left: 4px solid #64748b;
-  border-radius: 6px; padding: 4px 8px; cursor: grab; overflow: hidden;
-  box-shadow: 0 1px 3px rgb(0 0 0 / 12%); user-select: none;
+  border-radius: 6px;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 12%);
+  cursor: grab;
+  user-select: none;
 }
 .pz-bar:active { cursor: grabbing; }
-.pz-bar-title { font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 5px; }
-.pz-bar-sub { font-size: 11px; color: rgb(var(--v-theme-on-surface), 0.6); }
-.pz-state-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
-.pz-bar-swatch { width: 14px; height: 8px; border-radius: 2px; display: inline-block; }
+
+.pz-chip {
+  position: absolute;
+  block-size: 58px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  padding: 4px 8px;
+  overflow: hidden;
+  background: rgb(var(--v-theme-surface));
+  border: 1px solid rgb(var(--v-border-color), var(--v-border-opacity));
+  border-inline-start: 4px solid #64748b;
+  border-radius: 6px;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 14%);
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+.pz-chip:active { cursor: grabbing; }
+.pz-chip--pub { opacity: 0.6; cursor: not-allowed; }
+.pz-chip--ghost {
+  position: fixed;
+  z-index: 3000;
+  pointer-events: none;
+  opacity: 0.95;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 25%);
+}
+
+.pz-l1 { font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 5px; }
+.pz-l2 { font-size: 12px; color: rgb(var(--v-theme-on-surface), 0.82); }
+.pz-l3 { font-size: 12px; color: rgb(var(--v-theme-on-surface), 0.7); }
+.pz-l3 strong { color: rgb(var(--v-theme-on-surface), 0.95); }
+.pz-dim { color: rgb(var(--v-theme-on-surface), 0.5); font-weight: 400; }
+.pz-state-dot { inline-size: 8px; block-size: 8px; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
+.pz-bar-swatch { inline-size: 14px; block-size: 8px; border-radius: 2px; display: inline-block; }
 </style>
