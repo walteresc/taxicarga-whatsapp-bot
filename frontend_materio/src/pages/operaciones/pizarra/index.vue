@@ -224,7 +224,7 @@ const refreshBarPreview = () => {
   drag.rowDelta = to < 0 ? 0 : to - from
   drag.rid = t.rid
   drag.startMin = t.startMin
-  setHint(x, y, `${dayLabel.value} · ${toHHMM(t.startMin)}–${toHHMM(t.startMin + bar.dur)}`)
+  setHint(x, y, `${toHHMM(t.startMin)}–${toHHMM(t.startMin + bar.dur)}`)
 }
 const onBarMove = e => {
   if (!dragStart) return
@@ -246,19 +246,16 @@ const onBarMove = e => {
 const onBarUp = async () => {
   endBarGesture()
   const ds = dragStart
-  const mode = drag.mode
-  const rid = drag.rid
-  const mins = drag.startMin
   dragStart = null
-  resetDrag()
-  if (!ds) return
-  if (!ds.armed || !ds.moved) { openPanel(ds.bar); return }
-
-  const bar = ds.bar
-  if (mode === 'unassign') { await releaseBar(bar); return }
-  if (mode !== 'move' || rid == null || mins == null) return
+  if (!ds) { resetDrag(); return }
+  if (!ds.armed || !ds.moved) { resetDrag(); openPanel(ds.bar); return }
+  if (drag.mode === 'unassign') { resetDrag(); await releaseBar(ds.bar); return }
+  if (drag.mode !== 'move' || drag.rid == null || drag.startMin == null) { resetDrag(); return }
+  // Deja la barra previsualizada en su destino y pide la hora exacta.
+  openTimePicker({ kind: 'move', bar: ds.bar, rid: drag.rid }, lastPointer.x, lastPointer.y, drag.startMin)
+}
+const commitMove = async (bar, rid, mins) => {
   if (mins === bar.start && rid === bar.resourceId) return
-
   const a = board.value.assignments.find(x => x.id === bar.id)
   if (!a) return
   const prev = { start: a.start, end: a.end, resourceId: a.resourceId }
@@ -313,7 +310,7 @@ const refreshChipHint = () => {
   const mins = chipTargetMin(x, y)
   const sched = toMin(chipStart.s.start)
   const isSched = Math.abs(x - chipStart.px) < CHIP_MOVE_X && sched != null
-  setHint(x, y, `${dayLabel.value} · ${toHHMM(mins)}${isSched ? ' (programado)' : ''}`)
+  setHint(x, y, `${toHHMM(mins)}–${toHHMM(mins + 60)}${isSched ? ' · programado' : ''}`)
 }
 const onChipMove = e => {
   if (!chipStart) return
@@ -322,7 +319,7 @@ const onChipMove = e => {
   lastPointer = { x: e.clientX, y: e.clientY }
   refreshChipHint()
 }
-const onChipUp = async e => {
+const onChipUp = e => {
   window.removeEventListener('pointermove', onChipMove)
   window.removeEventListener('pointerup', onChipUp)
   stopEdge()
@@ -338,11 +335,13 @@ const onChipUp = async e => {
   const s = st.s
   const sched = toMin(s.start)
   const mins = (Math.abs(e.clientX - st.px) < CHIP_MOVE_X && sched != null) ? sched : t.startMin
+  openTimePicker({ kind: 'assign', service: s, rid: t.rid }, e.clientX, e.clientY, mins)
+}
+const commitAssign = async (s, rid, mins) => {
   const startHHMM = toHHMM(mins)
-
   const tempId = -Date.now()
   board.value.assignments.push({
-    id: tempId, resourceId: t.rid, serviceId: s.serviceId, leadId: s.leadId,
+    id: tempId, resourceId: rid, serviceId: s.serviceId, leadId: s.leadId,
     serviceCode: s.serviceCode, customer: s.customer,
     originDistrict: s.originDistrict, destDistrict: s.destDistrict, route: s.route,
     start: startHHMM, end: toHHMM(mins + 60), state: 'programado',
@@ -350,7 +349,7 @@ const onChipUp = async e => {
   })
   board.value.unassigned = board.value.unassigned.filter(x => x.serviceId !== s.serviceId)
   try {
-    await pizarraAssign({ serviceId: s.serviceId, resourceId: t.rid, start: startHHMM })
+    await pizarraAssign({ serviceId: s.serviceId, resourceId: rid, start: startHHMM })
     notify(`${s.serviceCode} asignado a las ${startHHMM}.`)
     await load(true)
   } catch (err) {
@@ -358,6 +357,34 @@ const onChipUp = async e => {
     board.value.unassigned = [...board.value.unassigned, s]
     notify(err.message || 'No se pudo asignar.', 'error')
   }
+}
+
+// ── Selector de hora exacta al soltar (radios :00 :15 :30 :45) ─────────
+const picker = reactive({ show: false, x: 0, y: 0, code: '', options: [], selected: null, ctx: null })
+const openTimePicker = (ctx, x, y, dropMin) => {
+  const hs = Math.floor(dropMin / 60) * 60
+  const vals = [hs, hs + 15, hs + 30, hs + 45]
+  if (!vals.includes(dropMin)) vals.push(dropMin)
+  vals.sort((a, b) => a - b)
+  picker.options = vals.map(v => ({ value: v, label: toHHMM(v) }))
+  picker.selected = dropMin
+  picker.code = ctx.kind === 'assign' ? ctx.service.serviceCode : ctx.bar.serviceCode
+  picker.ctx = ctx
+  picker.x = x
+  picker.y = y
+  picker.show = true
+}
+watch(() => picker.selected, v => {
+  if (picker.ctx?.kind === 'move' && v != null) { drag.startMin = v; drag.left = v * PX_PER_MIN }
+})
+watch(() => picker.show, v => { if (!v) { picker.ctx = null; resetDrag() } })
+const confirmPicker = async () => {
+  const c = picker.ctx
+  const mins = picker.selected
+  picker.show = false
+  if (!c || mins == null) return
+  if (c.kind === 'move') await commitMove(c.bar, c.rid, mins)
+  else await commitAssign(c.service, c.rid, mins)
 }
 
 // ── Panel lateral: editar una barra o asignar un servicio ──────────────
@@ -709,12 +736,14 @@ const onMmRectUp = () => {
                   @pointerdown="onChipDown($event, s)"
                   @contextmenu.prevent="openCtx($event, 'unassigned', s)"
                 >
-                  <div class="pz-l1 text-truncate">
-                    {{ s.serviceCode }}<span v-if="s.published" class="text-caption"> · publicada</span>
+                  <div class="pz-l1">
+                    <span class="text-truncate">{{ s.serviceCode }}</span>
+                    <span v-if="s.published" class="text-caption">· pub.</span>
+                    <span class="pz-amt">{{ soles(s.price) }}</span>
                   </div>
                   <div class="pz-l2 text-truncate">{{ routeOf(s) }}</div>
                   <div class="pz-l3 text-truncate">
-                    <strong>{{ s.start || s.scheduleText || 's/h' }}</strong> · <strong>{{ soles(s.price) }}</strong>
+                    <strong>{{ s.start || s.scheduleText || 's/h' }}</strong>
                   </div>
                 </div>
               </div>
@@ -739,15 +768,15 @@ const onMmRectUp = () => {
                 @pointerdown="onBarDown($event, bar)"
                 @contextmenu.prevent="openCtx($event, 'bar', bar)"
               >
-                <div class="pz-l1 text-truncate">
+                <div class="pz-l1">
                   <span class="pz-state-dot" :style="{ background: STATE[bar.state]?.color }" />
-                  {{ bar.serviceCode }}
+                  <span class="text-truncate">{{ bar.serviceCode }}</span>
                   <span v-if="bar.assignedAuto" title="Asignación automática">⚡</span>
+                  <span class="pz-amt">{{ soles(bar.price) }}</span>
                 </div>
                 <div class="pz-l2 text-truncate">{{ routeOf(bar) }}</div>
                 <div class="pz-l3 text-truncate">
                   <strong>{{ toHHMM(bar.start) }}</strong><span v-if="bar.end" class="pz-dim">–{{ toHHMM(bar.end) }}</span>
-                  · <strong>{{ soles(bar.price) }}</strong>
                 </div>
               </div>
             </div>
@@ -779,11 +808,13 @@ const onMmRectUp = () => {
       v-if="chipDrag.item" class="pz-chip pz-chip--ghost"
       :style="{ left: chipDrag.x + 'px', top: chipDrag.y + 'px', width: CHIP_W + 'px' }"
     >
-      <div class="pz-l1 text-truncate">{{ chipDrag.item.serviceCode }}</div>
+      <div class="pz-l1">
+        <span class="text-truncate">{{ chipDrag.item.serviceCode }}</span>
+        <span class="pz-amt">{{ soles(chipDrag.item.price) }}</span>
+      </div>
       <div class="pz-l2 text-truncate">{{ routeOf(chipDrag.item) }}</div>
       <div class="pz-l3 text-truncate">
-        <strong>{{ chipDrag.item.start || chipDrag.item.scheduleText || 's/h' }}</strong> ·
-        <strong>{{ soles(chipDrag.item.price) }}</strong>
+        <strong>{{ chipDrag.item.start || chipDrag.item.scheduleText || 's/h' }}</strong>
       </div>
     </div>
 
@@ -807,6 +838,22 @@ const onMmRectUp = () => {
           <VListItem prepend-icon="ri-eye-off-line" title="Quitar de la pizarra" @click="hideResource(ctx.item.id)" />
         </template>
       </VList>
+    </VMenu>
+
+    <!-- selector de hora exacta al soltar -->
+    <VMenu v-model="picker.show" :target="[picker.x, picker.y]" :close-on-content-click="false" location="bottom start">
+      <VCard min-width="196" class="pa-2">
+        <div class="text-caption text-medium-emphasis px-1 pb-1">
+          {{ picker.code }} · {{ dayLabel }}<br>Hora de inicio
+        </div>
+        <VRadioGroup v-model="picker.selected" density="compact" hide-details class="px-1">
+          <VRadio v-for="o in picker.options" :key="o.value" :value="o.value" :label="o.label" />
+        </VRadioGroup>
+        <div class="d-flex justify-end ga-1 mt-1">
+          <VBtn size="small" variant="text" @click="picker.show = false">Cancelar</VBtn>
+          <VBtn size="small" color="primary" @click="confirmPicker">Confirmar</VBtn>
+        </div>
+      </VCard>
     </VMenu>
 
     <!-- panel lateral: editar una barra o asignar un servicio -->
@@ -1021,18 +1068,31 @@ const onMmRectUp = () => {
   position: fixed;
   z-index: 3200;
   pointer-events: none;
-  transform: translate(-50%, calc(-100% - 16px));
-  padding: 3px 10px;
-  font-size: 12px;
-  font-weight: 600;
+  transform: translate(-50%, calc(-100% - 18px));
+  padding: 6px 16px;
+  font-size: 17px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
   white-space: nowrap;
   color: #fff;
-  background: rgb(17 24 39 / 92%);
-  border-radius: 6px;
-  box-shadow: 0 4px 14px rgb(0 0 0 / 30%);
+  background: rgb(17 24 39 / 94%);
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 34%);
 }
 
-.pz-l1 { font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 5px; }
+.pz-l1 {
+  font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 5px;
+  min-inline-size: 0;
+}
+.pz-l1 .text-truncate { min-inline-size: 0; }
+.pz-amt {
+  margin-inline-start: auto;
+  padding-inline-start: 6px;
+  font-weight: 700;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
 .pz-l2 { font-size: 12px; color: rgb(var(--v-theme-on-surface), 0.82); }
 .pz-l3 { font-size: 12px; color: rgb(var(--v-theme-on-surface), 0.7); }
 .pz-l3 strong { color: rgb(var(--v-theme-on-surface), 0.95); }
