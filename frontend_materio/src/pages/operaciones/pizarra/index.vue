@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 
 import { driversService } from '@/services/personnelService'
 import {
@@ -73,7 +73,11 @@ onMounted(async () => {
   await load()
   await nextTick()
   if (scroller.value) scroller.value.scrollLeft = 5.5 * 60 * PX_PER_MIN
+  syncView()
+  window.addEventListener('resize', syncView)
 })
+onBeforeUnmount(() => window.removeEventListener('resize', syncView))
+watch(() => board.value, () => nextTick(syncView), { deep: false })
 
 const shiftDay = n => {
   const d = new Date(date.value)
@@ -299,6 +303,80 @@ const showResource = rid => { hidden.value.delete(rid); hidden.value = new Set(h
 const addDialog = ref(false)
 const hiddenResources = computed(() =>
   board.value.resources.filter(r => hidden.value.has(r.id) && !hasAssignment(r.id)))
+
+// ── Vista general: minimapa + navegación entre servicios fuera de pantalla ─
+const TOTAL_W = 24 * 60 * PX_PER_MIN
+const minimap = ref(null)
+const view = reactive({ x: 0, w: 1, y: 0, h: 1 })
+const syncView = () => {
+  const el = scroller.value
+  if (!el) return
+  view.x = el.scrollLeft
+  view.w = Math.max(1, el.clientWidth - 190)
+  view.y = el.scrollTop
+  view.h = Math.max(1, el.clientHeight - headH.value)
+}
+
+// Todos los servicios del día (asignados + sin asignar) ordenados por hora.
+const allStops = computed(() => {
+  const out = []
+  for (const a of board.value.assignments) {
+    const m = toMin(a.start)
+    if (m == null) continue
+    out.push({ key: `a${a.id}`, min: m, kind: 'assigned', mode: a.mode, label: `${a.serviceCode} · ${routeOf(a)} · ${a.start}` })
+  }
+  for (const s of board.value.unassigned) {
+    const m = toMin(s.start)
+    out.push({
+      key: `u${s.serviceId}`, min: m ?? 0, kind: 'unassigned', mode: s.mode, noTime: m == null,
+      label: `${s.serviceCode} · ${routeOf(s)} · ${s.start || s.scheduleText || 's/h'}`,
+    })
+  }
+  return out.sort((x, y) => x.min - y.min)
+})
+
+const leftHidden = computed(() => allStops.value.filter(s => s.min * PX_PER_MIN < view.x - 4))
+const rightHidden = computed(() => allStops.value.filter(s => s.min * PX_PER_MIN > view.x + view.w + 4))
+const leftUn = computed(() => leftHidden.value.filter(s => s.kind === 'unassigned').length)
+const rightUn = computed(() => rightHidden.value.filter(s => s.kind === 'unassigned').length)
+const rowsAbove = computed(() => Math.max(0, Math.floor((view.y + 2) / ROW_H)))
+const rowsBelow = computed(() =>
+  Math.max(0, resources.value.length - Math.ceil((view.y + view.h) / ROW_H)))
+
+const scrollToMin = m => {
+  const el = scroller.value
+  if (!el) return
+  el.scrollTo({ left: Math.max(0, m * PX_PER_MIN - view.w / 2), behavior: 'smooth' })
+}
+const goPrev = () => { const s = leftHidden.value[leftHidden.value.length - 1]; if (s) scrollToMin(s.min) }
+const goNext = () => { const s = rightHidden.value[0]; if (s) scrollToMin(s.min) }
+const scrollTop = () => scroller.value?.scrollTo({ top: 0, behavior: 'smooth' })
+const scrollBottom = () => scroller.value?.scrollTo({ top: 999999, behavior: 'smooth' })
+
+const onMinimapClick = e => {
+  const el = minimap.value
+  if (!el) return
+  const frac = (e.clientX - el.getBoundingClientRect().left) / el.clientWidth
+  scrollToMin(Math.min(1440, Math.max(0, frac)) * 1440)
+}
+let mmDrag = null
+const onMmRectDown = e => {
+  e.stopPropagation()
+  mmDrag = { px: e.clientX, sx: view.x }
+  window.addEventListener('pointermove', onMmRectMove)
+  window.addEventListener('pointerup', onMmRectUp)
+}
+const onMmRectMove = e => {
+  const el = minimap.value
+  const sc = scroller.value
+  if (!el || !sc) return
+  sc.scrollLeft = Math.max(0, mmDrag.sx + ((e.clientX - mmDrag.px) / el.clientWidth) * TOTAL_W)
+}
+const onMmRectUp = () => {
+  window.removeEventListener('pointermove', onMmRectMove)
+  window.removeEventListener('pointerup', onMmRectUp)
+  mmDrag = null
+}
 </script>
 
 <template>
@@ -324,15 +402,56 @@ const hiddenResources = computed(() =>
     </VAlert>
 
     <VCard>
-      <div class="d-flex align-center justify-space-between px-4 py-2">
+      <div class="d-flex flex-wrap align-center justify-space-between ga-2 px-4 py-2">
         <span class="text-caption text-medium-emphasis">
           {{ resources.length }} vehículo(s) · {{ board.unassigned.length }} sin asignar
         </span>
-        <VBtn v-if="hiddenResources.length" size="small" variant="tonal" prepend-icon="ri-add-line" @click="addDialog = true">
-          Agregar vehículo
-        </VBtn>
+        <div class="d-flex align-center ga-1">
+          <VBtn
+            size="small" variant="tonal" :disabled="!leftHidden.length"
+            :color="leftUn ? 'warning' : undefined" prepend-icon="ri-arrow-left-s-line"
+            :title="leftHidden.length ? `${leftHidden.length} servicio(s) antes de la vista` : ''"
+            @click="goPrev"
+          >
+            {{ leftHidden.length || '·' }}<span v-if="leftUn" class="text-caption"> ⚠</span>
+          </VBtn>
+          <VBtn
+            size="small" variant="tonal" :disabled="!rightHidden.length"
+            :color="rightUn ? 'warning' : undefined" append-icon="ri-arrow-right-s-line"
+            :title="rightHidden.length ? `${rightHidden.length} servicio(s) después de la vista` : ''"
+            @click="goNext"
+          >
+            <span v-if="rightUn" class="text-caption">⚠ </span>{{ rightHidden.length || '·' }}
+          </VBtn>
+          <VBtn v-if="hiddenResources.length" size="small" variant="tonal" prepend-icon="ri-add-line" @click="addDialog = true">
+            Agregar vehículo
+          </VBtn>
+        </div>
       </div>
       <VDivider />
+
+      <div v-if="!loading && resources.length" class="pz-minimap-wrap px-4 pt-3 pb-1">
+        <div ref="minimap" class="pz-minimap" @click="onMinimapClick">
+          <div v-for="h in [3, 6, 9, 12, 15, 18, 21]" :key="h" class="pz-mm-tick" :style="{ left: (h / 24 * 100) + '%' }" />
+          <div
+            v-for="s in allStops" :key="s.key"
+            class="pz-mm-mark" :class="{ 'pz-mm-mark--un': s.kind === 'unassigned' }"
+            :style="{
+              left: (s.min / 1440 * 100) + '%',
+              background: s.kind === 'unassigned' ? '#d97706' : (MODE[s.mode]?.color || '#64748b'),
+            }"
+            :title="s.label"
+          />
+          <div
+            class="pz-mm-view"
+            :style="{ left: (view.x / TOTAL_W * 100) + '%', width: (view.w / TOTAL_W * 100) + '%' }"
+            @pointerdown="onMmRectDown"
+          />
+        </div>
+        <div class="d-flex justify-space-between text-caption text-disabled px-1">
+          <span>00h</span><span>06h</span><span>12h</span><span>18h</span><span>24h</span>
+        </div>
+      </div>
 
       <div v-if="loading" class="text-center py-12"><VProgressCircular indeterminate color="primary" /></div>
       <div v-else-if="!resources.length" class="text-center text-medium-emphasis py-12">
@@ -340,7 +459,10 @@ const hiddenResources = computed(() =>
         <VBtn v-if="hiddenResources.length" variant="text" @click="addDialog = true">Agregar</VBtn>
       </div>
 
-      <div v-else ref="scroller" class="pz-board">
+      <div v-else class="pz-boardwrap">
+        <div v-if="rowsAbove" class="pz-vedge pz-vedge--t" @click="scrollTop">▲ {{ rowsAbove }} vehículo(s)</div>
+        <div v-if="rowsBelow" class="pz-vedge pz-vedge--b" @click="scrollBottom">▼ {{ rowsBelow }} vehículo(s)</div>
+        <div ref="scroller" class="pz-board" @scroll="syncView">
         <div class="pz-inner">
           <!-- carril de vehículos (fijo a la izquierda) -->
           <div class="pz-rail">
@@ -422,6 +544,7 @@ const hiddenResources = computed(() =>
               </div>
             </div>
           </div>
+        </div>
         </div>
       </div>
 
@@ -666,4 +789,52 @@ const hiddenResources = computed(() =>
 .pz-dim { color: rgb(var(--v-theme-on-surface), 0.5); font-weight: 400; }
 .pz-state-dot { inline-size: 8px; block-size: 8px; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
 .pz-bar-swatch { inline-size: 14px; block-size: 8px; border-radius: 2px; display: inline-block; }
+
+/* minimapa: vista general de las 24h */
+.pz-minimap {
+  position: relative;
+  block-size: 34px;
+  border-radius: 6px;
+  background: rgb(var(--v-theme-on-surface), 0.05);
+  border: 1px solid rgb(var(--v-border-color), var(--v-border-opacity));
+  cursor: pointer;
+}
+.pz-mm-tick { position: absolute; inset-block: 0; inline-size: 1px; background: rgb(var(--v-border-color), 0.6); }
+.pz-mm-mark {
+  position: absolute;
+  inset-block-end: 0;
+  inline-size: 3px;
+  block-size: 60%;
+  border-radius: 1px;
+  transform: translateX(-50%);
+}
+.pz-mm-mark--un { inset-block-start: 0; inset-block-end: auto; block-size: 55%; inline-size: 4px; }
+.pz-mm-view {
+  position: absolute;
+  inset-block: -1px;
+  min-inline-size: 8px;
+  border: 2px solid rgb(var(--v-theme-primary));
+  border-radius: 4px;
+  background: rgb(var(--v-theme-primary), 0.12);
+  cursor: grab;
+}
+.pz-mm-view:active { cursor: grabbing; }
+
+.pz-boardwrap { position: relative; }
+.pz-vedge {
+  position: absolute;
+  inset-inline-start: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  padding: 2px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: rgb(var(--v-theme-on-primary));
+  background: rgb(var(--v-theme-primary));
+  border-radius: 999px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 25%);
+}
+.pz-vedge--t { inset-block-start: 6px; }
+.pz-vedge--b { inset-block-end: 6px; }
 </style>
