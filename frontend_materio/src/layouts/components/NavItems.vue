@@ -36,10 +36,15 @@ const MENU = [
   { title: 'Pizarra', icon: 'ri-layout-grid-line', to: '/operaciones/pizarra', ready: false },
   { title: 'Programación', icon: 'ri-calendar-line', to: '/operaciones/programacion', ready: false },
 
-  { heading: 'Personal de campo' },
+  { heading: 'Campo · Nuestro equipo' },
   { title: 'Conductores', icon: 'ri-steering-line', to: '/personal-campo/conductores', ready: true, roles: COMMERCIAL_ROLES },
   { title: 'Ayudantes', icon: 'ri-user-2-line', to: '/personal-campo/ayudantes', ready: true, roles: COMMERCIAL_ROLES },
   { title: 'Equipos', icon: 'ri-group-line', to: '/personal-campo/equipos', ready: false },
+
+  { heading: 'Campo · Transportistas' },
+  { title: 'Afiliados', icon: 'ri-team-line', to: '/campo/transportistas/afiliados', ready: true, roles: COMMERCIAL_ROLES },
+  { title: 'Vehículos', icon: 'ri-truck-line', to: '/campo/transportistas/vehiculos', ready: true, roles: COMMERCIAL_ROLES },
+  { title: 'Catálogo de vehículos', icon: 'ri-list-settings-line', to: '/configuracion/catalogo-vehiculos', ready: true, roles: ['Administrador', 'Supervisor'] },
 
   { heading: 'Flota' },
   { title: 'Vehículos', icon: 'ri-truck-line', to: '/flota/vehiculos', ready: true, roles: COMMERCIAL_ROLES },
@@ -48,6 +53,9 @@ const MENU = [
   { heading: 'Analítica' },
   { title: 'Ventas vivas', icon: 'ri-line-chart-line', to: '/analitica/ventas', ready: true, roles: ['Administrador', 'Supervisor'] },
   { title: 'Benchmark histórico', icon: 'ri-bar-chart-box-line', to: '/analitica/benchmark', ready: true, roles: ['Administrador', 'Supervisor'] },
+
+  { heading: 'Configuración' },
+  { title: 'Catálogo de vehículos', icon: 'ri-list-settings-line', to: '/configuracion/catalogo-vehiculos', ready: true, roles: ['Administrador', 'Supervisor'] },
 
   { heading: 'Sistema' },
   { title: 'Configuración del bot', icon: 'ri-robot-line', to: '/sistema/bot', ready: true, roles: COMMERCIAL_ROLES },

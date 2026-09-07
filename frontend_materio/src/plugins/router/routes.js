@@ -42,6 +42,23 @@ export const routes = [
         component: () => import('@/pages/personal-campo/ayudantes.vue'),
         meta: { roles: PERSONAL_ROLES },
       },
+      {
+        path: 'campo/transportistas/afiliados',
+        component: () => import('@/pages/campo/transportistas/afiliados/index.vue'),
+        meta: { roles: PERSONAL_ROLES },
+      },
+      {
+        path: 'campo/transportistas/vehiculos',
+        component: () => import('@/pages/campo/transportistas/vehiculos/index.vue'),
+        meta: { roles: PERSONAL_ROLES },
+      },
+
+      // CONFIGURACIÓN
+      {
+        path: 'configuracion/catalogo-vehiculos',
+        component: () => import('@/pages/configuracion/catalogo-vehiculos/index.vue'),
+        meta: { roles: ['Administrador', 'Supervisor'] },
+      },
 
       // COMERCIAL
       {

@@ -9,4 +9,6 @@ urlpatterns = [
     path("", include("apps.cotizador.api.urls")),
     path("", include("apps.whatsapp_bot_v4.api.urls")),
     path("", include("apps.grupos_internos.api.urls")),
+    path("", include("apps.catalogo.api.urls")),
+    path("", include("apps.tercerizacion.api.urls")),
 ]

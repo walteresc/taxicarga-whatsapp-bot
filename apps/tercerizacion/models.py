@@ -176,3 +176,136 @@ class TransportistaBotState(models.Model):
 
     def __str__(self):
         return f"Conv {self.conversacion_id} - {self.paso}"
+
+
+# --------------------------------------------------------------------------- #
+#  Transportistas afiliados (registro propio: sus vehículos y conductores)
+# --------------------------------------------------------------------------- #
+
+class Transportista(models.Model):
+    """Transportista externo dado de alta en la app. Puede tener uno o más
+    vehículos y uno o más conductores; también puede ser el conductor de sus
+    propios vehículos."""
+
+    nombre = models.CharField(max_length=160, help_text="Razón social o nombre")
+    documento = models.CharField(max_length=20, blank=True, help_text="RUC o DNI")
+    telefono = models.CharField(max_length=30, blank=True)
+    email = models.EmailField(blank=True)
+    cliente = models.ForeignKey(
+        "clientes.Cliente",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="transportistas_afiliados",
+        help_text="Contacto de WhatsApp asociado, si existe.",
+    )
+    es_conductor = models.BooleanField(
+        default=False, help_text="El transportista también maneja sus vehículos.",
+    )
+    activo = models.BooleanField(default=True)
+    notas = models.TextField(blank=True)
+    creado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+    creado_en = models.DateTimeField(auto_now_add=True)
+    actualizado_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Transportista afiliado"
+        verbose_name_plural = "Transportistas afiliados"
+        ordering = ["nombre"]
+
+    def __str__(self):
+        return self.nombre
+
+
+class TransportistaVehiculo(models.Model):
+    """Vehículo de un transportista externo. Datos mínimos para la derivación."""
+
+    transportista = models.ForeignKey(
+        Transportista, on_delete=models.CASCADE, related_name="vehiculos",
+    )
+    placa = models.CharField(max_length=20, unique=True)
+    tipo_vehiculo = models.ForeignKey(
+        "catalogo.TipoVehiculo", on_delete=models.PROTECT, related_name="+",
+    )
+    tipo_carroceria = models.ForeignKey(
+        "catalogo.TipoCarroceria", on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+    marca = models.CharField(max_length=80, blank=True)
+    modelo = models.CharField(max_length=80, blank=True)
+    anio = models.PositiveIntegerField(null=True, blank=True, verbose_name="Año")
+    capacidad_util_ton = models.DecimalField(
+        max_digits=7, decimal_places=2, null=True, blank=True, verbose_name="Capacidad útil (ton)",
+    )
+    largo_util_m = models.DecimalField(
+        max_digits=6, decimal_places=2, null=True, blank=True, verbose_name="Largo útil (m)",
+    )
+    ancho_util_m = models.DecimalField(
+        max_digits=6, decimal_places=2, null=True, blank=True, verbose_name="Ancho útil (m)",
+    )
+    alto_util_m = models.DecimalField(
+        max_digits=6, decimal_places=2, null=True, blank=True, verbose_name="Alto útil (m)",
+    )
+    categoria = models.ForeignKey(
+        "catalogo.CategoriaVehiculo",
+        on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+        help_text="Se asigna automáticamente según la capacidad útil.",
+    )
+    activo = models.BooleanField(default=True)
+    notas = models.TextField(blank=True)
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Vehículo de transportista"
+        verbose_name_plural = "Vehículos de transportistas"
+        ordering = ["placa"]
+
+    def __str__(self):
+        return f"{self.placa} ({self.tipo_vehiculo_id})"
+
+    def save(self, *args, **kwargs):
+        from apps.catalogo.models import categoria_para_capacidad
+        if self.tipo_vehiculo_id:
+            self.categoria = categoria_para_capacidad(self.tipo_vehiculo_id, self.capacidad_util_ton)
+        super().save(*args, **kwargs)
+
+
+class TransportistaConductor(models.Model):
+    """Conductor de un transportista externo. MODELADO — sin UI todavía."""
+
+    LICENCIA_CATEGORIAS = [
+        ("A-I", "A-I"), ("A-II-a", "A-II-a"), ("A-II-b", "A-II-b"),
+        ("A-III-a", "A-III-a"), ("A-III-b", "A-III-b"), ("A-III-c", "A-III-c"),
+        ("B-I", "B-I"), ("B-II-a", "B-II-a"), ("B-II-b", "B-II-b"), ("B-II-c", "B-II-c"),
+    ]
+
+    transportista = models.ForeignKey(
+        Transportista, on_delete=models.CASCADE, related_name="conductores",
+    )
+    nombre = models.CharField(max_length=160)
+    dni = models.CharField(max_length=20)
+    telefono = models.CharField(max_length=30, blank=True)
+    numero_licencia = models.CharField(max_length=40, blank=True, verbose_name="N° Licencia")
+    categoria_licencia = models.CharField(
+        max_length=20, choices=LICENCIA_CATEGORIAS, blank=True, verbose_name="Categoría",
+    )
+    fecha_vencimiento_licencia = models.DateField(
+        null=True, blank=True, verbose_name="Vencimiento Licencia",
+    )
+    es_titular = models.BooleanField(
+        default=False, help_text="Es el propio transportista.",
+    )
+    activo = models.BooleanField(default=True)
+
+    class Meta:
+        verbose_name = "Conductor de transportista"
+        verbose_name_plural = "Conductores de transportistas"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["transportista", "dni"], name="tercerizacion_conductor_dni_por_transportista",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.nombre} ({self.dni})"

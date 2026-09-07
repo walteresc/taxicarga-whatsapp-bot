@@ -73,6 +73,7 @@ INSTALLED_APPS = [
     "apps.whatsapp_bot_v4",
     "apps.tercerizacion",
     "apps.grupos_internos",
+    "apps.catalogo",
 ]
 
 LOGIN_URL = "/dashboard/login/"
