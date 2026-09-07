@@ -122,7 +122,7 @@ const unassignedPlaced = computed(() => {
 const unassignedRows = computed(() =>
   Math.max(1, ...unassignedPlaced.value.map(i => i._row + 1)))
 const unLaneH = computed(() =>
-  (board.value.unassigned.length ? unassignedRows.value * (CHIP_H + 6) + 8 : 0))
+  Math.max(46, board.value.unassigned.length ? unassignedRows.value * (CHIP_H + 6) + 8 : 0))
 const headH = computed(() => HOURS_H + unLaneH.value)
 
 const nowLeft = computed(() => {
@@ -131,26 +131,52 @@ const nowLeft = computed(() => {
   return (now.getHours() * 60 + now.getMinutes()) * PX_PER_MIN
 })
 
-// ── Drag de una barra asignada ──────────────────────────────────────────
+// ── Drag de una barra asignada ─────────────────────────────────────────
+// La barra se "levanta" al mantenerla presionada un instante. Si en cambio se
+// mueve el dedo enseguida, el gesto se toma como navegación (pan) y la barra
+// no se toca — así un clic al vuelo mientras se navega no mueve el servicio.
+const ARM_MS = 160
 const drag = reactive({ id: null, dx: 0, dy: 0 })
 let dragStart = null
+let armTimer = null
+const endBarGesture = () => {
+  window.removeEventListener('pointermove', onBarMove)
+  window.removeEventListener('pointerup', onBarUp)
+  clearTimeout(armTimer)
+}
 const onBarDown = (e, bar) => {
   if (e.button !== 0 || e.target.closest('button')) return
-  dragStart = { px: e.clientX, py: e.clientY, bar }
-  drag.id = bar.id
+  dragStart = { px: e.clientX, py: e.clientY, bar, armed: false }
+  drag.id = null
   drag.dx = 0
   drag.dy = 0
   window.addEventListener('pointermove', onBarMove)
   window.addEventListener('pointerup', onBarUp)
+  armTimer = setTimeout(() => {
+    if (dragStart) { dragStart.armed = true; drag.id = bar.id }
+  }, ARM_MS)
 }
 const onBarMove = e => {
   if (!dragStart) return
-  drag.dx = e.clientX - dragStart.px
-  drag.dy = e.clientY - dragStart.py
+  const dx = e.clientX - dragStart.px
+  const dy = e.clientY - dragStart.py
+  if (!dragStart.armed) {
+    if (Math.abs(dx) > 6 || Math.abs(dy) > 6) {
+      // se movió antes de "levantar" la barra → es un gesto para navegar
+      const { px, py } = dragStart
+      endBarGesture()
+      dragStart = null
+      drag.id = null
+      beginPan(px, py)
+      onBoardPan(e)
+    }
+    return
+  }
+  drag.dx = dx
+  drag.dy = dy
 }
-const onBarUp = async () => {
-  window.removeEventListener('pointermove', onBarMove)
-  window.removeEventListener('pointerup', onBarUp)
+const onBarUp = async e => {
+  endBarGesture()
   const ds = dragStart
   const dx = drag.dx
   const dy = drag.dy
@@ -159,32 +185,51 @@ const onBarUp = async () => {
   drag.dx = 0
   drag.dy = 0
   if (!ds) return
-  const { bar } = ds
-  if (Math.abs(dx) < 6 && Math.abs(dy) < 6) { openPanel(bar); return }
+  if (!ds.armed || (Math.abs(dx) < 6 && Math.abs(dy) < 6)) { openPanel(ds.bar); return }
 
-  const deltaMin = Math.round((dx / PX_PER_MIN) / SNAP) * SNAP
-  const newStart = Math.max(0, Math.min(24 * 60 - bar.dur, bar.start + deltaMin))
-  const rs = resources.value
-  const idx = rs.findIndex(r => r.id === bar.resourceId)
-  const newIdx = Math.max(0, Math.min(rs.length - 1, idx + Math.round(dy / ROW_H)))
-  const newResourceId = rs[newIdx].id
-  if (newStart === bar.start && newResourceId === bar.resourceId) return
+  const bar = ds.bar
+  const dropEl = document.elementFromPoint(e.clientX, e.clientY)
+
+  // Soltar sobre la zona "sin asignar" → quitar la asignación.
+  if (dropEl?.closest('.pz-unassigned, .pz-rail-head')) {
+    try {
+      await pizarraUnassign(bar.id)
+      notify(`${bar.serviceCode} vuelve a "Sin asignar".`)
+      await load()
+    } catch (err) { notify(err.message || 'No se pudo quitar.', 'error') }
+    return
+  }
+
+  const lane = dropEl?.closest('.pz-lane')
+  if (!lane) return
+  const rid = lane.dataset.resourceId
+  const rect = lane.getBoundingClientRect()
+  let mins = Math.round(((e.clientX - rect.left) / PX_PER_MIN) / SNAP) * SNAP
+  mins = Math.max(0, Math.min(24 * 60 - bar.dur, mins))
+  if (mins === bar.start && rid === bar.resourceId) return
 
   const a = board.value.assignments.find(x => x.id === bar.id)
   if (!a) return
   const prev = { start: a.start, end: a.end, resourceId: a.resourceId }
-  a.start = toHHMM(newStart)
-  a.end = toHHMM(newStart + bar.dur)
-  a.resourceId = newResourceId
+  a.start = toHHMM(mins)
+  a.end = toHHMM(mins + bar.dur)
+  a.resourceId = rid
   try {
-    await pizarraMove({ assignmentId: bar.id, resourceId: newResourceId, start: toHHMM(newStart) })
-  } catch (e) {
+    await pizarraMove({ assignmentId: bar.id, resourceId: rid, start: toHHMM(mins) })
+  } catch (err) {
     Object.assign(a, prev)
-    notify(e.message || 'No se pudo mover.', 'error')
+    notify(err.message || 'No se pudo mover.', 'error')
   }
 }
 const barLiveStyle = bar => (drag.id === bar.id
-  ? { transform: `translate(${drag.dx}px, ${drag.dy}px)`, zIndex: 30, opacity: 0.92 } : {})
+  ? {
+    transform: `translate(${drag.dx}px, ${drag.dy}px) scale(1.02)`,
+    zIndex: 30,
+    opacity: 0.95,
+    pointerEvents: 'none',
+    boxShadow: '0 10px 26px rgb(0 0 0 / 30%)',
+  }
+  : {})
 
 // ── Drag de un servicio sin asignar → soltar sobre la fila de un vehículo ─
 const chipDrag = reactive({ item: null, x: 0, y: 0 })
@@ -362,15 +407,18 @@ const onMinimapClick = e => {
 // Arrastrar el tablero (zona vacía) para navegar.
 const panning = ref(false)
 let panStart = null
-const onBoardDown = e => {
-  if (e.button !== 0 || e.target.closest('.pz-bar, .pz-chip, .v-btn, button, a, input')) return
+const beginPan = (px, py) => {
   const el = scroller.value
   if (!el) return
-  e.preventDefault()
-  panStart = { px: e.clientX, py: e.clientY, sl: el.scrollLeft, st: el.scrollTop }
+  panStart = { px, py, sl: el.scrollLeft, st: el.scrollTop }
   panning.value = true
   window.addEventListener('pointermove', onBoardPan)
   window.addEventListener('pointerup', onBoardPanUp)
+}
+const onBoardDown = e => {
+  if (e.button !== 0 || e.target.closest('.pz-bar, .pz-chip, .v-btn, button, a, input')) return
+  e.preventDefault()
+  beginPan(e.clientX, e.clientY)
 }
 const onBoardPan = e => {
   const el = scroller.value
@@ -411,7 +459,7 @@ const onMmRectUp = () => {
       <div>
         <h1 class="text-h4 font-weight-bold mb-1">Pizarra</h1>
         <p class="text-body-1 text-medium-emphasis mb-0">
-          Arrastrá un servicio sin asignar hasta la fila del vehículo · arrastrá una barra para cambiar hora o vehículo · clic edita · clic derecho más opciones.
+          Arrastrá el tablero para navegar · mantené presionada una barra para moverla (o soltala en "Sin asignar" para liberarla) · clic edita · clic derecho más opciones.
         </p>
       </div>
       <div class="d-flex align-center ga-1">
@@ -517,7 +565,13 @@ const onMmRectUp = () => {
                   {{ String(h).padStart(2, '0') }}:00
                 </div>
               </div>
-              <div class="pz-unassigned" :style="{ height: unLaneH + 'px' }">
+              <div
+                class="pz-unassigned" :class="{ 'pz-unassigned--drop': drag.id }"
+                :style="{ height: unLaneH + 'px' }"
+              >
+                <span v-if="!board.unassigned.length" class="pz-un-hint">
+                  Soltá una barra aquí para dejarla sin asignar
+                </span>
                 <div
                   v-for="s in unassignedPlaced" :key="s.serviceId"
                   class="pz-chip" :class="{ 'pz-chip--pub': s.published }"
@@ -761,7 +815,20 @@ const onMmRectUp = () => {
   color: rgb(var(--v-theme-on-surface), 0.6);
   transform: translateX(-50%);
 }
-.pz-unassigned { position: relative; }
+.pz-unassigned { position: relative; transition: background 0.15s; }
+.pz-unassigned--drop {
+  background: rgb(var(--v-theme-warning), 0.12);
+  outline: 2px dashed rgb(var(--v-theme-warning));
+  outline-offset: -3px;
+}
+.pz-un-hint {
+  position: absolute;
+  inset-inline-start: 12px;
+  inset-block-start: 50%;
+  transform: translateY(-50%);
+  font-size: 11px;
+  color: rgb(var(--v-theme-on-surface), 0.45);
+}
 
 .pz-lane { position: relative; border-block-end: 1px solid rgb(var(--v-border-color), var(--v-border-opacity)); }
 .pz-tick { position: absolute; inset-block: 0; inline-size: 1px; background: rgb(var(--v-border-color), 0.5); }
