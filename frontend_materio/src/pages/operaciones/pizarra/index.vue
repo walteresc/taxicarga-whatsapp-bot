@@ -79,7 +79,7 @@ onMounted(async () => {
   syncView()
   window.addEventListener('resize', syncView)
 })
-onBeforeUnmount(() => window.removeEventListener('resize', syncView))
+onBeforeUnmount(() => { window.removeEventListener('resize', syncView); stopEdge() })
 watch(() => board.value, () => nextTick(syncView), { deep: false })
 
 const shiftDay = n => {
@@ -134,77 +134,129 @@ const nowLeft = computed(() => {
   return (now.getHours() * 60 + now.getMinutes()) * PX_PER_MIN
 })
 
+const dayLabel = computed(() => {
+  const d = new Date(`${date.value}T00:00`)
+  return d.toLocaleDateString('es-PE', { weekday: 'long', day: 'numeric', month: 'short' })
+})
+const addHour = hhmm => toHHMM(Math.min(24 * 60 - 15, (toMin(hhmm) ?? 480) + 60))
+const driverNameOf = id => drivers.value.find(d => d.id === id)?.name || null
+
+// Vehículo + hora bajo el cursor, listos para asignar/mover (scroll-safe).
+const targetFromPoint = (cx, cy, durMin) => {
+  const lane = document.elementFromPoint(cx, cy)?.closest('.pz-lane')
+  if (!lane) return null
+  const rect = lane.getBoundingClientRect()
+  let mins = Math.round(((cx - rect.left) / PX_PER_MIN) / SNAP) * SNAP
+  mins = Math.max(0, Math.min(24 * 60 - (durMin || 60), mins))
+  return { rid: lane.dataset.resourceId, startMin: mins }
+}
+
+// Etiqueta flotante con el día + horario de destino mientras se arrastra.
+const dragHint = reactive({ show: false, x: 0, y: 0, text: '' })
+const setHint = (x, y, text) => Object.assign(dragHint, { show: true, x, y, text })
+const hideHint = () => { dragHint.show = false }
+
+// Auto-scroll del tablero al arrastrar cerca de un borde (llegar a horas/filas
+// fuera de la vista).
+let edgeRAF = null
+let lastPointer = { x: 0, y: 0 }
+const EDGE = 60
+const edgeStep = () => {
+  const el = scroller.value
+  if (!el) { edgeRAF = null; return }
+  const r = el.getBoundingClientRect()
+  const { x, y } = lastPointer
+  const railR = r.left + 190
+  if (x > railR && x < railR + EDGE) el.scrollLeft -= Math.ceil((railR + EDGE - x) / 3)
+  else if (x < r.right && x > r.right - EDGE) el.scrollLeft += Math.ceil((x - r.right + EDGE) / 3)
+  const topB = r.top + headH.value
+  if (y > topB && y < topB + EDGE) el.scrollTop -= Math.ceil((topB + EDGE - y) / 4)
+  else if (y < r.bottom && y > r.bottom - EDGE) el.scrollTop += Math.ceil((y - r.bottom + EDGE) / 4)
+  if (dragStart?.armed) refreshBarPreview()
+  else if (chipStart) refreshChipHint()
+  edgeRAF = requestAnimationFrame(edgeStep)
+}
+const startEdge = () => { if (!edgeRAF) edgeRAF = requestAnimationFrame(edgeStep) }
+const stopEdge = () => { if (edgeRAF) cancelAnimationFrame(edgeRAF); edgeRAF = null }
+
 // ── Drag de una barra asignada ─────────────────────────────────────────
 // La barra se "levanta" al mantenerla presionada un instante. Si en cambio se
-// mueve el dedo enseguida, el gesto se toma como navegación (pan) y la barra
-// no se toca — así un clic al vuelo mientras se navega no mueve el servicio.
+// mueve el dedo enseguida, el gesto se toma como navegación (pan).
 const ARM_MS = 160
-const drag = reactive({ id: null, dx: 0, dy: 0 })
+const drag = reactive({ id: null, left: 0, rowDelta: 0, mode: null, rid: null, startMin: null })
 let dragStart = null
 let armTimer = null
+const resetDrag = () => Object.assign(drag, { id: null, left: 0, rowDelta: 0, mode: null, rid: null, startMin: null })
 const endBarGesture = () => {
   window.removeEventListener('pointermove', onBarMove)
   window.removeEventListener('pointerup', onBarUp)
   clearTimeout(armTimer)
+  stopEdge()
+  hideHint()
 }
 const onBarDown = (e, bar) => {
   if (e.button !== 0 || e.target.closest('button')) return
-  dragStart = { px: e.clientX, py: e.clientY, bar, armed: false }
-  drag.id = null
-  drag.dx = 0
-  drag.dy = 0
+  dragStart = { px: e.clientX, py: e.clientY, bar, armed: false, moved: false }
+  resetDrag()
+  lastPointer = { x: e.clientX, y: e.clientY }
   window.addEventListener('pointermove', onBarMove)
   window.addEventListener('pointerup', onBarUp)
   armTimer = setTimeout(() => {
-    if (dragStart) { dragStart.armed = true; drag.id = bar.id }
+    if (dragStart) { dragStart.armed = true; drag.id = bar.id; startEdge() }
   }, ARM_MS)
+}
+const refreshBarPreview = () => {
+  if (!dragStart?.armed) return
+  const { x, y } = lastPointer
+  const bar = dragStart.bar
+  if (document.elementFromPoint(x, y)?.closest('.pz-unassigned, .pz-rail-head')) {
+    drag.mode = 'unassign'
+    setHint(x, y, 'Soltar aquí → dejar sin asignar')
+    return
+  }
+  const t = targetFromPoint(x, y, bar.dur)
+  if (!t) { drag.mode = null; hideHint(); return }
+  const rs = resources.value
+  const from = rs.findIndex(r => r.id === bar.resourceId)
+  const to = rs.findIndex(r => r.id === t.rid)
+  drag.mode = 'move'
+  drag.left = t.startMin * PX_PER_MIN
+  drag.rowDelta = to < 0 ? 0 : to - from
+  drag.rid = t.rid
+  drag.startMin = t.startMin
+  setHint(x, y, `${dayLabel.value} · ${toHHMM(t.startMin)}–${toHHMM(t.startMin + bar.dur)}`)
 }
 const onBarMove = e => {
   if (!dragStart) return
-  const dx = e.clientX - dragStart.px
-  const dy = e.clientY - dragStart.py
   if (!dragStart.armed) {
-    if (Math.abs(dx) > 6 || Math.abs(dy) > 6) {
-      // se movió antes de "levantar" la barra → es un gesto para navegar
+    if (Math.abs(e.clientX - dragStart.px) > 6 || Math.abs(e.clientY - dragStart.py) > 6) {
       const { px, py } = dragStart
       endBarGesture()
       dragStart = null
-      drag.id = null
+      resetDrag()
       beginPan(px, py)
       onBoardPan(e)
     }
     return
   }
-  drag.dx = dx
-  drag.dy = dy
+  dragStart.moved = true
+  lastPointer = { x: e.clientX, y: e.clientY }
+  refreshBarPreview()
 }
-const onBarUp = async e => {
+const onBarUp = async () => {
   endBarGesture()
   const ds = dragStart
-  const dx = drag.dx
-  const dy = drag.dy
+  const mode = drag.mode
+  const rid = drag.rid
+  const mins = drag.startMin
   dragStart = null
-  drag.id = null
-  drag.dx = 0
-  drag.dy = 0
+  resetDrag()
   if (!ds) return
-  if (!ds.armed || (Math.abs(dx) < 6 && Math.abs(dy) < 6)) { openPanel(ds.bar); return }
+  if (!ds.armed || !ds.moved) { openPanel(ds.bar); return }
 
   const bar = ds.bar
-  const dropEl = document.elementFromPoint(e.clientX, e.clientY)
-
-  // Soltar sobre la zona "sin asignar" → quitar la asignación.
-  if (dropEl?.closest('.pz-unassigned, .pz-rail-head')) {
-    await releaseBar(bar)
-    return
-  }
-
-  const lane = dropEl?.closest('.pz-lane')
-  if (!lane) return
-  const rid = lane.dataset.resourceId
-  const rect = lane.getBoundingClientRect()
-  let mins = Math.round(((e.clientX - rect.left) / PX_PER_MIN) / SNAP) * SNAP
-  mins = Math.max(0, Math.min(24 * 60 - bar.dur, mins))
+  if (mode === 'unassign') { await releaseBar(bar); return }
+  if (mode !== 'move' || rid == null || mins == null) return
   if (mins === bar.start && rid === bar.resourceId) return
 
   const a = board.value.assignments.find(x => x.id === bar.id)
@@ -220,54 +272,77 @@ const onBarUp = async e => {
     notify(err.message || 'No se pudo mover.', 'error')
   }
 }
-const barLiveStyle = bar => (drag.id === bar.id
-  ? {
-    transform: `translate(${drag.dx}px, ${drag.dy}px) scale(1.02)`,
-    zIndex: 30,
-    opacity: 0.95,
-    pointerEvents: 'none',
-    boxShadow: '0 10px 26px rgb(0 0 0 / 30%)',
+const barLiveStyle = bar => {
+  if (drag.id !== bar.id) return {}
+  const s = {
+    zIndex: 40, opacity: 0.95, pointerEvents: 'none', transition: 'none',
+    boxShadow: '0 12px 28px rgb(0 0 0 / 32%)',
   }
-  : {})
+  if (drag.mode === 'move') {
+    s.left = `${drag.left}px`
+    s.transform = `translateY(${drag.rowDelta * ROW_H}px) scale(1.02)`
+  } else {
+    s.transform = 'scale(1.02)'
+  }
+  return s
+}
 
 // ── Drag de un servicio sin asignar → soltar sobre la fila de un vehículo ─
 const chipDrag = reactive({ item: null, x: 0, y: 0 })
 let chipStart = null
+const CHIP_MOVE_X = 60 // si el movimiento horizontal es menor, se usa la hora programada
 const onChipDown = (e, s) => {
   if (e.button !== 0 || s.published) return
   e.preventDefault()
   chipStart = { px: e.clientX, py: e.clientY, s }
   Object.assign(chipDrag, { item: s, x: e.clientX, y: e.clientY })
+  lastPointer = { x: e.clientX, y: e.clientY }
   window.addEventListener('pointermove', onChipMove)
   window.addEventListener('pointerup', onChipUp)
+  startEdge()
+}
+const chipTargetMin = (x, y) => {
+  const sched = toMin(chipStart.s.start)
+  if (Math.abs(x - chipStart.px) < CHIP_MOVE_X && sched != null) return sched
+  return targetFromPoint(x, y, 60)?.startMin ?? sched ?? 0
+}
+const refreshChipHint = () => {
+  if (!chipStart) return
+  const { x, y } = lastPointer
+  if (!document.elementFromPoint(x, y)?.closest('.pz-lane')) { hideHint(); return }
+  const mins = chipTargetMin(x, y)
+  const sched = toMin(chipStart.s.start)
+  const isSched = Math.abs(x - chipStart.px) < CHIP_MOVE_X && sched != null
+  setHint(x, y, `${dayLabel.value} · ${toHHMM(mins)}${isSched ? ' (programado)' : ''}`)
 }
 const onChipMove = e => {
   if (!chipStart) return
   chipDrag.x = e.clientX
   chipDrag.y = e.clientY
+  lastPointer = { x: e.clientX, y: e.clientY }
+  refreshChipHint()
 }
 const onChipUp = async e => {
   window.removeEventListener('pointermove', onChipMove)
   window.removeEventListener('pointerup', onChipUp)
+  stopEdge()
+  hideHint()
   const st = chipStart
   chipStart = null
   chipDrag.item = null
   if (!st) return
-  if (Math.abs(e.clientX - st.px) + Math.abs(e.clientY - st.py) < 6) { openDetail(st.s.leadId); return }
+  if (Math.abs(e.clientX - st.px) + Math.abs(e.clientY - st.py) < 6) { openAssignPanel(st.s); return }
 
-  const lane = document.elementFromPoint(e.clientX, e.clientY)?.closest('.pz-lane')
-  if (!lane) { notify('Soltá el servicio sobre la fila de un vehículo.', 'warning'); return }
-  const rid = lane.dataset.resourceId
-  const rect = lane.getBoundingClientRect()
-  let mins = Math.round(((e.clientX - rect.left) / PX_PER_MIN) / SNAP) * SNAP
-  mins = Math.max(0, Math.min(23 * 60 + 45, mins))
-  const startHHMM = toHHMM(mins)
+  const t = targetFromPoint(e.clientX, e.clientY, 60)
+  if (!t) { notify('Soltá el servicio sobre la fila de un vehículo.', 'warning'); return }
   const s = st.s
+  const sched = toMin(s.start)
+  const mins = (Math.abs(e.clientX - st.px) < CHIP_MOVE_X && sched != null) ? sched : t.startMin
+  const startHHMM = toHHMM(mins)
 
-  // Optimista: la barra aparece ya en su sitio y el refresco va en 2° plano.
   const tempId = -Date.now()
   board.value.assignments.push({
-    id: tempId, resourceId: rid, serviceId: s.serviceId, leadId: s.leadId,
+    id: tempId, resourceId: t.rid, serviceId: s.serviceId, leadId: s.leadId,
     serviceCode: s.serviceCode, customer: s.customer,
     originDistrict: s.originDistrict, destDistrict: s.destDistrict, route: s.route,
     start: startHHMM, end: toHHMM(mins + 60), state: 'programado',
@@ -275,7 +350,7 @@ const onChipUp = async e => {
   })
   board.value.unassigned = board.value.unassigned.filter(x => x.serviceId !== s.serviceId)
   try {
-    await pizarraAssign({ serviceId: s.serviceId, resourceId: rid, start: startHHMM })
+    await pizarraAssign({ serviceId: s.serviceId, resourceId: t.rid, start: startHHMM })
     notify(`${s.serviceCode} asignado a las ${startHHMM}.`)
     await load(true)
   } catch (err) {
@@ -285,18 +360,33 @@ const onChipUp = async e => {
   }
 }
 
-// ── Panel de edición rápida ─────────────────────────────────────────────
+// ── Panel lateral: editar una barra o asignar un servicio ──────────────
 const panel = ref(false)
+const panelKind = ref('assigned')
 const sel = ref(null)
-const form = reactive({ driverId: null, start: '', end: '', state: '' })
+const form = reactive({ resourceId: null, driverId: null, start: '', end: '', state: '' })
+const driverOptions = computed(() => drivers.value.map(d => ({ title: d.name, value: d.id })))
+const resourceOptions = computed(() =>
+  resources.value.map(r => ({ title: `${r.label}${r.driverName ? ` · ${r.driverName}` : ''}`, value: r.id })))
 const openPanel = bar => {
+  panelKind.value = 'assigned'
   sel.value = bar
   Object.assign(form, {
-    driverId: null, start: toHHMM(bar.start), end: bar.end ? toHHMM(bar.end) : '', state: bar.state,
+    resourceId: bar.resourceId, driverId: null,
+    start: toHHMM(bar.start), end: bar.end ? toHHMM(bar.end) : '', state: bar.state,
   })
   panel.value = true
 }
-const driverOptions = computed(() => drivers.value.map(d => ({ title: d.name, value: d.id })))
+const openAssignPanel = s => {
+  panelKind.value = 'unassigned'
+  sel.value = s
+  const raw = s.start || s.scheduleText || ''
+  const st = /^\d{1,2}:\d{2}$/.test(raw) ? raw.padStart(5, '0') : '08:00'
+  Object.assign(form, {
+    resourceId: null, driverId: null, start: st, end: addHour(st), state: 'programado',
+  })
+  panel.value = true
+}
 const saveEdit = async () => {
   try {
     await pizarraEdit({
@@ -310,6 +400,32 @@ const saveEdit = async () => {
     notify('Guardado.')
     await load(true)
   } catch (e) { notify(e.message || 'No se pudo guardar.', 'error') }
+}
+const doAssignPanel = async () => {
+  if (!form.resourceId) { notify('Elegí un vehículo.', 'warning'); return }
+  const s = sel.value
+  panel.value = false
+  const tempId = -Date.now()
+  board.value.assignments.push({
+    id: tempId, resourceId: form.resourceId, serviceId: s.serviceId, leadId: s.leadId,
+    serviceCode: s.serviceCode, customer: s.customer,
+    originDistrict: s.originDistrict, destDistrict: s.destDistrict, route: s.route,
+    start: form.start, end: form.end || addHour(form.start), state: 'programado',
+    price: s.price, mode: s.mode, assignedAuto: false, driverName: driverNameOf(form.driverId), helpers: [],
+  })
+  board.value.unassigned = board.value.unassigned.filter(x => x.serviceId !== s.serviceId)
+  try {
+    await pizarraAssign({
+      serviceId: s.serviceId, resourceId: form.resourceId, start: form.start,
+      end: form.end || undefined, driverId: form.driverId || undefined,
+    })
+    notify(`${s.serviceCode} asignado.`)
+    await load(true)
+  } catch (e) {
+    board.value.assignments = board.value.assignments.filter(a => a.id !== tempId)
+    board.value.unassigned = [...board.value.unassigned, s]
+    notify(e.message || 'No se pudo asignar.', 'error')
+  }
 }
 // Devuelve el servicio a "Sin asignar" quedando en su hora y con su color.
 const releaseBar = async bar => {
@@ -349,27 +465,6 @@ const openCtx = (e, kind, item) => {
   nextTick(() => { ctx.show = true })
 }
 
-// ── Asignar un servicio sin asignar (diálogo) ──────────────────────────
-const assignDialog = ref(false)
-const assignForm = reactive({ service: null, resourceId: null, start: '' })
-const openAssign = svc => {
-  Object.assign(assignForm, { service: svc, resourceId: null, start: svc.start || '08:00' })
-  assignDialog.value = true
-}
-const resourceOptions = computed(() =>
-  resources.value.map(r => ({ title: `${r.label}${r.driverName ? ` · ${r.driverName}` : ''}`, value: r.id })))
-const doAssign = async () => {
-  try {
-    await pizarraAssign({
-      serviceId: assignForm.service.serviceId,
-      resourceId: assignForm.resourceId,
-      start: assignForm.start,
-    })
-    assignDialog.value = false
-    notify('Servicio asignado.')
-    await load(true)
-  } catch (e) { notify(e.message || 'No se pudo asignar.', 'error') }
-}
 
 // ── Ocultar / agregar vehículos ────────────────────────────────────────
 const hideResource = rid => { hidden.value.add(rid); hidden.value = new Set(hidden.value); persistHidden() }
@@ -488,7 +583,7 @@ const onMmRectUp = () => {
       <div>
         <h1 class="text-h4 font-weight-bold mb-1">Pizarra</h1>
         <p class="text-body-1 text-medium-emphasis mb-0">
-          Arrastrá el tablero para navegar · mantené presionada una barra para moverla (o soltala en "Sin asignar" para liberarla) · clic edita · clic derecho más opciones.
+          Arrastrá el tablero para navegar · mantené presionada una barra para moverla — al arrastrar cerca del borde el tablero avanza y una etiqueta muestra el horario de destino · soltala en "Sin asignar" para liberarla · clic en un servicio abre su panel.
         </p>
       </div>
       <div class="d-flex align-center ga-1">
@@ -603,7 +698,8 @@ const onMmRectUp = () => {
                 </span>
                 <div
                   v-for="s in unassignedPlaced" :key="s.serviceId"
-                  class="pz-chip" :class="{ 'pz-chip--pub': s.published }"
+                  class="pz-chip"
+                  :class="{ 'pz-chip--pub': s.published, 'pz-chip--src': chipDrag.item && chipDrag.item.serviceId === s.serviceId }"
                   :style="{
                     left: s._left + 'px',
                     top: (s._row * (CHIP_H + 6) + 4) + 'px',
@@ -703,7 +799,7 @@ const onMmRectUp = () => {
         <template v-else-if="ctx.kind === 'unassigned'">
           <VListItem
             prepend-icon="ri-calendar-check-line" title="Asignar a un vehículo"
-            :disabled="ctx.item.published" @click="openAssign(ctx.item)"
+            :disabled="ctx.item.published" @click="openAssignPanel(ctx.item)"
           />
           <VListItem prepend-icon="ri-file-list-3-line" title="Ver detalle del servicio" @click="openDetail(ctx.item.leadId)" />
         </template>
@@ -713,7 +809,7 @@ const onMmRectUp = () => {
       </VList>
     </VMenu>
 
-    <!-- panel editar barra -->
+    <!-- panel lateral: editar una barra o asignar un servicio -->
     <VNavigationDrawer v-model="panel" location="right" temporary width="360">
       <div v-if="sel" class="pa-4">
         <div class="d-flex align-center justify-space-between mb-3">
@@ -721,41 +817,50 @@ const onMmRectUp = () => {
           <VBtn icon="ri-close-line" variant="text" size="small" @click="panel = false" />
         </div>
         <p class="text-body-2 mb-1">{{ sel.customer }}</p>
-        <p class="text-caption text-medium-emphasis mb-3">{{ routeOf(sel) }}</p>
-        <VBtn variant="tonal" size="small" prepend-icon="ri-file-list-3-line" class="mb-4" @click="openDetail(sel.leadId)">
+        <p class="text-caption text-medium-emphasis mb-1">{{ routeOf(sel) }}</p>
+        <VChip
+          size="x-small" label class="mb-3"
+          :style="{ borderInlineStart: `3px solid ${MODE[sel.mode]?.color || '#64748b'}` }"
+        >
+          {{ MODE[sel.mode]?.label || 'Ejecución sin definir' }}
+        </VChip>
+        <VBtn variant="tonal" size="small" prepend-icon="ri-file-list-3-line" class="mb-4 d-block" @click="openDetail(sel.leadId)">
           Ver detalle completo
         </VBtn>
 
+        <VSelect
+          v-if="panelKind === 'unassigned'"
+          v-model="form.resourceId" :items="resourceOptions" label="Vehículo"
+          placeholder="Elegí un vehículo" class="mb-3"
+        />
         <VSelect v-model="form.driverId" :items="driverOptions" label="Conductor" clearable class="mb-3" />
         <div class="d-flex ga-2 mb-3">
           <VTextField v-model="form.start" type="time" label="Inicio" density="compact" hide-details />
           <VTextField v-model="form.end" type="time" label="Fin" density="compact" hide-details />
         </div>
         <VSelect
+          v-if="panelKind === 'assigned'"
           v-model="form.state" label="Estado" class="mb-4"
           :items="Object.entries(STATE).map(([value, s]) => ({ title: s.label, value }))"
         />
-        <VBtn block color="primary" class="mb-2" @click="saveEdit">Guardar</VBtn>
-        <VBtn block variant="text" color="error" @click="releaseBar(sel)">Quitar asignación</VBtn>
+
+        <template v-if="panelKind === 'assigned'">
+          <VBtn block color="primary" class="mb-2" @click="saveEdit">Guardar</VBtn>
+          <VBtn block variant="text" color="error" @click="releaseBar(sel)">Quitar asignación</VBtn>
+        </template>
+        <VBtn
+          v-else block color="primary" class="mt-2"
+          :disabled="!form.resourceId" @click="doAssignPanel"
+        >
+          Asignar
+        </VBtn>
       </div>
     </VNavigationDrawer>
 
-    <!-- asignar servicio (diálogo) -->
-    <VDialog v-model="assignDialog" max-width="440">
-      <VCard v-if="assignForm.service">
-        <VCardTitle>Asignar {{ assignForm.service.serviceCode }}</VCardTitle>
-        <VCardText>
-          <p class="text-body-2 mb-3">{{ routeOf(assignForm.service) }} · {{ assignForm.service.customer }}</p>
-          <VSelect v-model="assignForm.resourceId" :items="resourceOptions" label="Vehículo" class="mb-3" />
-          <VTextField v-model="assignForm.start" type="time" label="Hora de inicio" density="compact" hide-details />
-        </VCardText>
-        <VCardActions>
-          <VSpacer />
-          <VBtn variant="text" @click="assignDialog = false">Cancelar</VBtn>
-          <VBtn color="primary" :disabled="!assignForm.resourceId" @click="doAssign">Asignar</VBtn>
-        </VCardActions>
-      </VCard>
-    </VDialog>
+    <!-- etiqueta flotante con el día + hora de destino mientras se arrastra -->
+    <div v-if="dragHint.show" class="pz-hint" :style="{ left: dragHint.x + 'px', top: dragHint.y + 'px' }">
+      {{ dragHint.text }}
+    </div>
 
     <!-- agregar vehículo a la pizarra -->
     <VDialog v-model="addDialog" max-width="420">
@@ -902,6 +1007,7 @@ const onMmRectUp = () => {
 }
 .pz-chip:active { cursor: grabbing; }
 .pz-chip--pub { opacity: 0.6; cursor: not-allowed; }
+.pz-chip--src { opacity: 0.3; }
 .pz-chip--ghost {
   position: fixed;
   z-index: 3000;
@@ -909,6 +1015,21 @@ const onMmRectUp = () => {
   opacity: 0.95;
   transform: translate(-50%, -50%);
   box-shadow: 0 6px 20px rgb(0 0 0 / 25%);
+}
+
+.pz-hint {
+  position: fixed;
+  z-index: 3200;
+  pointer-events: none;
+  transform: translate(-50%, calc(-100% - 16px));
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: #fff;
+  background: rgb(17 24 39 / 92%);
+  border-radius: 6px;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 30%);
 }
 
 .pz-l1 { font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 5px; }

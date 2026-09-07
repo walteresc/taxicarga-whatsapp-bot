@@ -345,16 +345,19 @@ class PizarraMutationView(APIView):
             hora_ini = _time(d.get("start")) or parse_horario(servicio.horario_servicio)
             if not servicio.fecha_servicio or not hora_ini:
                 return Response({"error": "El servicio necesita fecha y hora."}, status=409)
-            hora_fin = (datetime.combine(servicio.fecha_servicio, hora_ini) + timedelta(hours=1)).time()
+            hora_fin = _time(d.get("end")) or (
+                datetime.combine(servicio.fecha_servicio, hora_ini) + timedelta(hours=1)
+            ).time()
+            conductor = Conductor.objects.filter(pk=d["driverId"]).first() if d.get("driverId") else None
             c = _pizarra_conflicto(veh, servicio.fecha_servicio, hora_ini, hora_fin)
             if c:
                 return Response({"error": f"Choca con {c.servicio.codigo if c.servicio else 'otra'} ({c.hora_inicio:%H:%M})"}, status=409)
-            ProgramacionServicio.objects.create(
-                servicio=servicio, vehiculo=veh, conductor=None,
+            ps = ProgramacionServicio.objects.create(
+                servicio=servicio, vehiculo=veh, conductor=conductor,
                 fecha=servicio.fecha_servicio, hora_inicio=hora_ini, hora_fin=hora_fin,
                 monto=servicio.precio or 0,
             )
-            return Response({"ok": True})
+            return Response({"ok": True, "id": ps.id})
 
         ps = get_object_or_404(ProgramacionServicio.objects.select_related("servicio"), pk=d.get("assignmentId"))
 
