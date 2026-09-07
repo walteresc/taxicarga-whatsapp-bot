@@ -56,13 +56,16 @@ const toHHMM = min => `${String(Math.floor(min / 60)).padStart(2, '0')}:${String
 const soles = n => (n == null ? '—' : `S/ ${Math.round(n).toLocaleString('es-PE')}`)
 const routeOf = x => `${x.originDistrict || '?'} → ${x.destDistrict || '?'}`
 
-const load = async () => {
-  loading.value = true
+// silent = refresco en segundo plano: no desmonta el tablero (así no se pierde
+// el scroll ni "salta" al inicio tras asignar/mover/quitar).
+const load = async (silent = false) => {
+  if (!silent) loading.value = true
   error.value = ''
   try {
     board.value = await fetchPizarra(date.value)
   } catch (e) {
-    error.value = e.message || 'No se pudo cargar la pizarra.'
+    if (silent) notify(e.message || 'No se pudo actualizar la pizarra.', 'error')
+    else error.value = e.message || 'No se pudo cargar la pizarra.'
   } finally {
     loading.value = false
   }
@@ -192,11 +195,7 @@ const onBarUp = async e => {
 
   // Soltar sobre la zona "sin asignar" → quitar la asignación.
   if (dropEl?.closest('.pz-unassigned, .pz-rail-head')) {
-    try {
-      await pizarraUnassign(bar.id)
-      notify(`${bar.serviceCode} vuelve a "Sin asignar".`)
-      await load()
-    } catch (err) { notify(err.message || 'No se pudo quitar.', 'error') }
+    await releaseBar(bar)
     return
   }
 
@@ -262,11 +261,26 @@ const onChipUp = async e => {
   const rect = lane.getBoundingClientRect()
   let mins = Math.round(((e.clientX - rect.left) / PX_PER_MIN) / SNAP) * SNAP
   mins = Math.max(0, Math.min(23 * 60 + 45, mins))
+  const startHHMM = toHHMM(mins)
+  const s = st.s
+
+  // Optimista: la barra aparece ya en su sitio y el refresco va en 2° plano.
+  const tempId = -Date.now()
+  board.value.assignments.push({
+    id: tempId, resourceId: rid, serviceId: s.serviceId, leadId: s.leadId,
+    serviceCode: s.serviceCode, customer: s.customer,
+    originDistrict: s.originDistrict, destDistrict: s.destDistrict, route: s.route,
+    start: startHHMM, end: toHHMM(mins + 60), state: 'programado',
+    price: s.price, mode: s.mode, assignedAuto: false, driverName: null, helpers: [],
+  })
+  board.value.unassigned = board.value.unassigned.filter(x => x.serviceId !== s.serviceId)
   try {
-    await pizarraAssign({ serviceId: st.s.serviceId, resourceId: rid, start: toHHMM(mins) })
-    notify(`${st.s.serviceCode} asignado a las ${toHHMM(mins)}.`)
-    await load()
+    await pizarraAssign({ serviceId: s.serviceId, resourceId: rid, start: startHHMM })
+    notify(`${s.serviceCode} asignado a las ${startHHMM}.`)
+    await load(true)
   } catch (err) {
+    board.value.assignments = board.value.assignments.filter(a => a.id !== tempId)
+    board.value.unassigned = [...board.value.unassigned, s]
     notify(err.message || 'No se pudo asignar.', 'error')
   }
 }
@@ -294,16 +308,31 @@ const saveEdit = async () => {
     })
     panel.value = false
     notify('Guardado.')
-    await load()
+    await load(true)
   } catch (e) { notify(e.message || 'No se pudo guardar.', 'error') }
 }
-const unassignBar = async bar => {
+// Devuelve el servicio a "Sin asignar" quedando en su hora y con su color.
+const releaseBar = async bar => {
+  const orig = board.value.assignments.find(a => a.id === bar.id)
+  const snap = orig ? { ...orig } : null
+  board.value.assignments = board.value.assignments.filter(a => a.id !== bar.id)
+  board.value.unassigned = [...board.value.unassigned, {
+    serviceId: bar.serviceId, leadId: bar.leadId, serviceCode: bar.serviceCode,
+    customer: bar.customer, originDistrict: bar.originDistrict, destDistrict: bar.destDistrict,
+    route: bar.route, mode: bar.mode, price: bar.price, published: false, scheduleText: '',
+    start: typeof bar.start === 'number' ? toHHMM(bar.start) : bar.start,
+  }]
+  panel.value = false
+  ctx.show = false
   try {
     await pizarraUnassign(bar.id)
-    panel.value = false
-    notify('Servicio devuelto a "Sin asignar".')
-    await load()
-  } catch (e) { notify(e.message || 'No se pudo quitar.', 'error') }
+    notify(`${bar.serviceCode} vuelve a "Sin asignar".`)
+    await load(true)
+  } catch (e) {
+    board.value.unassigned = board.value.unassigned.filter(x => x.serviceId !== bar.serviceId)
+    if (snap) board.value.assignments = [...board.value.assignments, snap]
+    notify(e.message || 'No se pudo quitar.', 'error')
+  }
 }
 
 // ── Detalle del servicio (modal compartido) ─────────────────────────────
@@ -338,7 +367,7 @@ const doAssign = async () => {
     })
     assignDialog.value = false
     notify('Servicio asignado.')
-    await load()
+    await load(true)
   } catch (e) { notify(e.message || 'No se pudo asignar.', 'error') }
 }
 
@@ -669,7 +698,7 @@ const onMmRectUp = () => {
           <VListItem prepend-icon="ri-file-list-3-line" title="Ver detalle del servicio" @click="openDetail(ctx.item.leadId)" />
           <VListItem prepend-icon="ri-edit-line" title="Editar rápido (hora, conductor…)" @click="openPanel(ctx.item)" />
           <VDivider />
-          <VListItem prepend-icon="ri-close-circle-line" title="Quitar asignación" base-color="error" @click="unassignBar(ctx.item)" />
+          <VListItem prepend-icon="ri-close-circle-line" title="Quitar asignación" base-color="error" @click="releaseBar(ctx.item)" />
         </template>
         <template v-else-if="ctx.kind === 'unassigned'">
           <VListItem
@@ -707,7 +736,7 @@ const onMmRectUp = () => {
           :items="Object.entries(STATE).map(([value, s]) => ({ title: s.label, value }))"
         />
         <VBtn block color="primary" class="mb-2" @click="saveEdit">Guardar</VBtn>
-        <VBtn block variant="text" color="error" @click="unassignBar(sel)">Quitar asignación</VBtn>
+        <VBtn block variant="text" color="error" @click="releaseBar(sel)">Quitar asignación</VBtn>
       </div>
     </VNavigationDrawer>
 
@@ -751,7 +780,7 @@ const onMmRectUp = () => {
       :lead-id="detailLeadId"
       context="bookings"
       @close="detailLeadId = null"
-      @changed="load"
+      @changed="() => load(true)"
     />
 
     <VSnackbar v-model="snackbar.show" :color="snackbar.color" timeout="3500">{{ snackbar.text }}</VSnackbar>
