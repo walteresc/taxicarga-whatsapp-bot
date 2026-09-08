@@ -318,6 +318,14 @@ class PagosTests(_Authed):
         self.assertEqual(r["payableDays"], 11)
         self.assertEqual(r["grossAmount"], 1100.0)  # 11 * (3000/30)
 
+    def test_calc_por_dias_hasta_la_fecha_de_cese(self):
+        # ejemplo del usuario: sueldo 1130, del 1 al 12 = 12 días → 452.00
+        cfg = _config(_conductor(), monto_mes="1130", pct_afp="0",
+                      fecha_ingreso=dt.date(2026, 3, 1), fecha_cese=dt.date(2026, 3, 12))
+        r = calcular_pago(cfg, dt.date(2026, 3, 1), dt.date(2026, 3, 31), "por_dias")
+        self.assertEqual(r["payableDays"], 12)
+        self.assertEqual(r["grossAmount"], 452.0)
+
 
 class VacacionesYResumenTests(_Authed):
     def test_vacaciones_por_anio_cumplido(self):

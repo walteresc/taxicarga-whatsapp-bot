@@ -268,19 +268,21 @@ const removePayment = async row => {
               {{ p.label }}
             </VChip>
           </div>
-          <div class="d-flex flex-wrap align-center ga-3">
-            <template v-if="summaryPreset === 'custom'">
-              <VTextField v-model="summaryFrom" type="date" label="Desde" density="compact" hide-details style="max-width: 175px;" />
-              <VTextField v-model="summaryTo" type="date" label="Hasta" density="compact" hide-details style="max-width: 175px;" />
-            </template>
-            <VTextField
-              v-else v-model="summaryMonth" type="month" label="Mes"
-              density="compact" hide-details style="max-width: 190px;"
-            />
-            <VChip size="small" variant="tonal" prepend-icon="ri-calendar-line">
-              {{ summaryRange.from }} → {{ summaryRange.to }}
-            </VChip>
-          </div>
+          <VRow v-if="summaryPreset === 'custom'" dense class="mb-1">
+            <VCol cols="12" sm="4">
+              <VTextField v-model="summaryFrom" type="date" label="Desde" hide-details />
+            </VCol>
+            <VCol cols="12" sm="4">
+              <VTextField v-model="summaryTo" type="date" label="Hasta" hide-details />
+            </VCol>
+          </VRow>
+          <VTextField
+            v-else v-model="summaryMonth" type="month" label="Mes"
+            hide-details style="max-width: 220px;" class="mb-1"
+          />
+          <VChip size="small" variant="tonal" prepend-icon="ri-calendar-line">
+            Se calcula del {{ summaryRange.from }} al {{ summaryRange.to }}
+          </VChip>
         </VCardText>
         <VDivider />
         <VTable>
@@ -394,13 +396,13 @@ const removePayment = async row => {
               </div>
 
               <VRow>
-                <VCol cols="12" sm="4">
+                <VCol cols="12" sm="6">
                   <VTextField v-model="form.periodFrom" type="date" label="Desde" :error-messages="errs.periodFrom" />
                 </VCol>
-                <VCol cols="12" sm="4">
+                <VCol cols="12" sm="6">
                   <VTextField v-model="form.periodTo" type="date" label="Hasta" :error-messages="errs.periodTo" />
                 </VCol>
-                <VCol cols="12" sm="4">
+                <VCol cols="12">
                   <VSelect
                     v-model="form.type" :items="PAY_METHODS"
                     item-title="label" item-value="value" label="Método de cálculo"

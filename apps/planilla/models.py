@@ -70,6 +70,7 @@ class ConfiguracionPlanilla(models.Model):
         max_digits=5, decimal_places=2, default=_ZERO, verbose_name="% AFP",
     )
     fecha_ingreso = models.DateField()
+    fecha_cese = models.DateField(null=True, blank=True, verbose_name="Fecha de cese")
     activo = models.BooleanField(default=True)
     observaciones = models.TextField(blank=True)
     creado_en = models.DateTimeField(auto_now_add=True)

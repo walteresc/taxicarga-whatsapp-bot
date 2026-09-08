@@ -300,7 +300,8 @@ def calcular_pago(trabajador, desde, hasta, tipo):
         elif tipo == Pago.TIPO_POR_DIAS:
             # proporcional: días calendario del vínculo dentro del rango − faltas
             inicio = max(desde, trabajador.fecha_ingreso)
-            dias_cal = (hasta - inicio).days + 1 if inicio <= hasta else 0
+            fin = min(hasta, trabajador.fecha_cese) if trabajador.fecha_cese else hasta
+            dias_cal = (fin - inicio).days + 1 if inicio <= fin else 0
             dias_pagables = max(0, dias_cal - len(faltas_nc))
             base = valor_dia * dias_pagables
         else:  # adelanto: monto libre
@@ -313,7 +314,8 @@ def calcular_pago(trabajador, desde, hasta, tipo):
     if (trabajador.tipo_contrato == ConfiguracionPlanilla.CONTRATO_PLANILLA
             and tipo == Pago.TIPO_POR_DIAS):
         _ini = max(desde, trabajador.fecha_ingreso)
-        _cal = (hasta - _ini).days + 1 if _ini <= hasta else 0
+        _fin = min(hasta, trabajador.fecha_cese) if trabajador.fecha_cese else hasta
+        _cal = (_fin - _ini).days + 1 if _ini <= _fin else 0
         dias_pagables = max(0, _cal - len(faltas_nc))
     return {
         "daysWorked": dias_trab,
@@ -434,6 +436,7 @@ def worker_payroll(trabajador, fecha):
             "contractType": trabajador.tipo_contrato,
             "workdayHours": float(trabajador.horas_jornada),
             "hiredOn": trabajador.fecha_ingreso.isoformat(),
+            "endedOn": trabajador.fecha_cese.isoformat() if trabajador.fecha_cese else None,
             "amountPerMonth": float(trabajador.monto_mes) if trabajador.monto_mes is not None else None,
             "amountPerDay": float(trabajador.monto_dia) if trabajador.monto_dia is not None else None,
             "valorDia": float(trabajador.valor_dia.quantize(_Q2)),

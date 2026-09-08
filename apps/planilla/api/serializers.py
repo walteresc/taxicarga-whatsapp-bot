@@ -36,6 +36,7 @@ class PayrollConfigSerializer(serializers.ModelSerializer):
     )
     afpPct = serializers.DecimalField(source="pct_afp", max_digits=5, decimal_places=2, required=False)
     hiredOn = serializers.DateField(source="fecha_ingreso")
+    endedOn = serializers.DateField(source="fecha_cese", required=False, allow_null=True)
     active = serializers.BooleanField(source="activo", required=False, default=True)
     notes = serializers.CharField(source="observaciones", required=False, allow_blank=True, default="")
     valorDia = serializers.SerializerMethodField()
@@ -46,7 +47,7 @@ class PayrollConfigSerializer(serializers.ModelSerializer):
         fields = (
             "id", "workerType", "workerId", "workerName", "documentId",
             "workdayHours", "lunchHours", "contractType", "amountPerDay", "amountPerMonth",
-            "afpPct", "hiredOn", "active", "notes", "valorDia", "valorHora",
+            "afpPct", "hiredOn", "endedOn", "active", "notes", "valorDia", "valorHora",
         )
 
     def get_workerId(self, obj):

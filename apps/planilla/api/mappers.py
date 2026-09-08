@@ -10,6 +10,7 @@ CONFIG_FIELDS = {
     "amountPerMonth": "monto_mes",
     "afpPct": "pct_afp",
     "hiredOn": "fecha_ingreso",
+    "endedOn": "fecha_cese",
     "active": "activo",
     "notes": "observaciones",
 }

@@ -24,6 +24,7 @@ const form = reactive({
   lunchHours: '1',
   afpPct: '10',
   hiredOn: '',
+  endedOn: '',
   active: true,
   notes: '',
 })
@@ -55,6 +56,7 @@ onMounted(async () => {
         lunchHours: c.lunchHours,
         afpPct: c.afpPct,
         hiredOn: c.hiredOn || '',
+        endedOn: c.endedOn || '',
         active: c.active,
         notes: c.notes || '',
       })
@@ -75,6 +77,7 @@ const submit = async () => {
     lunchHours: form.lunchHours,
     afpPct: form.afpPct || 0,
     hiredOn: form.hiredOn,
+    endedOn: form.endedOn || null,
     active: form.active,
     notes: form.notes,
     amountPerMonth: form.contractType === 'planilla' ? form.amountPerMonth : null,
@@ -133,10 +136,17 @@ const submit = async () => {
                 :error-messages="errs.amountPerDay"
               />
             </VCol>
-            <VCol cols="12" sm="6">
+            <VCol cols="12" sm="3">
               <VTextField
                 v-model="form.hiredOn" type="date" label="Fecha de ingreso"
                 :error-messages="errs.hiredOn"
+              />
+            </VCol>
+            <VCol cols="12" sm="3">
+              <VTextField
+                v-model="form.endedOn" type="date" label="Fecha de cese"
+                hint="Solo si ya no trabaja" persistent-hint clearable
+                :error-messages="errs.endedOn"
               />
             </VCol>
             <VCol cols="12" sm="4">
