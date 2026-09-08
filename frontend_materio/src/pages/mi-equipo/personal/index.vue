@@ -2,7 +2,9 @@
 import { onMounted, reactive, ref, watch } from 'vue'
 
 import { ApiError, apiClient } from '@/services/apiClient'
+import PayrollConfigDialog from '@/components/planilla/PayrollConfigDialog.vue'
 import { assistantsService, driversService, LICENSE_CATEGORIES } from '@/services/personnelService'
+import { payrollConfigService } from '@/services/payrollService'
 
 const TYPE = {
   conductor: { label: 'Conductor', color: 'primary', icon: 'ri-steering-line' },
@@ -31,6 +33,20 @@ let searchTimer
 const snackbar = reactive({ show: false, text: '', color: 'success' })
 const notify = (text, color = 'success') => Object.assign(snackbar, { show: true, text, color })
 
+// ── Configuración de planilla por trabajador ────────────────────────────
+const PAYROLL_LABEL = { planilla: 'Planilla', honorarios: 'Honorarios' }
+const payrollByWorker = ref({}) // `${type}:${workerId}` -> config
+const payrollKey = row => `${row.type}:${row.sourceId}`
+const loadPayroll = async () => {
+  try {
+    const data = await payrollConfigService.list({ pageSize: 500 })
+    const map = {}
+    for (const c of data.results) map[`${c.workerType}:${c.workerId}`] = c
+    payrollByWorker.value = map
+  } catch { /* la columna simplemente queda vacía */ }
+}
+const payrollDialog = ref(null) // fila del trabajador o null
+
 const load = async () => {
   loading.value = true
   error.value = ''
@@ -52,7 +68,7 @@ const load = async () => {
   }
 }
 
-onMounted(load)
+onMounted(() => { load(); loadPayroll() })
 watch([type, onlyActive, page], load)
 watch(search, () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { page.value = 1; load() }, 350) })
 
@@ -178,12 +194,12 @@ const submit = async () => {
         <thead>
           <tr>
             <th>Nombre</th><th>Tipo</th><th>Documento</th><th>Teléfono</th><th>Detalle</th>
-            <th>Estado</th><th class="text-right">Acciones</th>
+            <th>Planilla</th><th>Estado</th><th class="text-right">Acciones</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-if="loading"><td colspan="7" class="text-center py-8"><VProgressCircular indeterminate color="primary" /></td></tr>
-          <tr v-else-if="!rows.length"><td colspan="7" class="text-center text-medium-emphasis py-10">Sin personal para el filtro.</td></tr>
+          <tr v-if="loading"><td colspan="8" class="text-center py-8"><VProgressCircular indeterminate color="primary" /></td></tr>
+          <tr v-else-if="!rows.length"><td colspan="8" class="text-center text-medium-emphasis py-10">Sin personal para el filtro.</td></tr>
           <tr v-for="row in rows" v-else :key="row.id">
             <td class="font-weight-medium">{{ row.name }}</td>
             <td>
@@ -194,13 +210,25 @@ const submit = async () => {
             <td>{{ row.documentId || '—' }}</td>
             <td>{{ row.phone || '—' }}</td>
             <td class="text-medium-emphasis text-body-2">{{ row.detail || '—' }}</td>
+            <td>
+              <VChip
+                v-if="payrollByWorker[payrollKey(row)]"
+                size="small" color="primary" variant="tonal"
+              >
+                {{ PAYROLL_LABEL[payrollByWorker[payrollKey(row)].contractType] }}
+              </VChip>
+              <span v-else class="text-caption text-disabled">Sin configurar</span>
+            </td>
             <td><VChip size="small" :color="row.active ? 'success' : 'secondary'">{{ row.active ? 'Activo' : 'Inactivo' }}</VChip></td>
             <td class="text-right text-no-wrap">
+              <VBtn
+                size="small" variant="text" icon="ri-money-dollar-circle-line"
+                title="Configuración de planilla" @click="payrollDialog = row"
+              />
               <VBtn
                 v-if="row.type !== 'asesor'" size="small" variant="text" icon="ri-edit-line"
                 title="Editar" @click="openEdit(row)"
               />
-              <span v-else class="text-caption text-disabled">Usuarios y permisos</span>
             </td>
           </tr>
         </tbody>
@@ -238,6 +266,13 @@ const submit = async () => {
         </VCardActions>
       </VCard>
     </VDialog>
+
+    <PayrollConfigDialog
+      v-if="payrollDialog"
+      :worker="payrollDialog"
+      @close="payrollDialog = null"
+      @saved="() => { notify('Configuración de planilla guardada.'); loadPayroll() }"
+    />
 
     <VSnackbar v-model="snackbar.show" :color="snackbar.color" timeout="3500">{{ snackbar.text }}</VSnackbar>
   </section>

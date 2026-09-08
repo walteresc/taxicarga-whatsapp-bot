@@ -74,6 +74,7 @@ INSTALLED_APPS = [
     "apps.tercerizacion",
     "apps.grupos_internos",
     "apps.catalogo",
+    "apps.planilla",
 ]
 
 LOGIN_URL = "/dashboard/login/"
