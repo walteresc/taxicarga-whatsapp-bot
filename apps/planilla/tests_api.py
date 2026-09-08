@@ -7,10 +7,15 @@ from rest_framework.test import APITestCase
 
 from apps.campo.models import Conductor
 from apps.planilla.api.mappers import (
-    ATTENDANCE_FIELDS, CONFIG_FIELDS, api_to_model, model_to_api,
+    ATTENDANCE_FIELDS, COMPENSATION_FIELDS, CONFIG_FIELDS, api_to_model, model_to_api,
 )
-from apps.planilla.api.serializers import AttendanceSerializer, PayrollConfigSerializer
-from apps.planilla.models import ConfiguracionPlanilla, RegistroAsistencia
+from apps.planilla.api.serializers import (
+    AttendanceSerializer, CompensationSerializer, PayrollConfigSerializer,
+)
+from apps.planilla.models import (
+    ConfiguracionPlanilla, MovimientoCompensacion, RegistroAsistencia,
+)
+from apps.planilla.services import saldo_horas
 
 User = get_user_model()
 
@@ -47,6 +52,9 @@ class MapperRoundTripTests(APITestCase):
         self.assertEqual(set(PayrollConfigSerializer().fields) - _RO, set(CONFIG_FIELDS))
         self.assertEqual(
             set(AttendanceSerializer().fields) - {"id", "workerName"}, set(ATTENDANCE_FIELDS),
+        )
+        self.assertEqual(
+            set(CompensationSerializer().fields) - {"id", "workerName"}, set(COMPENSATION_FIELDS),
         )
 
 
@@ -156,7 +164,7 @@ class AttendanceApiTests(_Authed):
         self.assertEqual(reg.tipo_dia, "falta")
         self.assertEqual(reg.delta_dia, 0)
 
-    def test_delta_mensual_acumulado(self):
+    def test_saldo_acumulado_del_mes(self):
         cfg = _config(_conductor())
         for dia, salida in ((5, "18:00"), (6, "17:00")):  # Δ +1 y Δ 0
             self.client.post("/api/v2/payroll/day", {
@@ -164,7 +172,7 @@ class AttendanceApiTests(_Authed):
                 "dayType": "trabajado", "clockIn": "08:00", "clockOut": salida,
             }, format="json")
         r = self.client.get("/api/v2/payroll/day?date=2026-03-06")
-        self.assertEqual(r.data["rows"][0]["monthDelta"], 1.0)
+        self.assertEqual(r.data["rows"][0]["balanceHours"], 1.0)
 
     def test_clear_borra_el_registro(self):
         cfg = _config(_conductor())
@@ -175,6 +183,66 @@ class AttendanceApiTests(_Authed):
             "trabajadorId": cfg.id, "fecha": "2026-03-10", "clear": True,
         }, format="json")
         self.assertFalse(RegistroAsistencia.objects.filter(trabajador=cfg).exists())
+
+
+class SaldoYCompensacionTests(_Authed):
+    def _falta(self, cfg, fecha):
+        return RegistroAsistencia.objects.create(
+            trabajador=cfg, fecha=fecha, tipo_dia="falta",
+            horas_jornada_dia=cfg.horas_jornada, horas_refrigerio_dia=cfg.horas_refrigerio,
+        )
+
+    def test_saldo_horas_suma_deltas_y_compensaciones(self):
+        cfg = _config(_conductor())
+        # 2 días con +2 h cada uno
+        for dia in (3, 4):
+            RegistroAsistencia.objects.create(
+                trabajador=cfg, fecha=dt.date(2026, 4, dia), tipo_dia="trabajado",
+                hora_ingreso=dt.time(8, 0), hora_salida=dt.time(19, 0),
+                horas_jornada_dia="8.00", horas_refrigerio_dia="1.00",
+            )
+        self.assertEqual(saldo_horas(cfg, dt.date(2026, 4, 4)), 4)
+        MovimientoCompensacion.objects.create(
+            trabajador=cfg, fecha=dt.date(2026, 4, 5), tipo="pago_horas", horas="-3.00",
+        )
+        self.assertEqual(saldo_horas(cfg, dt.date(2026, 4, 5)), 1)
+
+    def test_apertura_manual_arrastra(self):
+        cfg = _config(_conductor())
+        from apps.planilla.models import SaldoHorasMes
+        SaldoHorasMes.objects.create(trabajador=cfg, anio=2026, mes=5, saldo_apertura="6.00")
+        self.assertEqual(saldo_horas(cfg, dt.date(2026, 5, 1)), 6)
+
+    def test_compensar_falta_requiere_saldo(self):
+        cfg = _config(_conductor())
+        falta = self._falta(cfg, dt.date(2026, 4, 10))
+        # sin saldo → rechaza
+        r = self.client.post("/api/v2/payroll-compensations/", {
+            "trabajadorId": cfg.id, "kind": "falta_compensada", "attendanceId": falta.id,
+        }, format="json")
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("hours", r.data["fields"])
+
+        # con saldo de +10 h (un día trabajado largo) → acepta y resta la jornada
+        RegistroAsistencia.objects.create(
+            trabajador=cfg, fecha=dt.date(2026, 4, 1), tipo_dia="trabajado",
+            hora_ingreso=dt.time(6, 0), hora_salida=dt.time(23, 0),
+            horas_jornada_dia="8.00", horas_refrigerio_dia="1.00",
+        )
+        r = self.client.post("/api/v2/payroll-compensations/", {
+            "trabajadorId": cfg.id, "kind": "falta_compensada", "attendanceId": falta.id,
+        }, format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+        mv = MovimientoCompensacion.objects.get()
+        self.assertEqual(mv.horas, -8)  # -jornada
+        self.assertEqual(str(mv.fecha), "2026-04-10")
+
+    def test_faltas_pendientes(self):
+        cfg = _config(_conductor())
+        self._falta(cfg, dt.date(2026, 4, 10))
+        r = self.client.get("/api/v2/payroll/pending-absences?from=2026-04-01&to=2026-04-30")
+        self.assertEqual(len(r.data), 1)
+        self.assertFalse(r.data[0]["compensable"])  # saldo 0 < jornada 8
 
 
 class RbacTests(APITestCase):

@@ -43,6 +43,11 @@ export const routes = [
         meta: { roles: PERSONAL_ROLES },
       },
       {
+        path: 'mi-equipo/compensaciones',
+        component: () => import('@/pages/mi-equipo/compensaciones/index.vue'),
+        meta: { roles: PERSONAL_ROLES },
+      },
+      {
         path: 'personal-campo/conductores',
         component: () => import('@/pages/personal-campo/conductores.vue'),
         meta: { roles: PERSONAL_ROLES },

@@ -107,7 +107,7 @@ const onDayType = row => {
             <th style="width: 130px;">Salida</th>
             <th class="text-right">Horas trab.</th>
             <th class="text-right">Δ del día</th>
-            <th class="text-right">Δ acum. mes</th>
+            <th class="text-right">Saldo horas</th>
             <th></th>
           </tr>
         </thead>
@@ -147,8 +147,8 @@ const onDayType = row => {
             <td class="text-right" :class="deltaColor(row.delta)">
               {{ row.delta == null ? '—' : (row.delta > 0 ? '+' : '') + num(row.delta) }}
             </td>
-            <td class="text-right font-weight-medium" :class="deltaColor(row.monthDelta)">
-              {{ (row.monthDelta > 0 ? '+' : '') + num(row.monthDelta) }}
+            <td class="text-right font-weight-medium" :class="deltaColor(row.balanceHours)">
+              {{ (row.balanceHours > 0 ? '+' : '') + num(row.balanceHours) }}
             </td>
             <td class="text-right">
               <VBtn

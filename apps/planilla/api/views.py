@@ -10,12 +10,18 @@ from rest_framework.views import APIView
 from apps.api.exceptions import api_exception_handler
 from apps.api.permissions import HasAnyRole
 from apps.api.views import V2ModelViewSet
-from apps.planilla.models import ConfiguracionPlanilla, RegistroAsistencia
+from apps.planilla.models import (
+    ConfiguracionPlanilla, MovimientoCompensacion, RegistroAsistencia, SaldoHorasMes,
+)
 from apps.planilla.services import (
-    attendance_queryset, configs_queryset, dia_planilla, upsert_asistencia,
+    attendance_queryset, compensations_queryset, configs_queryset, dia_planilla,
+    faltas_pendientes, upsert_asistencia,
 )
 
-from .serializers import AttendanceSerializer, PayrollConfigSerializer
+from .serializers import (
+    AttendanceSerializer, CompensationSerializer, OpeningBalanceSerializer,
+    PayrollConfigSerializer,
+)
 
 _ROLES = ("Administrador", "Supervisor", "Asesor de Ventas")
 
@@ -95,3 +101,38 @@ class PayrollDayView(APIView):
             usuario=request.user if request.user.is_authenticated else None,
         )
         return Response(AttendanceSerializer(reg).data)
+
+
+class CompensationViewSet(V2ModelViewSet):
+    serializer_class = CompensationSerializer
+    permission_classes = [HasAnyRole(*_ROLES)]
+
+    def get_queryset(self):
+        return compensations_queryset(self.request.query_params)
+
+
+class OpeningBalanceViewSet(V2ModelViewSet):
+    serializer_class = OpeningBalanceSerializer
+    permission_classes = [HasAnyRole(*_ROLES)]
+    http_method_names = ["get", "post", "delete", "head", "options"]
+
+    def get_queryset(self):
+        qs = SaldoHorasMes.objects.select_related("trabajador")
+        p = self.request.query_params
+        if p.get("trabajadorId"):
+            qs = qs.filter(trabajador_id=p["trabajadorId"])
+        if p.get("year"):
+            qs = qs.filter(anio=p["year"])
+        return qs.order_by("-anio", "-mes")
+
+
+class PendingAbsencesView(APIView):
+    """Faltas sin compensación: GET /api/v2/payroll/pending-absences?from=&to="""
+    permission_classes = [HasAnyRole(*_ROLES)]
+
+    def get_exception_handler(self):
+        return api_exception_handler
+
+    def get(self, request):
+        p = request.query_params
+        return Response(faltas_pendientes(p.get("from") or None, p.get("to") or None))

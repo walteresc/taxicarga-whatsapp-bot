@@ -208,6 +208,8 @@ class RegistroAsistencia(models.Model):
     def recompute(self):
         from datetime import datetime, timedelta
 
+        refr = Decimal(str(self.horas_refrigerio_dia or 0))
+        jorn = Decimal(str(self.horas_jornada_dia or 0))
         if self.tipo_dia == self.TIPO_TRABAJADO and self.hora_ingreso and self.hora_salida:
             base = datetime(2000, 1, 1)
             ini = base.replace(
@@ -222,8 +224,8 @@ class RegistroAsistencia(models.Model):
                 fin += timedelta(days=1)
             minutos = int((fin - ini).total_seconds() // 60)
             presente = (Decimal(minutos) / Decimal("60")).quantize(Decimal("0.01"))
-            self.horas_trabajadas = presente - (self.horas_refrigerio_dia or _ZERO)
-            self.delta_dia = self.horas_trabajadas - (self.horas_jornada_dia or _ZERO)
+            self.horas_trabajadas = presente - refr
+            self.delta_dia = self.horas_trabajadas - jorn
         else:
             self.horas_trabajadas = _ZERO
             self.delta_dia = _ZERO
@@ -234,3 +236,73 @@ class RegistroAsistencia(models.Model):
 
     def __str__(self):
         return f"{self.trabajador.nombre} — {self.fecha} ({self.get_tipo_dia_display()})"
+
+
+class SaldoHorasMes(models.Model):
+    """Apertura del saldo de horas de un mes. Solo existe cuando el operador la
+    edita a mano (`editado_manual=True`); si no, la apertura se calcula como el
+    cierre del mes anterior."""
+    trabajador = models.ForeignKey(
+        ConfiguracionPlanilla, on_delete=models.PROTECT, related_name="saldos_mes",
+    )
+    anio = models.PositiveSmallIntegerField()
+    mes = models.PositiveSmallIntegerField()
+    saldo_apertura = models.DecimalField(max_digits=7, decimal_places=2, default=_ZERO)
+    editado_manual = models.BooleanField(default=True)
+    nota = models.CharField(max_length=200, blank=True)
+    actualizado_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Saldo de horas del mes"
+        verbose_name_plural = "Saldos de horas por mes"
+        ordering = ["-anio", "-mes"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["trabajador", "anio", "mes"], name="planilla_saldo_mes_unico",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.trabajador.nombre} — {self.anio}-{self.mes:02d}: {self.saldo_apertura}"
+
+
+class MovimientoCompensacion(models.Model):
+    """Ajuste manual del saldo de horas. `horas` con signo: negativo consume el
+    saldo a favor del trabajador (compensar una falta, otorgar día libre, pagar
+    horas), positivo lo aumenta (el trabajador repone horas, ajuste)."""
+    TIPO_FALTA_COMPENSADA = "falta_compensada"
+    TIPO_DIA_LIBRE = "dia_libre"
+    TIPO_PAGO_HORAS = "pago_horas"
+    TIPO_DEVOLUCION = "devolucion_trabajador"
+    TIPO_AJUSTE = "ajuste"
+    TIPOS = [
+        (TIPO_FALTA_COMPENSADA, "Falta compensada con horas"),
+        (TIPO_DIA_LIBRE, "Día libre a cuenta de horas"),
+        (TIPO_PAGO_HORAS, "Pago de horas extra"),
+        (TIPO_DEVOLUCION, "El trabajador repone horas"),
+        (TIPO_AJUSTE, "Ajuste manual"),
+    ]
+
+    trabajador = models.ForeignKey(
+        ConfiguracionPlanilla, on_delete=models.PROTECT, related_name="compensaciones",
+    )
+    fecha = models.DateField()
+    horas = models.DecimalField(max_digits=6, decimal_places=2)
+    tipo = models.CharField(max_length=24, choices=TIPOS)
+    asistencia = models.ForeignKey(
+        RegistroAsistencia, on_delete=models.PROTECT, null=True, blank=True,
+        related_name="compensaciones",
+    )
+    motivo = models.CharField(max_length=200, blank=True)
+    creado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Movimiento de compensación"
+        verbose_name_plural = "Movimientos de compensación"
+        ordering = ["-fecha", "-id"]
+
+    def __str__(self):
+        return f"{self.trabajador.nombre} — {self.fecha}: {self.horas:+} h"

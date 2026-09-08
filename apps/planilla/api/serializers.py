@@ -5,7 +5,9 @@ no se desincronizan de `mappers.CONFIG_FIELDS`.
 """
 from rest_framework import serializers
 
-from apps.planilla.models import ConfiguracionPlanilla, RegistroAsistencia
+from apps.planilla.models import (
+    ConfiguracionPlanilla, MovimientoCompensacion, RegistroAsistencia, SaldoHorasMes,
+)
 
 _WORKER_FK = {
     ConfiguracionPlanilla.TIPO_CONDUCTOR: "conductor_id",
@@ -105,3 +107,81 @@ class AttendanceSerializer(serializers.ModelSerializer):
             "id", "trabajadorId", "workerName", "date", "dayType", "clockIn", "clockOut",
             "workdayHours", "lunchHours", "workedHours", "delta", "note",
         )
+
+
+class CompensationSerializer(serializers.ModelSerializer):
+    trabajadorId = serializers.PrimaryKeyRelatedField(
+        source="trabajador", queryset=ConfiguracionPlanilla.objects.all(),
+    )
+    workerName = serializers.CharField(source="trabajador.nombre", read_only=True)
+    date = serializers.DateField(source="fecha", required=False)
+    hours = serializers.DecimalField(source="horas", max_digits=6, decimal_places=2, required=False)
+    kind = serializers.ChoiceField(source="tipo", choices=MovimientoCompensacion.TIPOS)
+    attendanceId = serializers.PrimaryKeyRelatedField(
+        source="asistencia", queryset=RegistroAsistencia.objects.all(),
+        required=False, allow_null=True,
+    )
+    reason = serializers.CharField(source="motivo", required=False, allow_blank=True, default="")
+
+    class Meta:
+        model = MovimientoCompensacion
+        fields = ("id", "trabajadorId", "workerName", "date", "hours", "kind", "attendanceId", "reason")
+
+    def validate(self, attrs):
+        tipo = attrs.get("tipo") or getattr(self.instance, "tipo", None)
+        trabajador = attrs.get("trabajador") or getattr(self.instance, "trabajador", None)
+        asistencia = attrs.get("asistencia")
+
+        if tipo == MovimientoCompensacion.TIPO_FALTA_COMPENSADA:
+            if asistencia is None:
+                raise serializers.ValidationError({"attendanceId": "Requerido para compensar una falta."})
+            if trabajador and asistencia.trabajador_id != trabajador.id:
+                raise serializers.ValidationError({"attendanceId": "La falta no es de este trabajador."})
+            if asistencia.tipo_dia != RegistroAsistencia.TIPO_FALTA:
+                raise serializers.ValidationError({"attendanceId": "Ese día no está marcado como falta."})
+            from apps.planilla.services import saldo_horas
+            jornada = asistencia.horas_jornada_dia or trabajador.horas_jornada
+            if saldo_horas(trabajador, asistencia.fecha) < jornada:
+                raise serializers.ValidationError(
+                    {"hours": "El saldo de horas no alcanza para compensar un día completo."},
+                )
+            attrs["fecha"] = asistencia.fecha
+            attrs["horas"] = -jornada
+        elif attrs.get("horas") is None and self.instance is None:
+            raise serializers.ValidationError({"hours": "Requerido."})
+        if attrs.get("fecha") is None and self.instance is None:
+            raise serializers.ValidationError({"date": "Requerida."})
+        return attrs
+
+    def create(self, validated_data):
+        req = self.context.get("request")
+        if req and req.user.is_authenticated:
+            validated_data["creado_por"] = req.user
+        return super().create(validated_data)
+
+
+class OpeningBalanceSerializer(serializers.ModelSerializer):
+    trabajadorId = serializers.PrimaryKeyRelatedField(
+        source="trabajador", queryset=ConfiguracionPlanilla.objects.all(),
+    )
+    workerName = serializers.CharField(source="trabajador.nombre", read_only=True)
+    year = serializers.IntegerField(source="anio")
+    month = serializers.IntegerField(source="mes")
+    openingHours = serializers.DecimalField(source="saldo_apertura", max_digits=7, decimal_places=2)
+    note = serializers.CharField(source="nota", required=False, allow_blank=True, default="")
+
+    class Meta:
+        model = SaldoHorasMes
+        fields = ("id", "trabajadorId", "workerName", "year", "month", "openingHours", "note")
+
+    def create(self, validated_data):
+        obj, _ = SaldoHorasMes.objects.update_or_create(
+            trabajador=validated_data["trabajador"],
+            anio=validated_data["anio"], mes=validated_data["mes"],
+            defaults={
+                "saldo_apertura": validated_data["saldo_apertura"],
+                "nota": validated_data.get("nota", ""),
+                "editado_manual": True,
+            },
+        )
+        return obj

@@ -28,6 +28,15 @@ ATTENDANCE_FIELDS = {
     "note": "observacion",
 }
 
+COMPENSATION_FIELDS = {
+    "trabajadorId": "trabajador",
+    "date": "fecha",
+    "hours": "horas",
+    "kind": "tipo",
+    "attendanceId": "asistencia",
+    "reason": "motivo",
+}
+
 
 def _invert(mapping):
     return {v: k for k, v in mapping.items()}

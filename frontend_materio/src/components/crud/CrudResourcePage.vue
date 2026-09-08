@@ -191,6 +191,8 @@ const fieldError = key => fieldErrors.value[key]?.[0]
 
 const detailRow = ref(null)
 const closeDetail = () => { detailRow.value = null }
+
+defineExpose({ load })
 </script>
 
 <template>
