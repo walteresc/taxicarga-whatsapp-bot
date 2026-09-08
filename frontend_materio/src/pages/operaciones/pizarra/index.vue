@@ -457,8 +457,8 @@ const openTimePicker = (ctx, x, y, dropMin) => {
   picker.selected = null // el usuario elige la hora explícitamente
   picker.code = ctx.kind === 'assign' ? ctx.service.serviceCode : ctx.bar.serviceCode
   picker.ctx = ctx
-  picker.x = x
-  picker.y = y
+  picker.x = Math.min(x, window.innerWidth - 230)
+  picker.y = Math.min(y, window.innerHeight - 230)
   picker.show = true
 }
 watch(() => picker.selected, v => {
@@ -978,10 +978,14 @@ const onMmRectUp = () => {
     </VMenu>
 
     <!-- selector de hora exacta al soltar -->
-    <VMenu v-model="picker.show" :target="[picker.x, picker.y]" :close-on-content-click="false" location="bottom start">
-      <VCard min-width="196" class="pa-2">
+    <template v-if="picker.show">
+      <div class="pz-picker-backdrop" @pointerdown="picker.show = false" />
+      <VCard
+        class="pz-picker pa-2" min-width="200"
+        :style="{ left: picker.x + 'px', top: picker.y + 'px' }"
+      >
         <div class="text-caption text-medium-emphasis px-1 pb-1">
-          {{ picker.code }} · {{ dayLabel }}<br>Hora de inicio
+          {{ picker.code }} · {{ dayLabel }}<br>Elegí la hora de inicio
         </div>
         <VRadioGroup v-model="picker.selected" density="compact" hide-details class="px-1">
           <VRadio v-for="o in picker.options" :key="o.value" :value="o.value" :label="o.label" />
@@ -991,7 +995,7 @@ const onMmRectUp = () => {
           <VBtn size="small" color="primary" :disabled="picker.selected == null" @click="confirmPicker">Confirmar</VBtn>
         </div>
       </VCard>
-    </VMenu>
+    </template>
 
     <!-- panel lateral: editar una barra o asignar un servicio -->
     <VNavigationDrawer v-model="panel" location="right" temporary width="360">
@@ -1217,6 +1221,13 @@ const onMmRectUp = () => {
   background: rgb(17 24 39 / 94%);
   border-radius: 8px;
   box-shadow: 0 6px 18px rgb(0 0 0 / 34%);
+}
+
+.pz-picker-backdrop { position: fixed; inset: 0; z-index: 2500; }
+.pz-picker {
+  position: fixed;
+  z-index: 2600;
+  box-shadow: 0 8px 30px rgb(0 0 0 / 28%);
 }
 
 .pz-l1 {
