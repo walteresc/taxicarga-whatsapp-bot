@@ -693,27 +693,10 @@ const onMmRectUp = () => {
   <section>
     <div class="d-flex flex-wrap align-center justify-space-between ga-4 mb-4">
       <h1 class="text-h4 font-weight-bold">Pizarra</h1>
-      <div class="d-flex flex-wrap align-center justify-end ga-x-6 ga-y-2">
-        <div v-if="!loading && !error" class="pz-summary d-flex align-center ga-4">
-          <div class="text-body-2 text-end">
-            <div :class="summary.sinAsignar ? 'text-error font-weight-medium' : 'text-medium-emphasis'">
-              <span>Sin asignar</span>
-              <strong class="ms-1">{{ summary.sinAsignar }}</strong>
-              <span> · {{ soles(summary.montoSinAsignar) }}</span>
-            </div>
-            <div>
-              <span class="text-medium-emphasis">Asignados</span>
-              <strong class="ms-1">{{ summary.asignados }}</strong>
-              <span class="text-medium-emphasis"> · {{ soles(summary.montoAsignados) }}</span>
-            </div>
-          </div>
-          <VDivider vertical class="align-self-stretch" />
-          <div class="text-end">
-            <div class="text-caption text-medium-emphasis">Servicios · {{ dayLabel }}</div>
-            <div class="text-h6 font-weight-bold">
-              {{ summary.total }} · {{ soles(summary.monto) }}
-            </div>
-          </div>
+      <div class="d-flex flex-wrap align-center justify-end ga-x-10 ga-y-2">
+        <div v-if="!loading && !error" class="text-end">
+          <div class="text-caption text-medium-emphasis">Servicios · {{ dayLabel }}</div>
+          <div class="text-h6 font-weight-bold">{{ summary.total }} · {{ soles(summary.monto) }}</div>
         </div>
         <div class="d-flex align-center ga-1">
           <VBtn icon="ri-arrow-left-s-line" variant="tonal" @click="shiftDay(-1)" />
