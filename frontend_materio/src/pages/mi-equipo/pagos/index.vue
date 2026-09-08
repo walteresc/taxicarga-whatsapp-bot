@@ -21,54 +21,58 @@ const error = ref('')
 
 // ── Resumen ────────────────────────────────────────────────────────────
 const SUM_PRESETS = [
-  { value: 'mtd', label: 'Al día de hoy', type: 'por_dias', payPreset: 'mtd' },
-  { value: 'month', label: 'Mes completo', type: 'fin_de_mes', payPreset: 'fin_de_mes' },
-  { value: 'q1', label: 'Quincena 1', type: 'quincena', payPreset: 'quincena1' },
-  { value: 'q2', label: 'Quincena 2', type: 'quincena', payPreset: 'quincena2' },
-  { value: 'custom', label: 'Entre fechas', type: 'por_dias', payPreset: 'custom' },
+  { value: 'mtd', label: 'Al día de hoy', type: 'por_dias' },
+  { value: 'month', label: 'Mes completo', type: 'fin_de_mes' },
+  { value: 'q1', label: 'Quincena 1', type: 'quincena' },
+  { value: 'q2', label: 'Quincena 2', type: 'quincena' },
+  { value: 'custom', label: 'Entre fechas', type: 'por_dias' },
 ]
 const monthFirstIso = () => `${limaMonth()}-01`
-const summaryMonth = ref(limaMonth())
 const summaryPreset = ref('mtd')
 const summaryFrom = ref(monthFirstIso())
 const summaryTo = ref(limaToday())
+const summaryType = ref('por_dias')
 const summary = ref([])
 const summaryLoading = ref(false)
-const summaryRange = ref({ from: '', to: '' })
 const detailWorker = ref(null)
 
-const sumRange = () => {
-  const p = SUM_PRESETS.find(x => x.value === summaryPreset.value)
-  if (summaryPreset.value === 'custom') {
-    return { from: summaryFrom.value, to: summaryTo.value, type: p.type, payPreset: p.payPreset }
-  }
-  const [y, m] = summaryMonth.value.split('-').map(Number)
+// Los chips solo pre-llenan Desde/Hasta (relativo al mes de "Desde"). Las
+// fechas siempre quedan editables a mano; editarlas pasa a "Entre fechas".
+const applySumPreset = (val) => {
+  summaryPreset.value = val
+  const p = SUM_PRESETS.find(x => x.value === val)
+  if (val === 'custom') { summaryType.value = 'por_dias'; return }
+  const base = (summaryFrom.value || limaToday()).split('-').map(Number)
+  const [y, m] = base
   const first = new Date(y, m - 1, 1)
   const last = new Date(y, m, 0)
   let from = iso(first)
   let to = iso(last)
-  if (summaryPreset.value === 'mtd') {
+  if (val === 'mtd') {
     const t = new Date(limaToday())
     to = iso(t >= first && t <= last ? t : last)
-  } else if (summaryPreset.value === 'q1') {
+  } else if (val === 'q1') {
     to = iso(new Date(y, m - 1, 15))
-  } else if (summaryPreset.value === 'q2') {
+  } else if (val === 'q2') {
     from = iso(new Date(y, m - 1, 16))
   }
-  return { from, to, type: p.type, payPreset: p.payPreset }
+  summaryFrom.value = from
+  summaryTo.value = to
+  summaryType.value = p.type
 }
+const onSumDateEdit = () => { summaryPreset.value = 'custom'; summaryType.value = 'por_dias' }
 
 const loadSummary = async () => {
-  const r = sumRange()
-  if (!r.from || !r.to || r.from > r.to) { summary.value = []; return }
+  const from = summaryFrom.value
+  const to = summaryTo.value
+  if (!from || !to || from > to) { summary.value = []; return }
   summaryLoading.value = true
-  summaryRange.value = { from: r.from, to: r.to }
   try {
-    const d = await apiClient.get('/api/v2/payroll/summary', { from: r.from, to: r.to, type: r.type })
+    const d = await apiClient.get('/api/v2/payroll/summary', { from, to, type: summaryType.value })
     summary.value = d.rows
   } catch { summary.value = [] } finally { summaryLoading.value = false }
 }
-watch([summaryMonth, summaryPreset, summaryFrom, summaryTo], loadSummary)
+watch([summaryFrom, summaryTo, summaryType], loadSummary)
 
 const summaryTotal = computed(() => summary.value.reduce((t, s) => t + (s.estimatedNet || 0), 0))
 
@@ -145,8 +149,7 @@ const openNew = ({ trabajadorId = null, from = '', to = '', type = 'por_dias' } 
   dialog.value = true
 }
 const registerFor = s => {
-  const p = SUM_PRESETS.find(x => x.value === summaryPreset.value)
-  openNew({ trabajadorId: s.trabajadorId, from: s.periodFrom, to: s.periodTo, type: p.type })
+  openNew({ trabajadorId: s.trabajadorId, from: s.periodFrom, to: s.periodTo, type: summaryType.value })
 }
 
 let calcTimer
@@ -263,26 +266,28 @@ const removePayment = async row => {
               v-for="p in SUM_PRESETS" :key="p.value"
               :color="summaryPreset === p.value ? 'primary' : undefined"
               :variant="summaryPreset === p.value ? 'flat' : 'tonal'"
-              @click="summaryPreset = p.value"
+              @click="applySumPreset(p.value)"
             >
               {{ p.label }}
             </VChip>
           </div>
-          <VRow v-if="summaryPreset === 'custom'" dense class="mb-1">
+          <VRow dense class="mb-1">
             <VCol cols="12" sm="4">
-              <VTextField v-model="summaryFrom" type="date" label="Desde" hide-details />
+              <VTextField
+                v-model="summaryFrom" type="date" label="Desde" hide-details
+                @update:model-value="onSumDateEdit"
+              />
             </VCol>
             <VCol cols="12" sm="4">
-              <VTextField v-model="summaryTo" type="date" label="Hasta" hide-details />
+              <VTextField
+                v-model="summaryTo" type="date" label="Hasta" hide-details
+                @update:model-value="onSumDateEdit"
+              />
             </VCol>
           </VRow>
-          <VTextField
-            v-else v-model="summaryMonth" type="month" label="Mes"
-            hide-details style="max-width: 220px;" class="mb-1"
-          />
-          <VChip size="small" variant="tonal" prepend-icon="ri-calendar-line">
-            Se calcula del {{ summaryRange.from }} al {{ summaryRange.to }}
-          </VChip>
+          <div v-if="summaryFrom > summaryTo" class="text-caption text-error">
+            La fecha "Desde" no puede ser mayor que "Hasta".
+          </div>
         </VCardText>
         <VDivider />
         <VTable>
