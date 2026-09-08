@@ -96,21 +96,16 @@ def month_delta(trabajador, fecha):
 
 
 def dia_planilla(fecha):
-    """Una fila por trabajador activo con config: su asistencia de ese día (o
-    None) + el Δ acumulado del mes hasta esa fecha."""
-    configs = list(
-        ConfiguracionPlanilla.objects
-        .filter(activo=True)
-        .select_related("conductor", "ayudante", "usuario")
-        .order_by("tipo")
-    )
-    regs = {
-        r.trabajador_id: r
-        for r in RegistroAsistencia.objects.filter(trabajador__in=configs, fecha=fecha)
-    }
+    """Reporte de la asistencia YA registrada en `fecha`: una fila por cada
+    RegistroAsistencia de ese día, con las horas del día y el saldo de horas
+    acumulado (desde el ingreso, no solo del mes)."""
+    regs = (RegistroAsistencia.objects
+            .filter(fecha=fecha)
+            .select_related("trabajador", "trabajador__conductor",
+                            "trabajador__ayudante", "trabajador__usuario"))
     filas = []
-    for c in sorted(configs, key=lambda x: x.nombre.lower()):
-        r = regs.get(c.id)
+    for r in regs:
+        c = r.trabajador
         filas.append({
             "trabajadorId": c.id,
             "workerType": c.tipo,
@@ -118,15 +113,16 @@ def dia_planilla(fecha):
             "contractType": c.tipo_contrato,
             "workdayHours": c.horas_jornada,
             "lunchHours": c.horas_refrigerio,
-            "attendanceId": r.id if r else None,
-            "dayType": r.tipo_dia if r else None,
-            "clockIn": r.hora_ingreso.strftime("%H:%M") if r and r.hora_ingreso else None,
-            "clockOut": r.hora_salida.strftime("%H:%M") if r and r.hora_salida else None,
-            "workedHours": float(r.horas_trabajadas) if r else None,
-            "delta": float(r.delta_dia) if r else None,
-            "note": r.observacion if r else "",
+            "attendanceId": r.id,
+            "dayType": r.tipo_dia,
+            "clockIn": r.hora_ingreso.strftime("%H:%M") if r.hora_ingreso else None,
+            "clockOut": r.hora_salida.strftime("%H:%M") if r.hora_salida else None,
+            "workedHours": float(r.horas_trabajadas),
+            "delta": float(r.delta_dia),
+            "note": r.observacion,
             "balanceHours": float(saldo_horas(c, fecha)),
         })
+    filas.sort(key=lambda x: x["workerName"].lower())
     return filas
 
 

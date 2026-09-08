@@ -145,11 +145,10 @@ class PayrollConfigApiTests(_Authed):
 class AttendanceApiTests(_Authed):
     def test_grilla_del_dia_y_upsert_calcula_delta(self):
         cfg = _config(_conductor())
-        # grilla: una fila, sin asistencia todavía
+        # reporte: vacío hasta que se registre a alguien
         r = self.client.get("/api/v2/payroll/day?date=2026-03-10")
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(len(r.data["rows"]), 1)
-        self.assertIsNone(r.data["rows"][0]["attendanceId"])
+        self.assertEqual(len(r.data["rows"]), 0)
 
         # upsert: 08:00–18:00, jornada 8, refrigerio 1 → trabajadas 9, Δ +1
         r = self.client.post("/api/v2/payroll/day", {
@@ -177,6 +176,7 @@ class AttendanceApiTests(_Authed):
                 "dayType": "trabajado", "clockIn": "08:00", "clockOut": salida,
             }, format="json")
         r = self.client.get("/api/v2/payroll/day?date=2026-03-06")
+        self.assertEqual(len(r.data["rows"]), 1)
         self.assertEqual(r.data["rows"][0]["balanceHours"], 1.0)
 
     def test_clear_borra_el_registro(self):
