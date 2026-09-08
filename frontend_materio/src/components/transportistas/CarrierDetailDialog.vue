@@ -1,0 +1,99 @@
+<script setup>
+import { onMounted, ref } from 'vue'
+
+import { carriersService, carrierDriversService, carrierVehiclesService } from '@/services/carriersService'
+
+const props = defineProps({
+  carrier: { type: Object, default: null },
+  carrierId: { type: [Number, String], default: null },
+})
+defineEmits(['close'])
+
+const info = ref(props.carrier)
+const vehicles = ref([])
+const drivers = ref([])
+const loading = ref(true)
+const error = ref('')
+
+onMounted(async () => {
+  const id = props.carrier?.id ?? props.carrierId
+  try {
+    const [c, v, d] = await Promise.all([
+      info.value ? Promise.resolve(info.value) : carriersService.get(id),
+      carrierVehiclesService.list({ carrierId: id, pageSize: 200 }),
+      carrierDriversService.list({ carrierId: id, pageSize: 200 }),
+    ])
+    info.value = c
+    vehicles.value = v.results
+    drivers.value = d.results
+  } catch (e) {
+    error.value = e.message || 'No se pudo cargar el detalle.'
+  } finally {
+    loading.value = false
+  }
+})
+
+const dash = v => v || '—'
+</script>
+
+<template>
+  <VDialog :model-value="true" max-width="720" scrollable @update:model-value="$emit('close')">
+    <VCard>
+      <VCardTitle class="d-flex align-center justify-space-between">
+        <div>
+          <span class="text-h6">{{ info?.name || 'Transportista' }}</span>
+          <span v-if="info?.documentId" class="text-body-2 text-medium-emphasis ms-2">{{ info.documentId }}</span>
+        </div>
+        <VBtn icon="ri-close-line" variant="text" size="small" @click="$emit('close')" />
+      </VCardTitle>
+
+      <VDivider />
+      <VCardText>
+        <div v-if="info" class="d-flex flex-wrap ga-2 mb-4">
+          <VChip size="small" :color="info.active ? 'success' : 'secondary'">
+            {{ info.active ? 'Activo' : 'Inactivo' }}
+          </VChip>
+          <VChip v-if="info.phone" size="small" variant="tonal" prepend-icon="ri-phone-line">{{ info.phone }}</VChip>
+          <VChip v-if="info.email" size="small" variant="tonal" prepend-icon="ri-mail-line">{{ info.email }}</VChip>
+          <VChip v-if="info.isDriver" size="small" variant="tonal" prepend-icon="ri-steering-line">Titular conduce</VChip>
+        </div>
+        <p v-if="info?.notes" class="text-body-2 text-medium-emphasis mb-4">{{ info.notes }}</p>
+
+        <VAlert v-if="error" type="error" variant="tonal" density="compact" class="mb-3">{{ error }}</VAlert>
+        <div v-if="loading" class="text-center py-6"><VProgressCircular indeterminate color="primary" size="28" /></div>
+
+        <template v-else>
+          <div class="text-overline text-medium-emphasis mb-1">Vehículos ({{ vehicles.length }})</div>
+          <VTable v-if="vehicles.length" density="compact" class="mb-4">
+            <thead><tr><th>Placa</th><th>Tipo / carrocería</th><th>Marca modelo</th><th>Cap. útil (t)</th><th>Estado</th></tr></thead>
+            <tbody>
+              <tr v-for="v in vehicles" :key="v.id">
+                <td class="font-weight-medium">{{ v.plate }}</td>
+                <td>{{ dash(v.vehicleTypeName) }}<span v-if="v.bodyTypeName"> · {{ v.bodyTypeName }}</span></td>
+                <td>{{ dash([v.brand, v.model].filter(Boolean).join(' ')) }}</td>
+                <td>{{ dash(v.capacityUsefulTons) }}</td>
+                <td><VChip size="x-small" :color="v.active ? 'success' : 'secondary'">{{ v.active ? 'Activo' : 'Inactivo' }}</VChip></td>
+              </tr>
+            </tbody>
+          </VTable>
+          <p v-else class="text-body-2 text-medium-emphasis mb-4">Sin vehículos afiliados.</p>
+
+          <div class="text-overline text-medium-emphasis mb-1">Conductores ({{ drivers.length }})</div>
+          <VTable v-if="drivers.length" density="compact">
+            <thead><tr><th>Nombre</th><th>DNI</th><th>Teléfono</th><th>Licencia</th><th>Titular</th></tr></thead>
+            <tbody>
+              <tr v-for="d in drivers" :key="d.id">
+                <td class="font-weight-medium">{{ d.name }}</td>
+                <td>{{ dash(d.documentId) }}</td>
+                <td>{{ dash(d.phone) }}</td>
+                <td>{{ d.licenseNumber ? `${d.licenseNumber}${d.licenseCategory ? ` · ${d.licenseCategory}` : ''}` : '—' }}</td>
+                <td>{{ d.isOwner ? 'Sí' : '—' }}</td>
+              </tr>
+            </tbody>
+          </VTable>
+          <p v-else class="text-body-2 text-medium-emphasis">Sin conductores registrados.</p>
+        </template>
+      </VCardText>
+    </VCard>
+  </VDialog>
+</template>

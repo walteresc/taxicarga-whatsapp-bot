@@ -3,6 +3,7 @@ import { ref } from 'vue'
 
 import CrudResourcePage from '@/components/crud/CrudResourcePage.vue'
 import ExpiryAlerts from '@/components/flota/ExpiryAlerts.vue'
+import VehicleDetailDialog from '@/components/flota/VehicleDetailDialog.vue'
 import { vehiclesService } from '@/services/flotaService'
 
 const alertsRef = ref(null)
@@ -44,10 +45,14 @@ const fields = [
     :fields="fields"
     search-label="Buscar por placa, marca o modelo"
     label-field="plate"
+    detail-field="plate"
     @changed="onChanged"
   >
     <template #before-table>
       <ExpiryAlerts ref="alertsRef" />
+    </template>
+    <template #detail="{ row, close }">
+      <VehicleDetailDialog v-if="row" :vehicle="row" @close="close" />
     </template>
   </CrudResourcePage>
 </template>

@@ -3,6 +3,7 @@ import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import CrudResourcePage from '@/components/crud/CrudResourcePage.vue'
+import CarrierDetailDialog from '@/components/transportistas/CarrierDetailDialog.vue'
 import {
   carrierDriversService, carriersService, LICENSE_CATEGORIES,
 } from '@/services/carriersService'
@@ -88,7 +89,12 @@ onMounted(async () => {
           hide-header singular="transportista" :service="carriersService"
           :columns="carrierColumns" :fields="carrierFields"
           search-label="Buscar por nombre, documento, teléfono o email" label-field="name"
-        />
+          detail-field="name"
+        >
+          <template #detail="{ row, close }">
+            <CarrierDetailDialog v-if="row" :carrier="row" @close="close" />
+          </template>
+        </CrudResourcePage>
       </VWindowItem>
       <VWindowItem value="drivers">
         <CrudResourcePage
@@ -96,7 +102,12 @@ onMounted(async () => {
           hide-header singular="conductor" :service="carrierDriversService"
           :columns="driverColumns" :fields="driverFields"
           search-label="Buscar por nombre, DNI, teléfono o transportista" label-field="name"
-        />
+          detail-field="name"
+        >
+          <template #detail="{ row, close }">
+            <CarrierDetailDialog v-if="row" :carrier-id="row.carrierId" @close="close" />
+          </template>
+        </CrudResourcePage>
       </VWindowItem>
     </VWindow>
   </section>

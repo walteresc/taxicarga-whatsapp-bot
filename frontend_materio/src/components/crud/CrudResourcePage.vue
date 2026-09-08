@@ -31,6 +31,8 @@ const props = defineProps({
   toggleField: { type: String, default: 'active' }, // habilita estado + activar/desactivar
   deletable: { type: Boolean, default: true }, // false = sin borrado duro (solo desactivar)
   labelField: { type: String, default: 'name' }, // para los mensajes ("<X> guardado")
+  // Columna cuyo valor abre el detalle (slot #detail) al hacer clic. '' = sin detalle.
+  detailField: { type: String, default: '' },
   writeRoles: { type: Array, default: () => ['Administrador', 'Supervisor', 'Asesor de Ventas'] },
 })
 
@@ -186,6 +188,9 @@ const toggleActive = async row => {
 
 const cellValue = (row, col) => (col.format ? col.format(row) : (row[col.key] ?? '—'))
 const fieldError = key => fieldErrors.value[key]?.[0]
+
+const detailRow = ref(null)
+const closeDetail = () => { detailRow.value = null }
 </script>
 
 <template>
@@ -291,6 +296,12 @@ const fieldError = key => fieldErrors.value[key]?.[0]
               >
                 {{ col.chip(row)?.text ?? cellValue(row, col) }}
               </VChip>
+              <button
+                v-else-if="detailField && col.key === detailField"
+                type="button" class="crud-link" @click="detailRow = row"
+              >
+                {{ cellValue(row, col) }}
+              </button>
               <template v-else>{{ cellValue(row, col) }}</template>
             </td>
             <td v-if="toggleField">
@@ -399,6 +410,8 @@ const fieldError = key => fieldErrors.value[key]?.[0]
       </VCard>
     </VDialog>
 
+    <slot name="detail" :row="detailRow" :close="closeDetail" />
+
     <VSnackbar v-model="snackbar.show" :color="snackbar.color" timeout="3500">
       {{ snackbar.text }}
     </VSnackbar>
@@ -418,4 +431,16 @@ const fieldError = key => fieldErrors.value[key]?.[0]
   padding: 0;
 }
 .crud-sort:hover { color: rgb(var(--v-theme-primary)); }
+.crud-link {
+  font: inherit;
+  color: rgb(var(--v-theme-primary));
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-align: start;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.crud-link:hover { text-decoration-thickness: 2px; }
 </style>
