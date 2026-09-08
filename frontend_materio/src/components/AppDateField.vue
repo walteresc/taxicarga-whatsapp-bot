@@ -1,9 +1,11 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, useAttrs } from 'vue'
 
 // Campo de fecha unificado para todo el CRM: VTextField estilo Materio +
 // calendario Vuetify en un menú. El v-model sigue siendo un string
 // 'YYYY-MM-DD' (o '') como el resto del código espera.
+defineOptions({ inheritAttrs: false })
+
 const props = defineProps({
   modelValue: { type: String, default: '' },
   label: { type: String, default: '' },
@@ -19,6 +21,14 @@ const props = defineProps({
   max: { type: String, default: undefined },
 })
 const emit = defineEmits(['update:modelValue'])
+
+const attrs = useAttrs()
+// El wrapper aplica class/style del padre al VTextField interno (el activador
+// del menú), no al VMenu; y no reenvía el listener de v-model.
+const fieldAttrs = computed(() => {
+  const { 'onUpdate:modelValue': _omit, ...rest } = attrs
+  return rest
+})
 
 const menu = ref(false)
 
@@ -50,7 +60,7 @@ const pick = val => {
   <VMenu v-model="menu" :close-on-content-click="false" location="bottom start" min-width="0">
     <template #activator="{ props: activator }">
       <VTextField
-        v-bind="activator"
+        v-bind="{ ...activator, ...fieldAttrs }"
         :model-value="display"
         :label="label"
         :density="density"
