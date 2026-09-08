@@ -271,20 +271,16 @@ const removePayment = async row => {
               {{ p.label }}
             </VChip>
           </div>
-          <VRow dense class="mb-1">
-            <VCol cols="12" sm="4">
-              <VTextField
-                v-model="summaryFrom" type="date" label="Desde" hide-details
-                @update:model-value="onSumDateEdit"
-              />
-            </VCol>
-            <VCol cols="12" sm="4">
-              <VTextField
-                v-model="summaryTo" type="date" label="Hasta" hide-details
-                @update:model-value="onSumDateEdit"
-              />
-            </VCol>
-          </VRow>
+          <div class="d-flex flex-wrap ga-3 mb-1">
+            <VTextField
+              v-model="summaryFrom" type="date" label="Desde" hide-details density="compact"
+              style="max-width: 190px;" @update:model-value="onSumDateEdit"
+            />
+            <VTextField
+              v-model="summaryTo" type="date" label="Hasta" hide-details density="compact"
+              style="max-width: 190px;" @update:model-value="onSumDateEdit"
+            />
+          </div>
           <div v-if="summaryFrom > summaryTo" class="text-caption text-error">
             La fecha "Desde" no puede ser mayor que "Hasta".
           </div>
