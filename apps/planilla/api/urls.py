@@ -3,7 +3,8 @@ from rest_framework.routers import DefaultRouter
 
 from .views import (
     AttendanceViewSet, CompensationViewSet, OpeningBalanceViewSet, PaymentViewSet,
-    PayrollCalcView, PayrollConfigViewSet, PayrollDayView, PendingAbsencesView,
+    PayrollCalcView, PayrollConfigViewSet, PayrollDayView, PayrollSummaryView,
+    PendingAbsencesView, WorkerPayrollView,
 )
 
 router = DefaultRouter()
@@ -17,5 +18,7 @@ urlpatterns = [
     path("payroll/day", PayrollDayView.as_view(), name="v2-payroll-day"),
     path("payroll/pending-absences", PendingAbsencesView.as_view(), name="v2-payroll-pending"),
     path("payroll/calc", PayrollCalcView.as_view(), name="v2-payroll-calc"),
+    path("payroll/summary", PayrollSummaryView.as_view(), name="v2-payroll-summary"),
+    path("payroll/worker/<int:pk>", WorkerPayrollView.as_view(), name="v2-payroll-worker"),
     *router.urls,
 ]

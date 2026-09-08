@@ -15,7 +15,8 @@ from apps.planilla.models import (
 )
 from apps.planilla.services import (
     attendance_queryset, calcular_pago, compensations_queryset, configs_queryset,
-    dia_planilla, faltas_pendientes, payments_queryset, upsert_asistencia,
+    dia_planilla, faltas_pendientes, payments_queryset, payroll_summary,
+    upsert_asistencia, worker_payroll,
 )
 
 from .serializers import (
@@ -165,3 +166,36 @@ class PayrollCalcView(APIView):
             return Response({"error": "Rango de fechas inválido."}, status=400)
         tipo = (p.get("type") or "fin_de_mes").strip()
         return Response(calcular_pago(cfg, desde, hasta, tipo))
+
+
+class PayrollSummaryView(APIView):
+    """GET /api/v2/payroll/summary?date= — una fila por trabajador activo."""
+    permission_classes = [HasAnyRole(*_ROLES)]
+
+    def get_exception_handler(self):
+        return api_exception_handler
+
+    def get(self, request):
+        raw = (request.query_params.get("date") or "").strip()
+        try:
+            day = _date.fromisoformat(raw) if raw else timezone.localdate()
+        except ValueError:
+            day = timezone.localdate()
+        return Response({"date": day.isoformat(), "rows": payroll_summary(day)})
+
+
+class WorkerPayrollView(APIView):
+    """GET /api/v2/payroll/worker/<id>?date= — detalle completo de un trabajador."""
+    permission_classes = [HasAnyRole(*_ROLES)]
+
+    def get_exception_handler(self):
+        return api_exception_handler
+
+    def get(self, request, pk):
+        cfg = get_object_or_404(ConfiguracionPlanilla, pk=pk)
+        raw = (request.query_params.get("date") or "").strip()
+        try:
+            day = _date.fromisoformat(raw) if raw else timezone.localdate()
+        except ValueError:
+            day = timezone.localdate()
+        return Response(worker_payroll(cfg, day))

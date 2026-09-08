@@ -321,3 +321,143 @@ def calcular_pago(trabajador, desde, hasta, tipo):
             "faltasCompensadas": len(faltas) - len(faltas_nc),
         },
     }
+
+
+# ── Vacaciones y resumen ──────────────────────────────────────────────
+
+def vacaciones_info(trabajador, fecha):
+    """15 días por año cumplido; truncas del año en curso para liquidación."""
+    if trabajador.tipo_contrato == ConfiguracionPlanilla.CONTRATO_HONORARIOS:
+        return {"aplica": False}
+
+    ing = trabajador.fecha_ingreso
+    anios = fecha.year - ing.year - (
+        1 if (fecha.month, fecha.day) < (ing.month, ing.day) else 0
+    )
+    anios = max(0, anios)
+    aniv_mes = ing.month
+    aniv_anio = ing.year + anios
+    meses = (fecha.year - aniv_anio) * 12 + (fecha.month - aniv_mes)
+    if fecha.day < min(ing.day, 28):
+        meses -= 1
+    meses = max(0, min(12, meses))
+
+    gozados = RegistroAsistencia.objects.filter(
+        trabajador=trabajador, tipo_dia=RegistroAsistencia.TIPO_VACACIONES,
+    ).count()
+    ganadas = anios * 15
+    pendientes = ganadas - gozados
+    truncas = (Decimal(15) * Decimal(meses) / Decimal(12)).quantize(_Q2)
+    vd = trabajador.valor_dia
+    liquidacion = _money(vd * (Decimal(max(0, pendientes)) + truncas))
+    return {
+        "aplica": True,
+        "yearsCompleted": anios,
+        "daysEarned": ganadas,
+        "daysTaken": gozados,
+        "daysPending": pendientes,
+        "daysAccruedCurrentYear": float(truncas),
+        "valorDia": float(vd.quantize(_Q2)),
+        "liquidationAmount": float(liquidacion),
+    }
+
+
+def _resumen_fila(c, fecha):
+    d1 = fecha.replace(day=1)
+    faltas_qs = RegistroAsistencia.objects.filter(
+        trabajador=c, fecha__gte=d1, fecha__lte=fecha, tipo_dia=RegistroAsistencia.TIPO_FALTA,
+    )
+    n_faltas = faltas_qs.count()
+    comp_ids = MovimientoCompensacion.objects.filter(
+        trabajador=c, tipo=MovimientoCompensacion.TIPO_FALTA_COMPENSADA,
+        asistencia__in=faltas_qs,
+    ).values_list("asistencia_id", flat=True)
+    faltas_nc = n_faltas - len(set(comp_ids))
+    dias_trab = RegistroAsistencia.objects.filter(
+        trabajador=c, fecha__gte=d1, fecha__lte=fecha,
+        tipo_dia=RegistroAsistencia.TIPO_TRABAJADO, hora_ingreso__isnull=False,
+    ).count()
+    saldo = saldo_horas(c, fecha)
+    vac = vacaciones_info(c, fecha)
+    ultimo = Pago.objects.filter(trabajador=c).order_by("-periodo_hasta", "-id").first()
+    desde = (ultimo.periodo_hasta + timedelta(days=1)) if ultimo else d1
+    if desde > fecha:
+        desde = d1
+    est = calcular_pago(c, desde, fecha, "fin_de_mes")
+    return {
+        "trabajadorId": c.id,
+        "workerType": c.tipo,
+        "workerName": c.nombre,
+        "contractType": c.tipo_contrato,
+        "balanceHours": float(saldo),
+        "balanceValue": float(_money(saldo * c.valor_hora)),
+        "absencesMonth": n_faltas,
+        "absencesUnresolved": faltas_nc,
+        "daysWorkedMonth": dias_trab,
+        "vacationDaysPending": vac["daysPending"] if vac.get("aplica") else None,
+        "estimatedFrom": desde.isoformat(),
+        "estimatedNet": est["netAmount"],
+        "lastPayment": None if not ultimo else {
+            "periodTo": ultimo.periodo_hasta.isoformat(),
+            "netAmount": float(ultimo.monto_neto),
+            "paid": ultimo.pagado,
+        },
+    }
+
+
+def payroll_summary(fecha):
+    configs = (ConfiguracionPlanilla.objects
+               .filter(activo=True)
+               .select_related("conductor", "ayudante", "usuario"))
+    filas = [_resumen_fila(c, fecha) for c in configs]
+    filas.sort(key=lambda r: r["workerName"].lower())
+    return filas
+
+
+def worker_payroll(trabajador, fecha):
+    d1 = fecha.replace(day=1)
+    regs = list(RegistroAsistencia.objects
+                .filter(trabajador=trabajador, fecha__lte=fecha)
+                .order_by("-fecha")[:31])
+    comps = list(MovimientoCompensacion.objects
+                 .filter(trabajador=trabajador).order_by("-fecha", "-id")[:20])
+    pagos = list(Pago.objects.filter(trabajador=trabajador).order_by("-periodo_hasta", "-id")[:12])
+    return {
+        "worker": {
+            "id": trabajador.id, "name": trabajador.nombre, "type": trabajador.tipo,
+            "contractType": trabajador.tipo_contrato,
+            "workdayHours": float(trabajador.horas_jornada),
+            "hiredOn": trabajador.fecha_ingreso.isoformat(),
+            "amountPerMonth": float(trabajador.monto_mes) if trabajador.monto_mes is not None else None,
+            "amountPerDay": float(trabajador.monto_dia) if trabajador.monto_dia is not None else None,
+            "valorDia": float(trabajador.valor_dia.quantize(_Q2)),
+            "valorHora": float(trabajador.valor_hora.quantize(Decimal("0.0001"))),
+        },
+        "balanceHours": float(saldo_horas(trabajador, fecha)),
+        "monthDelta": float(_deltas(trabajador, d1, fecha)),
+        "vacations": vacaciones_info(trabajador, fecha),
+        "recentAttendance": [
+            {
+                "date": r.fecha.isoformat(), "dayType": r.tipo_dia,
+                "clockIn": r.hora_ingreso.strftime("%H:%M") if r.hora_ingreso else None,
+                "clockOut": r.hora_salida.strftime("%H:%M") if r.hora_salida else None,
+                "delta": float(r.delta_dia),
+            }
+            for r in regs
+        ],
+        "compensations": [
+            {
+                "date": m.fecha.isoformat(), "kind": m.tipo, "hours": float(m.horas),
+                "reason": m.motivo,
+            }
+            for m in comps
+        ],
+        "payments": [
+            {
+                "periodFrom": p.periodo_desde.isoformat(), "periodTo": p.periodo_hasta.isoformat(),
+                "type": p.tipo, "netAmount": float(p.monto_neto), "paid": p.pagado,
+                "paidOn": p.fecha_pago.isoformat() if p.fecha_pago else None,
+            }
+            for p in pagos
+        ],
+    }

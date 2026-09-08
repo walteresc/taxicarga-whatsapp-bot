@@ -16,7 +16,7 @@ from apps.planilla.api.serializers import (
 from apps.planilla.models import (
     ConfiguracionPlanilla, MovimientoCompensacion, Pago, RegistroAsistencia,
 )
-from apps.planilla.services import calcular_pago, saldo_horas
+from apps.planilla.services import calcular_pago, saldo_horas, vacaciones_info
 
 User = get_user_model()
 
@@ -311,6 +311,37 @@ class PagosTests(_Authed):
         self.assertEqual(r.data["grossAmount"], 600.0)
 
 
+class VacacionesYResumenTests(_Authed):
+    def test_vacaciones_por_anio_cumplido(self):
+        cfg = _config(_conductor(), fecha_ingreso=dt.date(2024, 3, 1))
+        v = vacaciones_info(cfg, dt.date(2026, 9, 1))  # ~2.5 años
+        self.assertEqual(v["yearsCompleted"], 2)
+        self.assertEqual(v["daysEarned"], 30)
+        self.assertEqual(v["daysPending"], 30)
+        self.assertGreater(v["daysAccruedCurrentYear"], 0)
+
+    def test_vacaciones_no_aplica_honorarios(self):
+        cfg = _config(_conductor(), tipo_contrato="honorarios", monto_mes=None, monto_dia="60")
+        self.assertEqual(vacaciones_info(cfg, dt.date(2026, 9, 1)), {"aplica": False})
+
+    def test_summary_y_worker_detalle(self):
+        cfg = _config(_conductor())
+        RegistroAsistencia.objects.create(
+            trabajador=cfg, fecha=dt.date(2026, 9, 2), tipo_dia="trabajado",
+            hora_ingreso=dt.time(8, 0), hora_salida=dt.time(19, 0),
+            horas_jornada_dia="8.00", horas_refrigerio_dia="1.00",
+        )
+        r = self.client.get("/api/v2/payroll/summary?date=2026-09-05")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(len(r.data["rows"]), 1)
+        self.assertEqual(r.data["rows"][0]["balanceHours"], 2.0)
+
+        r = self.client.get(f"/api/v2/payroll/worker/{cfg.id}?date=2026-09-05")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data["balanceHours"], 2.0)
+        self.assertEqual(len(r.data["recentAttendance"]), 1)
+
+
 class RbacTests(APITestCase):
     def test_sin_rol_403(self):
         u = User.objects.create_user("nr", password="x")
@@ -318,3 +349,4 @@ class RbacTests(APITestCase):
         self.assertEqual(self.client.get("/api/v2/payroll-config/").status_code, 403)
         self.assertEqual(self.client.get("/api/v2/payroll/day").status_code, 403)
         self.assertEqual(self.client.get("/api/v2/payroll-payments/").status_code, 403)
+        self.assertEqual(self.client.get("/api/v2/payroll/summary").status_code, 403)

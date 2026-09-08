@@ -12,6 +12,8 @@ export const fetchPayrollDay = date => apiClient.get('/api/v2/payroll/day', { da
 export const savePayrollDay = body => apiClient.post('/api/v2/payroll/day', body)
 export const fetchPendingAbsences = params => apiClient.get('/api/v2/payroll/pending-absences', params)
 export const fetchPayCalc = params => apiClient.get('/api/v2/payroll/calc', params)
+export const fetchPayrollSummary = date => apiClient.get('/api/v2/payroll/summary', { date })
+export const fetchWorkerPayroll = (id, date) => apiClient.get(`/api/v2/payroll/worker/${id}`, { date })
 
 export const CONTRACT_TYPES = [
   { value: 'planilla', label: 'Planilla (sueldo mensual)' },

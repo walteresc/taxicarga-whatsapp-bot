@@ -2,18 +2,32 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 
 import { ApiError } from '@/services/apiClient'
+import WorkerPayrollDialog from '@/components/planilla/WorkerPayrollDialog.vue'
 import {
-  fetchPayCalc, PAYMENT_TYPES, payrollConfigService, paymentsService,
+  fetchPayCalc, fetchPayrollSummary, PAYMENT_TYPES, payrollConfigService, paymentsService,
 } from '@/services/payrollService'
 
 const TYPE = Object.fromEntries(PAYMENT_TYPES.map(t => [t.value, t.label]))
 const soles = n => (n == null ? '—' : `S/ ${Number(n).toLocaleString('es-PE', { minimumFractionDigits: 2 })}`)
 
-const tab = ref('pagos')
+const tab = ref('resumen')
 const workers = ref([])
 const rows = ref([])
 const loading = ref(true)
 const error = ref('')
+
+// ── Resumen ────────────────────────────────────────────────────────────
+const summaryDate = ref(new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima' }).format(new Date()))
+const summary = ref([])
+const summaryLoading = ref(false)
+const detailWorker = ref(null)
+const loadSummary = async () => {
+  summaryLoading.value = true
+  try {
+    const d = await fetchPayrollSummary(summaryDate.value)
+    summary.value = d.rows
+  } catch { summary.value = [] } finally { summaryLoading.value = false }
+}
 
 const snackbar = reactive({ show: false, text: '', color: 'success' })
 const notify = (text, color = 'success') => Object.assign(snackbar, { show: true, text, color })
@@ -37,6 +51,7 @@ onMounted(async () => {
     workers.value = w.results
   } catch { /* */ }
   load()
+  loadSummary()
 })
 
 // ── Nuevo pago ─────────────────────────────────────────────────────────
@@ -123,7 +138,7 @@ const submit = async () => {
     })
     dialog.value = false
     notify('Pago registrado.')
-    load()
+    load(); loadSummary()
   } catch (e) {
     if (e instanceof ApiError && Object.keys(e.fields).length) errs.value = e.fields
     else notify(e.message || 'No se pudo registrar.', 'error')
@@ -175,12 +190,54 @@ const removePayment = async row => {
     </div>
 
     <VTabs v-model="tab" class="mb-4">
+      <VTab value="resumen">Resumen</VTab>
       <VTab value="pagos">Pagos registrados</VTab>
     </VTabs>
 
     <VAlert v-if="error" type="error" variant="tonal" class="mb-4">{{ error }}</VAlert>
 
-    <VCard>
+    <!-- Resumen -->
+    <template v-if="tab === 'resumen'">
+      <VCard>
+        <VCardText class="d-flex flex-wrap align-center ga-3">
+          <span class="text-body-2 text-medium-emphasis">Estado al</span>
+          <VTextField v-model="summaryDate" type="date" density="compact" hide-details style="max-width: 175px;" @update:model-value="loadSummary" />
+        </VCardText>
+        <VDivider />
+        <VTable>
+          <thead>
+            <tr>
+              <th>Trabajador</th><th>Contrato</th>
+              <th class="text-right">Saldo horas</th><th class="text-right">Valor saldo</th>
+              <th class="text-right">Faltas mes</th><th class="text-right">Sin resolver</th>
+              <th class="text-right">Días trab.</th><th class="text-right">Vac. pend.</th>
+              <th class="text-right">A pagar (est.)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-if="summaryLoading"><td colspan="9" class="text-center py-8"><VProgressCircular indeterminate color="primary" /></td></tr>
+            <tr v-else-if="!summary.length"><td colspan="9" class="text-center text-medium-emphasis py-10">Sin trabajadores en planilla.</td></tr>
+            <tr v-for="s in summary" v-else :key="s.trabajadorId">
+              <td>
+                <button type="button" class="pz-link" @click="detailWorker = s.trabajadorId">{{ s.workerName }}</button>
+              </td>
+              <td><VChip size="x-small" variant="tonal">{{ s.contractType === 'planilla' ? 'Planilla' : 'Honorarios' }}</VChip></td>
+              <td class="text-right" :class="s.balanceHours > 0 ? 'text-success' : (s.balanceHours < 0 ? 'text-error' : '')">
+                {{ (s.balanceHours > 0 ? '+' : '') + s.balanceHours.toFixed(2) }}
+              </td>
+              <td class="text-right text-medium-emphasis">{{ soles(s.balanceValue) }}</td>
+              <td class="text-right">{{ s.absencesMonth }}</td>
+              <td class="text-right" :class="s.absencesUnresolved ? 'text-error font-weight-medium' : ''">{{ s.absencesUnresolved }}</td>
+              <td class="text-right">{{ s.daysWorkedMonth }}</td>
+              <td class="text-right">{{ s.vacationDaysPending ?? '—' }}</td>
+              <td class="text-right font-weight-bold">{{ soles(s.estimatedNet) }}</td>
+            </tr>
+          </tbody>
+        </VTable>
+      </VCard>
+    </template>
+
+    <VCard v-else>
       <VTable>
         <thead>
           <tr>
@@ -282,6 +339,25 @@ const removePayment = async row => {
       </VCard>
     </VDialog>
 
+    <WorkerPayrollDialog
+      v-if="detailWorker"
+      :trabajador-id="detailWorker" :date="summaryDate"
+      @close="detailWorker = null"
+    />
+
     <VSnackbar v-model="snackbar.show" :color="snackbar.color" timeout="3500">{{ snackbar.text }}</VSnackbar>
   </section>
 </template>
+
+<style scoped>
+.pz-link {
+  font: inherit;
+  color: rgb(var(--v-theme-primary));
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+</style>
