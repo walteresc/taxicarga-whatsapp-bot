@@ -8,7 +8,7 @@ import {
 import ServiceViewDialog from '@/pages/atencion/bandeja-entrada/components/ServiceViewDialog.vue'
 
 const PX_PER_MIN = 2.4
-const ROW_H = 84
+const ROW_H = 90
 const SNAP = 15
 const HOURS = Array.from({ length: 25 }, (_, i) => i)
 const HOURS_H = 28
@@ -184,9 +184,13 @@ const stopEdge = () => { if (edgeRAF) cancelAnimationFrame(edgeRAF); edgeRAF = n
 // mueve el dedo enseguida, el gesto se toma como navegación (pan).
 const ARM_MS = 160
 const drag = reactive({ id: null, left: 0, rowDelta: 0, mode: null, rid: null, startMin: null })
+const barDrag = reactive({ bar: null, x: 0, y: 0 })
 let dragStart = null
 let armTimer = null
-const resetDrag = () => Object.assign(drag, { id: null, left: 0, rowDelta: 0, mode: null, rid: null, startMin: null })
+const resetDrag = () => {
+  Object.assign(drag, { id: null, left: 0, rowDelta: 0, mode: null, rid: null, startMin: null })
+  barDrag.bar = null
+}
 const endBarGesture = () => {
   window.removeEventListener('pointermove', onBarMove)
   window.removeEventListener('pointerup', onBarUp)
@@ -202,7 +206,12 @@ const onBarDown = (e, bar) => {
   window.addEventListener('pointermove', onBarMove)
   window.addEventListener('pointerup', onBarUp)
   armTimer = setTimeout(() => {
-    if (dragStart) { dragStart.armed = true; drag.id = bar.id; startEdge() }
+    if (dragStart) {
+      dragStart.armed = true
+      drag.id = bar.id
+      Object.assign(barDrag, { bar, x: lastPointer.x, y: lastPointer.y })
+      startEdge()
+    }
   }, ARM_MS)
 }
 const refreshBarPreview = () => {
@@ -241,6 +250,8 @@ const onBarMove = e => {
   }
   dragStart.moved = true
   lastPointer = { x: e.clientX, y: e.clientY }
+  barDrag.x = e.clientX
+  barDrag.y = e.clientY
   refreshBarPreview()
 }
 const onBarUp = async () => {
@@ -271,17 +282,16 @@ const commitMove = async (bar, rid, mins) => {
 }
 const barLiveStyle = bar => {
   if (drag.id !== bar.id) return {}
-  const s = {
-    zIndex: 40, opacity: 0.95, pointerEvents: 'none', transition: 'none',
-    boxShadow: '0 12px 28px rgb(0 0 0 / 32%)',
-  }
   if (drag.mode === 'move') {
-    s.left = `${drag.left}px`
-    s.transform = `translateY(${drag.rowDelta * ROW_H}px) scale(1.02)`
-  } else {
-    s.transform = 'scale(1.02)'
+    return {
+      left: `${drag.left}px`,
+      transform: `translateY(${drag.rowDelta * ROW_H}px) scale(1.02)`,
+      zIndex: 40, opacity: 0.92, pointerEvents: 'none', transition: 'none',
+      boxShadow: '0 12px 28px rgb(0 0 0 / 32%)',
+    }
   }
-  return s
+  // sin destino válido / hacia "sin asignar": se queda y se atenúa
+  return { opacity: 0.3, pointerEvents: 'none', transition: 'none' }
 }
 
 // ── Drag de un servicio sin asignar → soltar sobre la fila de un vehículo ─
@@ -334,8 +344,9 @@ const onChipUp = e => {
   if (!t) { notify('Soltá el servicio sobre la fila de un vehículo.', 'warning'); return }
   const s = st.s
   const sched = toMin(s.start)
+  // Sin confirmación: se asigna directo en la hora indicada (programada o la del punto).
   const mins = (Math.abs(e.clientX - st.px) < CHIP_MOVE_X && sched != null) ? sched : t.startMin
-  openTimePicker({ kind: 'assign', service: s, rid: t.rid }, e.clientX, e.clientY, mins)
+  commitAssign(s, t.rid, mins)
 }
 const commitAssign = async (s, rid, mins) => {
   const startHHMM = toHHMM(mins)
@@ -531,10 +542,6 @@ const allStops = computed(() => {
   return out.sort((x, y) => x.min - y.min)
 })
 
-const leftHidden = computed(() => allStops.value.filter(s => s.min * PX_PER_MIN < view.x - 4))
-const rightHidden = computed(() => allStops.value.filter(s => s.min * PX_PER_MIN > view.x + view.w + 4))
-const leftUn = computed(() => leftHidden.value.filter(s => s.kind === 'unassigned').length)
-const rightUn = computed(() => rightHidden.value.filter(s => s.kind === 'unassigned').length)
 const rowsAbove = computed(() => Math.max(0, Math.floor((view.y + 2) / ROW_H)))
 const rowsBelow = computed(() =>
   Math.max(0, resources.value.length - Math.ceil((view.y + view.h) / ROW_H)))
@@ -544,10 +551,21 @@ const scrollToMin = m => {
   if (!el) return
   el.scrollTo({ left: Math.max(0, m * PX_PER_MIN - view.w / 2), behavior: 'smooth' })
 }
-const goPrev = () => { const s = leftHidden.value[leftHidden.value.length - 1]; if (s) scrollToMin(s.min) }
-const goNext = () => { const s = rightHidden.value[0]; if (s) scrollToMin(s.min) }
 const scrollTop = () => scroller.value?.scrollTo({ top: 0, behavior: 'smooth' })
 const scrollBottom = () => scroller.value?.scrollTo({ top: 999999, behavior: 'smooth' })
+
+// Navegación por servicio: salta al más cercano fuera de la vista.
+const nextStopMin = (mins, dir) => (dir > 0
+  ? mins.find(m => m * PX_PER_MIN > view.x + view.w + 4)
+  : [...mins].reverse().find(m => m * PX_PER_MIN < view.x - 4))
+const unassignedMins = computed(() =>
+  board.value.unassigned.map(s => toMin(s.start) ?? 0).sort((a, b) => a - b))
+const unPrev = computed(() => nextStopMin(unassignedMins.value, -1) != null)
+const unNext = computed(() => nextStopMin(unassignedMins.value, 1) != null)
+const goUn = dir => { const m = nextStopMin(unassignedMins.value, dir); if (m != null) scrollToMin(m) }
+const barMins = rid => (barsByResource.value[rid] || []).map(b => b.start).sort((a, b) => a - b)
+const barNav = (rid, dir) => nextStopMin(barMins(rid), dir) != null
+const goBar = (rid, dir) => { const m = nextStopMin(barMins(rid), dir); if (m != null) scrollToMin(m) }
 
 const onMinimapClick = e => {
   const el = minimap.value
@@ -631,27 +649,9 @@ const onMmRectUp = () => {
         <span class="text-caption text-medium-emphasis">
           {{ resources.length }} vehículo(s) · {{ board.unassigned.length }} sin asignar
         </span>
-        <div class="d-flex align-center ga-1">
-          <VBtn
-            size="small" variant="tonal" :disabled="!leftHidden.length"
-            :color="leftUn ? 'warning' : undefined" prepend-icon="ri-arrow-left-s-line"
-            :title="leftHidden.length ? `${leftHidden.length} servicio(s) antes de la vista` : ''"
-            @click="goPrev"
-          >
-            {{ leftHidden.length || '·' }}<span v-if="leftUn" class="text-caption"> ⚠</span>
-          </VBtn>
-          <VBtn
-            size="small" variant="tonal" :disabled="!rightHidden.length"
-            :color="rightUn ? 'warning' : undefined" append-icon="ri-arrow-right-s-line"
-            :title="rightHidden.length ? `${rightHidden.length} servicio(s) después de la vista` : ''"
-            @click="goNext"
-          >
-            <span v-if="rightUn" class="text-caption">⚠ </span>{{ rightHidden.length || '·' }}
-          </VBtn>
-          <VBtn v-if="hiddenResources.length" size="small" variant="tonal" prepend-icon="ri-add-line" @click="addDialog = true">
-            Agregar vehículo
-          </VBtn>
-        </div>
+        <VBtn v-if="hiddenResources.length" size="small" variant="tonal" prepend-icon="ri-add-line" @click="addDialog = true">
+          Agregar vehículo
+        </VBtn>
       </div>
       <VDivider />
 
@@ -695,13 +695,39 @@ const onMmRectUp = () => {
           <!-- carril de vehículos (fijo a la izquierda) -->
           <div class="pz-rail">
             <div class="pz-rail-head" :style="{ height: headH + 'px' }">
-              <span class="text-caption text-medium-emphasis">Sin asignar</span>
+              <div class="d-flex align-center justify-space-between ga-1" style="inline-size: 100%;">
+                <div class="d-flex align-center ga-1">
+                  <span class="text-caption text-medium-emphasis">Sin asignar</span>
+                  <VChip size="x-small" color="warning" variant="flat">{{ board.unassigned.length }}</VChip>
+                </div>
+                <div class="d-flex flex-shrink-0">
+                  <VBtn icon="ri-arrow-left-s-line" size="x-small" variant="text" :disabled="!unPrev" title="Servicio sin asignar anterior" @click="goUn(-1)" />
+                  <VBtn icon="ri-arrow-right-s-line" size="x-small" variant="text" :disabled="!unNext" title="Siguiente servicio sin asignar" @click="goUn(1)" />
+                </div>
+              </div>
             </div>
             <div
               v-for="r in resources" :key="r.id" class="pz-rail-row" :style="{ height: ROW_H + 'px' }"
               @contextmenu.prevent="openCtx($event, 'resource', r)"
             >
-              <div class="font-weight-medium text-truncate">{{ r.label }}</div>
+              <div class="d-flex align-center justify-space-between ga-1">
+                <div class="d-flex align-center ga-1" style="min-inline-size: 0;">
+                  <span class="font-weight-medium text-truncate">{{ r.label }}</span>
+                  <VChip size="x-small" variant="tonal" class="flex-shrink-0">{{ (barsByResource[r.id] || []).length }}</VChip>
+                </div>
+                <div class="d-flex flex-shrink-0">
+                  <VBtn
+                    icon="ri-arrow-left-s-line" size="x-small" variant="text"
+                    :disabled="!barNav(r.id, -1)" title="Servicio anterior de este vehículo"
+                    @click="goBar(r.id, -1)"
+                  />
+                  <VBtn
+                    icon="ri-arrow-right-s-line" size="x-small" variant="text"
+                    :disabled="!barNav(r.id, 1)" title="Siguiente servicio de este vehículo"
+                    @click="goBar(r.id, 1)"
+                  />
+                </div>
+              </div>
               <div class="text-caption text-medium-emphasis text-truncate">
                 {{ r.driverName || 'sin conductor' }}<span v-if="r.sublabel"> · {{ r.sublabel }}</span>
               </div>
@@ -816,6 +842,22 @@ const onMmRectUp = () => {
       <div class="pz-l3 text-truncate">
         <strong>{{ chipDrag.item.start || chipDrag.item.scheduleText || 's/h' }}</strong>
       </div>
+    </div>
+
+    <!-- barra "fantasma" mientras se arrastra una barra asignada -->
+    <div
+      v-if="barDrag.bar" class="pz-chip pz-chip--ghost"
+      :style="{
+        left: barDrag.x + 'px', top: barDrag.y + 'px', width: '176px',
+        borderInlineStartColor: (MODE[barDrag.bar.mode]?.color || '#64748b'),
+      }"
+    >
+      <div class="pz-l1">
+        <span class="text-truncate">{{ barDrag.bar.serviceCode }}</span>
+        <span class="pz-amt">{{ soles(barDrag.bar.price) }}</span>
+      </div>
+      <div class="pz-l2 text-truncate">{{ routeOf(barDrag.bar) }}</div>
+      <div class="pz-l3 text-truncate"><strong>{{ toHHMM(barDrag.bar.start) }}</strong></div>
     </div>
 
     <!-- menú contextual -->
