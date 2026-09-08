@@ -218,9 +218,22 @@ const targetFromPoint = (cx, cy, durMin) => {
   const lane = document.elementFromPoint(cx, cy)?.closest('.pz-lane')
   if (!lane) return null
   const rect = lane.getBoundingClientRect()
-  let mins = Math.round(((cx - rect.left) / PX_PER_MIN) / SNAP) * SNAP
+  const raw = Math.max(0, Math.min(24 * 60, (cx - rect.left) / PX_PER_MIN))
+  let mins = Math.round(raw / SNAP) * SNAP
   mins = Math.max(0, Math.min(24 * 60 - (durMin || 60), mins))
-  return { rid: lane.dataset.resourceId, startMin: mins }
+  return { rid: lane.dataset.resourceId, startMin: mins, rawMin: raw }
+}
+
+// Rango del bloque de una hora (formato 12h), p. ej. "3:00 – 4:00 pm".
+const hour12 = m => {
+  let h = Math.floor(m / 60)
+  const ap = h >= 12 && h < 24 ? 'pm' : 'am'
+  h = h % 12 || 12
+  return `${h}:${String(m % 60).padStart(2, '0')} ${ap}`
+}
+const hourBlockLabel = rawMin => {
+  const hs = Math.floor(Math.min(23 * 60, Math.max(0, rawMin)) / 60) * 60
+  return `${hour12(hs)} – ${hour12(hs + 60)}`
 }
 
 // Etiqueta flotante con el día + horario de destino mientras se arrastra.
@@ -301,7 +314,7 @@ const refreshBarPreview = () => {
   drag.mode = 'move'
   drag.rid = t.rid
   drag.startMin = t.startMin
-  setHint(x, y, `${toHHMM(t.startMin)}–${toHHMM(t.startMin + bar.dur)}`)
+  setHint(x, y, hourBlockLabel(t.rawMin))
 }
 const onBarMove = e => {
   if (!dragStart) return
