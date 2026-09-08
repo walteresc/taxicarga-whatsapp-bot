@@ -693,10 +693,14 @@ const onMmRectUp = () => {
   <section>
     <div class="d-flex flex-wrap align-center justify-space-between ga-4 mb-4">
       <h1 class="text-h4 font-weight-bold">Pizarra</h1>
-      <div class="d-flex flex-wrap align-center justify-end ga-x-10 ga-y-2">
-        <div v-if="!loading && !error" class="text-end">
-          <div class="text-caption text-medium-emphasis">Servicios · {{ dayLabel }}</div>
-          <div class="text-h6 font-weight-bold">{{ summary.total }} · {{ soles(summary.monto) }}</div>
+      <div class="d-flex flex-wrap align-center justify-end ga-y-2">
+        <div v-if="!loading && !error" class="text-end me-10">
+          <div class="text-caption text-medium-emphasis">{{ dayLabel }}</div>
+          <div>
+            <span class="text-h6 font-weight-bold">{{ summary.total }}</span>
+            <span class="text-body-2 text-medium-emphasis"> servicios</span>
+            <span class="text-h6 font-weight-bold ms-4">{{ soles(summary.monto) }}</span>
+          </div>
         </div>
         <div class="d-flex align-center ga-1">
           <VBtn icon="ri-arrow-left-s-line" variant="tonal" @click="shiftDay(-1)" />
