@@ -453,11 +453,8 @@ const commitAssign = async (s, rid, mins) => {
 const picker = reactive({ show: false, x: 0, y: 0, code: '', options: [], selected: null, ctx: null })
 const openTimePicker = (ctx, x, y, dropMin) => {
   const hs = Math.floor(dropMin / 60) * 60
-  const vals = [hs, hs + 15, hs + 30, hs + 45]
-  if (!vals.includes(dropMin)) vals.push(dropMin)
-  vals.sort((a, b) => a - b)
-  picker.options = vals.map(v => ({ value: v, label: toHHMM(v) }))
-  picker.selected = dropMin
+  picker.options = [hs, hs + 15, hs + 30, hs + 45].map(v => ({ value: v, label: toHHMM(v) }))
+  picker.selected = null // el usuario elige la hora explícitamente
   picker.code = ctx.kind === 'assign' ? ctx.service.serviceCode : ctx.bar.serviceCode
   picker.ctx = ctx
   picker.x = x
@@ -991,7 +988,7 @@ const onMmRectUp = () => {
         </VRadioGroup>
         <div class="d-flex justify-end ga-1 mt-1">
           <VBtn size="small" variant="text" @click="picker.show = false">Cancelar</VBtn>
-          <VBtn size="small" color="primary" @click="confirmPicker">Confirmar</VBtn>
+          <VBtn size="small" color="primary" :disabled="picker.selected == null" @click="confirmPicker">Confirmar</VBtn>
         </div>
       </VCard>
     </VMenu>
