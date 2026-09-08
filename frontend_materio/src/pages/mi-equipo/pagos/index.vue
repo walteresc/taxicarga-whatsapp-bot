@@ -1,14 +1,17 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 
-import { ApiError } from '@/services/apiClient'
+import { apiClient, ApiError } from '@/services/apiClient'
 import WorkerPayrollDialog from '@/components/planilla/WorkerPayrollDialog.vue'
 import {
-  fetchPayCalc, fetchPayrollSummary, PAYMENT_TYPES, payrollConfigService, paymentsService,
+  fetchPayCalc, PAYMENT_TYPES, payrollConfigService, paymentsService,
 } from '@/services/payrollService'
 
 const TYPE = Object.fromEntries(PAYMENT_TYPES.map(t => [t.value, t.label]))
 const soles = n => (n == null ? '—' : `S/ ${Number(n).toLocaleString('es-PE', { minimumFractionDigits: 2 })}`)
+const iso = d => new Intl.DateTimeFormat('en-CA').format(d)
+const limaToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima' }).format(new Date())
+const limaMonth = () => limaToday().slice(0, 7)
 
 const tab = ref('resumen')
 const workers = ref([])
@@ -17,17 +20,47 @@ const loading = ref(true)
 const error = ref('')
 
 // ── Resumen ────────────────────────────────────────────────────────────
-const summaryDate = ref(new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima' }).format(new Date()))
+const SUM_PRESETS = [
+  { value: 'mtd', label: 'Al día de hoy', type: 'por_dias', payPreset: 'mtd' },
+  { value: 'month', label: 'Mes completo', type: 'fin_de_mes', payPreset: 'fin_de_mes' },
+  { value: 'q1', label: 'Quincena 1', type: 'quincena', payPreset: 'quincena1' },
+  { value: 'q2', label: 'Quincena 2', type: 'quincena', payPreset: 'quincena2' },
+]
+const summaryMonth = ref(limaMonth())
+const summaryPreset = ref('mtd')
 const summary = ref([])
 const summaryLoading = ref(false)
+const summaryRange = ref({ from: '', to: '' })
 const detailWorker = ref(null)
+
+const sumRange = () => {
+  const [y, m] = summaryMonth.value.split('-').map(Number)
+  const first = new Date(y, m - 1, 1)
+  const last = new Date(y, m, 0)
+  const p = SUM_PRESETS.find(x => x.value === summaryPreset.value)
+  let from = iso(first)
+  let to = iso(last)
+  if (summaryPreset.value === 'mtd') {
+    const t = new Date(limaToday())
+    to = iso(t >= first && t <= last ? t : last)
+  } else if (summaryPreset.value === 'q1') {
+    to = iso(new Date(y, m - 1, 15))
+  } else if (summaryPreset.value === 'q2') {
+    from = iso(new Date(y, m - 1, 16))
+  }
+  return { from, to, type: p.type, payPreset: p.payPreset }
+}
+
 const loadSummary = async () => {
   summaryLoading.value = true
+  const r = sumRange()
+  summaryRange.value = { from: r.from, to: r.to }
   try {
-    const d = await fetchPayrollSummary(summaryDate.value)
+    const d = await apiClient.get('/api/v2/payroll/summary', { from: r.from, to: r.to, type: r.type })
     summary.value = d.rows
   } catch { summary.value = [] } finally { summaryLoading.value = false }
 }
+watch([summaryMonth, summaryPreset], loadSummary)
 
 const snackbar = reactive({ show: false, text: '', color: 'success' })
 const notify = (text, color = 'success') => Object.assign(snackbar, { show: true, text, color })
@@ -66,11 +99,6 @@ const errs = ref({})
 const calc = ref(null)
 const calcLoading = ref(false)
 
-const iso = d => new Intl.DateTimeFormat('en-CA').format(d)
-const limaMonth = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima', year: 'numeric', month: '2-digit' })
-  .format(new Date()).slice(0, 7)
-const limaToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima' }).format(new Date())
-
 const PRESETS = [
   { value: 'fin_de_mes', label: 'Fin de mes', type: 'fin_de_mes' },
   { value: 'quincena1', label: 'Quincena 1 (1–15)', type: 'quincena' },
@@ -103,15 +131,19 @@ const applyPreset = () => {
   } else { form.periodFrom = iso(first); form.periodTo = iso(last) }
 }
 
-const openNew = () => {
+const openNew = ({ trabajadorId = null, month = null, preset = 'fin_de_mes' } = {}) => {
   errs.value = {}
   calc.value = null
   Object.assign(form, {
-    trabajadorId: null, month: limaMonth(), preset: 'fin_de_mes', type: 'fin_de_mes',
+    trabajadorId, month: month || summaryMonth.value || limaMonth(), preset, type: 'fin_de_mes',
     periodFrom: '', periodTo: '', otherDeductions: '0', otherDeductionsReason: '', note: '',
   })
   applyPreset()
   dialog.value = true
+}
+const registerFor = s => {
+  const p = SUM_PRESETS.find(x => x.value === summaryPreset.value)
+  openNew({ trabajadorId: s.trabajadorId, month: summaryMonth.value, preset: p.payPreset })
 }
 
 watch(() => [form.month, form.preset], applyPreset)
@@ -205,7 +237,7 @@ const removePayment = async row => {
           Liquidación por quincena, fin de mes o rango de fechas (para altas/bajas a mitad de mes). El sistema calcula bruto, AFP y neto.
         </p>
       </div>
-      <VBtn prepend-icon="ri-add-line" @click="openNew">Nuevo pago</VBtn>
+      <VBtn prepend-icon="ri-add-line" @click="openNew()">Nuevo pago</VBtn>
     </div>
 
     <VTabs v-model="tab" class="mb-4">
@@ -219,8 +251,20 @@ const removePayment = async row => {
     <template v-if="tab === 'resumen'">
       <VCard>
         <VCardText class="d-flex flex-wrap align-center ga-3">
-          <span class="text-body-2 text-medium-emphasis">Estado al</span>
-          <VTextField v-model="summaryDate" type="date" density="compact" hide-details style="max-width: 175px;" @update:model-value="loadSummary" />
+          <VTextField v-model="summaryMonth" type="month" label="Mes" density="compact" hide-details style="max-width: 170px;" />
+          <div class="d-flex flex-wrap ga-2">
+            <VChip
+              v-for="p in SUM_PRESETS" :key="p.value"
+              :color="summaryPreset === p.value ? 'primary' : undefined"
+              :variant="summaryPreset === p.value ? 'flat' : 'tonal'"
+              @click="summaryPreset = p.value"
+            >
+              {{ p.label }}
+            </VChip>
+          </div>
+          <span class="text-caption text-medium-emphasis">
+            {{ summaryRange.from }} → {{ summaryRange.to }}
+          </span>
         </VCardText>
         <VDivider />
         <VTable>
@@ -228,28 +272,31 @@ const removePayment = async row => {
             <tr>
               <th>Trabajador</th><th>Contrato</th>
               <th class="text-right">Saldo H. Extras</th><th class="text-right">Valor saldo</th>
-              <th class="text-right">Faltas mes</th><th class="text-right">Sin resolver</th>
+              <th class="text-right">Faltas</th><th class="text-right">Sin resolver</th>
               <th class="text-right">Días trab.</th><th class="text-right">Vac. pend.</th>
               <th class="text-right">A pagar (est.)</th>
+              <th class="text-right">Acciones</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-if="summaryLoading"><td colspan="9" class="text-center py-8"><VProgressCircular indeterminate color="primary" /></td></tr>
-            <tr v-else-if="!summary.length"><td colspan="9" class="text-center text-medium-emphasis py-10">Sin trabajadores en planilla.</td></tr>
+            <tr v-if="summaryLoading"><td colspan="10" class="text-center py-8"><VProgressCircular indeterminate color="primary" /></td></tr>
+            <tr v-else-if="!summary.length"><td colspan="10" class="text-center text-medium-emphasis py-10">Sin trabajadores en planilla.</td></tr>
             <tr v-for="s in summary" v-else :key="s.trabajadorId">
-              <td>
-                <button type="button" class="pz-link" @click="detailWorker = s.trabajadorId">{{ s.workerName }}</button>
-              </td>
+              <td class="font-weight-medium">{{ s.workerName }}</td>
               <td><VChip size="x-small" variant="tonal">{{ s.contractType === 'planilla' ? 'Planilla' : 'Honorarios' }}</VChip></td>
               <td class="text-right" :class="s.balanceHours > 0 ? 'text-success' : (s.balanceHours < 0 ? 'text-error' : '')">
                 {{ (s.balanceHours > 0 ? '+' : '') + s.balanceHours.toFixed(2) }}
               </td>
               <td class="text-right text-medium-emphasis">{{ soles(s.balanceValue) }}</td>
-              <td class="text-right">{{ s.absencesMonth }}</td>
+              <td class="text-right">{{ s.absencesRange }}</td>
               <td class="text-right" :class="s.absencesUnresolved ? 'text-error font-weight-medium' : ''">{{ s.absencesUnresolved }}</td>
-              <td class="text-right">{{ s.daysWorkedMonth }}</td>
+              <td class="text-right">{{ s.daysWorkedRange }}</td>
               <td class="text-right">{{ s.vacationDaysPending ?? '—' }}</td>
               <td class="text-right font-weight-bold">{{ soles(s.estimatedNet) }}</td>
+              <td class="text-right text-no-wrap">
+                <VBtn size="small" variant="text" icon="ri-eye-line" title="Ver detalle" @click="detailWorker = s.trabajadorId" />
+                <VBtn size="small" variant="text" icon="ri-bank-card-line" color="primary" title="Registrar pago" @click="registerFor(s)" />
+              </td>
             </tr>
           </tbody>
         </VTable>

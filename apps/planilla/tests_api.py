@@ -339,7 +339,7 @@ class VacacionesYResumenTests(_Authed):
             hora_ingreso=dt.time(8, 0), hora_salida=dt.time(19, 0),
             horas_jornada_dia="8.00", horas_refrigerio_dia="1.00",
         )
-        r = self.client.get("/api/v2/payroll/summary?date=2026-09-05")
+        r = self.client.get("/api/v2/payroll/summary?from=2026-09-01&to=2026-09-05")
         self.assertEqual(r.status_code, 200)
         self.assertEqual(len(r.data["rows"]), 1)
         self.assertEqual(r.data["rows"][0]["balanceHours"], 2.0)

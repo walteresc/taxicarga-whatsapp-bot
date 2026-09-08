@@ -371,10 +371,9 @@ def vacaciones_info(trabajador, fecha):
     }
 
 
-def _resumen_fila(c, fecha):
-    d1 = fecha.replace(day=1)
+def _resumen_fila(c, desde, hasta, tipo):
     faltas_qs = RegistroAsistencia.objects.filter(
-        trabajador=c, fecha__gte=d1, fecha__lte=fecha, tipo_dia=RegistroAsistencia.TIPO_FALTA,
+        trabajador=c, fecha__gte=desde, fecha__lte=hasta, tipo_dia=RegistroAsistencia.TIPO_FALTA,
     )
     n_faltas = faltas_qs.count()
     comp_ids = MovimientoCompensacion.objects.filter(
@@ -383,28 +382,26 @@ def _resumen_fila(c, fecha):
     ).values_list("asistencia_id", flat=True)
     faltas_nc = n_faltas - len(set(comp_ids))
     dias_trab = RegistroAsistencia.objects.filter(
-        trabajador=c, fecha__gte=d1, fecha__lte=fecha,
+        trabajador=c, fecha__gte=desde, fecha__lte=hasta,
         tipo_dia=RegistroAsistencia.TIPO_TRABAJADO, hora_ingreso__isnull=False,
     ).count()
-    saldo = saldo_horas(c, fecha)
-    vac = vacaciones_info(c, fecha)
+    saldo = saldo_horas(c, hasta)
+    vac = vacaciones_info(c, hasta)
     ultimo = Pago.objects.filter(trabajador=c).order_by("-periodo_hasta", "-id").first()
-    desde = (ultimo.periodo_hasta + timedelta(days=1)) if ultimo else d1
-    if desde > fecha:
-        desde = d1
-    est = calcular_pago(c, desde, fecha, "fin_de_mes")
+    est = calcular_pago(c, desde, hasta, tipo)
     return {
         "trabajadorId": c.id,
         "workerType": c.tipo,
         "workerName": c.nombre,
         "contractType": c.tipo_contrato,
+        "periodFrom": desde.isoformat(),
+        "periodTo": hasta.isoformat(),
         "balanceHours": float(saldo),
         "balanceValue": float(_money(saldo * c.valor_hora)),
-        "absencesMonth": n_faltas,
+        "absencesRange": n_faltas,
         "absencesUnresolved": faltas_nc,
-        "daysWorkedMonth": dias_trab,
+        "daysWorkedRange": dias_trab,
         "vacationDaysPending": vac["daysPending"] if vac.get("aplica") else None,
-        "estimatedFrom": desde.isoformat(),
         "estimatedNet": est["netAmount"],
         "lastPayment": None if not ultimo else {
             "periodTo": ultimo.periodo_hasta.isoformat(),
@@ -414,11 +411,11 @@ def _resumen_fila(c, fecha):
     }
 
 
-def payroll_summary(fecha):
+def payroll_summary(desde, hasta, tipo="por_dias"):
     configs = (ConfiguracionPlanilla.objects
                .filter(activo=True)
                .select_related("conductor", "ayudante", "usuario"))
-    filas = [_resumen_fila(c, fecha) for c in configs]
+    filas = [_resumen_fila(c, desde, hasta, tipo) for c in configs]
     filas.sort(key=lambda r: r["workerName"].lower())
     return filas
 

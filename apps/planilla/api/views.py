@@ -169,19 +169,29 @@ class PayrollCalcView(APIView):
 
 
 class PayrollSummaryView(APIView):
-    """GET /api/v2/payroll/summary?date= — una fila por trabajador activo."""
+    """GET /api/v2/payroll/summary?from=&to=&type= — una fila por trabajador activo.
+    Por defecto: del 1° del mes en curso hasta hoy (type=por_dias)."""
     permission_classes = [HasAnyRole(*_ROLES)]
 
     def get_exception_handler(self):
         return api_exception_handler
 
     def get(self, request):
-        raw = (request.query_params.get("date") or "").strip()
+        p = request.query_params
+        hoy = timezone.localdate()
         try:
-            day = _date.fromisoformat(raw) if raw else timezone.localdate()
+            hasta = _date.fromisoformat(p["to"]) if p.get("to") else hoy
         except ValueError:
-            day = timezone.localdate()
-        return Response({"date": day.isoformat(), "rows": payroll_summary(day)})
+            hasta = hoy
+        try:
+            desde = _date.fromisoformat(p["from"]) if p.get("from") else hasta.replace(day=1)
+        except ValueError:
+            desde = hasta.replace(day=1)
+        tipo = (p.get("type") or "por_dias").strip()
+        return Response({
+            "from": desde.isoformat(), "to": hasta.isoformat(),
+            "rows": payroll_summary(desde, hasta, tipo),
+        })
 
 
 class WorkerPayrollView(APIView):
