@@ -14,6 +14,9 @@ const HOURS = Array.from({ length: 25 }, (_, i) => i)
 const HOURS_H = 28
 const CHIP_W = 160
 const CHIP_H = 58
+const PEEK = 22 // desfase de las barras superpuestas
+
+const frontId = ref(null) // barra superpuesta traída al frente por clic
 
 const STATE = {
   programado: { label: 'Programado', color: '#3b82f6' },
@@ -139,20 +142,18 @@ const barsByResource = computed(() => {
     const end = toMin(a.end) ?? start + 60
     map[a.resourceId].push({ ...a, start, end, dur: Math.max(30, end - start) })
   }
-  // Reparte los servicios que se superponen en sub-filas dentro del vehículo.
+  // Servicios que se superponen en un vehículo: se apilan con un pequeño
+  // desfase para poder alternar entre ellos con un clic.
   for (const rid of Object.keys(map)) {
     const bars = map[rid].sort((x, y) => x.start - y.start || x.end - y.end)
-    const laneEnd = []
-    for (const b of bars) {
-      let s = laneEnd.findIndex(e => e <= b.start)
-      if (s === -1) { s = laneEnd.length; laneEnd.push(0) }
-      laneEnd[s] = b.end
-      b._sub = s
-    }
-    const subs = Math.max(1, laneEnd.length)
-    for (const b of bars) {
-      b._subs = subs
-      b._overlap = subs > 1
+    let i = 0
+    while (i < bars.length) {
+      let j = i + 1
+      let end = bars[i].end
+      while (j < bars.length && bars[j].start < end) { end = Math.max(end, bars[j].end); j += 1 }
+      const grp = bars.slice(i, j)
+      grp.forEach((b, k) => { b._stack = k; b._stackCount = grp.length })
+      i = j
     }
   }
   return map
@@ -305,7 +306,13 @@ const onBarUp = async () => {
   const ds = dragStart
   dragStart = null
   if (!ds) { resetDrag(); return }
-  if (!ds.armed || !ds.moved) { resetDrag(); openPanel(ds.bar); return }
+  if (!ds.armed || !ds.moved) {
+    resetDrag()
+    // clic en una barra superpuesta que no está al frente → traerla al frente
+    if ((ds.bar._stackCount || 1) > 1 && frontId.value !== ds.bar.id) { frontId.value = ds.bar.id; return }
+    openPanel(ds.bar)
+    return
+  }
   if (drag.mode === 'unassign') { resetDrag(); await releaseBar(ds.bar); return }
   if (drag.mode !== 'move' || drag.rid == null || drag.startMin == null) { resetDrag(); return }
   // Deja la barra previsualizada en su destino y pide la hora exacta.
@@ -812,23 +819,16 @@ const onMmRectUp = () => {
               :data-resource-id="r.id" :style="{ height: ROW_H + 'px' }"
             >
               <div v-for="h in HOURS" :key="h" class="pz-tick" :style="{ left: (h * 60 * PX_PER_MIN) + 'px' }" />
-              <!-- recuadro fantasma: a dónde va a caer la barra que se arrastra -->
-              <div
-                v-if="drag.mode === 'move' && drag.rid === r.id"
-                class="pz-drop"
-                :style="{ left: (drag.startMin * PX_PER_MIN) + 'px', width: (drag.durMin * PX_PER_MIN) + 'px' }"
-              >
-                {{ toHHMM(drag.startMin) }}–{{ toHHMM(drag.startMin + drag.durMin) }}
-              </div>
               <div
                 v-for="bar in (barsByResource[r.id] || [])" :key="bar.id"
-                class="pz-bar" :class="{ 'pz-bar--conflict': bar._overlap }"
+                class="pz-bar"
                 :style="{
                   left: (bar.start * PX_PER_MIN) + 'px',
                   width: (bar.dur * PX_PER_MIN) + 'px',
-                  top: (5 + (bar._sub || 0) * ((ROW_H - 10) / (bar._subs || 1))) + 'px',
-                  height: (((ROW_H - 10) / (bar._subs || 1)) - 2) + 'px',
+                  top: (5 + (bar._stack || 0) * PEEK) + 'px',
+                  height: (ROW_H - 10 - ((bar._stackCount || 1) - 1) * PEEK) + 'px',
                   bottom: 'auto',
+                  zIndex: frontId === bar.id ? 60 : undefined,
                   borderLeftColor: (MODE[bar.mode]?.color || '#64748b'),
                   ...barLiveStyle(bar),
                 }"
@@ -837,12 +837,11 @@ const onMmRectUp = () => {
               >
                 <div class="pz-l1">
                   <span class="pz-state-dot" :style="{ background: STATE[bar.state]?.color }" />
-                  <span v-if="bar._overlap" title="Se superpone con otro servicio">⚠</span>
                   <span class="text-truncate">{{ bar.serviceCode }}</span>
                   <span v-if="bar.assignedAuto" title="Asignación automática">⚡</span>
                   <span class="pz-amt">{{ soles(bar.price) }}</span>
                 </div>
-                <div v-if="(bar._subs || 1) < 3" class="pz-l2 text-truncate">{{ routeOf(bar) }}</div>
+                <div v-if="(bar._stackCount || 1) < 3" class="pz-l2 text-truncate">{{ routeOf(bar) }}</div>
                 <div class="pz-l3 text-truncate">
                   <strong>{{ toHHMM(bar.start) }}</strong><span v-if="bar.end" class="pz-dim">–{{ toHHMM(bar.end) }}</span>
                 </div>
@@ -1117,26 +1116,6 @@ const onMmRectUp = () => {
   user-select: none;
 }
 .pz-bar:active { cursor: grabbing; }
-.pz-bar--conflict {
-  border-color: rgb(var(--v-theme-error));
-  box-shadow: 0 0 0 1px rgb(var(--v-theme-error)), 0 1px 3px rgb(0 0 0 / 12%);
-}
-
-.pz-drop {
-  position: absolute;
-  inset-block: 5px;
-  z-index: 20;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  font-weight: 700;
-  color: rgb(var(--v-theme-primary));
-  background: rgb(var(--v-theme-primary), 0.1);
-  border: 2px dashed rgb(var(--v-theme-primary));
-  border-radius: 6px;
-  pointer-events: none;
-}
 
 .pz-chip {
   position: absolute;
