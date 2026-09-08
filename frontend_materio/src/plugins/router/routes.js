@@ -38,6 +38,11 @@ export const routes = [
         meta: { roles: PERSONAL_ROLES },
       },
       {
+        path: 'mi-equipo/horas-extras',
+        component: () => import('@/pages/mi-equipo/horas-extras/index.vue'),
+        meta: { roles: PERSONAL_ROLES },
+      },
+      {
         path: 'personal-campo/conductores',
         component: () => import('@/pages/personal-campo/conductores.vue'),
         meta: { roles: PERSONAL_ROLES },

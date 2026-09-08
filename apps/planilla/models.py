@@ -155,3 +155,82 @@ class ConfiguracionPlanilla(models.Model):
 
     def __str__(self):
         return f"{self.nombre} — {self.get_tipo_contrato_display()}"
+
+
+class RegistroAsistencia(models.Model):
+    """Un registro por (trabajador, día). Guarda hora de ingreso/salida y calcula
+    en `save()` las horas trabajadas y el Δ contra la jornada (con snapshot de la
+    jornada/refrigerio del día para que cambiar la config no reescriba historia).
+    """
+    TIPO_TRABAJADO = "trabajado"
+    TIPO_FALTA = "falta"
+    TIPO_VACACIONES = "vacaciones"
+    TIPO_DESCANSO = "descanso"
+    TIPO_FERIADO = "feriado"
+    TIPO_LICENCIA_SG = "licencia_sin_goce"
+    TIPOS_DIA = [
+        (TIPO_TRABAJADO, "Trabajado"),
+        (TIPO_FALTA, "Falta"),
+        (TIPO_VACACIONES, "Vacaciones"),
+        (TIPO_DESCANSO, "Descanso / franco"),
+        (TIPO_FERIADO, "Feriado"),
+        (TIPO_LICENCIA_SG, "Licencia sin goce"),
+    ]
+
+    trabajador = models.ForeignKey(
+        ConfiguracionPlanilla, on_delete=models.PROTECT, related_name="asistencias",
+    )
+    fecha = models.DateField()
+    tipo_dia = models.CharField(max_length=20, choices=TIPOS_DIA, default=TIPO_TRABAJADO)
+    hora_ingreso = models.TimeField(null=True, blank=True)
+    hora_salida = models.TimeField(null=True, blank=True)
+    horas_jornada_dia = models.DecimalField(max_digits=4, decimal_places=2)
+    horas_refrigerio_dia = models.DecimalField(max_digits=4, decimal_places=2)
+    horas_trabajadas = models.DecimalField(max_digits=5, decimal_places=2, default=_ZERO)
+    delta_dia = models.DecimalField(max_digits=6, decimal_places=2, default=_ZERO)
+    observacion = models.CharField(max_length=200, blank=True)
+    registrado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+    creado_en = models.DateTimeField(auto_now_add=True)
+    actualizado_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Registro de asistencia"
+        verbose_name_plural = "Registros de asistencia"
+        ordering = ["-fecha", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["trabajador", "fecha"], name="planilla_asistencia_unica_por_dia",
+            ),
+        ]
+
+    def recompute(self):
+        from datetime import datetime, timedelta
+
+        if self.tipo_dia == self.TIPO_TRABAJADO and self.hora_ingreso and self.hora_salida:
+            base = datetime(2000, 1, 1)
+            ini = base.replace(
+                hour=self.hora_ingreso.hour, minute=self.hora_ingreso.minute,
+                second=self.hora_ingreso.second,
+            )
+            fin = base.replace(
+                hour=self.hora_salida.hour, minute=self.hora_salida.minute,
+                second=self.hora_salida.second,
+            )
+            if fin <= ini:
+                fin += timedelta(days=1)
+            minutos = int((fin - ini).total_seconds() // 60)
+            presente = (Decimal(minutos) / Decimal("60")).quantize(Decimal("0.01"))
+            self.horas_trabajadas = presente - (self.horas_refrigerio_dia or _ZERO)
+            self.delta_dia = self.horas_trabajadas - (self.horas_jornada_dia or _ZERO)
+        else:
+            self.horas_trabajadas = _ZERO
+            self.delta_dia = _ZERO
+
+    def save(self, *args, **kwargs):
+        self.recompute()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.trabajador.nombre} — {self.fecha} ({self.get_tipo_dia_display()})"

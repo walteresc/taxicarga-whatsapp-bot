@@ -5,7 +5,7 @@ no se desincronizan de `mappers.CONFIG_FIELDS`.
 """
 from rest_framework import serializers
 
-from apps.planilla.models import ConfiguracionPlanilla
+from apps.planilla.models import ConfiguracionPlanilla, RegistroAsistencia
 
 _WORKER_FK = {
     ConfiguracionPlanilla.TIPO_CONDUCTOR: "conductor_id",
@@ -84,3 +84,24 @@ class PayrollConfigSerializer(serializers.ModelSerializer):
     def update(self, instance, validated_data):
         validated_data.pop("tipo", None)  # el vínculo con el trabajador no cambia
         return super().update(instance, validated_data)
+
+
+class AttendanceSerializer(serializers.ModelSerializer):
+    trabajadorId = serializers.PrimaryKeyRelatedField(source="trabajador", read_only=True)
+    workerName = serializers.CharField(source="trabajador.nombre", read_only=True)
+    date = serializers.DateField(source="fecha", read_only=True)
+    dayType = serializers.CharField(source="tipo_dia", read_only=True)
+    clockIn = serializers.TimeField(source="hora_ingreso", format="%H:%M", read_only=True)
+    clockOut = serializers.TimeField(source="hora_salida", format="%H:%M", read_only=True)
+    workdayHours = serializers.DecimalField(source="horas_jornada_dia", max_digits=4, decimal_places=2, read_only=True)
+    lunchHours = serializers.DecimalField(source="horas_refrigerio_dia", max_digits=4, decimal_places=2, read_only=True)
+    workedHours = serializers.DecimalField(source="horas_trabajadas", max_digits=5, decimal_places=2, read_only=True)
+    delta = serializers.DecimalField(source="delta_dia", max_digits=6, decimal_places=2, read_only=True)
+    note = serializers.CharField(source="observacion", read_only=True)
+
+    class Meta:
+        model = RegistroAsistencia
+        fields = (
+            "id", "trabajadorId", "workerName", "date", "dayType", "clockIn", "clockOut",
+            "workdayHours", "lunchHours", "workedHours", "delta", "note",
+        )

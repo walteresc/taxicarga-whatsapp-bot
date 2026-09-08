@@ -15,6 +15,20 @@ CONFIG_FIELDS = {
 }
 
 
+ATTENDANCE_FIELDS = {
+    "trabajadorId": "trabajador",
+    "date": "fecha",
+    "dayType": "tipo_dia",
+    "clockIn": "hora_ingreso",
+    "clockOut": "hora_salida",
+    "workdayHours": "horas_jornada_dia",
+    "lunchHours": "horas_refrigerio_dia",
+    "workedHours": "horas_trabajadas",
+    "delta": "delta_dia",
+    "note": "observacion",
+}
+
+
 def _invert(mapping):
     return {v: k for k, v in mapping.items()}
 

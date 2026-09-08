@@ -6,13 +6,25 @@ from django.contrib.auth.models import Group
 from rest_framework.test import APITestCase
 
 from apps.campo.models import Conductor
-from apps.planilla.api.mappers import CONFIG_FIELDS, api_to_model, model_to_api
-from apps.planilla.api.serializers import PayrollConfigSerializer
-from apps.planilla.models import ConfiguracionPlanilla
+from apps.planilla.api.mappers import (
+    ATTENDANCE_FIELDS, CONFIG_FIELDS, api_to_model, model_to_api,
+)
+from apps.planilla.api.serializers import AttendanceSerializer, PayrollConfigSerializer
+from apps.planilla.models import ConfiguracionPlanilla, RegistroAsistencia
 
 User = get_user_model()
 
 _RO = {"id", "workerId", "workerName", "documentId", "valorDia", "valorHora"}
+
+
+def _config(conductor, **kw):
+    base = dict(
+        tipo="conductor", conductor=conductor, tipo_contrato="planilla",
+        monto_mes="1130", fecha_ingreso=dt.date(2026, 1, 1),
+        horas_jornada="8.00", horas_refrigerio="1.00",
+    )
+    base.update(kw)
+    return ConfiguracionPlanilla.objects.create(**base)
 
 
 def _conductor(**kw):
@@ -33,6 +45,9 @@ class MapperRoundTripTests(APITestCase):
 
     def test_serializer_expone_las_claves_del_mapa(self):
         self.assertEqual(set(PayrollConfigSerializer().fields) - _RO, set(CONFIG_FIELDS))
+        self.assertEqual(
+            set(AttendanceSerializer().fields) - {"id", "workerName"}, set(ATTENDANCE_FIELDS),
+        )
 
 
 class _Authed(APITestCase):
@@ -114,8 +129,57 @@ class PayrollConfigApiTests(_Authed):
         self.assertNotIn("monto_dia", row)
 
 
+class AttendanceApiTests(_Authed):
+    def test_grilla_del_dia_y_upsert_calcula_delta(self):
+        cfg = _config(_conductor())
+        # grilla: una fila, sin asistencia todavía
+        r = self.client.get("/api/v2/payroll/day?date=2026-03-10")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(len(r.data["rows"]), 1)
+        self.assertIsNone(r.data["rows"][0]["attendanceId"])
+
+        # upsert: 08:00–18:00, jornada 8, refrigerio 1 → trabajadas 9, Δ +1
+        r = self.client.post("/api/v2/payroll/day", {
+            "trabajadorId": cfg.id, "fecha": "2026-03-10", "dayType": "trabajado",
+            "clockIn": "08:00", "clockOut": "18:00",
+        }, format="json")
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual(str(r.data["workedHours"]), "9.00")
+        self.assertEqual(str(r.data["delta"]), "1.00")
+
+        # segundo upsert el mismo día no duplica
+        self.client.post("/api/v2/payroll/day", {
+            "trabajadorId": cfg.id, "fecha": "2026-03-10", "dayType": "falta",
+        }, format="json")
+        self.assertEqual(RegistroAsistencia.objects.filter(trabajador=cfg, fecha="2026-03-10").count(), 1)
+        reg = RegistroAsistencia.objects.get(trabajador=cfg, fecha="2026-03-10")
+        self.assertEqual(reg.tipo_dia, "falta")
+        self.assertEqual(reg.delta_dia, 0)
+
+    def test_delta_mensual_acumulado(self):
+        cfg = _config(_conductor())
+        for dia, salida in ((5, "18:00"), (6, "17:00")):  # Δ +1 y Δ 0
+            self.client.post("/api/v2/payroll/day", {
+                "trabajadorId": cfg.id, "fecha": f"2026-03-{dia:02d}",
+                "dayType": "trabajado", "clockIn": "08:00", "clockOut": salida,
+            }, format="json")
+        r = self.client.get("/api/v2/payroll/day?date=2026-03-06")
+        self.assertEqual(r.data["rows"][0]["monthDelta"], 1.0)
+
+    def test_clear_borra_el_registro(self):
+        cfg = _config(_conductor())
+        self.client.post("/api/v2/payroll/day", {
+            "trabajadorId": cfg.id, "fecha": "2026-03-10", "dayType": "descanso",
+        }, format="json")
+        self.client.post("/api/v2/payroll/day", {
+            "trabajadorId": cfg.id, "fecha": "2026-03-10", "clear": True,
+        }, format="json")
+        self.assertFalse(RegistroAsistencia.objects.filter(trabajador=cfg).exists())
+
+
 class RbacTests(APITestCase):
     def test_sin_rol_403(self):
         u = User.objects.create_user("nr", password="x")
         self.client.force_login(u)
         self.assertEqual(self.client.get("/api/v2/payroll-config/").status_code, 403)
+        self.assertEqual(self.client.get("/api/v2/payroll/day").status_code, 403)
