@@ -32,11 +32,15 @@ const loadSummary = async () => {
 const snackbar = reactive({ show: false, text: '', color: 'success' })
 const notify = (text, color = 'success') => Object.assign(snackbar, { show: true, text, color })
 
+const statusFilter = ref('')
 const load = async () => {
   loading.value = true
   error.value = ''
   try {
-    const data = await paymentsService.list({ pageSize: 100 })
+    const data = await paymentsService.list({
+      pageSize: 200,
+      paid: statusFilter.value === 'paid' ? 'true' : (statusFilter.value === 'pending' ? 'false' : undefined),
+    })
     rows.value = data.results
   } catch (e) {
     error.value = e.message || 'No se pudieron cargar los pagos.'
@@ -44,6 +48,7 @@ const load = async () => {
     loading.value = false
   }
 }
+const setStatus = v => { statusFilter.value = v; load() }
 
 onMounted(async () => {
   try {
@@ -54,48 +59,62 @@ onMounted(async () => {
   loadSummary()
 })
 
-// ── Nuevo pago ─────────────────────────────────────────────────────────
+// ── Nuevo pago / calcular ──────────────────────────────────────────────
 const dialog = ref(false)
 const saving = ref(false)
 const errs = ref({})
 const calc = ref(null)
 const calcLoading = ref(false)
+
+const iso = d => new Intl.DateTimeFormat('en-CA').format(d)
+const limaMonth = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima', year: 'numeric', month: '2-digit' })
+  .format(new Date()).slice(0, 7)
+const limaToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima' }).format(new Date())
+
+const PRESETS = [
+  { value: 'fin_de_mes', label: 'Fin de mes', type: 'fin_de_mes' },
+  { value: 'quincena1', label: 'Quincena 1 (1–15)', type: 'quincena' },
+  { value: 'quincena2', label: 'Quincena 2 (16–fin)', type: 'quincena' },
+  { value: 'mtd', label: 'Lo que va del mes', type: 'por_dias' },
+  { value: 'custom', label: 'Rango personalizado', type: 'por_dias' },
+]
+
 const form = reactive({
-  trabajadorId: null, type: 'fin_de_mes', periodFrom: '', periodTo: '',
-  otherDeductions: '0', otherDeductionsReason: '', note: '',
+  trabajadorId: null, month: limaMonth(), preset: 'fin_de_mes', type: 'fin_de_mes',
+  periodFrom: '', periodTo: '', otherDeductions: '0', otherDeductionsReason: '', note: '',
 })
 
-const monthRange = (type) => {
-  const now = new Date()
-  const y = now.getFullYear()
-  const m = now.getMonth()
-  const first = new Date(y, m, 1)
-  const last = new Date(y, m + 1, 0)
-  const iso = d => new Intl.DateTimeFormat('en-CA').format(d)
-  if (type === 'quincena') {
-    const day = now.getDate()
-    return day <= 15
-      ? [iso(first), iso(new Date(y, m, 15))]
-      : [iso(new Date(y, m, 16)), iso(last)]
+const applyPreset = () => {
+  if (form.preset === 'custom') {
+    form.type = form.type === 'quincena' || form.type === 'fin_de_mes' ? form.type : 'por_dias'
+    return
   }
-  return [iso(first), iso(last)]
+  const [y, m] = form.month.split('-').map(Number)
+  const first = new Date(y, m - 1, 1)
+  const last = new Date(y, m, 0)
+  const p = PRESETS.find(x => x.value === form.preset)
+  form.type = p.type
+  if (form.preset === 'quincena1') { form.periodFrom = iso(first); form.periodTo = iso(new Date(y, m - 1, 15)) }
+  else if (form.preset === 'quincena2') { form.periodFrom = iso(new Date(y, m - 1, 16)); form.periodTo = iso(last) }
+  else if (form.preset === 'mtd') {
+    const today = new Date(limaToday())
+    const end = (today >= first && today <= last) ? today : last
+    form.periodFrom = iso(first); form.periodTo = iso(end)
+  } else { form.periodFrom = iso(first); form.periodTo = iso(last) }
 }
 
 const openNew = () => {
   errs.value = {}
   calc.value = null
-  const [f, t] = monthRange('fin_de_mes')
   Object.assign(form, {
-    trabajadorId: null, type: 'fin_de_mes', periodFrom: f, periodTo: t,
-    otherDeductions: '0', otherDeductionsReason: '', note: '',
+    trabajadorId: null, month: limaMonth(), preset: 'fin_de_mes', type: 'fin_de_mes',
+    periodFrom: '', periodTo: '', otherDeductions: '0', otherDeductionsReason: '', note: '',
   })
+  applyPreset()
   dialog.value = true
 }
 
-watch(() => form.type, t => {
-  const [f, to] = monthRange(t)
-  if (t !== 'adelanto') { form.periodFrom = f; form.periodTo = to }
-})
+watch(() => [form.month, form.preset], applyPreset)
 
 let calcTimer
 const runCalc = () => {
@@ -127,7 +146,7 @@ const submit = async () => {
       type: form.type,
       periodFrom: form.periodFrom,
       periodTo: form.periodTo,
-      daysWorked: calc.value.daysWorked,
+      daysWorked: calc.value.payableDays ?? calc.value.daysWorked,
       absencesDeducted: calc.value.absencesDeducted,
       grossAmount: calc.value.grossAmount,
       afpDeduction: calc.value.afpDeduction,
@@ -183,7 +202,7 @@ const removePayment = async row => {
       <div>
         <h1 class="text-h4 font-weight-bold mb-1">Pagos</h1>
         <p class="text-body-1 text-medium-emphasis mb-0">
-          Liquidación de quincenas y fin de mes. El sistema calcula bruto, AFP y neto.
+          Liquidación por quincena, fin de mes o rango de fechas (para altas/bajas a mitad de mes). El sistema calcula bruto, AFP y neto.
         </p>
       </div>
       <VBtn prepend-icon="ri-add-line" @click="openNew">Nuevo pago</VBtn>
@@ -238,6 +257,16 @@ const removePayment = async row => {
     </template>
 
     <VCard v-else>
+      <VCardText class="d-flex flex-wrap ga-2">
+        <VChip
+          v-for="f in [{ v: '', l: 'Todos' }, { v: 'pending', l: 'Pendientes' }, { v: 'paid', l: 'Pagados' }]"
+          :key="f.v" :color="statusFilter === f.v ? 'primary' : undefined"
+          :variant="statusFilter === f.v ? 'flat' : 'tonal'" @click="setStatus(f.v)"
+        >
+          {{ f.l }}
+        </VChip>
+      </VCardText>
+      <VDivider />
       <VTable>
         <thead>
           <tr>
@@ -249,7 +278,7 @@ const removePayment = async row => {
         </thead>
         <tbody>
           <tr v-if="loading"><td colspan="9" class="text-center py-8"><VProgressCircular indeterminate color="primary" /></td></tr>
-          <tr v-else-if="!rows.length"><td colspan="9" class="text-center text-medium-emphasis py-10">Aún no hay pagos registrados.</td></tr>
+          <tr v-else-if="!rows.length"><td colspan="9" class="text-center text-medium-emphasis py-10">No hay pagos para el filtro.</td></tr>
           <tr v-for="row in rows" v-else :key="row.id">
             <td class="text-no-wrap">{{ row.periodFrom }} → {{ row.periodTo }}</td>
             <td class="font-weight-medium">{{ row.workerName }}</td>
@@ -272,51 +301,80 @@ const removePayment = async row => {
       </VTable>
     </VCard>
 
-    <!-- Nuevo pago -->
-    <VDialog v-model="dialog" max-width="620" persistent>
+    <!-- Nuevo pago / calcular -->
+    <VDialog v-model="dialog" max-width="640" persistent>
       <VCard>
-        <VCardTitle>Nuevo pago</VCardTitle>
+        <VCardTitle>Calcular y registrar pago</VCardTitle>
         <VCardText>
-          <VRow>
-            <VCol cols="12" sm="6">
-              <VSelect
-                v-model="form.trabajadorId"
-                :items="workers.map(w => ({ title: `${w.workerName} (${w.contractType})`, value: w.id }))"
-                label="Trabajador" :error-messages="errs.trabajadorId"
-              />
-            </VCol>
-            <VCol cols="12" sm="6">
-              <VSelect v-model="form.type" :items="PAYMENT_TYPES" item-title="label" item-value="value" label="Tipo de pago" />
-            </VCol>
-            <VCol cols="12" sm="6"><VTextField v-model="form.periodFrom" type="date" label="Período desde" :error-messages="errs.periodFrom" /></VCol>
-            <VCol cols="12" sm="6"><VTextField v-model="form.periodTo" type="date" label="Período hasta" :error-messages="errs.periodTo" /></VCol>
-          </VRow>
+          <VAutocomplete
+            v-model="form.trabajadorId"
+            :items="workers.map(w => ({ title: `${w.workerName} — ${w.contractType === 'planilla' ? 'Planilla' : 'Honorarios'}`, value: w.id }))"
+            label="Trabajador" prepend-inner-icon="ri-user-line"
+            :error-messages="errs.trabajadorId" autofocus
+          />
 
-          <VDivider class="my-3" />
-          <div v-if="calcLoading" class="text-center py-4"><VProgressCircular indeterminate size="24" color="primary" /></div>
-          <div v-else-if="calc" class="text-body-2">
-            <div class="d-flex justify-space-between"><span class="text-medium-emphasis">Días trabajados</span><span>{{ calc.daysWorked }}</span></div>
-            <div class="d-flex justify-space-between"><span class="text-medium-emphasis">Faltas descontadas</span><span>{{ calc.absencesDeducted }}</span></div>
-            <div class="d-flex justify-space-between"><span class="text-medium-emphasis">Monto bruto</span><span>{{ soles(calc.grossAmount) }}</span></div>
-            <div class="d-flex justify-space-between"><span class="text-medium-emphasis">Descuento AFP</span><span>− {{ soles(calc.afpDeduction) }}</span></div>
-          </div>
-          <p v-else class="text-body-2 text-medium-emphasis">Elegí trabajador y período para calcular.</p>
+          <VExpandTransition>
+            <div v-if="form.trabajadorId">
+              <div class="d-flex flex-wrap align-center ga-3 mt-2">
+                <VTextField
+                  v-if="form.preset !== 'custom'"
+                  v-model="form.month" type="month" label="Mes" density="compact" hide-details
+                  style="max-width: 170px;"
+                />
+                <div class="d-flex flex-wrap ga-2">
+                  <VChip
+                    v-for="p in PRESETS" :key="p.value"
+                    :color="form.preset === p.value ? 'primary' : undefined"
+                    :variant="form.preset === p.value ? 'flat' : 'tonal'"
+                    @click="form.preset = p.value"
+                  >
+                    {{ p.label }}
+                  </VChip>
+                </div>
+              </div>
 
-          <VRow class="mt-1">
-            <VCol cols="12" sm="6"><VTextField v-model="form.otherDeductions" type="number" label="Otros descuentos (S/)" @update:model-value="() => {}" /></VCol>
-            <VCol cols="12" sm="6"><VTextField v-model="form.otherDeductionsReason" label="Motivo otros descuentos" /></VCol>
-            <VCol cols="12"><VTextField v-model="form.note" label="Nota" /></VCol>
-          </VRow>
+              <div v-if="form.preset === 'custom'" class="d-flex flex-wrap ga-3 mt-3">
+                <VTextField v-model="form.periodFrom" type="date" label="Desde" density="compact" hide-details :error-messages="errs.periodFrom" />
+                <VTextField v-model="form.periodTo" type="date" label="Hasta" density="compact" hide-details :error-messages="errs.periodTo" />
+                <VSelect
+                  v-model="form.type"
+                  :items="PAYMENT_TYPES.filter(t => t.value !== 'adelanto')"
+                  item-title="label" item-value="value" label="Cálculo" density="compact" hide-details style="max-width: 220px;"
+                />
+              </div>
 
-          <VDivider class="my-2" />
-          <div class="d-flex justify-space-between text-h6">
-            <span>Neto a depositar</span>
-            <strong>{{ soles(netAfterOther) }}</strong>
-          </div>
+              <p v-else-if="form.periodFrom" class="text-body-2 text-medium-emphasis mt-2 mb-0">
+                Período: <strong>{{ form.periodFrom }}</strong> al <strong>{{ form.periodTo }}</strong> ({{ TYPE[form.type] }})
+              </p>
+
+              <VDivider class="my-3" />
+              <div v-if="calcLoading" class="text-center py-4"><VProgressCircular indeterminate size="24" color="primary" /></div>
+              <div v-else-if="calc" class="text-body-2">
+                <div v-if="calc.payableDays != null" class="d-flex justify-space-between"><span class="text-medium-emphasis">Días pagables</span><span>{{ calc.payableDays }}</span></div>
+                <div v-else class="d-flex justify-space-between"><span class="text-medium-emphasis">Días trabajados</span><span>{{ calc.daysWorked }}</span></div>
+                <div class="d-flex justify-space-between"><span class="text-medium-emphasis">Faltas descontadas</span><span>{{ calc.absencesDeducted }}</span></div>
+                <div class="d-flex justify-space-between"><span class="text-medium-emphasis">Monto bruto</span><span>{{ soles(calc.grossAmount) }}</span></div>
+                <div class="d-flex justify-space-between"><span class="text-medium-emphasis">Descuento AFP</span><span>− {{ soles(calc.afpDeduction) }}</span></div>
+              </div>
+              <p v-else class="text-body-2 text-medium-emphasis">Elegí el período para calcular.</p>
+
+              <VRow class="mt-1">
+                <VCol cols="12" sm="6"><VTextField v-model="form.otherDeductions" type="number" label="Otros descuentos (S/)" /></VCol>
+                <VCol cols="12" sm="6"><VTextField v-model="form.otherDeductionsReason" label="Motivo otros descuentos" /></VCol>
+                <VCol cols="12"><VTextField v-model="form.note" label="Nota" /></VCol>
+              </VRow>
+
+              <VDivider class="my-2" />
+              <div class="d-flex justify-space-between text-h6">
+                <span>Neto a depositar</span>
+                <strong>{{ soles(netAfterOther) }}</strong>
+              </div>
+            </div>
+          </VExpandTransition>
         </VCardText>
         <VCardActions>
           <VSpacer />
-          <VBtn variant="text" :disabled="saving" @click="dialog = false">Cancelar</VBtn>
+          <VBtn variant="text" :disabled="saving" @click="dialog = false">Cerrar</VBtn>
           <VBtn color="primary" :loading="saving" :disabled="!calc" @click="submit">Registrar pago</VBtn>
         </VCardActions>
       </VCard>

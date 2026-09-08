@@ -311,10 +311,12 @@ class MovimientoCompensacion(models.Model):
 class Pago(models.Model):
     TIPO_QUINCENA = "quincena"
     TIPO_FIN_DE_MES = "fin_de_mes"
+    TIPO_POR_DIAS = "por_dias"
     TIPO_ADELANTO = "adelanto"
     TIPOS = [
         (TIPO_QUINCENA, "Quincena"),
         (TIPO_FIN_DE_MES, "Fin de mes"),
+        (TIPO_POR_DIAS, "Por días (proporcional)"),
         (TIPO_ADELANTO, "Adelanto / otro"),
     ]
 

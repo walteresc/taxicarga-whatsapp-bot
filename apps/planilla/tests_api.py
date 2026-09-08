@@ -310,6 +310,14 @@ class PagosTests(_Authed):
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.data["grossAmount"], 600.0)
 
+    def test_calc_por_dias_trabajador_que_entra_a_mitad_de_mes(self):
+        # ingreso el 20, se calcula del 1 al 30 → paga solo del 20 al 30 = 11 días
+        cfg = _config(_conductor(), monto_mes="3000", pct_afp="0",
+                      fecha_ingreso=dt.date(2026, 3, 20))
+        r = calcular_pago(cfg, dt.date(2026, 3, 1), dt.date(2026, 3, 30), "por_dias")
+        self.assertEqual(r["payableDays"], 11)
+        self.assertEqual(r["grossAmount"], 1100.0)  # 11 * (3000/30)
+
 
 class VacacionesYResumenTests(_Authed):
     def test_vacaciones_por_anio_cumplido(self):

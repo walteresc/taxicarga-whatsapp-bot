@@ -294,17 +294,30 @@ def calcular_pago(trabajador, desde, hasta, tipo):
         mes = Decimal(str(trabajador.monto_mes or 0))
         valor_dia = mes / Decimal("30")
         if tipo == Pago.TIPO_FIN_DE_MES:
-            base = mes
+            base = mes - valor_dia * len(faltas_nc)
         elif tipo == Pago.TIPO_QUINCENA:
-            base = mes / Decimal("2")
+            base = mes / Decimal("2") - valor_dia * len(faltas_nc)
+        elif tipo == Pago.TIPO_POR_DIAS:
+            # proporcional: días calendario del vínculo dentro del rango − faltas
+            inicio = max(desde, trabajador.fecha_ingreso)
+            dias_cal = (hasta - inicio).days + 1 if inicio <= hasta else 0
+            dias_pagables = max(0, dias_cal - len(faltas_nc))
+            base = valor_dia * dias_pagables
         else:  # adelanto: monto libre
             base = _ZERO
-        bruto = _money(base - valor_dia * len(faltas_nc))
+        bruto = _money(base)
         afp = _money(bruto * Decimal(str(trabajador.pct_afp or 0)) / Decimal("100"))
 
     neto = _money(bruto - afp)
+    dias_pagables = None
+    if (trabajador.tipo_contrato == ConfiguracionPlanilla.CONTRATO_PLANILLA
+            and tipo == Pago.TIPO_POR_DIAS):
+        _ini = max(desde, trabajador.fecha_ingreso)
+        _cal = (hasta - _ini).days + 1 if _ini <= hasta else 0
+        dias_pagables = max(0, _cal - len(faltas_nc))
     return {
         "daysWorked": dias_trab,
+        "payableDays": dias_pagables,
         "absencesDeducted": len(faltas_nc),
         "grossAmount": float(bruto),
         "afpDeduction": float(afp),

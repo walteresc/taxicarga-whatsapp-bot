@@ -32,6 +32,7 @@ export const DAY_TYPES = [
 export const PAYMENT_TYPES = [
   { value: 'quincena', label: 'Quincena' },
   { value: 'fin_de_mes', label: 'Fin de mes' },
+  { value: 'por_dias', label: 'Por días (proporcional)' },
   { value: 'adelanto', label: 'Adelanto / otro' },
 ]
 
