@@ -25,19 +25,26 @@ const SUM_PRESETS = [
   { value: 'month', label: 'Mes completo', type: 'fin_de_mes', payPreset: 'fin_de_mes' },
   { value: 'q1', label: 'Quincena 1', type: 'quincena', payPreset: 'quincena1' },
   { value: 'q2', label: 'Quincena 2', type: 'quincena', payPreset: 'quincena2' },
+  { value: 'custom', label: 'Entre fechas', type: 'por_dias', payPreset: 'custom' },
 ]
+const monthFirstIso = () => `${limaMonth()}-01`
 const summaryMonth = ref(limaMonth())
 const summaryPreset = ref('mtd')
+const summaryFrom = ref(monthFirstIso())
+const summaryTo = ref(limaToday())
 const summary = ref([])
 const summaryLoading = ref(false)
 const summaryRange = ref({ from: '', to: '' })
 const detailWorker = ref(null)
 
 const sumRange = () => {
+  const p = SUM_PRESETS.find(x => x.value === summaryPreset.value)
+  if (summaryPreset.value === 'custom') {
+    return { from: summaryFrom.value, to: summaryTo.value, type: p.type, payPreset: p.payPreset }
+  }
   const [y, m] = summaryMonth.value.split('-').map(Number)
   const first = new Date(y, m - 1, 1)
   const last = new Date(y, m, 0)
-  const p = SUM_PRESETS.find(x => x.value === summaryPreset.value)
   let from = iso(first)
   let to = iso(last)
   if (summaryPreset.value === 'mtd') {
@@ -52,15 +59,18 @@ const sumRange = () => {
 }
 
 const loadSummary = async () => {
-  summaryLoading.value = true
   const r = sumRange()
+  if (!r.from || !r.to || r.from > r.to) { summary.value = []; return }
+  summaryLoading.value = true
   summaryRange.value = { from: r.from, to: r.to }
   try {
     const d = await apiClient.get('/api/v2/payroll/summary', { from: r.from, to: r.to, type: r.type })
     summary.value = d.rows
   } catch { summary.value = [] } finally { summaryLoading.value = false }
 }
-watch([summaryMonth, summaryPreset], loadSummary)
+watch([summaryMonth, summaryPreset, summaryFrom, summaryTo], loadSummary)
+
+const summaryTotal = computed(() => summary.value.reduce((t, s) => t + (s.estimatedNet || 0), 0))
 
 const snackbar = reactive({ show: false, text: '', color: 'success' })
 const notify = (text, color = 'success') => Object.assign(snackbar, { show: true, text, color })
@@ -131,19 +141,22 @@ const applyPreset = () => {
   } else { form.periodFrom = iso(first); form.periodTo = iso(last) }
 }
 
-const openNew = ({ trabajadorId = null, month = null, preset = 'fin_de_mes' } = {}) => {
+const openNew = ({ trabajadorId = null, month = null, preset = 'fin_de_mes', from = '', to = '' } = {}) => {
   errs.value = {}
   calc.value = null
   Object.assign(form, {
-    trabajadorId, month: month || summaryMonth.value || limaMonth(), preset, type: 'fin_de_mes',
-    periodFrom: '', periodTo: '', otherDeductions: '0', otherDeductionsReason: '', note: '',
+    trabajadorId, month: month || summaryMonth.value || limaMonth(), preset, type: 'por_dias',
+    periodFrom: from, periodTo: to, otherDeductions: '0', otherDeductionsReason: '', note: '',
   })
   applyPreset()
   dialog.value = true
 }
 const registerFor = s => {
   const p = SUM_PRESETS.find(x => x.value === summaryPreset.value)
-  openNew({ trabajadorId: s.trabajadorId, month: summaryMonth.value, preset: p.payPreset })
+  openNew({
+    trabajadorId: s.trabajadorId, month: summaryMonth.value, preset: p.payPreset,
+    from: s.periodFrom, to: s.periodTo,
+  })
 }
 
 watch(() => [form.month, form.preset], applyPreset)
@@ -251,7 +264,6 @@ const removePayment = async row => {
     <template v-if="tab === 'resumen'">
       <VCard>
         <VCardText class="d-flex flex-wrap align-center ga-3">
-          <VTextField v-model="summaryMonth" type="month" label="Mes" density="compact" hide-details style="max-width: 170px;" />
           <div class="d-flex flex-wrap ga-2">
             <VChip
               v-for="p in SUM_PRESETS" :key="p.value"
@@ -262,6 +274,14 @@ const removePayment = async row => {
               {{ p.label }}
             </VChip>
           </div>
+          <template v-if="summaryPreset === 'custom'">
+            <VTextField v-model="summaryFrom" type="date" label="Desde" density="compact" hide-details style="max-width: 165px;" />
+            <VTextField v-model="summaryTo" type="date" label="Hasta" density="compact" hide-details style="max-width: 165px;" />
+          </template>
+          <VTextField
+            v-else v-model="summaryMonth" type="month" label="Mes"
+            density="compact" hide-details style="max-width: 170px;"
+          />
           <span class="text-caption text-medium-emphasis">
             {{ summaryRange.from }} → {{ summaryRange.to }}
           </span>
@@ -299,6 +319,13 @@ const removePayment = async row => {
               </td>
             </tr>
           </tbody>
+          <tfoot v-if="summary.length && !summaryLoading">
+            <tr class="font-weight-bold">
+              <td colspan="8" class="text-right">Total a pagar en el período</td>
+              <td class="text-right text-h6">{{ soles(summaryTotal) }}</td>
+              <td></td>
+            </tr>
+          </tfoot>
         </VTable>
       </VCard>
     </template>
