@@ -58,18 +58,32 @@ const routeOf = x => `${x.originDistrict || '?'} → ${x.destDistrict || '?'}`
 
 // silent = refresco en segundo plano: no desmonta el tablero (así no se pierde
 // el scroll ni "salta" al inicio tras asignar/mover/quitar).
+let loadToken = 0
+let loadCtl = null
 const load = async (silent = false) => {
+  const token = ++loadToken
+  loadCtl?.abort()
   if (!silent) loading.value = true
   error.value = ''
+  const ctl = new AbortController()
+  loadCtl = ctl
+  const timer = setTimeout(() => ctl.abort(), 20000)
   try {
-    board.value = await fetchPizarra(date.value)
+    const data = await fetchPizarra(date.value, ctl.signal)
+    if (token === loadToken) board.value = data
   } catch (e) {
-    if (silent) notify(e.message || 'No se pudo actualizar la pizarra.', 'error')
-    else error.value = e.message || 'No se pudo cargar la pizarra.'
+    if (token !== loadToken) return
+    const msg = e.name === 'AbortError'
+      ? 'La pizarra tardó demasiado en responder. Reintentá.'
+      : (e.message || 'No se pudo cargar la pizarra.')
+    if (silent) notify(msg, 'error')
+    else error.value = msg
   } finally {
-    loading.value = false
+    clearTimeout(timer)
+    if (token === loadToken) loading.value = false
   }
 }
+const reload = () => load()
 
 onMounted(async () => {
   try { drivers.value = (await driversService.list({ pageSize: 200, status: 'active' })).results } catch { /* */ }
@@ -628,7 +642,7 @@ const onMmRectUp = () => {
       <h1 class="text-h4 font-weight-bold">Pizarra</h1>
       <div class="d-flex align-center ga-1">
         <VBtn icon="ri-arrow-left-s-line" variant="tonal" @click="shiftDay(-1)" />
-        <VTextField v-model="date" type="date" density="compact" hide-details style="max-width: 175px;" @update:model-value="load" />
+        <VTextField v-model="date" type="date" density="compact" hide-details style="max-width: 175px;" @update:model-value="reload" />
         <VBtn icon="ri-arrow-right-s-line" variant="tonal" @click="shiftDay(1)" />
         <VBtn variant="text" @click="today">Hoy</VBtn>
       </div>
@@ -636,7 +650,7 @@ const onMmRectUp = () => {
 
     <VAlert v-if="error" type="error" variant="tonal" class="mb-4">
       {{ error }}
-      <template #append><VBtn size="small" variant="text" @click="load">Reintentar</VBtn></template>
+      <template #append><VBtn size="small" variant="text" @click="reload">Reintentar</VBtn></template>
     </VAlert>
 
     <VCard>
