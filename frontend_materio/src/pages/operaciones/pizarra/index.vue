@@ -625,12 +625,7 @@ const onMmRectUp = () => {
 <template>
   <section>
     <div class="d-flex flex-wrap align-center justify-space-between ga-4 mb-4">
-      <div>
-        <h1 class="text-h4 font-weight-bold mb-1">Pizarra</h1>
-        <p class="text-body-1 text-medium-emphasis mb-0">
-          Arrastrá el tablero para navegar · mantené presionada una barra para moverla — al arrastrar cerca del borde el tablero avanza y una etiqueta muestra el horario de destino · soltala en "Sin asignar" para liberarla · clic en un servicio abre su panel.
-        </p>
-      </div>
+      <h1 class="text-h4 font-weight-bold">Pizarra</h1>
       <div class="d-flex align-center ga-1">
         <VBtn icon="ri-arrow-left-s-line" variant="tonal" @click="shiftDay(-1)" />
         <VTextField v-model="date" type="date" density="compact" hide-details style="max-width: 175px;" @update:model-value="load" />
