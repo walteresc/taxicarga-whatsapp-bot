@@ -1,16 +1,21 @@
 """Consultas y helpers del módulo Planilla."""
 import calendar
 from datetime import date as _date, timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from django.db.models import Q, Sum
 
 from apps.api.filters import apply_active_filter, apply_ordering
 from apps.planilla.models import (
-    ConfiguracionPlanilla, MovimientoCompensacion, RegistroAsistencia, SaldoHorasMes,
+    ConfiguracionPlanilla, MovimientoCompensacion, Pago, RegistroAsistencia, SaldoHorasMes,
 )
 
 _ZERO = Decimal("0")
+_Q2 = Decimal("0.01")
+
+
+def _money(x):
+    return Decimal(x).quantize(_Q2, rounding=ROUND_HALF_UP)
 
 
 def _ultimo_dia(anio, mes):
@@ -247,3 +252,72 @@ def faltas_pendientes(desde=None, hasta=None):
             "compensable": saldo >= jornada,
         })
     return filas
+
+
+# ── Pagos ─────────────────────────────────────────────────────────────
+
+def payments_queryset(params):
+    qs = Pago.objects.select_related(
+        "trabajador", "trabajador__conductor", "trabajador__ayudante", "trabajador__usuario",
+    )
+    if params.get("trabajadorId"):
+        qs = qs.filter(trabajador_id=params["trabajadorId"])
+    if params.get("from"):
+        qs = qs.filter(periodo_hasta__gte=params["from"])
+    if params.get("to"):
+        qs = qs.filter(periodo_hasta__lte=params["to"])
+    paid = params.get("paid")
+    if paid in ("true", "1"):
+        qs = qs.filter(pagado=True)
+    elif paid in ("false", "0"):
+        qs = qs.filter(pagado=False)
+    return apply_ordering(qs, params.get("ordering"), {"periodTo": "periodo_hasta"},
+                          ("-periodo_hasta", "-id"))
+
+
+def calcular_pago(trabajador, desde, hasta, tipo):
+    """Preview del pago (sin guardar). Reglas confirmadas con el usuario."""
+    regs = list(RegistroAsistencia.objects.filter(
+        trabajador=trabajador, fecha__gte=desde, fecha__lte=hasta,
+    ))
+    dias_trab = sum(1 for r in regs
+                    if r.tipo_dia == RegistroAsistencia.TIPO_TRABAJADO and r.hora_ingreso)
+    faltas = [r for r in regs if r.tipo_dia in (
+        RegistroAsistencia.TIPO_FALTA, RegistroAsistencia.TIPO_LICENCIA_SG,
+    )]
+    comp_ids = set(MovimientoCompensacion.objects.filter(
+        trabajador=trabajador, tipo=MovimientoCompensacion.TIPO_FALTA_COMPENSADA,
+        asistencia_id__in=[r.id for r in faltas],
+    ).values_list("asistencia_id", flat=True))
+    faltas_nc = [r for r in faltas if r.id not in comp_ids]
+
+    if trabajador.tipo_contrato == ConfiguracionPlanilla.CONTRATO_HONORARIOS:
+        bruto = _money(Decimal(str(trabajador.monto_dia or 0)) * dias_trab)
+        afp = _ZERO
+    else:
+        mes = Decimal(str(trabajador.monto_mes or 0))
+        valor_dia = mes / Decimal("30")
+        if tipo == Pago.TIPO_FIN_DE_MES:
+            base = mes
+        elif tipo == Pago.TIPO_QUINCENA:
+            base = mes / Decimal("2")
+        else:  # adelanto: monto libre
+            base = _ZERO
+        bruto = _money(base - valor_dia * len(faltas_nc))
+        afp = _money(bruto * Decimal(str(trabajador.pct_afp or 0)) / Decimal("100"))
+
+    neto = _money(bruto - afp)
+    return {
+        "daysWorked": dias_trab,
+        "absencesDeducted": len(faltas_nc),
+        "grossAmount": float(bruto),
+        "afpDeduction": float(afp),
+        "netAmount": float(neto),
+        "valorDia": float((trabajador.valor_dia).quantize(Decimal("0.0001"))),
+        "valorHora": float((trabajador.valor_hora).quantize(Decimal("0.0001"))),
+        "detalle": {
+            "contrato": trabajador.tipo_contrato,
+            "tipo": tipo,
+            "faltasCompensadas": len(faltas) - len(faltas_nc),
+        },
+    }

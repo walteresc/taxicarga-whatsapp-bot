@@ -6,7 +6,7 @@ no se desincronizan de `mappers.CONFIG_FIELDS`.
 from rest_framework import serializers
 
 from apps.planilla.models import (
-    ConfiguracionPlanilla, MovimientoCompensacion, RegistroAsistencia, SaldoHorasMes,
+    ConfiguracionPlanilla, MovimientoCompensacion, Pago, RegistroAsistencia, SaldoHorasMes,
 )
 
 _WORKER_FK = {
@@ -185,3 +185,39 @@ class OpeningBalanceSerializer(serializers.ModelSerializer):
             },
         )
         return obj
+
+
+class PaymentSerializer(serializers.ModelSerializer):
+    trabajadorId = serializers.PrimaryKeyRelatedField(
+        source="trabajador", queryset=ConfiguracionPlanilla.objects.all(),
+    )
+    workerName = serializers.CharField(source="trabajador.nombre", read_only=True)
+    contractType = serializers.CharField(source="trabajador.tipo_contrato", read_only=True)
+    type = serializers.ChoiceField(source="tipo", choices=Pago.TIPOS)
+    periodFrom = serializers.DateField(source="periodo_desde")
+    periodTo = serializers.DateField(source="periodo_hasta")
+    daysWorked = serializers.IntegerField(source="dias_trabajados", required=False, default=0)
+    absencesDeducted = serializers.IntegerField(source="dias_falta_descontados", required=False, default=0)
+    grossAmount = serializers.DecimalField(source="monto_bruto", max_digits=10, decimal_places=2)
+    afpDeduction = serializers.DecimalField(source="descuento_afp", max_digits=10, decimal_places=2, required=False)
+    otherDeductions = serializers.DecimalField(source="otros_descuentos", max_digits=10, decimal_places=2, required=False)
+    otherDeductionsReason = serializers.CharField(source="otros_descuentos_motivo", required=False, allow_blank=True, default="")
+    netAmount = serializers.DecimalField(source="monto_neto", max_digits=10, decimal_places=2)
+    paid = serializers.BooleanField(source="pagado", required=False, default=False)
+    paidOn = serializers.DateField(source="fecha_pago", required=False, allow_null=True)
+    method = serializers.CharField(source="metodo", required=False, allow_blank=True, default="")
+    note = serializers.CharField(source="nota", required=False, allow_blank=True, default="")
+
+    class Meta:
+        model = Pago
+        fields = (
+            "id", "trabajadorId", "workerName", "contractType", "type", "periodFrom", "periodTo",
+            "daysWorked", "absencesDeducted", "grossAmount", "afpDeduction", "otherDeductions",
+            "otherDeductionsReason", "netAmount", "paid", "paidOn", "method", "note",
+        )
+
+    def create(self, validated_data):
+        req = self.context.get("request")
+        if req and req.user.is_authenticated:
+            validated_data["registrado_por"] = req.user
+        return super().create(validated_data)

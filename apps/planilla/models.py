@@ -143,12 +143,12 @@ class ConfiguracionPlanilla(models.Model):
     @property
     def valor_dia(self):
         if self.tipo_contrato == self.CONTRATO_HONORARIOS:
-            return self.monto_dia or _ZERO
-        return (self.monto_mes or _ZERO) / _TREINTA
+            return Decimal(str(self.monto_dia or 0))
+        return Decimal(str(self.monto_mes or 0)) / _TREINTA
 
     @property
     def valor_hora(self):
-        jornada = self.horas_jornada or _ZERO
+        jornada = Decimal(str(self.horas_jornada or 0))
         if not jornada:
             return _ZERO
         return self.valor_dia / jornada
@@ -306,3 +306,45 @@ class MovimientoCompensacion(models.Model):
 
     def __str__(self):
         return f"{self.trabajador.nombre} — {self.fecha}: {self.horas:+} h"
+
+
+class Pago(models.Model):
+    TIPO_QUINCENA = "quincena"
+    TIPO_FIN_DE_MES = "fin_de_mes"
+    TIPO_ADELANTO = "adelanto"
+    TIPOS = [
+        (TIPO_QUINCENA, "Quincena"),
+        (TIPO_FIN_DE_MES, "Fin de mes"),
+        (TIPO_ADELANTO, "Adelanto / otro"),
+    ]
+
+    trabajador = models.ForeignKey(
+        ConfiguracionPlanilla, on_delete=models.PROTECT, related_name="pagos",
+    )
+    tipo = models.CharField(max_length=12, choices=TIPOS)
+    periodo_desde = models.DateField()
+    periodo_hasta = models.DateField()
+    dias_trabajados = models.PositiveSmallIntegerField(default=0)
+    dias_falta_descontados = models.PositiveSmallIntegerField(default=0)
+    monto_bruto = models.DecimalField(max_digits=10, decimal_places=2)
+    descuento_afp = models.DecimalField(max_digits=10, decimal_places=2, default=_ZERO)
+    otros_descuentos = models.DecimalField(max_digits=10, decimal_places=2, default=_ZERO)
+    otros_descuentos_motivo = models.CharField(max_length=200, blank=True)
+    monto_neto = models.DecimalField(max_digits=10, decimal_places=2)
+    detalle = models.JSONField(default=dict, blank=True)
+    pagado = models.BooleanField(default=False)
+    fecha_pago = models.DateField(null=True, blank=True)
+    metodo = models.CharField(max_length=40, blank=True)
+    nota = models.TextField(blank=True)
+    registrado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Pago de planilla"
+        verbose_name_plural = "Pagos de planilla"
+        ordering = ["-periodo_hasta", "-id"]
+
+    def __str__(self):
+        return f"{self.trabajador.nombre} — {self.get_tipo_display()} {self.periodo_hasta}: S/ {self.monto_neto}"

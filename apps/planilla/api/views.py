@@ -14,13 +14,13 @@ from apps.planilla.models import (
     ConfiguracionPlanilla, MovimientoCompensacion, RegistroAsistencia, SaldoHorasMes,
 )
 from apps.planilla.services import (
-    attendance_queryset, compensations_queryset, configs_queryset, dia_planilla,
-    faltas_pendientes, upsert_asistencia,
+    attendance_queryset, calcular_pago, compensations_queryset, configs_queryset,
+    dia_planilla, faltas_pendientes, payments_queryset, upsert_asistencia,
 )
 
 from .serializers import (
     AttendanceSerializer, CompensationSerializer, OpeningBalanceSerializer,
-    PayrollConfigSerializer,
+    PaymentSerializer, PayrollConfigSerializer,
 )
 
 _ROLES = ("Administrador", "Supervisor", "Asesor de Ventas")
@@ -136,3 +136,32 @@ class PendingAbsencesView(APIView):
     def get(self, request):
         p = request.query_params
         return Response(faltas_pendientes(p.get("from") or None, p.get("to") or None))
+
+
+class PaymentViewSet(V2ModelViewSet):
+    serializer_class = PaymentSerializer
+    permission_classes = [HasAnyRole(*_ROLES)]
+
+    def get_queryset(self):
+        return payments_queryset(self.request.query_params)
+
+
+class PayrollCalcView(APIView):
+    """Preview de un pago (no guarda):
+        GET /api/v2/payroll/calc?trabajadorId=&from=&to=&type=quincena|fin_de_mes|adelanto
+    """
+    permission_classes = [HasAnyRole(*_ROLES)]
+
+    def get_exception_handler(self):
+        return api_exception_handler
+
+    def get(self, request):
+        p = request.query_params
+        cfg = get_object_or_404(ConfiguracionPlanilla, pk=p.get("trabajadorId"))
+        try:
+            desde = _date.fromisoformat(p["from"])
+            hasta = _date.fromisoformat(p["to"])
+        except (KeyError, ValueError, TypeError):
+            return Response({"error": "Rango de fechas inválido."}, status=400)
+        tipo = (p.get("type") or "fin_de_mes").strip()
+        return Response(calcular_pago(cfg, desde, hasta, tipo))

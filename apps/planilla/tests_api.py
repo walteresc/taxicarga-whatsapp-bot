@@ -7,15 +7,16 @@ from rest_framework.test import APITestCase
 
 from apps.campo.models import Conductor
 from apps.planilla.api.mappers import (
-    ATTENDANCE_FIELDS, COMPENSATION_FIELDS, CONFIG_FIELDS, api_to_model, model_to_api,
+    ATTENDANCE_FIELDS, COMPENSATION_FIELDS, CONFIG_FIELDS, PAYMENT_FIELDS,
+    api_to_model, model_to_api,
 )
 from apps.planilla.api.serializers import (
-    AttendanceSerializer, CompensationSerializer, PayrollConfigSerializer,
+    AttendanceSerializer, CompensationSerializer, PaymentSerializer, PayrollConfigSerializer,
 )
 from apps.planilla.models import (
-    ConfiguracionPlanilla, MovimientoCompensacion, RegistroAsistencia,
+    ConfiguracionPlanilla, MovimientoCompensacion, Pago, RegistroAsistencia,
 )
-from apps.planilla.services import saldo_horas
+from apps.planilla.services import calcular_pago, saldo_horas
 
 User = get_user_model()
 
@@ -55,6 +56,10 @@ class MapperRoundTripTests(APITestCase):
         )
         self.assertEqual(
             set(CompensationSerializer().fields) - {"id", "workerName"}, set(COMPENSATION_FIELDS),
+        )
+        self.assertEqual(
+            set(PaymentSerializer().fields) - {"id", "workerName", "contractType"},
+            set(PAYMENT_FIELDS),
         )
 
 
@@ -245,9 +250,71 @@ class SaldoYCompensacionTests(_Authed):
         self.assertFalse(r.data[0]["compensable"])  # saldo 0 < jornada 8
 
 
+class PagosTests(_Authed):
+    def _trabajado(self, cfg, y, m, d, ci="08:00", co="17:00"):
+        return RegistroAsistencia.objects.create(
+            trabajador=cfg, fecha=dt.date(y, m, d), tipo_dia="trabajado",
+            hora_ingreso=dt.time(*map(int, ci.split(":"))),
+            hora_salida=dt.time(*map(int, co.split(":"))),
+            horas_jornada_dia="8.00", horas_refrigerio_dia="1.00",
+        )
+
+    def test_calc_planilla_fin_de_mes_con_falta(self):
+        cfg = _config(_conductor(), monto_mes="1130", pct_afp="10")
+        for d in range(2, 22):  # días trabajados
+            self._trabajado(cfg, 2026, 3, d)
+        RegistroAsistencia.objects.create(
+            trabajador=cfg, fecha=dt.date(2026, 3, 25), tipo_dia="falta",
+            horas_jornada_dia="8.00", horas_refrigerio_dia="1.00",
+        )
+        r = calcular_pago(cfg, dt.date(2026, 3, 1), dt.date(2026, 3, 31), "fin_de_mes")
+        # bruto = 1130 - 1*(1130/30) = 1092.33 ; afp 10% = 109.23 ; neto = 983.10
+        self.assertEqual(r["absencesDeducted"], 1)
+        self.assertEqual(r["grossAmount"], 1092.33)
+        self.assertEqual(r["afpDeduction"], 109.23)
+        self.assertEqual(r["netAmount"], 983.10)
+        self.assertEqual(r["valorHora"], 4.7083)
+
+    def test_calc_honorarios_por_dias(self):
+        cfg = _config(_conductor(), tipo_contrato="honorarios", monto_mes=None, monto_dia="60")
+        for d in (2, 3, 4, 5):
+            self._trabajado(cfg, 2026, 3, d)
+        r = calcular_pago(cfg, dt.date(2026, 3, 1), dt.date(2026, 3, 31), "fin_de_mes")
+        self.assertEqual(r["daysWorked"], 4)
+        self.assertEqual(r["grossAmount"], 240.0)
+        self.assertEqual(r["afpDeduction"], 0.0)
+
+    def test_registrar_pago_via_api(self):
+        cfg = _config(_conductor())
+        r = self.client.post("/api/v2/payroll-payments/", {
+            "trabajadorId": cfg.id, "type": "quincena",
+            "periodFrom": "2026-03-01", "periodTo": "2026-03-15",
+            "grossAmount": "565.00", "afpDeduction": "56.50", "netAmount": "508.50",
+        }, format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+        p = Pago.objects.get()
+        self.assertEqual(str(p.monto_neto), "508.50")
+        # marcar pagado por PATCH
+        r = self.client.patch(f"/api/v2/payroll-payments/{p.id}/", {
+            "paid": True, "paidOn": "2026-03-16",
+        }, format="json")
+        self.assertEqual(r.status_code, 200)
+        p.refresh_from_db()
+        self.assertTrue(p.pagado)
+
+    def test_calc_endpoint(self):
+        cfg = _config(_conductor(), monto_mes="1200", pct_afp="0")
+        r = self.client.get(
+            f"/api/v2/payroll/calc?trabajadorId={cfg.id}&from=2026-03-01&to=2026-03-31&type=quincena",
+        )
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data["grossAmount"], 600.0)
+
+
 class RbacTests(APITestCase):
     def test_sin_rol_403(self):
         u = User.objects.create_user("nr", password="x")
         self.client.force_login(u)
         self.assertEqual(self.client.get("/api/v2/payroll-config/").status_code, 403)
         self.assertEqual(self.client.get("/api/v2/payroll/day").status_code, 403)
+        self.assertEqual(self.client.get("/api/v2/payroll-payments/").status_code, 403)

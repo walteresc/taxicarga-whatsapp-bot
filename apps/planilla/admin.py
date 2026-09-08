@@ -1,7 +1,7 @@
 from django.contrib import admin
 
 from apps.planilla.models import (
-    ConfiguracionPlanilla, MovimientoCompensacion, RegistroAsistencia, SaldoHorasMes,
+    ConfiguracionPlanilla, MovimientoCompensacion, Pago, RegistroAsistencia, SaldoHorasMes,
 )
 
 
@@ -29,3 +29,10 @@ class MovimientoCompensacionAdmin(admin.ModelAdmin):
     list_display = ("trabajador", "fecha", "tipo", "horas")
     list_filter = ("tipo",)
     date_hierarchy = "fecha"
+
+
+@admin.register(Pago)
+class PagoAdmin(admin.ModelAdmin):
+    list_display = ("trabajador", "tipo", "periodo_hasta", "monto_neto", "pagado", "fecha_pago")
+    list_filter = ("tipo", "pagado")
+    date_hierarchy = "periodo_hasta"

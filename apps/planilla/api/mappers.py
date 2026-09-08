@@ -37,6 +37,24 @@ COMPENSATION_FIELDS = {
     "reason": "motivo",
 }
 
+PAYMENT_FIELDS = {
+    "trabajadorId": "trabajador",
+    "type": "tipo",
+    "periodFrom": "periodo_desde",
+    "periodTo": "periodo_hasta",
+    "daysWorked": "dias_trabajados",
+    "absencesDeducted": "dias_falta_descontados",
+    "grossAmount": "monto_bruto",
+    "afpDeduction": "descuento_afp",
+    "otherDeductions": "otros_descuentos",
+    "otherDeductionsReason": "otros_descuentos_motivo",
+    "netAmount": "monto_neto",
+    "paid": "pagado",
+    "paidOn": "fecha_pago",
+    "method": "metodo",
+    "note": "nota",
+}
+
 
 def _invert(mapping):
     return {v: k for k, v in mapping.items()}
