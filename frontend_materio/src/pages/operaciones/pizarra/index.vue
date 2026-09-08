@@ -640,15 +640,12 @@ const onMmRectUp = () => {
     </VAlert>
 
     <VCard>
-      <div class="d-flex flex-wrap align-center justify-space-between ga-2 px-4 py-2">
-        <span class="text-caption text-medium-emphasis">
-          {{ resources.length }} vehículo(s) · {{ board.unassigned.length }} sin asignar
-        </span>
-        <VBtn v-if="hiddenResources.length" size="small" variant="tonal" prepend-icon="ri-add-line" @click="addDialog = true">
+      <div v-if="hiddenResources.length" class="d-flex justify-end px-4 py-2">
+        <VBtn size="small" variant="tonal" prepend-icon="ri-add-line" @click="addDialog = true">
           Agregar vehículo
         </VBtn>
       </div>
-      <VDivider />
+      <VDivider v-if="hiddenResources.length" />
 
       <div v-if="!loading && resources.length" class="pz-minimap-wrap px-4 pt-3 pb-1">
         <div ref="minimap" class="pz-minimap" @click="onMinimapClick">
