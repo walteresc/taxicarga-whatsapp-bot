@@ -208,7 +208,7 @@ const removePayment = async row => {
           <thead>
             <tr>
               <th>Trabajador</th><th>Contrato</th>
-              <th class="text-right">Saldo horas</th><th class="text-right">Valor saldo</th>
+              <th class="text-right">Saldo H. Extras</th><th class="text-right">Valor saldo</th>
               <th class="text-right">Faltas mes</th><th class="text-right">Sin resolver</th>
               <th class="text-right">Días trab.</th><th class="text-right">Vac. pend.</th>
               <th class="text-right">A pagar (est.)</th>

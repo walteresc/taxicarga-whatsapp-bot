@@ -46,7 +46,7 @@ const MENU = [
   {
     title: 'Planilla', icon: 'ri-team-line', roles: OPS, children: [
       { title: 'Personal', icon: 'ri-id-card-line', to: '/mi-equipo/personal' },
-      { title: 'Horas extras', icon: 'ri-time-line', to: '/mi-equipo/horas-extras' },
+      { title: 'Asistencia', icon: 'ri-time-line', to: '/mi-equipo/horas-extras' },
       { title: 'Compensaciones', icon: 'ri-hand-coin-line', to: '/mi-equipo/compensaciones' },
       { title: 'Pagos', icon: 'ri-bank-card-line', to: '/mi-equipo/pagos' },
     ],

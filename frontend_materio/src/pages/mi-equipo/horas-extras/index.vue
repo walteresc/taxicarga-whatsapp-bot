@@ -143,9 +143,9 @@ const removeRow = async row => {
   <section>
     <div class="d-flex flex-wrap align-center justify-space-between ga-4 mb-4">
       <div>
-        <h1 class="text-h4 font-weight-bold mb-1">Horas extras</h1>
+        <h1 class="text-h4 font-weight-bold mb-1">Asistencia</h1>
         <p class="text-body-1 text-medium-emphasis mb-0">
-          Asistencia registrada por día. Las horas trabajadas, el Δ y el saldo acumulado se calculan solos.
+          Asistencia registrada por día. Las horas trabajadas, las horas extra del día y el saldo acumulado se calculan solos.
         </p>
       </div>
       <div class="d-flex align-center ga-1">
@@ -186,8 +186,8 @@ const removeRow = async row => {
             <th>Trabajador</th><th>Tipo de día</th>
             <th>Ingreso</th><th>Salida</th>
             <th class="text-right">Horas trab.</th>
-            <th class="text-right">Δ del día</th>
-            <th class="text-right">Saldo horas</th>
+            <th class="text-right">H. Extras Día</th>
+            <th class="text-right">Saldo H. Extras</th>
             <th class="text-right">Acciones</th>
           </tr>
         </thead>
