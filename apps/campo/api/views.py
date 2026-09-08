@@ -178,15 +178,17 @@ class PizarraView(APIView):
     def get(self, request):
         from datetime import date as _date
 
+        from django.utils import timezone
+
         from apps.campo.models import ProgramacionServicio, Vehiculo
         from apps.servicios.models import Servicio
         from apps.servicios.utils import parse_horario
 
         raw = (request.query_params.get("date") or "").strip()
         try:
-            day = _date.fromisoformat(raw) if raw else _date.today()
+            day = _date.fromisoformat(raw) if raw else timezone.localdate()
         except ValueError:
-            day = _date.today()
+            day = timezone.localdate()
 
         progs = list(
             ProgramacionServicio.objects

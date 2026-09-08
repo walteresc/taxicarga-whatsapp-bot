@@ -37,7 +37,16 @@ const persistHidden = () => {
   try { localStorage.setItem(HIDDEN_KEY, JSON.stringify([...hidden.value])) } catch { /* */ }
 }
 
-const date = ref(new Date().toISOString().slice(0, 10))
+// Fecha/hora de Lima, no del navegador ni UTC.
+const LIMA = 'America/Lima'
+const limaDate = () => new Intl.DateTimeFormat('en-CA', { timeZone: LIMA }).format(new Date())
+const limaNowMin = () => {
+  const p = new Intl.DateTimeFormat('en-GB', { timeZone: LIMA, hour: '2-digit', minute: '2-digit', hour12: false })
+    .formatToParts(new Date())
+  return +p.find(x => x.type === 'hour').value * 60 + +p.find(x => x.type === 'minute').value
+}
+
+const date = ref(limaDate())
 const board = ref({ resources: [], assignments: [], unassigned: [] })
 const loading = ref(true)
 const error = ref('')
@@ -85,6 +94,13 @@ const load = async (silent = false) => {
 }
 const reload = () => load()
 
+const onKeydown = e => {
+  if (e.key !== 'Escape') return
+  if (picker.show) picker.show = false
+  else if (panel.value) panel.value = false
+  else if (detailLeadId.value) detailLeadId.value = null
+}
+
 onMounted(async () => {
   try { drivers.value = (await driversService.list({ pageSize: 200, status: 'active' })).results } catch { /* */ }
   await load()
@@ -92,17 +108,22 @@ onMounted(async () => {
   if (scroller.value) scroller.value.scrollLeft = 5.5 * 60 * PX_PER_MIN
   syncView()
   window.addEventListener('resize', syncView)
+  window.addEventListener('keydown', onKeydown)
 })
-onBeforeUnmount(() => { window.removeEventListener('resize', syncView); stopEdge() })
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', syncView)
+  window.removeEventListener('keydown', onKeydown)
+  stopEdge()
+})
 watch(() => board.value, () => nextTick(syncView), { deep: false })
 
 const shiftDay = n => {
-  const d = new Date(date.value)
+  const d = new Date(`${date.value}T12:00:00`)
   d.setDate(d.getDate() + n)
-  date.value = d.toISOString().slice(0, 10)
+  date.value = new Intl.DateTimeFormat('en-CA').format(d)
   load()
 }
-const today = () => { date.value = new Date().toISOString().slice(0, 10); load() }
+const today = () => { date.value = limaDate(); load() }
 
 const hasAssignment = rid => board.value.assignments.some(a => a.resourceId === rid)
 // Vehículos propios siempre visibles salvo que se oculten; ocultos vuelven si tienen servicio.
@@ -117,6 +138,22 @@ const barsByResource = computed(() => {
     const start = toMin(a.start) ?? 0
     const end = toMin(a.end) ?? start + 60
     map[a.resourceId].push({ ...a, start, end, dur: Math.max(30, end - start) })
+  }
+  // Reparte los servicios que se superponen en sub-filas dentro del vehículo.
+  for (const rid of Object.keys(map)) {
+    const bars = map[rid].sort((x, y) => x.start - y.start || x.end - y.end)
+    const laneEnd = []
+    for (const b of bars) {
+      let s = laneEnd.findIndex(e => e <= b.start)
+      if (s === -1) { s = laneEnd.length; laneEnd.push(0) }
+      laneEnd[s] = b.end
+      b._sub = s
+    }
+    const subs = Math.max(1, laneEnd.length)
+    for (const b of bars) {
+      b._subs = subs
+      b._overlap = subs > 1
+    }
   }
   return map
 })
@@ -143,15 +180,14 @@ const unLaneH = computed(() =>
 const headH = computed(() => HOURS_H + unLaneH.value)
 
 const nowLeft = computed(() => {
-  const now = new Date()
-  if (date.value !== now.toISOString().slice(0, 10)) return null
-  return (now.getHours() * 60 + now.getMinutes()) * PX_PER_MIN
+  if (date.value !== limaDate()) return null
+  return limaNowMin() * PX_PER_MIN
 })
 
-const dayLabel = computed(() => {
-  const d = new Date(`${date.value}T00:00`)
-  return d.toLocaleDateString('es-PE', { weekday: 'long', day: 'numeric', month: 'short' })
-})
+const dayLabel = computed(() =>
+  new Date(`${date.value}T12:00:00`).toLocaleDateString('es-PE', {
+    weekday: 'long', day: 'numeric', month: 'short',
+  }))
 const addHour = hhmm => toHHMM(Math.min(24 * 60 - 15, (toMin(hhmm) ?? 480) + 60))
 const driverNameOf = id => drivers.value.find(d => d.id === id)?.name || null
 
@@ -197,12 +233,12 @@ const stopEdge = () => { if (edgeRAF) cancelAnimationFrame(edgeRAF); edgeRAF = n
 // La barra se "levanta" al mantenerla presionada un instante. Si en cambio se
 // mueve el dedo enseguida, el gesto se toma como navegación (pan).
 const ARM_MS = 160
-const drag = reactive({ id: null, left: 0, rowDelta: 0, mode: null, rid: null, startMin: null })
+const drag = reactive({ id: null, mode: null, rid: null, startMin: null, durMin: 60 })
 const barDrag = reactive({ bar: null, x: 0, y: 0 })
 let dragStart = null
 let armTimer = null
 const resetDrag = () => {
-  Object.assign(drag, { id: null, left: 0, rowDelta: 0, mode: null, rid: null, startMin: null })
+  Object.assign(drag, { id: null, mode: null, rid: null, startMin: null, durMin: 60 })
   barDrag.bar = null
 }
 const endBarGesture = () => {
@@ -223,6 +259,7 @@ const onBarDown = (e, bar) => {
     if (dragStart) {
       dragStart.armed = true
       drag.id = bar.id
+      drag.durMin = bar.dur
       Object.assign(barDrag, { bar, x: lastPointer.x, y: lastPointer.y })
       startEdge()
     }
@@ -239,12 +276,7 @@ const refreshBarPreview = () => {
   }
   const t = targetFromPoint(x, y, bar.dur)
   if (!t) { drag.mode = null; hideHint(); return }
-  const rs = resources.value
-  const from = rs.findIndex(r => r.id === bar.resourceId)
-  const to = rs.findIndex(r => r.id === t.rid)
   drag.mode = 'move'
-  drag.left = t.startMin * PX_PER_MIN
-  drag.rowDelta = to < 0 ? 0 : to - from
   drag.rid = t.rid
   drag.startMin = t.startMin
   setHint(x, y, `${toHHMM(t.startMin)}–${toHHMM(t.startMin + bar.dur)}`)
@@ -294,19 +326,11 @@ const commitMove = async (bar, rid, mins) => {
     notify(err.message || 'No se pudo mover.', 'error')
   }
 }
-const barLiveStyle = bar => {
-  if (drag.id !== bar.id) return {}
-  if (drag.mode === 'move') {
-    return {
-      left: `${drag.left}px`,
-      transform: `translateY(${drag.rowDelta * ROW_H}px) scale(1.02)`,
-      zIndex: 40, opacity: 0.92, pointerEvents: 'none', transition: 'none',
-      boxShadow: '0 12px 28px rgb(0 0 0 / 32%)',
-    }
-  }
-  // sin destino válido / hacia "sin asignar": se queda y se atenúa
-  return { opacity: 0.3, pointerEvents: 'none', transition: 'none' }
-}
+// La barra que se está arrastrando se queda en su sitio, translúcida (referencia
+// de "de dónde salió"). El destino se marca con un recuadro fantasma aparte.
+const barLiveStyle = bar => (drag.id === bar.id
+  ? { opacity: 0.22, pointerEvents: 'none', transition: 'none' }
+  : {})
 
 // ── Drag de un servicio sin asignar → soltar sobre la fila de un vehículo ─
 const chipDrag = reactive({ item: null, x: 0, y: 0 })
@@ -400,7 +424,7 @@ const openTimePicker = (ctx, x, y, dropMin) => {
   picker.show = true
 }
 watch(() => picker.selected, v => {
-  if (picker.ctx?.kind === 'move' && v != null) { drag.startMin = v; drag.left = v * PX_PER_MIN }
+  if (picker.ctx?.kind === 'move' && v != null) drag.startMin = v
 })
 watch(() => picker.show, v => { if (!v) { picker.ctx = null; resetDrag() } })
 const confirmPicker = async () => {
@@ -788,12 +812,23 @@ const onMmRectUp = () => {
               :data-resource-id="r.id" :style="{ height: ROW_H + 'px' }"
             >
               <div v-for="h in HOURS" :key="h" class="pz-tick" :style="{ left: (h * 60 * PX_PER_MIN) + 'px' }" />
+              <!-- recuadro fantasma: a dónde va a caer la barra que se arrastra -->
+              <div
+                v-if="drag.mode === 'move' && drag.rid === r.id"
+                class="pz-drop"
+                :style="{ left: (drag.startMin * PX_PER_MIN) + 'px', width: (drag.durMin * PX_PER_MIN) + 'px' }"
+              >
+                {{ toHHMM(drag.startMin) }}–{{ toHHMM(drag.startMin + drag.durMin) }}
+              </div>
               <div
                 v-for="bar in (barsByResource[r.id] || [])" :key="bar.id"
-                class="pz-bar"
+                class="pz-bar" :class="{ 'pz-bar--conflict': bar._overlap }"
                 :style="{
                   left: (bar.start * PX_PER_MIN) + 'px',
                   width: (bar.dur * PX_PER_MIN) + 'px',
+                  top: (5 + (bar._sub || 0) * ((ROW_H - 10) / (bar._subs || 1))) + 'px',
+                  height: (((ROW_H - 10) / (bar._subs || 1)) - 2) + 'px',
+                  bottom: 'auto',
                   borderLeftColor: (MODE[bar.mode]?.color || '#64748b'),
                   ...barLiveStyle(bar),
                 }"
@@ -802,11 +837,12 @@ const onMmRectUp = () => {
               >
                 <div class="pz-l1">
                   <span class="pz-state-dot" :style="{ background: STATE[bar.state]?.color }" />
+                  <span v-if="bar._overlap" title="Se superpone con otro servicio">⚠</span>
                   <span class="text-truncate">{{ bar.serviceCode }}</span>
                   <span v-if="bar.assignedAuto" title="Asignación automática">⚡</span>
                   <span class="pz-amt">{{ soles(bar.price) }}</span>
                 </div>
-                <div class="pz-l2 text-truncate">{{ routeOf(bar) }}</div>
+                <div v-if="(bar._subs || 1) < 3" class="pz-l2 text-truncate">{{ routeOf(bar) }}</div>
                 <div class="pz-l3 text-truncate">
                   <strong>{{ toHHMM(bar.start) }}</strong><span v-if="bar.end" class="pz-dim">–{{ toHHMM(bar.end) }}</span>
                 </div>
@@ -1081,6 +1117,26 @@ const onMmRectUp = () => {
   user-select: none;
 }
 .pz-bar:active { cursor: grabbing; }
+.pz-bar--conflict {
+  border-color: rgb(var(--v-theme-error));
+  box-shadow: 0 0 0 1px rgb(var(--v-theme-error)), 0 1px 3px rgb(0 0 0 / 12%);
+}
+
+.pz-drop {
+  position: absolute;
+  inset-block: 5px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: rgb(var(--v-theme-primary));
+  background: rgb(var(--v-theme-primary), 0.1);
+  border: 2px dashed rgb(var(--v-theme-primary));
+  border-radius: 6px;
+  pointer-events: none;
+}
 
 .pz-chip {
   position: absolute;
