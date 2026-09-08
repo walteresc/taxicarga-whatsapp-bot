@@ -263,8 +263,9 @@ const removePayment = async row => {
     <!-- Resumen -->
     <template v-if="tab === 'resumen'">
       <VCard>
-        <VCardText class="d-flex flex-wrap align-center ga-3">
-          <div class="d-flex flex-wrap ga-2">
+        <VCardText>
+          <div class="text-caption text-medium-emphasis mb-1">Período a calcular</div>
+          <div class="d-flex flex-wrap ga-2 mb-3">
             <VChip
               v-for="p in SUM_PRESETS" :key="p.value"
               :color="summaryPreset === p.value ? 'primary' : undefined"
@@ -274,17 +275,19 @@ const removePayment = async row => {
               {{ p.label }}
             </VChip>
           </div>
-          <template v-if="summaryPreset === 'custom'">
-            <VTextField v-model="summaryFrom" type="date" label="Desde" density="compact" hide-details style="max-width: 165px;" />
-            <VTextField v-model="summaryTo" type="date" label="Hasta" density="compact" hide-details style="max-width: 165px;" />
-          </template>
-          <VTextField
-            v-else v-model="summaryMonth" type="month" label="Mes"
-            density="compact" hide-details style="max-width: 170px;"
-          />
-          <span class="text-caption text-medium-emphasis">
-            {{ summaryRange.from }} → {{ summaryRange.to }}
-          </span>
+          <div class="d-flex flex-wrap align-center ga-3">
+            <template v-if="summaryPreset === 'custom'">
+              <VTextField v-model="summaryFrom" type="date" label="Desde" density="compact" hide-details style="max-width: 175px;" />
+              <VTextField v-model="summaryTo" type="date" label="Hasta" density="compact" hide-details style="max-width: 175px;" />
+            </template>
+            <VTextField
+              v-else v-model="summaryMonth" type="month" label="Mes"
+              density="compact" hide-details style="max-width: 190px;"
+            />
+            <VChip size="small" variant="tonal" prepend-icon="ri-calendar-line">
+              {{ summaryRange.from }} → {{ summaryRange.to }}
+            </VChip>
+          </div>
         </VCardText>
         <VDivider />
         <VTable>
