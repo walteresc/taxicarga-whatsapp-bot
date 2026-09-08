@@ -364,11 +364,12 @@ defineExpose({ load })
                 :error-messages="fieldError(fld.key)"
                 clearable
               />
-              <VTextField
+              <AppDateField
                 v-else-if="fld.type === 'date'"
                 v-model="form[fld.key]"
                 :label="fld.label"
-                type="date"
+                density="comfortable"
+                clearable
                 :error-messages="fieldError(fld.key)"
               />
               <VSwitch

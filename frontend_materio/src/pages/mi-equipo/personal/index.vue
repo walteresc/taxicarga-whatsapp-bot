@@ -254,7 +254,7 @@ const submit = async () => {
             <template v-if="formType === 'conductor'">
               <VCol cols="12" sm="6"><VTextField v-model="form.licenseNumber" label="N° de licencia" :error-messages="errs.licenseNumber" /></VCol>
               <VCol cols="12" sm="6"><VSelect v-model="form.licenseCategory" :items="LICENSE_CATEGORIES" label="Categoría" clearable :error-messages="errs.licenseCategory" /></VCol>
-              <VCol cols="12" sm="6"><VTextField v-model="form.licenseExpiresOn" type="date" label="Vencimiento de licencia" :error-messages="errs.licenseExpiresOn" /></VCol>
+              <VCol cols="12" sm="6"><AppDateField v-model="form.licenseExpiresOn" label="Vencimiento de licencia" density="comfortable" clearable :error-messages="errs.licenseExpiresOn" /></VCol>
             </template>
             <VCol cols="12"><VSwitch v-model="form.active" label="Activo" color="primary" /></VCol>
           </VRow>

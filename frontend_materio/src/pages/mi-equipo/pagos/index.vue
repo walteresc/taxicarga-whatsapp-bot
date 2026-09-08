@@ -272,12 +272,12 @@ const removePayment = async row => {
             </VChip>
           </div>
           <div class="d-flex flex-wrap ga-3 mb-1">
-            <VTextField
-              v-model="summaryFrom" type="date" label="Desde" hide-details density="compact"
+            <AppDateField
+              v-model="summaryFrom" label="Desde" hide-details
               style="max-width: 190px;" @update:model-value="onSumDateEdit"
             />
-            <VTextField
-              v-model="summaryTo" type="date" label="Hasta" hide-details density="compact"
+            <AppDateField
+              v-model="summaryTo" label="Hasta" hide-details
               style="max-width: 190px;" @update:model-value="onSumDateEdit"
             />
           </div>
@@ -398,10 +398,10 @@ const removePayment = async row => {
 
               <VRow>
                 <VCol cols="12" sm="6">
-                  <VTextField v-model="form.periodFrom" type="date" label="Desde" :error-messages="errs.periodFrom" />
+                  <AppDateField v-model="form.periodFrom" label="Desde" density="comfortable" :error-messages="errs.periodFrom" />
                 </VCol>
                 <VCol cols="12" sm="6">
-                  <VTextField v-model="form.periodTo" type="date" label="Hasta" :error-messages="errs.periodTo" />
+                  <AppDateField v-model="form.periodTo" label="Hasta" density="comfortable" :error-messages="errs.periodTo" />
                 </VCol>
                 <VCol cols="12">
                   <VSelect
@@ -457,7 +457,7 @@ const removePayment = async row => {
         <VCardTitle>Marcar como pagado</VCardTitle>
         <VCardText>
           <p class="text-body-2 mb-3">{{ payDialog.workerName }} · {{ soles(payDialog.netAmount) }}</p>
-          <VTextField v-model="payOn" type="date" label="Fecha de pago" class="mb-2" />
+          <AppDateField v-model="payOn" label="Fecha de pago" density="comfortable" class="mb-2" />
           <VTextField v-model="payMethod" label="Método" placeholder="transferencia / efectivo" />
         </VCardText>
         <VCardActions>

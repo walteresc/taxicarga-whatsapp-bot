@@ -137,16 +137,15 @@ const submit = async () => {
               />
             </VCol>
             <VCol cols="12" sm="3">
-              <VTextField
-                v-model="form.hiredOn" type="date" label="Fecha de ingreso"
+              <AppDateField
+                v-model="form.hiredOn" label="Fecha de ingreso" density="comfortable"
                 :error-messages="errs.hiredOn"
               />
             </VCol>
             <VCol cols="12" sm="3">
-              <VTextField
-                v-model="form.endedOn" type="date" label="Fecha de cese"
-                hint="Solo si ya no trabaja" persistent-hint clearable
-                :error-messages="errs.endedOn"
+              <AppDateField
+                v-model="form.endedOn" label="Fecha de cese" density="comfortable" clearable
+                hint="Solo si ya no trabaja" persistent-hint :error-messages="errs.endedOn"
               />
             </VCol>
             <VCol cols="12" sm="4">

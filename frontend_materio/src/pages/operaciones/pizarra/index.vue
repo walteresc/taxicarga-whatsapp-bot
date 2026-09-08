@@ -714,7 +714,7 @@ const onMmRectUp = () => {
         </div>
         <div class="d-flex align-center ga-1">
           <VBtn icon="ri-arrow-left-s-line" variant="tonal" @click="shiftDay(-1)" />
-          <VTextField v-model="date" type="date" density="compact" hide-details style="max-width: 175px;" @update:model-value="reload" />
+          <AppDateField v-model="date" hide-details style="max-width: 175px;" @update:model-value="reload" />
           <VBtn icon="ri-arrow-right-s-line" variant="tonal" @click="shiftDay(1)" />
           <VBtn variant="text" @click="today">Hoy</VBtn>
         </div>

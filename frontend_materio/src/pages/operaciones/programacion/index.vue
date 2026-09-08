@@ -77,7 +77,7 @@ const setState = async (row, target) => {
       <VCardText class="d-flex flex-wrap align-center ga-4">
         <div class="d-flex align-center ga-1">
           <VBtn icon="ri-arrow-left-s-line" variant="text" size="small" @click="shiftDay(-1)" />
-          <VTextField v-model="day" type="date" density="compact" hide-details style="max-width: 170px;" />
+          <AppDateField v-model="day" hide-details style="max-width: 170px;" />
           <VBtn icon="ri-arrow-right-s-line" variant="text" size="small" @click="shiftDay(1)" />
           <VBtn size="small" variant="text" @click="day = new Date().toISOString().slice(0, 10)">Hoy</VBtn>
         </div>
