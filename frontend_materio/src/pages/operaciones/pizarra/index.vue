@@ -18,17 +18,24 @@ const PEEK = 22 // desfase de las barras superpuestas
 
 const frontId = ref(null) // barra superpuesta traída al frente por clic
 
+// Nomenclatura de colores (única para toda la pizarra).
+// Estado operativo de la programación → punto de color en la barra.
 const STATE = {
-  programado: { label: 'Programado', color: '#3b82f6' },
+  programado: { label: 'Programado', color: '#64748b' },
   en_ruta: { label: 'En ruta', color: '#f59e0b' },
   en_servicio: { label: 'En servicio', color: '#8b5cf6' },
   finalizado: { label: 'Finalizado', color: '#10b981' },
-  cancelado: { label: 'Cancelado', color: '#94a3b8' },
+  cancelado: { label: 'Cancelado', color: '#cbd5e1' },
 }
-// Color de la barra según quién ejecuta.
+// Quién ejecuta el servicio → color del borde izquierdo de la barra.
 const MODE = {
   propio: { label: 'Nuestro equipo', color: '#2563eb' },
   tercerizado: { label: 'Transportista', color: '#d97706' },
+}
+// Servicios que todavía no están en un vehículo → color de la tarjeta.
+const UNASSIGNED = {
+  por_asignar: { label: 'Por asignar', color: '#dc2626' },
+  publicada: { label: 'Publicada a transportistas', color: '#d97706' },
 }
 
 const HIDDEN_KEY = 'pizarra:hidden-resources'
@@ -189,6 +196,20 @@ const dayLabel = computed(() =>
   new Date(`${date.value}T12:00:00`).toLocaleDateString('es-PE', {
     weekday: 'long', day: 'numeric', month: 'short',
   }))
+
+const summary = computed(() => {
+  const sum = arr => arr.reduce((t, x) => t + (x.price || 0), 0)
+  const a = board.value.assignments
+  const u = board.value.unassigned
+  return {
+    total: a.length + u.length,
+    monto: sum(a) + sum(u),
+    asignados: a.length,
+    montoAsignados: sum(a),
+    sinAsignar: u.length,
+    montoSinAsignar: sum(u),
+  }
+})
 const addHour = hhmm => toHHMM(Math.min(24 * 60 - 15, (toMin(hhmm) ?? 480) + 60))
 const driverNameOf = id => drivers.value.find(d => d.id === id)?.name || null
 
@@ -581,6 +602,7 @@ const allStops = computed(() => {
     const m = toMin(s.start)
     out.push({
       key: `u${s.serviceId}`, min: m ?? 0, kind: 'unassigned', mode: s.mode, noTime: m == null,
+      published: s.published,
       label: `${s.serviceCode} · ${routeOf(s)} · ${s.start || s.scheduleText || 's/h'}`,
     })
   }
@@ -670,7 +692,30 @@ const onMmRectUp = () => {
 <template>
   <section>
     <div class="d-flex flex-wrap align-center justify-space-between ga-4 mb-4">
-      <h1 class="text-h4 font-weight-bold">Pizarra</h1>
+      <div class="d-flex flex-wrap align-center ga-6">
+        <h1 class="text-h4 font-weight-bold">Pizarra</h1>
+        <div v-if="!loading && !error" class="pz-summary d-flex align-center ga-4">
+          <div>
+            <div class="text-caption text-medium-emphasis">Servicios · {{ dayLabel }}</div>
+            <div class="text-h6 font-weight-bold">
+              {{ summary.total }} · {{ soles(summary.monto) }}
+            </div>
+          </div>
+          <VDivider vertical class="align-self-stretch" />
+          <div class="text-body-2">
+            <div>
+              <span class="text-medium-emphasis">Asignados</span>
+              <strong class="ms-1">{{ summary.asignados }}</strong>
+              <span class="text-medium-emphasis"> · {{ soles(summary.montoAsignados) }}</span>
+            </div>
+            <div :class="summary.sinAsignar ? 'text-error font-weight-medium' : 'text-medium-emphasis'">
+              <span>Sin asignar</span>
+              <strong class="ms-1">{{ summary.sinAsignar }}</strong>
+              <span> · {{ soles(summary.montoSinAsignar) }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
       <div class="d-flex align-center ga-1">
         <VBtn icon="ri-arrow-left-s-line" variant="tonal" @click="shiftDay(-1)" />
         <VTextField v-model="date" type="date" density="compact" hide-details style="max-width: 175px;" @update:model-value="reload" />
@@ -700,7 +745,9 @@ const onMmRectUp = () => {
             class="pz-mm-mark" :class="{ 'pz-mm-mark--un': s.kind === 'unassigned' }"
             :style="{
               left: (s.min / 1440 * 100) + '%',
-              background: s.kind === 'unassigned' ? '#d97706' : (MODE[s.mode]?.color || '#64748b'),
+              background: s.kind === 'unassigned'
+                ? (s.published ? UNASSIGNED.publicada.color : UNASSIGNED.por_asignar.color)
+                : (MODE[s.mode]?.color || '#64748b'),
             }"
             :title="s.label"
           />
@@ -789,12 +836,16 @@ const onMmRectUp = () => {
                 <div
                   v-for="s in unassignedPlaced" :key="s.serviceId"
                   class="pz-chip"
-                  :class="{ 'pz-chip--pub': s.published, 'pz-chip--src': chipDrag.item && chipDrag.item.serviceId === s.serviceId }"
+                  :class="{
+                    'pz-chip--pub': s.published,
+                    'pz-chip--todo': !s.published,
+                    'pz-chip--src': chipDrag.item && chipDrag.item.serviceId === s.serviceId,
+                  }"
                   :style="{
                     left: s._left + 'px',
                     top: (s._row * (CHIP_H + 6) + 4) + 'px',
                     width: CHIP_W + 'px',
-                    borderInlineStartColor: (MODE[s.mode]?.color || '#64748b'),
+                    borderInlineStartColor: s.published ? UNASSIGNED.publicada.color : UNASSIGNED.por_asignar.color,
                   }"
                   @pointerdown="onChipDown($event, s)"
                   @contextmenu.prevent="openCtx($event, 'unassigned', s)"
@@ -853,20 +904,26 @@ const onMmRectUp = () => {
       </div>
 
       <VDivider />
-      <VCardText class="d-flex flex-wrap ga-6 text-caption">
-        <div class="d-flex align-center ga-3">
-          <span class="text-medium-emphasis">Ejecuta:</span>
+      <VCardText class="d-flex flex-wrap ga-x-8 ga-y-2 text-caption">
+        <div class="d-flex align-center flex-wrap ga-x-3 ga-y-1">
+          <span class="text-medium-emphasis font-weight-medium">Sin asignar (tarjeta):</span>
+          <span v-for="(u, k) in UNASSIGNED" :key="k" class="d-inline-flex align-center ga-1">
+            <span class="pz-bar-swatch" :style="{ background: u.color }" /> {{ u.label }}
+          </span>
+        </div>
+        <div class="d-flex align-center flex-wrap ga-x-3 ga-y-1">
+          <span class="text-medium-emphasis font-weight-medium">Ejecuta (borde de la barra):</span>
           <span v-for="(m, k) in MODE" :key="k" class="d-inline-flex align-center ga-1">
             <span class="pz-bar-swatch" :style="{ background: m.color }" /> {{ m.label }}
           </span>
         </div>
-        <div class="d-flex align-center ga-3">
-          <span class="text-medium-emphasis">Estado:</span>
+        <div class="d-flex align-center flex-wrap ga-x-3 ga-y-1">
+          <span class="text-medium-emphasis font-weight-medium">Estado (punto):</span>
           <span v-for="(s, k) in STATE" :key="k" class="d-inline-flex align-center ga-1">
             <span class="pz-state-dot" :style="{ background: s.color }" /> {{ s.label }}
           </span>
         </div>
-        <span class="text-medium-emphasis">⚡ = asignación automática</span>
+        <span class="text-medium-emphasis">⚡ = asignación automática (bot)</span>
       </VCardText>
     </VCard>
 
@@ -1136,7 +1193,8 @@ const onMmRectUp = () => {
   touch-action: none;
 }
 .pz-chip:active { cursor: grabbing; }
-.pz-chip--pub { opacity: 0.6; cursor: not-allowed; }
+.pz-chip--todo { background: rgb(220 38 38 / 6%); }
+.pz-chip--pub { opacity: 0.7; cursor: not-allowed; background: rgb(217 119 6 / 8%); }
 .pz-chip--src { opacity: 0.3; }
 .pz-chip--ghost {
   position: fixed;
