@@ -274,11 +274,11 @@ const removePayment = async row => {
           <div class="d-flex flex-wrap ga-3 mb-1">
             <AppDateField
               v-model="summaryFrom" label="Desde" hide-details
-              style="max-width: 190px;" @update:model-value="onSumDateEdit"
+              style="width: 160px;" @update:model-value="onSumDateEdit"
             />
             <AppDateField
               v-model="summaryTo" label="Hasta" hide-details
-              style="max-width: 190px;" @update:model-value="onSumDateEdit"
+              style="width: 160px;" @update:model-value="onSumDateEdit"
             />
           </div>
           <div v-if="summaryFrom > summaryTo" class="text-caption text-error">
