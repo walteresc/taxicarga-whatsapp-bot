@@ -234,14 +234,14 @@ const removeRow = async row => {
                 v-model="form.dayType" :items="DAY_TYPES" item-title="label" item-value="value"
                 label="Tipo de registro" density="comfortable" class="mt-4"
               />
-              <div class="d-flex ga-4 mt-4">
+              <div class="d-flex flex-wrap ga-6 mt-4">
                 <AppTimeField
                   v-model="form.clockIn" label="Hora de ingreso" density="comfortable"
-                  :disabled="!isWorked" hide-details style="flex: 1 1 0;"
+                  :disabled="!isWorked"
                 />
                 <AppTimeField
                   v-model="form.clockOut" label="Hora de salida" density="comfortable"
-                  :disabled="!isWorked" hide-details style="flex: 1 1 0;"
+                  :disabled="!isWorked"
                 />
               </div>
               <VTextField v-model="form.note" label="Observación (opcional)" density="comfortable" class="mt-4" />
