@@ -76,20 +76,29 @@ class ScheduleSerializer(serializers.ModelSerializer):
     state = serializers.CharField(source="estado_operativo", read_only=True)
     serviceCode = serializers.CharField(source="servicio.codigo", read_only=True)
     serviceId = serializers.IntegerField(source="servicio_id", read_only=True)
+    leadId = serializers.IntegerField(source="servicio.lead_origen_id", read_only=True)
+    executionMode = serializers.CharField(source="servicio.modalidad_ejecucion", read_only=True)
     customerName = serializers.SerializerMethodField()
+    vehicleId = serializers.IntegerField(source="vehiculo_id", read_only=True)
     plate = serializers.CharField(source="vehiculo.placa", read_only=True)
+    driverId = serializers.IntegerField(source="conductor_id", read_only=True)
     driverName = serializers.CharField(source="conductor.nombre", read_only=True)
     helpers = serializers.SerializerMethodField()
     teamId = serializers.IntegerField(source="equipo_dia_id", read_only=True)
+    autoAssigned = serializers.SerializerMethodField()
     notes = serializers.CharField(source="observaciones", read_only=True)
 
     class Meta:
         model = ProgramacionServicio
         fields = (
             "id", "date", "startTime", "endTime", "amount", "state",
-            "serviceId", "serviceCode", "customerName", "plate", "driverName",
-            "helpers", "teamId", "notes",
+            "serviceId", "serviceCode", "leadId", "executionMode", "customerName",
+            "vehicleId", "plate", "driverId", "driverName",
+            "helpers", "teamId", "autoAssigned", "notes",
         )
+
+    def get_autoAssigned(self, obj):
+        return getattr(obj, "origen_asignacion", None) == "auto"
 
     def get_customerName(self, obj):
         cli = getattr(obj.servicio, "cliente", None)

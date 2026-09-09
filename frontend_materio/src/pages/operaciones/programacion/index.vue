@@ -2,6 +2,7 @@
 import { onMounted, reactive, ref, watch } from 'vue'
 
 import { apiClient } from '@/services/apiClient'
+import ReassignScheduleDialog from './ReassignScheduleDialog.vue'
 
 const STATE = {
   programado: { label: 'Programado', color: 'info' },
@@ -15,6 +16,11 @@ const NEXT = {
   en_ruta: ['en_servicio', 'cancelado'],
   en_servicio: ['finalizado', 'cancelado'],
 }
+const EXEC = {
+  propio: { label: 'Nuestro equipo', color: 'primary', icon: 'ri-team-line' },
+  tercerizado: { label: 'Transportistas', color: 'secondary', icon: 'ri-truck-line' },
+}
+const REASSIGNABLE = new Set(['programado', 'en_ruta'])
 
 const rows = ref([])
 const loading = ref(true)
@@ -55,6 +61,11 @@ const shiftDay = n => {
 }
 
 const snackbar = reactive({ show: false, text: '', color: 'success' })
+const notify = (text, color = 'success') => Object.assign(snackbar, { show: true, text, color })
+
+const reassignRow = ref(null)
+const afterReassign = async () => { notify('Programación reasignada.'); await load() }
+
 const setState = async (row, target) => {
   try {
     await apiClient.post(`/api/v2/schedule/${row.id}/set-state/`, { state: target })
@@ -70,7 +81,7 @@ const setState = async (row, target) => {
   <section>
     <h1 class="text-h4 font-weight-bold mb-1">Programación</h1>
     <p class="text-body-1 text-medium-emphasis mb-6">
-      Servicios asignados a un equipo, por día. La asignación se arma en la Pizarra.
+      Servicios asignados a un equipo, por día. Podés reasignar vehículo, conductor u hora desde acá o en la Pizarra.
     </p>
 
     <VCard>
@@ -113,26 +124,38 @@ const setState = async (row, target) => {
       <VTable class="text-no-wrap">
         <thead>
           <tr>
-            <th>Hora</th><th>Servicio</th><th>Cliente</th><th>Vehículo</th><th>Conductor</th>
+            <th>Hora</th><th>Servicio</th><th>Cliente</th><th>Ejecuta</th><th>Vehículo</th><th>Conductor</th>
             <th>Ayudantes</th><th class="text-right">Monto</th><th>Estado</th><th class="text-right">Acciones</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-if="loading"><td colspan="9" class="text-center py-8"><VProgressCircular indeterminate color="primary" /></td></tr>
-          <tr v-else-if="!rows.length"><td colspan="9" class="text-center text-medium-emphasis py-10">Sin programaciones para ese día.</td></tr>
+          <tr v-if="loading"><td colspan="10" class="text-center py-8"><VProgressCircular indeterminate color="primary" /></td></tr>
+          <tr v-else-if="!rows.length"><td colspan="10" class="text-center text-medium-emphasis py-10">Sin programaciones para ese día.</td></tr>
           <tr v-for="row in rows" v-else :key="row.id">
             <td class="font-weight-medium">{{ row.startTime }}{{ row.endTime ? `–${row.endTime}` : '' }}</td>
             <td>{{ row.serviceCode }}</td>
             <td>{{ row.customerName }}</td>
+            <td>
+              <VChip v-if="EXEC[row.executionMode]" size="small" :color="EXEC[row.executionMode].color" variant="tonal">
+                <VIcon start :icon="EXEC[row.executionMode].icon" size="14" /> {{ EXEC[row.executionMode].label }}
+              </VChip>
+              <span v-else class="text-disabled">—</span>
+              <VIcon v-if="row.autoAssigned" icon="ri-flashlight-line" size="13" class="ms-1 text-medium-emphasis" title="Asignación automática" />
+            </td>
             <td>{{ row.plate || '—' }}</td>
             <td>{{ row.driverName || '—' }}</td>
             <td class="text-medium-emphasis">{{ row.helpers.length ? row.helpers.join(', ') : '—' }}</td>
             <td class="text-right">{{ soles(row.amount) }}</td>
             <td><VChip size="small" :color="STATE[row.state]?.color">{{ STATE[row.state]?.label || row.state }}</VChip></td>
             <td class="text-right text-no-wrap">
+              <VBtn
+                v-if="REASSIGNABLE.has(row.state)"
+                size="small" variant="text" icon="ri-team-line" title="Reasignar (vehículo / conductor / hora)"
+                @click="reassignRow = row"
+              />
               <VMenu v-if="NEXT[row.state]?.length">
                 <template #activator="{ props }">
-                  <VBtn v-bind="props" size="small" variant="tonal">Cambiar estado</VBtn>
+                  <VBtn v-bind="props" size="small" variant="tonal" class="ms-1">Cambiar estado</VBtn>
                 </template>
                 <VList>
                   <VListItem v-for="t in NEXT[row.state]" :key="t" @click="setState(row, t)">
@@ -140,12 +163,19 @@ const setState = async (row, target) => {
                   </VListItem>
                 </VList>
               </VMenu>
-              <span v-else class="text-caption text-disabled">—</span>
+              <span v-else-if="!REASSIGNABLE.has(row.state)" class="text-caption text-disabled">—</span>
             </td>
           </tr>
         </tbody>
       </VTable>
     </VCard>
+
+    <ReassignScheduleDialog
+      v-if="reassignRow"
+      :row="reassignRow"
+      @close="reassignRow = null"
+      @saved="afterReassign"
+    />
 
     <VSnackbar v-model="snackbar.show" :color="snackbar.color" timeout="3500">{{ snackbar.text }}</VSnackbar>
   </section>
