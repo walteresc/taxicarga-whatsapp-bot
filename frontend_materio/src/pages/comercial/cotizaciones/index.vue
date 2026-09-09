@@ -4,7 +4,8 @@ import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import {
-  leadServiceData, quoteAccept, quoteDetail, quoteList, quoteRevise, quoteSetState,
+  leadServiceData, quoteClosePrice, quoteDetail, quoteList, quoteNegotiate,
+  quoteRevise, quoteSetState, quoteToOutsourcing,
 } from '@/services/commercialService'
 import { usePipelineStore } from '@/stores/pipelineStore'
 import ServiceViewDialog from '@/pages/atencion/bandeja-entrada/components/ServiceViewDialog.vue'
@@ -119,18 +120,47 @@ const submitRevise = async () => {
   } catch (e) { notify(e.message || 'No se pudo revisar.', 'error') } finally { busy.value = false }
 }
 
-// aceptar → crea reserva
-const acceptOpen = ref(false)
-const doAccept = async () => {
+// --- F1: negociación ---
+const negForm = reactive({ open: false, clientPrice: '', note: '' })
+const submitNegotiate = async () => {
   busy.value = true
   try {
-    const res = await quoteAccept(detail.value.id)
-    notify(`Cotización aceptada. Reserva ${res.bookingCode} creada.`)
-    acceptOpen.value = false
+    detail.value = await quoteNegotiate(detail.value.id, {
+      clientPrice: negForm.clientPrice || undefined,
+      note: negForm.note || undefined,
+    })
+    notify('Cotización en negociación.')
+    negForm.open = false
+    await load(); pipeline.bump()
+  } catch (e) { notify(e.message || 'No se pudo.', 'error') } finally { busy.value = false }
+}
+
+const outForm = reactive({ open: false, priceMode: 'referencial', referencePrice: '' })
+const submitOutsourcing = async () => {
+  busy.value = true
+  try {
+    const res = await quoteToOutsourcing(detail.value.id, {
+      priceMode: outForm.priceMode,
+      referencePrice: outForm.referencePrice || undefined,
+    })
+    notify(`Derivada a tercerización · publicación ${res.publicationCode} (borrador).`)
+    outForm.open = false
+    await openDetail(detail.value); await load(); pipeline.bump()
+  } catch (e) { notify(e.message || 'No se pudo derivar.', 'error') } finally { busy.value = false }
+}
+
+const closeForm = reactive({ open: false, price: '', note: '' })
+const submitClosePrice = async () => {
+  busy.value = true
+  try {
+    const res = await quoteClosePrice(detail.value.id, {
+      price: closeForm.price, note: closeForm.note || undefined,
+    })
+    notify(`Precio cerrado. Reserva ${res.bookingCode} creada.`)
+    closeForm.open = false
     detailOpen.value = false
-    pipeline.bump()
-    await load()
-  } catch (e) { notify(e.message || 'No se pudo aceptar.', 'error') } finally { busy.value = false }
+    await load(); pipeline.bump()
+  } catch (e) { notify(e.message || 'No se pudo cerrar.', 'error') } finally { busy.value = false }
 }
 </script>
 
@@ -170,8 +200,17 @@ const doAccept = async () => {
             </td>
             <td>{{ row.customerName }}</td>
             <td>{{ row.route }}</td>
-            <td><VChip size="small" :color="STATE[row.state]?.color">{{ STATE[row.state]?.label || row.state }}</VChip></td>
-            <td class="text-right">{{ soles(row.currentPrice) }}</td>
+            <td>
+              <VChip size="small" :color="STATE[row.state]?.color">{{ STATE[row.state]?.label || row.state }}</VChip>
+              <div v-if="row.outsourced" class="text-caption text-medium-emphasis mt-1">
+                <VIcon icon="ri-truck-line" size="12" /> tercerizada · {{ row.outsourced.code }}
+              </div>
+            </td>
+            <td class="text-right">
+              {{ soles(row.currentPrice) }}
+              <div v-if="row.clientPrice != null" class="text-caption text-warning">cliente: {{ soles(row.clientPrice) }}</div>
+              <div v-if="row.agreedPrice != null" class="text-caption text-success">acordado: {{ soles(row.agreedPrice) }}</div>
+            </td>
             <td class="text-capitalize">{{ row.origin }}</td>
             <td class="text-right text-no-wrap">
               <VBtn size="small" variant="text" icon="ri-eye-line" title="Ver detalle del servicio" :disabled="!row.leadId" @click="openServiceView(row)" />
@@ -196,7 +235,10 @@ const doAccept = async () => {
             <tbody>
               <tr><td>Cliente</td><td>{{ detail.service.customer.name }}</td></tr>
               <tr><td>Ruta</td><td>{{ detail.service.origin }} → {{ detail.service.destination }}</td></tr>
-              <tr><td>Precio actual</td><td class="font-weight-bold">{{ soles(detail.currentPrice) }}</td></tr>
+              <tr><td>Precio actual (nuestra oferta)</td><td class="font-weight-bold">{{ soles(detail.currentPrice) }}</td></tr>
+              <tr v-if="detail.clientPrice != null"><td>Contraoferta del cliente</td><td class="text-warning font-weight-medium">{{ soles(detail.clientPrice) }}</td></tr>
+              <tr v-if="detail.agreedPrice != null"><td>Precio acordado</td><td class="text-success font-weight-bold">{{ soles(detail.agreedPrice) }}</td></tr>
+              <tr v-if="detail.outsourced"><td>Tercerización</td><td><VChip size="x-small" color="secondary" variant="tonal">{{ detail.outsourced.code }} · {{ detail.outsourced.state }} · {{ detail.outsourced.priceMode }}</VChip></td></tr>
             </tbody>
           </VTable>
 
@@ -214,10 +256,36 @@ const doAccept = async () => {
           </VTable>
         </VCardText>
 
+        <VDivider v-if="detail && !detail.hasBooking" />
+        <div v-if="detail && !detail.hasBooking" class="px-4 py-3 d-flex flex-wrap ga-2">
+          <span class="text-overline text-medium-emphasis w-100">Negociación</span>
+          <VBtn
+            size="small" variant="tonal" prepend-icon="ri-discuss-line"
+            :disabled="busy"
+            @click="Object.assign(negForm, { open: true, clientPrice: detail.clientPrice != null ? String(detail.clientPrice) : '', note: '' })"
+          >
+            Negociar con el cliente
+          </VBtn>
+          <VBtn
+            size="small" variant="tonal" prepend-icon="ri-truck-line"
+            :disabled="busy || !!detail.outsourced"
+            @click="Object.assign(outForm, { open: true, priceMode: 'referencial', referencePrice: '' })"
+          >
+            {{ detail.outsourced ? 'Ya derivada a tercerización' : 'Derivar a tercerización' }}
+          </VBtn>
+          <VBtn
+            size="small" color="success" prepend-icon="ri-check-double-line"
+            :disabled="busy"
+            @click="Object.assign(closeForm, { open: true, price: String(detail.agreedPrice ?? detail.clientPrice ?? detail.currentPrice ?? ''), note: '' })"
+          >
+            Cerrar precio
+          </VBtn>
+        </div>
+
         <VCardActions v-if="detail" class="flex-wrap px-4 pb-4 ga-2">
           <VMenu v-if="TRANSITIONS[detail.state]?.length">
             <template #activator="{ props }">
-              <VBtn v-bind="props" variant="text" :disabled="busy">Cambiar estado</VBtn>
+              <VBtn v-bind="props" variant="text" size="small" :disabled="busy">Cambiar estado</VBtn>
             </template>
             <VList>
               <VListItem v-for="t in TRANSITIONS[detail.state]" :key="t" @click="changeState(t)">
@@ -225,13 +293,12 @@ const doAccept = async () => {
               </VListItem>
             </VList>
           </VMenu>
-          <VBtn variant="text" :disabled="busy || detail.state === 'accepted'" @click="Object.assign(reviseForm, { open: true, price: String(detail.currentPrice || ''), conditions: '', validityDays: 7, whatsappMessage: '' })">
+          <VBtn variant="text" size="small" :disabled="busy || detail.state === 'accepted'" @click="Object.assign(reviseForm, { open: true, price: String(detail.currentPrice || ''), conditions: '', validityDays: 7, whatsappMessage: '' })">
             Nueva revisión
           </VBtn>
           <VSpacer />
           <VBtn variant="text" @click="detailOpen = false">Cerrar</VBtn>
-          <VBtn v-if="!detail.hasBooking" color="success" :disabled="busy" @click="acceptOpen = true">Marcar aceptada</VBtn>
-          <VChip v-else color="success" size="small">Reserva creada</VChip>
+          <VChip v-if="detail.hasBooking" color="success" size="small">Reserva creada</VChip>
         </VCardActions>
       </VCard>
     </VDialog>
@@ -254,18 +321,74 @@ const doAccept = async () => {
       </VCard>
     </VDialog>
 
-    <!-- Confirmar aceptación -->
-    <VDialog v-model="acceptOpen" max-width="440">
+    <!-- Negociar con el cliente -->
+    <VDialog v-model="negForm.open" max-width="460">
       <VCard>
-        <VCardTitle>Marcar como aceptada</VCardTitle>
+        <VCardTitle>Negociar con el cliente</VCardTitle>
         <VCardText>
-          Confirmas que el cliente <strong>aceptó</strong> esta cotización ({{ soles(detail?.currentPrice) }}).
-          Se creará la <strong>reserva</strong> y quedará registrado quién y cuándo. Esto genera una venta.
+          <p class="text-body-2 text-medium-emphasis mb-3">
+            Pasa la cotización a "En negociación". El chat de negociación llega en la próxima fase;
+            por ahora registrá la contraoferta del cliente y una nota.
+          </p>
+          <VTextField v-model="negForm.clientPrice" label="Contraoferta del cliente (S/)" type="number" class="mb-2" clearable />
+          <VTextarea v-model="negForm.note" label="Nota (queda en el historial del lead)" rows="2" auto-grow />
         </VCardText>
         <VCardActions>
           <VSpacer />
-          <VBtn variant="text" @click="acceptOpen = false">Cancelar</VBtn>
-          <VBtn color="success" :loading="busy" @click="doAccept">Sí, crear reserva</VBtn>
+          <VBtn variant="text" @click="negForm.open = false">Cancelar</VBtn>
+          <VBtn color="primary" :loading="busy" @click="submitNegotiate">Poner en negociación</VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
+
+    <!-- Derivar a tercerización -->
+    <VDialog v-model="outForm.open" max-width="480">
+      <VCard>
+        <VCardTitle>Derivar a tercerización</VCardTitle>
+        <VCardText>
+          <p class="text-body-2 text-medium-emphasis mb-3">
+            Se crea la reserva (si faltan datos, completalos primero) marcada como
+            <strong>tercerizada</strong>, y una publicación en <strong>borrador</strong>.
+            El Despacho la publica a los transportistas.
+          </p>
+          <VSelect
+            v-model="outForm.priceMode" label="Modo de precio" class="mb-2"
+            :items="[
+              { title: 'Referencial (hay un precio guía, se puede ofertar)', value: 'referencial' },
+              { title: 'Abierto (el transportista propone)', value: 'abierto' },
+              { title: 'Fijo (precio cerrado, solo aceptan)', value: 'fijo' },
+            ]"
+          />
+          <VTextField
+            v-if="outForm.priceMode !== 'abierto'"
+            v-model="outForm.referencePrice" type="number"
+            label="Precio hacia el transportista (S/) — costo, no venta"
+          />
+        </VCardText>
+        <VCardActions>
+          <VSpacer />
+          <VBtn variant="text" @click="outForm.open = false">Cancelar</VBtn>
+          <VBtn color="primary" :loading="busy" @click="submitOutsourcing">Derivar</VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
+
+    <!-- Cerrar precio -->
+    <VDialog v-model="closeForm.open" max-width="460">
+      <VCard>
+        <VCardTitle>Cerrar precio con el cliente</VCardTitle>
+        <VCardText>
+          <p class="text-body-2 text-medium-emphasis mb-3">
+            Confirmás el <strong>acuerdo</strong>. Si el precio difiere de la última oferta,
+            se envía una revisión a ese precio. Se crea la <strong>reserva</strong>.
+          </p>
+          <VTextField v-model="closeForm.price" label="Precio acordado (S/)" type="number" class="mb-2" />
+          <VTextarea v-model="closeForm.note" label="Nota / condiciones" rows="2" auto-grow />
+        </VCardText>
+        <VCardActions>
+          <VSpacer />
+          <VBtn variant="text" @click="closeForm.open = false">Cancelar</VBtn>
+          <VBtn color="success" :loading="busy" :disabled="!closeForm.price" @click="submitClosePrice">Cerrar y crear reserva</VBtn>
         </VCardActions>
       </VCard>
     </VDialog>

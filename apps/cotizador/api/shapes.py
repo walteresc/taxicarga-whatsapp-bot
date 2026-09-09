@@ -304,12 +304,28 @@ def quote_item(cotizacion):
         "origin": cotizacion.origen,
         "advisor": _user(cotizacion.asesor),
         "currentPrice": float(last.precio_final) if last else None,
+        "clientPrice": float(cotizacion.precio_cliente) if cotizacion.precio_cliente is not None else None,
+        "agreedPrice": float(cotizacion.precio_acordado) if cotizacion.precio_acordado is not None else None,
         "revisionCount": len(revs),
         "createdAt": _d(cotizacion.creada_en),
         "updatedAt": _d(cotizacion.actualizada_en),
         "hasBooking": hasattr(lead, "servicio_generado") and lead.servicio_generado is not None,
+        "outsourced": _quote_outsourced(lead),
         "seen": _visto("quotes", lead.id),
     }
+
+
+def _quote_outsourced(lead):
+    """(bool, código de publicación) — si la carga ya fue derivada a tercerización."""
+    servicio = getattr(lead, "servicio_generado", None)
+    if not servicio:
+        return None
+    pub = servicio.publicaciones_tercerizacion.exclude(
+        estado__in=("cancelada", "vencida"),
+    ).order_by("-creado_en").first()
+    if not pub:
+        return None
+    return {"code": pub.codigo, "state": pub.estado, "priceMode": pub.modo_precio}
 
 
 def quote_detail(cotizacion):

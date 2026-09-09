@@ -43,6 +43,9 @@ urlpatterns = [
     path("pipeline/quotes/<int:pk>/state", views.QuoteStateView.as_view(), name="v2-quote-state"),
     path("pipeline/quotes/<int:pk>/revise", views.QuoteReviseView.as_view(), name="v2-quote-revise"),
     path("pipeline/quotes/<int:pk>/accept", views.QuoteAcceptView.as_view(), name="v2-quote-accept"),
+    path("pipeline/quotes/<int:pk>/negotiate", views.QuoteNegotiateView.as_view(), name="v2-quote-negotiate"),
+    path("pipeline/quotes/<int:pk>/to-outsourcing", views.QuoteToOutsourcingView.as_view(), name="v2-quote-to-outsourcing"),
+    path("pipeline/quotes/<int:pk>/close-price", views.QuoteClosePriceView.as_view(), name="v2-quote-close-price"),
 
     # Reservas
     path("pipeline/bookings/", views.BookingListView.as_view(), name="v2-booking-list"),

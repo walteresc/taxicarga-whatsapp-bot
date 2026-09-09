@@ -38,6 +38,9 @@ export const quoteDetail = id => apiClient.get(`${P}/quotes/${id}/`)
 export const quoteSetState = (id, state) => apiClient.post(`${P}/quotes/${id}/state`, { state })
 export const quoteRevise = (id, body) => apiClient.post(`${P}/quotes/${id}/revise`, body)
 export const quoteAccept = id => apiClient.post(`${P}/quotes/${id}/accept`)
+export const quoteNegotiate = (id, body) => apiClient.post(`${P}/quotes/${id}/negotiate`, body)
+export const quoteToOutsourcing = (id, body) => apiClient.post(`${P}/quotes/${id}/to-outsourcing`, body)
+export const quoteClosePrice = (id, body) => apiClient.post(`${P}/quotes/${id}/close-price`, body)
 
 // --- Perdidos ---
 export const lostList = params => apiClient.get(`${P}/lost/`, params)

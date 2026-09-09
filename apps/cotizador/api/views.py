@@ -661,6 +661,139 @@ class QuoteAcceptView(_Base):
         })
 
 
+class QuoteNegotiateView(_Base):
+    """Pone la cotización 'en negociación' y guarda la contraoferta del cliente.
+    El chat de negociación en sí llega en F2 — acá solo el estado + el número."""
+
+    def post(self, request, pk):
+        from apps.cotizador.commercial import cambiar_estado_cotizacion
+        from apps.cotizador.pipeline import _auditar
+
+        cot = get_object_or_404(_quote_qs(), pk=pk)
+        d = request.data
+        if cot.estado in ("enviada", "entregada"):
+            cambiar_estado_cotizacion(cot.id, "en_negociacion")
+            cot.refresh_from_db()
+        elif cot.estado != "en_negociacion":
+            raise ValidationError("Esta cotización no se puede poner en negociación en su estado actual.")
+
+        fields = []
+        raw_price = d.get("clientPrice")
+        if raw_price not in (None, ""):
+            cot.precio_cliente = _decimal(raw_price, "precio del cliente", positive=True)
+            fields.append("precio_cliente")
+        if fields:
+            cot.save(update_fields=fields + ["actualizada_en"])
+        note = (d.get("note") or "").strip()
+        if note:
+            _auditar(cot.lead, request.user, "negociacion_nota", {"nota": note})
+        return Response(shapes.quote_detail(get_object_or_404(_quote_qs(), pk=pk)))
+
+
+class QuoteToOutsourcingView(_Base):
+    """El asesor deriva la carga a tercerización. Crea el Servicio (si falta
+    algún dato obligatorio → 400), lo marca 'tercerizado' y crea una
+    PublicacionCarga en BORRADOR con el modo de precio elegido. El Despacho la
+    publica de verdad en F3."""
+
+    def post(self, request, pk):
+        from django.db import transaction
+
+        from apps.ia.conversation_policy import booking_missing_fields
+        from apps.servicios.models import Servicio
+        from apps.servicios.services import crear_servicio_desde_lead
+        from apps.tercerizacion.models import PublicacionCarga
+        from apps.tercerizacion.services import tercerizar_carga
+        from apps.cotizador.pipeline import _auditar
+
+        cot = get_object_or_404(CotizacionComercial.objects.select_related("lead"), pk=pk)
+        d = request.data
+        modo = (d.get("priceMode") or PublicacionCarga.PRECIO_ABIERTO).strip()
+        if modo not in dict(PublicacionCarga.MODOS_PRECIO):
+            raise ValidationError({"priceMode": "Modo de precio no válido."})
+        precio_ref = None
+        if d.get("referencePrice") not in (None, ""):
+            precio_ref = _decimal(d.get("referencePrice"), "precio referencial", positive=True)
+
+        missing = booking_missing_fields(cot.lead)
+        if missing:
+            raise ValidationError(
+                "Faltan datos obligatorios para derivar ("
+                + ", ".join(missing) + "). Complétalos en el lead."
+            )
+
+        with transaction.atomic():
+            servicio, _created = crear_servicio_desde_lead(cot.lead, usuario=request.user)
+            if servicio.modalidad_ejecucion != Servicio.MODALIDAD_TERCERIZADO:
+                servicio.modalidad_ejecucion = Servicio.MODALIDAD_TERCERIZADO
+                servicio.save(update_fields=["modalidad_ejecucion"])
+            pub, pub_creada = tercerizar_carga(
+                servicio, request.user,
+                modo_precio=modo, precio_publicado=precio_ref,
+                estado=PublicacionCarga.ESTADO_BORRADOR,
+            )
+            _auditar(cot.lead, request.user, "derivada_a_tercerizacion",
+                     {"publicacion": pub.codigo, "modo_precio": modo})
+
+        return Response({"ok": True, "publicationCode": pub.codigo, "created": pub_creada})
+
+
+class QuoteClosePriceView(_Base):
+    """Cierra el precio de venta con el cliente (acuerdo). Si el precio acordado
+    difiere de la última revisión, crea y envía una revisión a ese precio, y
+    luego acepta → crea la reserva."""
+
+    def post(self, request, pk):
+        from django.db import transaction
+
+        from apps.cotizador.commercial import (
+            cambiar_estado_cotizacion, crear_revision, marcar_revision_enviada,
+        )
+        from apps.cotizador.delivery import queue_revision_whatsapp
+        from apps.cotizador.pipeline import _auditar
+        from apps.ia.conversation_policy import booking_missing_fields
+        from apps.servicios.services import crear_servicio_desde_lead
+        from apps.dashboard.views_quotes import _quote_message
+
+        cot = get_object_or_404(CotizacionComercial.objects.select_related("lead"), pk=pk)
+        if cot.estado not in ("enviada", "entregada", "en_negociacion"):
+            raise ValidationError("Esta cotización no se puede cerrar en su estado actual.")
+        price = _decimal(request.data.get("price"), "precio acordado", positive=True)
+        note = (request.data.get("note") or "").strip()
+
+        missing = booking_missing_fields(cot.lead)
+        if missing:
+            raise ValidationError(
+                "Faltan datos obligatorios para crear la reserva ("
+                + ", ".join(missing) + "). Complétalos en el lead."
+            )
+
+        revs = list(cot.revisiones.order_by("-numero"))
+        last_price = revs[0].precio_final if revs else None
+
+        with transaction.atomic():
+            cot.precio_acordado = price
+            cot.save(update_fields=["precio_acordado", "actualizada_en"])
+            if last_price is None or price != last_price:
+                revision = crear_revision(
+                    cot, request.user, price,
+                    condiciones=(note or ""), vigencia_dias=7,
+                    mensaje_whatsapp=_quote_message(cot.lead, price, 7),
+                )
+                queue_revision_whatsapp(revision.id, actor=request.user)
+                marcar_revision_enviada(revision)
+            cambiar_estado_cotizacion(cot.id, "aceptada")
+            servicio, created = crear_servicio_desde_lead(
+                cot.lead, usuario=request.user, require_accepted_revision=True,
+            )
+            _auditar(cot.lead, request.user, "precio_cerrado",
+                     {"cotizacion": cot.codigo, "reserva": servicio.codigo, "precio": str(price)})
+
+        return Response({
+            "ok": True, "bookingCode": servicio.codigo, "bookingId": servicio.id, "created": created,
+        })
+
+
 # --------------------------------------------------------------------------- #
 #  Reservas
 # --------------------------------------------------------------------------- #

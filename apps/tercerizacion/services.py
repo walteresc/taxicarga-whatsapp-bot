@@ -89,12 +89,24 @@ def generar_texto_publicacion(servicio, codigo, channel=None):
     return "\n".join(partes)
 
 
-def tercerizar_carga(servicio, usuario):
-    """Crea (o reutiliza, si ya hay una abierta) la publicación de una carga.
-    Nunca crea una segunda publicación abierta para el mismo servicio —
-    evita códigos duplicados para la misma carga."""
+_ESTADOS_PUBLICACION_ACTIVA = (
+    PublicacionCarga.ESTADO_BORRADOR,
+    PublicacionCarga.ESTADO_ABIERTA,
+    PublicacionCarga.ESTADO_PUBLICADA,
+    PublicacionCarga.ESTADO_CON_OFERTAS,
+)
+
+
+def tercerizar_carga(servicio, usuario, *, modo_precio=None, precio_publicado=None,
+                     estado=PublicacionCarga.ESTADO_ABIERTA):
+    """Crea (o reutiliza, si ya hay una activa) la publicación de una carga.
+    Nunca crea una segunda publicación activa para el mismo servicio —
+    evita códigos duplicados para la misma carga.
+
+    modo_precio / precio_publicado / estado permiten crearla como borrador
+    (F1: el asesor la deriva pero la publica el Despacho en F3)."""
     existente = servicio.publicaciones_tercerizacion.filter(
-        estado=PublicacionCarga.ESTADO_ABIERTA,
+        estado__in=_ESTADOS_PUBLICACION_ACTIVA,
     ).first()
     if existente:
         return existente, False
@@ -113,6 +125,9 @@ def tercerizar_carga(servicio, usuario):
             codigo=codigo,
             texto_publicado=generar_texto_publicacion(servicio, codigo),
             creado_por=usuario,
+            estado=estado,
+            modo_precio=modo_precio or PublicacionCarga.PRECIO_ABIERTO,
+            precio_publicado=precio_publicado,
         )
 
     return publicacion, True
