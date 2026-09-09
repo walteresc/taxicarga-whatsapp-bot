@@ -22,6 +22,7 @@ const DAY = Object.fromEntries(DAY_TYPES.map(d => [d.value, d.label]))
 const KIND = Object.fromEntries(COMPENSATION_KINDS.map(k => [k.value, k.label]))
 const soles = n => (n == null ? '—' : `S/ ${Number(n).toLocaleString('es-PE', { minimumFractionDigits: 2 })}`)
 const hLabel = n => (n == null ? '—' : `${n > 0 ? '+' : ''}${Number(n).toFixed(2)} h`)
+const dash = v => (v === '' || v == null ? '—' : v)
 
 const loading = ref(true)
 const record = ref(null)
@@ -35,183 +36,234 @@ const balanceClass = computed(() => {
   return b > 0 ? 'text-success' : (b < 0 ? 'text-error' : '')
 })
 
-onMounted(async () => {
-  const jobs = []
-  if (props.worker.type !== 'asesor') {
-    const svc = props.worker.type === 'conductor' ? driversService : assistantsService
-    jobs.push(svc.get(props.worker.sourceId).then(r => { record.value = r }).catch(() => {}))
+const personalFields = computed(() => {
+  const f = [
+    { label: 'Tipo', value: TYPE[props.worker.type]?.label || props.worker.type },
+    { label: 'Documento', value: dash(props.worker.documentId) },
+    { label: 'Teléfono', value: dash(props.worker.phone) },
+  ]
+  if (props.worker.detail) f.push({ label: 'Detalle', value: props.worker.detail })
+  if (record.value && props.worker.type === 'conductor') {
+    f.push(
+      { label: 'N° de licencia', value: dash(record.value.licenseNumber) },
+      { label: 'Categoría', value: dash(record.value.licenseCategory) },
+      { label: 'Vencimiento de licencia', value: dash(record.value.licenseExpiresOn) },
+    )
   }
-  jobs.push(
-    payrollConfigService.list({
-      workerType: props.worker.type, workerId: props.worker.sourceId, pageSize: 1,
-    }).then(async d => {
-      if (d.results.length) {
-        config.value = d.results[0]
-        payroll.value = await fetchWorkerPayroll(config.value.id, today).catch(() => null)
-      }
-    }).catch(() => {}),
+  return f
+})
+
+const payrollFields = computed(() => {
+  const c = config.value
+  if (!c) return []
+  const f = [{ label: 'Contrato', value: CONTRACT[c.contractType] || c.contractType }]
+  if (c.contractType === 'planilla') {
+    f.push({ label: 'Sueldo mensual', value: soles(c.amountPerMonth) })
+    f.push({ label: 'AFP', value: `${c.afpPct} %` })
+  } else {
+    f.push({ label: 'Monto por día', value: soles(c.amountPerDay) })
+  }
+  f.push(
+    { label: 'Jornada', value: `${c.workdayHours} h` },
+    { label: 'Refrigerio', value: `${c.lunchHours} h` },
+    { label: 'Ingreso', value: c.hiredOn },
   )
-  await Promise.all(jobs)
-  loading.value = false
+  if (c.endedOn) f.push({ label: 'Cese', value: c.endedOn })
+  return f
 })
 </script>
 
 <template>
-  <VDialog :model-value="true" max-width="780" scrollable @update:model-value="$emit('close')">
+  <VDialog :model-value="true" max-width="820" scrollable @update:model-value="$emit('close')">
     <VCard>
-      <VCardTitle class="d-flex align-center justify-space-between pt-4">
-        <div class="d-flex align-center ga-2">
-          <VIcon :icon="TYPE[worker.type]?.icon" :color="TYPE[worker.type]?.color" />
-          <span>{{ worker.name }}</span>
-          <VChip size="x-small" :color="worker.active ? 'success' : 'secondary'">
-            {{ worker.active ? 'Activo' : 'Inactivo' }}
-          </VChip>
+      <div class="pdd-head d-flex align-center ga-3 pa-5">
+        <VAvatar :color="TYPE[worker.type]?.color" variant="tonal" size="48">
+          <VIcon :icon="TYPE[worker.type]?.icon" size="24" />
+        </VAvatar>
+        <div class="flex-grow-1">
+          <div class="d-flex align-center flex-wrap ga-2">
+            <span class="text-h6">{{ worker.name }}</span>
+            <VChip size="x-small" :color="worker.active ? 'success' : 'secondary'" label>
+              {{ worker.active ? 'Activo' : 'Inactivo' }}
+            </VChip>
+          </div>
+          <div class="text-body-2 text-medium-emphasis">
+            {{ TYPE[worker.type]?.label }}<template v-if="worker.documentId"> · DNI {{ worker.documentId }}</template>
+          </div>
         </div>
         <VBtn icon="ri-close-line" variant="text" size="small" @click="$emit('close')" />
-      </VCardTitle>
+      </div>
       <VDivider />
 
-      <VCardText>
-        <div v-if="loading" class="text-center py-8"><VProgressCircular indeterminate color="primary" /></div>
+      <VCardText class="pa-5">
+        <div v-if="loading" class="text-center py-10"><VProgressCircular indeterminate color="primary" /></div>
 
         <template v-else>
           <!-- Datos personales -->
-          <div class="text-overline text-medium-emphasis mb-2">Datos</div>
-          <VRow dense class="mb-2">
-            <VCol cols="12" sm="6" md="4">
-              <div class="text-caption text-medium-emphasis">Tipo</div>
-              <div>{{ TYPE[worker.type]?.label || worker.type }}</div>
-            </VCol>
-            <VCol cols="12" sm="6" md="4">
-              <div class="text-caption text-medium-emphasis">Documento</div>
-              <div>{{ worker.documentId || '—' }}</div>
-            </VCol>
-            <VCol cols="12" sm="6" md="4">
-              <div class="text-caption text-medium-emphasis">Teléfono</div>
-              <div>{{ worker.phone || '—' }}</div>
-            </VCol>
-            <VCol v-if="worker.detail" cols="12" sm="6" md="4">
-              <div class="text-caption text-medium-emphasis">Detalle</div>
-              <div>{{ worker.detail }}</div>
-            </VCol>
-            <template v-if="record && worker.type === 'conductor'">
-              <VCol cols="12" sm="6" md="4">
-                <div class="text-caption text-medium-emphasis">N° de licencia</div>
-                <div>{{ record.licenseNumber || '—' }}</div>
-              </VCol>
-              <VCol cols="12" sm="6" md="4">
-                <div class="text-caption text-medium-emphasis">Categoría</div>
-                <div>{{ record.licenseCategory || '—' }}</div>
-              </VCol>
-              <VCol cols="12" sm="6" md="4">
-                <div class="text-caption text-medium-emphasis">Vencimiento de licencia</div>
-                <div>{{ record.licenseExpiresOn || '—' }}</div>
-              </VCol>
-            </template>
-          </VRow>
-
-          <div v-if="worker.type !== 'asesor'" class="mb-4">
-            <VBtn size="small" variant="text" prepend-icon="ri-edit-line" @click="$emit('edit', worker)">
-              Editar datos
-            </VBtn>
-          </div>
-
-          <VDivider class="mb-4" />
+          <section class="mb-6">
+            <div class="d-flex align-center justify-space-between mb-3">
+              <h3 class="text-subtitle-1 font-weight-bold">Datos personales</h3>
+              <VBtn
+                v-if="worker.type !== 'asesor'" size="small" variant="tonal"
+                prepend-icon="ri-edit-line" @click="$emit('edit', worker)"
+              >
+                Editar
+              </VBtn>
+            </div>
+            <div class="pdd-grid">
+              <div v-for="f in personalFields" :key="f.label" class="pdd-cell">
+                <div class="pdd-cell__label">{{ f.label }}</div>
+                <div class="pdd-cell__value">{{ f.value }}</div>
+              </div>
+            </div>
+          </section>
 
           <!-- Planilla -->
-          <div class="d-flex align-center justify-space-between mb-2">
-            <span class="text-overline text-medium-emphasis">Planilla</span>
-            <VBtn size="small" variant="text" prepend-icon="ri-money-dollar-circle-line" @click="$emit('edit-payroll', worker)">
-              {{ config ? 'Editar planilla' : 'Configurar planilla' }}
-            </VBtn>
-          </div>
-
-          <p v-if="!config" class="text-body-2 text-medium-emphasis">
-            Este trabajador no tiene configuración de planilla.
-          </p>
-
-          <template v-else>
-            <div class="d-flex flex-wrap ga-2 mb-3">
-              <VChip size="small" variant="tonal">{{ CONTRACT[config.contractType] || config.contractType }}</VChip>
-              <VChip v-if="config.contractType === 'planilla'" size="small" variant="tonal">
-                Sueldo {{ soles(config.amountPerMonth) }}
-              </VChip>
-              <VChip v-else size="small" variant="tonal">Día {{ soles(config.amountPerDay) }}</VChip>
-              <VChip size="small" variant="tonal">Jornada {{ config.workdayHours }} h</VChip>
-              <VChip size="small" variant="tonal">Refrigerio {{ config.lunchHours }} h</VChip>
-              <VChip v-if="config.contractType === 'planilla'" size="small" variant="tonal">AFP {{ config.afpPct }}%</VChip>
-              <VChip size="small" variant="tonal">Ingreso {{ config.hiredOn }}</VChip>
-              <VChip v-if="config.endedOn" size="small" variant="tonal" color="warning">Cese {{ config.endedOn }}</VChip>
-              <VChip size="small" variant="tonal">Valor día {{ soles(config.valorDia) }}</VChip>
-              <VChip size="small" variant="tonal">Valor hora {{ soles(config.valorHora) }}</VChip>
+          <section>
+            <div class="d-flex align-center justify-space-between mb-3">
+              <h3 class="text-subtitle-1 font-weight-bold">Planilla</h3>
+              <VBtn
+                size="small" variant="tonal" prepend-icon="ri-money-dollar-circle-line"
+                @click="$emit('edit-payroll', worker)"
+              >
+                {{ config ? 'Editar' : 'Configurar' }}
+              </VBtn>
             </div>
 
-            <VRow v-if="payroll" class="mb-1">
-              <VCol cols="12" sm="6">
-                <div class="text-caption text-medium-emphasis">Saldo de horas extra (al {{ today }})</div>
-                <div class="text-h5 font-weight-bold" :class="balanceClass">{{ hLabel(payroll.balanceHours) }}</div>
-              </VCol>
-              <VCol v-if="payroll.vacations?.aplica" cols="12" sm="6">
-                <div class="text-caption text-medium-emphasis">Vacaciones</div>
-                <div class="text-body-2">
-                  Ganadas {{ payroll.vacations.daysEarned }} · Tomadas {{ payroll.vacations.daysTaken }} ·
-                  <strong>Pendientes {{ payroll.vacations.daysPending }}</strong>
-                </div>
-                <div class="text-body-2 text-medium-emphasis">
-                  Liquidación estimada: <strong>{{ soles(payroll.vacations.liquidationAmount) }}</strong>
-                </div>
-              </VCol>
-            </VRow>
+            <VAlert v-if="!config" type="info" variant="tonal" density="compact">
+              Este trabajador no tiene configuración de planilla.
+            </VAlert>
 
-            <VExpansionPanels v-if="payroll" variant="accordion" class="mt-2">
-              <VExpansionPanel :title="`Asistencia reciente (${payroll.recentAttendance.length})`">
-                <template #text>
-                  <VTable v-if="payroll.recentAttendance.length" density="compact">
-                    <thead><tr><th>Fecha</th><th>Tipo</th><th>Ingreso</th><th>Salida</th><th class="text-right">Δ</th></tr></thead>
-                    <tbody>
-                      <tr v-for="a in payroll.recentAttendance" :key="a.date">
-                        <td>{{ a.date }}</td><td>{{ DAY[a.dayType] || a.dayType }}</td>
-                        <td>{{ a.clockIn || '—' }}</td><td>{{ a.clockOut || '—' }}</td>
-                        <td class="text-right" :class="a.delta > 0 ? 'text-success' : (a.delta < 0 ? 'text-error' : '')">{{ hLabel(a.delta) }}</td>
-                      </tr>
-                    </tbody>
-                  </VTable>
-                  <p v-else class="text-body-2 text-medium-emphasis mb-0">Sin registros.</p>
-                </template>
-              </VExpansionPanel>
-              <VExpansionPanel :title="`Compensaciones (${payroll.compensations.length})`">
-                <template #text>
-                  <VTable v-if="payroll.compensations.length" density="compact">
-                    <thead><tr><th>Fecha</th><th>Tipo</th><th class="text-right">Horas</th><th>Motivo</th></tr></thead>
-                    <tbody>
-                      <tr v-for="(c, i) in payroll.compensations" :key="i">
-                        <td>{{ c.date }}</td><td>{{ KIND[c.kind] || c.kind }}</td>
-                        <td class="text-right">{{ hLabel(c.hours) }}</td><td>{{ c.reason || '—' }}</td>
-                      </tr>
-                    </tbody>
-                  </VTable>
-                  <p v-else class="text-body-2 text-medium-emphasis mb-0">Sin movimientos.</p>
-                </template>
-              </VExpansionPanel>
-              <VExpansionPanel :title="`Pagos (${payroll.payments.length})`">
-                <template #text>
-                  <VTable v-if="payroll.payments.length" density="compact">
-                    <thead><tr><th>Período</th><th>Tipo</th><th class="text-right">Neto</th><th>Estado</th></tr></thead>
-                    <tbody>
-                      <tr v-for="(p, i) in payroll.payments" :key="i">
-                        <td>{{ p.periodFrom }} → {{ p.periodTo }}</td><td>{{ p.type }}</td>
-                        <td class="text-right">{{ soles(p.netAmount) }}</td>
-                        <td>{{ p.paid ? `Pagado ${p.paidOn || ''}` : 'Pendiente' }}</td>
-                      </tr>
-                    </tbody>
-                  </VTable>
-                  <p v-else class="text-body-2 text-medium-emphasis mb-0">Sin pagos.</p>
-                </template>
-              </VExpansionPanel>
-            </VExpansionPanels>
-          </template>
+            <template v-else>
+              <!-- métricas destacadas -->
+              <div class="pdd-stats mb-4">
+                <div class="pdd-stat">
+                  <div class="pdd-stat__label">Saldo de horas extra</div>
+                  <div class="pdd-stat__value" :class="balanceClass">
+                    {{ payroll ? hLabel(payroll.balanceHours) : '—' }}
+                  </div>
+                  <div class="pdd-stat__hint">al {{ today }}</div>
+                </div>
+                <div class="pdd-stat">
+                  <div class="pdd-stat__label">Valor día</div>
+                  <div class="pdd-stat__value">{{ soles(config.valorDia) }}</div>
+                </div>
+                <div class="pdd-stat">
+                  <div class="pdd-stat__label">Valor hora</div>
+                  <div class="pdd-stat__value">{{ soles(config.valorHora) }}</div>
+                </div>
+                <div v-if="payroll && payroll.vacations?.aplica" class="pdd-stat">
+                  <div class="pdd-stat__label">Vacaciones pendientes</div>
+                  <div class="pdd-stat__value">{{ payroll.vacations.daysPending }} d</div>
+                  <div class="pdd-stat__hint">liquidación {{ soles(payroll.vacations.liquidationAmount) }}</div>
+                </div>
+              </div>
+
+              <div class="pdd-grid mb-2">
+                <div v-for="f in payrollFields" :key="f.label" class="pdd-cell">
+                  <div class="pdd-cell__label">{{ f.label }}</div>
+                  <div class="pdd-cell__value">{{ f.value }}</div>
+                </div>
+              </div>
+
+              <VExpansionPanels v-if="payroll" variant="accordion" class="mt-4">
+                <VExpansionPanel :title="`Asistencia reciente (${payroll.recentAttendance.length})`">
+                  <template #text>
+                    <VTable v-if="payroll.recentAttendance.length" density="compact">
+                      <thead><tr><th>Fecha</th><th>Tipo</th><th>Ingreso</th><th>Salida</th><th class="text-right">Δ</th></tr></thead>
+                      <tbody>
+                        <tr v-for="a in payroll.recentAttendance" :key="a.date">
+                          <td>{{ a.date }}</td><td>{{ DAY[a.dayType] || a.dayType }}</td>
+                          <td>{{ a.clockIn || '—' }}</td><td>{{ a.clockOut || '—' }}</td>
+                          <td class="text-right" :class="a.delta > 0 ? 'text-success' : (a.delta < 0 ? 'text-error' : '')">{{ hLabel(a.delta) }}</td>
+                        </tr>
+                      </tbody>
+                    </VTable>
+                    <p v-else class="text-body-2 text-medium-emphasis mb-0">Sin registros.</p>
+                  </template>
+                </VExpansionPanel>
+                <VExpansionPanel :title="`Compensaciones (${payroll.compensations.length})`">
+                  <template #text>
+                    <VTable v-if="payroll.compensations.length" density="compact">
+                      <thead><tr><th>Fecha</th><th>Tipo</th><th class="text-right">Horas</th><th>Motivo</th></tr></thead>
+                      <tbody>
+                        <tr v-for="(c, i) in payroll.compensations" :key="i">
+                          <td>{{ c.date }}</td><td>{{ KIND[c.kind] || c.kind }}</td>
+                          <td class="text-right">{{ hLabel(c.hours) }}</td><td>{{ c.reason || '—' }}</td>
+                        </tr>
+                      </tbody>
+                    </VTable>
+                    <p v-else class="text-body-2 text-medium-emphasis mb-0">Sin movimientos.</p>
+                  </template>
+                </VExpansionPanel>
+                <VExpansionPanel :title="`Pagos (${payroll.payments.length})`">
+                  <template #text>
+                    <VTable v-if="payroll.payments.length" density="compact">
+                      <thead><tr><th>Período</th><th>Tipo</th><th class="text-right">Neto</th><th>Estado</th></tr></thead>
+                      <tbody>
+                        <tr v-for="(p, i) in payroll.payments" :key="i">
+                          <td>{{ p.periodFrom }} → {{ p.periodTo }}</td><td>{{ p.type }}</td>
+                          <td class="text-right">{{ soles(p.netAmount) }}</td>
+                          <td>{{ p.paid ? `Pagado ${p.paidOn || ''}` : 'Pendiente' }}</td>
+                        </tr>
+                      </tbody>
+                    </VTable>
+                    <p v-else class="text-body-2 text-medium-emphasis mb-0">Sin pagos.</p>
+                  </template>
+                </VExpansionPanel>
+              </VExpansionPanels>
+            </template>
+          </section>
         </template>
       </VCardText>
     </VCard>
   </VDialog>
 </template>
+
+<style scoped>
+.pdd-head {
+  background: rgba(var(--v-theme-on-surface), 0.02);
+}
+
+.pdd-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 16px 24px;
+}
+.pdd-cell__label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(var(--v-theme-on-surface), 0.6);
+  margin-bottom: 2px;
+}
+.pdd-cell__value {
+  font-size: 0.95rem;
+}
+
+.pdd-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+.pdd-stat {
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.pdd-stat__label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(var(--v-theme-on-surface), 0.6);
+}
+.pdd-stat__value {
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+.pdd-stat__hint {
+  font-size: 0.72rem;
+  color: rgba(var(--v-theme-on-surface), 0.55);
+}
+</style>
