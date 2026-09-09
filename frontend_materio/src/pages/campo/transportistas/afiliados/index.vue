@@ -106,19 +106,13 @@ onMounted(async () => {
         >
           <template #row-actions="{ row }">
             <VBtn
-              variant="tonal" size="small" class="me-1"
-              prepend-icon="ri-add-line" title="Agregar vehículo"
+              icon="ri-truck-line" variant="text" size="small" title="Agregar vehículo"
               @click="addVehicleFor = row"
-            >
-              Vehículo
-            </VBtn>
+            />
             <VBtn
-              variant="tonal" size="small" class="me-1"
-              prepend-icon="ri-add-line" title="Agregar conductor"
+              icon="ri-user-add-line" variant="text" size="small" title="Agregar conductor"
               @click="addDriverFor = row"
-            >
-              Conductor
-            </VBtn>
+            />
           </template>
           <template #detail="{ row, close }">
             <CarrierDetailDialog v-if="row" :carrier="row" @close="close" />
