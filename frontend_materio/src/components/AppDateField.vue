@@ -82,8 +82,32 @@ const pick = val => {
       :min="min"
       :max="max"
       show-adjacent-months
+      hide-header
       color="primary"
+      class="app-date-field__picker"
       @update:model-value="pick"
     />
   </VMenu>
 </template>
+
+<style scoped>
+.app-date-field__picker {
+  width: 280px;
+}
+.app-date-field__picker :deep(.v-date-picker-month) {
+  min-width: auto;
+  padding-inline: 8px;
+}
+.app-date-field__picker :deep(.v-date-picker-month__day) {
+  width: 32px;
+  height: 32px;
+}
+.app-date-field__picker :deep(.v-date-picker-month__day .v-btn) {
+  width: 30px;
+  height: 30px;
+}
+.app-date-field__picker :deep(.v-date-picker-controls) {
+  padding-inline: 8px;
+  min-height: 40px;
+}
+</style>
