@@ -117,7 +117,7 @@ class ProgramacionServicioModelTests(TestCase):
         self.assertEqual(programacion.conductor, conductor)
         self.assertIn(ayudante, programacion.ayudantes.all())
         self.assertEqual(programacion.estado_operativo, "programado")
-        self.assertIn("SVC-0001", str(programacion))
+        self.assertIn(self.servicio.codigo, str(programacion))
         self.assertIn("2026-06-15", str(programacion))
 
     def test_programacion_mantiene_historial_al_cambiar_equipo(self):

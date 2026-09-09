@@ -28,6 +28,40 @@ class Lead(models.Model):
         (ETAPA_RESERVADO, "Reservado"),
     ]
 
+    # Cómo quiere cotizar el cliente (portal / wizard). "por_carga" = describe la
+    # carga y el sistema elige el vehículo; "por_vehiculo" = el cliente elige el
+    # tipo de vehículo dedicado.
+    MODO_COT_POR_CARGA = "por_carga"
+    MODO_COT_POR_VEHICULO = "por_vehiculo"
+    MODOS_COTIZACION = [
+        (MODO_COT_POR_CARGA, "Por carga"),
+        (MODO_COT_POR_VEHICULO, "Por vehículo"),
+    ]
+
+    CATEGORIAS_CARGA = [
+        ("mudanza", "Mudanza, muebles y electrodomésticos"),
+        ("cajas", "Cajas, paquetes y bultos"),
+        ("mercaderia", "Mercadería comercial"),
+        ("maquinaria", "Maquinaria y equipos"),
+        ("construccion", "Materiales de construcción"),
+        ("agricolas", "Productos agrícolas"),
+        ("pallets", "Pallets / parihuelas"),
+        ("contenedores", "Contenedores"),
+        ("refrigerada", "Carga refrigerada"),
+        ("otros", "Otros"),
+    ]
+
+    # De dónde entró la carga (para que el asesor "entienda qué hacemos de
+    # clientes" — teléfono/correo vs portal vs bot).
+    ORIGENES_CARGA = [
+        ("bot_whatsapp", "Bot de WhatsApp"),
+        ("invitado", "Cotización rápida (invitado)"),
+        ("portal_cliente", "Portal del cliente"),
+        ("asesor_telefono", "Asesor · teléfono"),
+        ("asesor_correo", "Asesor · correo"),
+        ("asesor_crm", "Asesor · CRM"),
+    ]
+
     ESTADOS = [
         (NUEVO, "Nuevo"),
         (EN_CONVERSACION, "En conversacion"),
@@ -88,7 +122,14 @@ class Lead(models.Model):
                 return codigo
         return cls.MOTIVO_PERDIDA_OTRO
 
+    codigo = models.CharField(
+        max_length=20, unique=True, blank=True, db_index=True,
+        help_text="Código único de la carga (CRG-NNNN). El Servicio adopta este mismo código.",
+    )
     cliente = models.ForeignKey(Cliente, on_delete=models.CASCADE, related_name="leads")
+    modo_cotizacion = models.CharField(max_length=16, choices=MODOS_COTIZACION, blank=True)
+    categoria_carga = models.CharField(max_length=20, choices=CATEGORIAS_CARGA, blank=True)
+    origen_carga = models.CharField(max_length=20, choices=ORIGENES_CARGA, default="bot_whatsapp")
     tipo_servicio = models.CharField(max_length=80, blank=True)
     distrito_origen = models.CharField(max_length=120, blank=True)
     distrito_destino = models.CharField(max_length=120, blank=True)
@@ -180,7 +221,15 @@ class Lead(models.Model):
 
     def __str__(self):
         ruta = f"{self.distrito_origen or '?'} -> {self.distrito_destino or '?'}"
-        return f"{self.cliente} - {ruta}"
+        return f"{self.codigo or self.pk} · {self.cliente} - {ruta}"
+
+    def save(self, *args, **kwargs):
+        # El código deriva del PK (único, sin carrera, sin necesidad de transacción).
+        asignar_codigo = self._state.adding and not self.codigo
+        super().save(*args, **kwargs)
+        if asignar_codigo and not self.codigo:
+            self.codigo = f"CRG-{self.pk:04d}"
+            Lead.objects.filter(pk=self.pk).update(codigo=self.codigo)
 
 
 class LeadUbicacion(models.Model):

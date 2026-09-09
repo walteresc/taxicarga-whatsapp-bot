@@ -42,6 +42,7 @@ def crear_servicio_desde_lead(lead, usuario=None, revision=None, *, require_acce
 
     servicio = Servicio.objects.create(
         lead_origen=lead,
+        codigo=lead.codigo or "",
         cliente=lead.cliente,
         whatsapp_channel=lead.whatsapp_channel,
         asesor=usuario or lead.vendedor_asignado,

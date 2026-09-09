@@ -12,9 +12,15 @@ from .similarity import score_service
 logger = logging.getLogger(__name__)
 
 
+# Categorías que el motor determinístico sabe cotizar razonablemente hoy
+# (históricos de mudanzas dentro de Lima). El resto → cotización manual / negociación.
+_CATEGORIAS_MOTOR = {"", "mudanza"}
+
+
 def cotizar_lead(lead):
     similar_services = _find_similar_services(lead)
-    if len(similar_services) >= 3:
+    n = len(similar_services)
+    if n >= 3:
         prices = sorted(
             service.precio_final or service.precio_cotizado
             for _score, service in similar_services
@@ -29,16 +35,31 @@ def cotizar_lead(lead):
             "Cotizacion calculada con mediana y percentiles de los historicos "
             "operativamente mas similares."
         )
+        confianza = min(95, 55 + n * 4)
     else:
         price_min, price_max, recommended = fallback_price_for_lead(lead)
         explanation = "Cotizacion preliminar calculada por reglas base por falta de historicos similares."
+        confianza = 35
+
+    # El motor no cubre bien: interprovincial, o carga que no es mudanza.
+    fuera_de_alcance = bool(getattr(lead, "es_interprovincial", False)) or (
+        (getattr(lead, "categoria_carga", "") or "") not in _CATEGORIAS_MOTOR
+    )
+    if fuera_de_alcance:
+        confianza = min(confianza, 25)
+        modo = Cotizacion.MODO_MANUAL
+        explanation += " · Fuera del alcance del cotizador automático: requiere confirmación de un asesor."
+    else:
+        modo = Cotizacion.MODO_AUTOMATICO if confianza >= 40 else Cotizacion.MODO_MANUAL
 
     return Cotizacion.objects.create(
         lead=lead,
         precio_min=price_min,
         precio_max=price_max,
         precio_recomendado=recommended,
-        servicios_similares_encontrados=len(similar_services),
+        servicios_similares_encontrados=n,
+        confianza=confianza,
+        modo=modo,
         explicacion=explanation,
     )
 

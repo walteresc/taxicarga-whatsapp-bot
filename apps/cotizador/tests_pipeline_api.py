@@ -190,7 +190,7 @@ class QuoteAndBookingFlowTests(_Sup):
         q = self._sent_quote()
         r = self.client.post(f"/api/v2/pipeline/quotes/{q['id']}/accept")
         self.assertEqual(r.status_code, 200, r.data)
-        self.assertTrue(r.data["bookingCode"].startswith("SVC-"))
+        self.assertTrue(r.data["bookingCode"].startswith("CRG-"))
         from apps.servicios.models import Servicio
         s = Servicio.objects.get(codigo=r.data["bookingCode"])
         self.assertEqual(s.asesor, self.user)

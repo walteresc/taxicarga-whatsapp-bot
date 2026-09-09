@@ -59,9 +59,11 @@ class Servicio(models.Model):
 
     # Quién ejecuta el servicio. La regla de ventana horaria la fija al crearse
     # (nocturno → tercerizado); el asesor puede cambiarla mientras no esté asignado.
+    MODALIDAD_POR_DEFINIR = "por_definir"
     MODALIDAD_PROPIO = "propio"
     MODALIDAD_TERCERIZADO = "tercerizado"
     MODALIDADES_EJECUCION = [
+        (MODALIDAD_POR_DEFINIR, "Por definir"),
         (MODALIDAD_PROPIO, "Nuestro equipo"),
         (MODALIDAD_TERCERIZADO, "Transportistas"),
     ]
@@ -199,11 +201,14 @@ class Servicio(models.Model):
 
     def save(self, *args, **kwargs):
         if not self.codigo:
-            last = (
-                Servicio.objects.select_for_update().order_by("-id").first()
-            )
-            next_id = (last.id + 1) if last else 1
-            self.codigo = f"SVC-{next_id:04d}"
+            # Código unificado: si viene de un Lead, adopta su CRG-NNNN.
+            lead = self.lead_origen if self.lead_origen_id else None
+            if lead and lead.codigo:
+                self.codigo = lead.codigo
+            else:
+                last = Servicio.objects.select_for_update().order_by("-id").first()
+                next_id = (last.id + 1) if last else 1
+                self.codigo = f"SVC-{next_id:04d}"
         # Sella la fecha de finalización la primera vez que el servicio llega a
         # ese estado, sea cual sea la vista que lo cambie.
         if self.estado == SERVICIO_FINALIZADO and self.fecha_finalizacion is None:

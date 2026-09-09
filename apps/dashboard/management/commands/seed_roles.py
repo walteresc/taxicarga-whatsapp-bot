@@ -10,9 +10,13 @@ from django.contrib.auth.models import Group
 from django.core.management.base import BaseCommand
 
 ROLES = [
-    "Administrador",
+    "Administrador",       # legacy "puede todo" — se separa en Gerencia + Admin de sistema (F4)
+    "Gerencia",            # negocio: márgenes, costos, precios, reportes
+    "Admin de sistema",    # usuarios, roles, integraciones, config técnica
     "Supervisor",
     "Asesor de Ventas",
+    "Despacho",            # Pizarra, programación, publicar a transportistas, adjudicar
+    "Finanzas",            # pagos, planilla, facturación, cobros
     "Conductor",
     "Ayudante",
 ]

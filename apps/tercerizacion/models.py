@@ -7,13 +7,45 @@ class PublicacionCarga(models.Model):
     que el asesor copia y pega a mano en los grupos de WhatsApp de
     transportistas. Fase 3 (bot) usa el código para identificar respuestas."""
 
-    ESTADO_ABIERTA = "abierta"
+    ESTADO_BORRADOR = "borrador"
+    ESTADO_ABIERTA = "abierta"          # sinónimo histórico de "publicada"
+    ESTADO_PUBLICADA = "publicada"
+    ESTADO_CON_OFERTAS = "con_ofertas"
     ESTADO_ADJUDICADA = "adjudicada"
     ESTADO_CANCELADA = "cancelada"
+    ESTADO_VENCIDA = "vencida"
     ESTADOS = [
+        (ESTADO_BORRADOR, "Borrador"),
         (ESTADO_ABIERTA, "Abierta"),
+        (ESTADO_PUBLICADA, "Publicada"),
+        (ESTADO_CON_OFERTAS, "Con ofertas"),
         (ESTADO_ADJUDICADA, "Adjudicada"),
         (ESTADO_CANCELADA, "Cancelada"),
+        (ESTADO_VENCIDA, "Vencida"),
+    ]
+
+    # Cómo se publica el precio a los transportistas.
+    PRECIO_FIJO = "fijo"                # precio cerrado (aceptado por el cliente) → solo aceptan
+    PRECIO_REFERENCIAL = "referencial"  # hay un precio guía → se puede ofertar
+    PRECIO_ABIERTO = "abierto"          # sin precio → el transportista propone
+    MODOS_PRECIO = [
+        (PRECIO_FIJO, "Precio fijo"),
+        (PRECIO_REFERENCIAL, "Precio referencial"),
+        (PRECIO_ABIERTO, "Abierto (a proponer)"),
+    ]
+    ALCANCE_TODOS = "todos"
+    ALCANCE_RED = "red_confianza"
+    ALCANCE_SELECCION = "seleccion"
+    ALCANCES = [
+        (ALCANCE_TODOS, "Todos los transportistas"),
+        (ALCANCE_RED, "Red de confianza"),
+        (ALCANCE_SELECCION, "Selección"),
+    ]
+    ADJ_PRIMERO = "primero_acepta"
+    ADJ_CERCANIA = "cercania_compat"
+    CRITERIOS_ADJUDICACION = [
+        (ADJ_PRIMERO, "Primero que acepta"),
+        (ADJ_CERCANIA, "Cercanía + compatibilidad (futuro)"),
     ]
 
     servicio = models.ForeignKey(
@@ -28,6 +60,16 @@ class PublicacionCarga(models.Model):
                    "editarlo antes de pegarlo en el grupo.",
     )
     estado = models.CharField(max_length=20, choices=ESTADOS, default=ESTADO_ABIERTA)
+    modo_precio = models.CharField(max_length=12, choices=MODOS_PRECIO, default=PRECIO_ABIERTO)
+    precio_publicado = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+        help_text="Costo objetivo hacia el transportista (no el precio de venta al cliente).",
+    )
+    alcance = models.CharField(max_length=16, choices=ALCANCES, default=ALCANCE_TODOS)
+    vigencia_hasta = models.DateTimeField(null=True, blank=True)
+    criterio_adjudicacion = models.CharField(
+        max_length=16, choices=CRITERIOS_ADJUDICACION, default=ADJ_PRIMERO,
+    )
 
     creado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -76,14 +118,20 @@ class OfertaTransportista(models.Model):
     mismo pipeline de mensajería que un cliente normal)."""
 
     ESTADO_PENDIENTE = "pendiente"
+    ESTADO_CONTRAOFERTA_TC = "contraoferta_taxicarga"
+    ESTADO_CONTRAOFERTA_TR = "contraoferta_transportista"
     ESTADO_ACEPTADA = "aceptada"
     ESTADO_RECHAZADA = "rechazada"
     ESTADO_RETIRADA = "retirada"
+    ESTADO_VENCIDA = "vencida"
     ESTADOS = [
         (ESTADO_PENDIENTE, "Pendiente"),
+        (ESTADO_CONTRAOFERTA_TC, "Contraoferta de TaxiCarga"),
+        (ESTADO_CONTRAOFERTA_TR, "Contraoferta del transportista"),
         (ESTADO_ACEPTADA, "Aceptada"),
         (ESTADO_RECHAZADA, "Rechazada"),
         (ESTADO_RETIRADA, "Retirada"),
+        (ESTADO_VENCIDA, "Vencida"),
     ]
 
     publicacion = models.ForeignKey(
@@ -98,6 +146,15 @@ class OfertaTransportista(models.Model):
     )
     precio_ofertado = models.DecimalField(
         max_digits=10, decimal_places=2, null=True, blank=True,
+        help_text="Primer precio que puso el transportista (se conserva).",
+    )
+    monto_actual = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+        help_text="Último monto vigente de la negociación (contraofertas).",
+    )
+    fecha_aceptacion = models.DateTimeField(
+        null=True, blank=True,
+        help_text="Cuándo el transportista aceptó (FIFO para adjudicación 'primero que acepta').",
     )
     mensaje_origen = models.ForeignKey(
         "whatsapp.MensajeWhatsApp",
@@ -108,7 +165,7 @@ class OfertaTransportista(models.Model):
         help_text="Mensaje donde el transportista declaró el precio — "
                    "evidencia/trazabilidad, no se duplica el texto aquí.",
     )
-    estado = models.CharField(max_length=20, choices=ESTADOS, default=ESTADO_PENDIENTE)
+    estado = models.CharField(max_length=30, choices=ESTADOS, default=ESTADO_PENDIENTE)
     creado_en = models.DateTimeField(auto_now_add=True)
     actualizado_en = models.DateTimeField(auto_now=True)
 

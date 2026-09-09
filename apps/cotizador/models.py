@@ -63,11 +63,23 @@ class ServicioHistorico(models.Model):
 
 
 class Cotizacion(models.Model):
+    MODO_AUTOMATICO = "automatico"
+    MODO_MANUAL = "manual"
+    MODOS = [
+        (MODO_AUTOMATICO, "Automático (motor)"),
+        (MODO_MANUAL, "Manual (asesor pone precio)"),
+    ]
+
     lead = models.ForeignKey(Lead, on_delete=models.CASCADE, related_name="cotizaciones")
     precio_min = models.DecimalField(max_digits=10, decimal_places=2)
     precio_max = models.DecimalField(max_digits=10, decimal_places=2)
     precio_recomendado = models.DecimalField(max_digits=10, decimal_places=2)
     servicios_similares_encontrados = models.PositiveIntegerField(default=0)
+    confianza = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+        help_text="0–100. Baja (<40) → el sistema no muestra precio firme; ofrece rango y deriva a asesor/negociación.",
+    )
+    modo = models.CharField(max_length=12, choices=MODOS, default=MODO_AUTOMATICO)
     explicacion = models.TextField(blank=True)
     fecha_creacion = models.DateTimeField(auto_now_add=True)
 
@@ -189,6 +201,10 @@ class CotizacionComercial(models.Model):
     )
     origen = models.CharField(max_length=10, choices=ORIGENES)
     estado = models.CharField(max_length=20, choices=ESTADOS, default="borrador")
+    # Contraoferta del cliente ("Indicar mi precio" en el portal) y precio de
+    # cierre tras la negociación.
+    precio_cliente = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    precio_acordado = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     asesor = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,

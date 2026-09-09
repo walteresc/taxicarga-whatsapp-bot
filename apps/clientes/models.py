@@ -25,8 +25,21 @@ class Cliente(models.Model):
         (SOURCE_FALLBACK, "Fallback (phone)"),
     ]
 
+    TIPO_OCASIONAL = "ocasional"
+    TIPO_FRECUENTE = "frecuente"
+    TIPO_EMPRESA = "empresa"
+    TIPOS_CLIENTE = [
+        (TIPO_OCASIONAL, "Ocasional"),
+        (TIPO_FRECUENTE, "Frecuente"),
+        (TIPO_EMPRESA, "Empresa"),
+    ]
+
     nombre = models.CharField(max_length=160, blank=True)
     telefono = models.CharField(max_length=30, unique=True)
+    tipo = models.CharField(
+        max_length=12, choices=TIPOS_CLIENTE, default=TIPO_OCASIONAL, db_index=True,
+        help_text="Ocasional (guest), Frecuente (carga recurrente) o Empresa (con cuenta/portal).",
+    )
     documento = models.CharField(max_length=20, blank=True, default="")
     correo = models.EmailField(max_length=200, blank=True, default="")
     ruc = models.CharField(max_length=20, blank=True, default="")
