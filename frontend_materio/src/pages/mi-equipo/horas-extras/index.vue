@@ -212,10 +212,10 @@ const removeRow = async row => {
     </VCard>
 
     <!-- Registrar / editar asistencia -->
-    <VDialog v-model="dialog" max-width="480" persistent>
+    <VDialog v-model="dialog" max-width="520" persistent>
       <VCard>
-        <VCardTitle>{{ editing ? 'Editar asistencia' : 'Registrar asistencia' }}</VCardTitle>
-        <VCardText>
+        <VCardTitle class="pt-5">{{ editing ? 'Editar asistencia' : 'Registrar asistencia' }}</VCardTitle>
+        <VCardText class="pt-2">
           <VAutocomplete
             v-model="form.trabajadorId"
             :items="workers.map(w => ({ title: `${w.workerName} — ${CONTRACT[w.contractType]}`, value: w.id }))"
@@ -228,26 +228,26 @@ const removeRow = async row => {
             <div v-if="form.trabajadorId">
               <AppDateField
                 v-model="form.fecha" label="Fecha" density="comfortable"
-                class="mt-2" :error-messages="errs.fecha"
+                class="mt-4" :error-messages="errs.fecha"
               />
               <VSelect
                 v-model="form.dayType" :items="DAY_TYPES" item-title="label" item-value="value"
-                label="Tipo de registro" class="mt-2"
+                label="Tipo de registro" density="comfortable" class="mt-4"
               />
-              <div class="d-flex ga-3 mt-2">
-                <VTextField
-                  v-model="form.clockIn" type="time" label="Hora de ingreso"
-                  :disabled="!isWorked" hide-details
+              <div class="d-flex ga-4 mt-4">
+                <AppTimeField
+                  v-model="form.clockIn" label="Hora de ingreso" density="comfortable"
+                  :disabled="!isWorked" hide-details style="flex: 1 1 0;"
                 />
-                <VTextField
-                  v-model="form.clockOut" type="time" label="Hora de salida"
-                  :disabled="!isWorked" hide-details
+                <AppTimeField
+                  v-model="form.clockOut" label="Hora de salida" density="comfortable"
+                  :disabled="!isWorked" hide-details style="flex: 1 1 0;"
                 />
               </div>
-              <VTextField v-model="form.note" label="Observación (opcional)" class="mt-2" />
+              <VTextField v-model="form.note" label="Observación (opcional)" density="comfortable" class="mt-4" />
 
               <VAlert
-                v-if="preview" type="info" variant="tonal" density="compact" class="mt-3"
+                v-if="preview" type="info" variant="tonal" density="compact" class="mt-4"
               >
                 Horas trabajadas: <strong>{{ preview.worked.toFixed(2) }}</strong> ·
                 Δ del día:
