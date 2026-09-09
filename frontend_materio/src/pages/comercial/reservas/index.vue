@@ -320,15 +320,20 @@ const submitCancel = async () => {
             <td><VChip size="small" :color="STATE[row.state]?.color">{{ STATE[row.state]?.label || row.state }}</VChip></td>
             <td class="text-right">{{ soles(row.price) }}</td>
             <td class="text-no-wrap">
-              <VChip size="small" :color="EXEC[row.executionMode]?.color" variant="tonal">
-                <VIcon start :icon="EXEC[row.executionMode]?.icon" size="14" />
-                {{ EXEC[row.executionMode]?.label }}
-              </VChip>
-              <div class="text-caption text-medium-emphasis mt-1">
-                <template v-if="row.assignmentState === 'asignado'">→ {{ row.executor }}</template>
-                <template v-else-if="row.assignmentState === 'publicado'">⏳ publicada</template>
-                <template v-else>sin asignar</template>
-              </div>
+              <button type="button" class="rsv-assign" title="Gestionar asignación / equipo" @click="openDetail(row)">
+                <VChip size="small" :color="EXEC[row.executionMode]?.color" variant="tonal">
+                  <VIcon start :icon="EXEC[row.executionMode]?.icon" size="14" />
+                  {{ EXEC[row.executionMode]?.label }}
+                </VChip>
+                <span
+                  class="d-block text-caption mt-1"
+                  :class="row.assignmentState === 'asignado' ? 'text-medium-emphasis' : 'text-primary font-weight-medium'"
+                >
+                  <template v-if="row.assignmentState === 'asignado'">→ {{ row.executor }}</template>
+                  <template v-else-if="row.assignmentState === 'publicado'">⏳ publicada · gestionar</template>
+                  <template v-else>Asignar →</template>
+                </span>
+              </button>
             </td>
             <td><VChip size="x-small" :color="PAY[row.paymentState]?.color">{{ PAY[row.paymentState]?.label }}</VChip></td>
             <td class="text-right text-no-wrap">
@@ -337,10 +342,6 @@ const submitCancel = async () => {
               <VBtn
                 v-if="row.state !== 'completed' && row.state !== 'cancelled'"
                 size="small" variant="text" icon="ri-money-dollar-circle-line" title="Registrar pago" @click="openPay(row)"
-              />
-              <VBtn
-                size="small" variant="text" icon="ri-team-line"
-                title="Gestionar asignación / equipo" @click="openDetail(row)"
               />
             </td>
           </tr>
@@ -540,6 +541,20 @@ const submitCancel = async () => {
   cursor: pointer;
 }
 .rsv-link:hover {
+  text-decoration: underline;
+}
+.rsv-assign {
+  cursor: pointer;
+  text-align: start;
+  border-radius: 6px;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  transition: background-color 0.15s;
+}
+.rsv-assign:hover {
+  background-color: rgba(var(--v-theme-primary), 0.08);
+}
+.rsv-assign:hover span {
   text-decoration: underline;
 }
 </style>
