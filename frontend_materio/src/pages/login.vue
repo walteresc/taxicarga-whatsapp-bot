@@ -111,6 +111,10 @@ const handleLogin = async () => {
               <span v-else>Iniciando sesión...</span>
             </VBtn>
           </VForm>
+          <div class="text-center text-body-2">
+            ¿Sos cliente nuevo?
+            <RouterLink to="/cotizar">Cotizá tu carga sin registrarte</RouterLink>
+          </div>
         </VCardText>
       </VCard>
     </div>

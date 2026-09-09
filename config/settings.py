@@ -151,6 +151,23 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
     ],
+    # Solo se aplica donde se declara explícitamente (endpoints públicos de F7).
+    "DEFAULT_THROTTLE_RATES": {
+        "guest_quote": config("GUEST_QUOTE_RATE", default="20/hour"),
+        "guest_signup": config("GUEST_SIGNUP_RATE", default="15/hour"),
+    },
+}
+
+# Alias de cache dedicado al rate-limiting de los endpoints públicos (F7).
+# `default` queda como estaba (LocMem implícito); este va a Redis para que el
+# límite sea compartido entre workers de gunicorn.
+CACHES = {
+    "default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"},
+    "throttle": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": REDIS_URL,
+        "KEY_PREFIX": "throttle",
+    },
 }
 
 OPENAI_API_KEY = env_value("OPENAI_API_KEY")

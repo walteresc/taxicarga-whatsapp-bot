@@ -1,8 +1,12 @@
 from django.urls import path
 
-from . import views
+from . import guest_views, views
 
 urlpatterns = [
+    # Público (F7): cotización rápida de invitado + alta de cuenta.
+    path("guest/quote", guest_views.GuestQuoteView.as_view(), name="v2-guest-quote"),
+    path("guest/signup", guest_views.GuestSignupView.as_view(), name="v2-guest-signup"),
+
     path("pipeline/counts", views.PipelineCountsView.as_view(), name="v2-pipeline-counts"),
 
     # Potenciales

@@ -211,6 +211,11 @@ export const routes = [
         meta: { public: true },
       },
       {
+        path: 'cotizar',
+        component: () => import('@/pages/cotizar.vue'),
+        meta: { public: true },
+      },
+      {
         path: 'register',
         component: () => import('@/pages/register.vue'),
         meta: { public: true },
