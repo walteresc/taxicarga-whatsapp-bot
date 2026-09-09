@@ -28,10 +28,20 @@ class CarrierViewSet(V2ModelViewSet):
     permission_classes = [HasAnyRole(*_ROLES)]
 
     def get_queryset(self):
+        from django.db.models import Count, Q
+
         p = self.request.query_params
-        qs = Transportista.objects.prefetch_related("vehiculos")
+        qs = Transportista.objects.prefetch_related("vehiculos").annotate(
+            useCount=Count(
+                "programaciones",
+                filter=~Q(programaciones__estado_operativo="cancelado"),
+                distinct=True,
+            ),
+        )
         qs = apply_search(qs, p.get("search"), ("nombre", "documento", "telefono", "email"))
         qs = apply_active_filter(qs, p.get("status"))
+        if p.get("ordering") == "frequency":
+            return qs.order_by("-useCount", "nombre", "id")
         return apply_ordering(qs, p.get("ordering"), _CARRIER_ORDER, ("nombre", "id"))
 
     @action(detail=True, methods=["post"], url_path="toggle-active")

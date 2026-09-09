@@ -641,35 +641,56 @@ const removeResource = async r => {
 
 // ── Agregar transportista a la pizarra ─────────────────────────────────
 const addTab = ref('propio')
-const carrierOpts = ref([])
+const carrierList = ref([]) // {id, name, useCount, vehicleCount}
+const carrierSearch = ref('')
+const carrierLoading = ref(false)
+const carrierSel = ref(null) // objeto transportista elegido
 const carrierVehOpts = ref([])
-const carrierDriverOpts = ref([])
-const carrierForm = reactive({ carrierId: null, carrierVehicleId: null, driverName: '' })
+const carrierDriverOpts = ref([]) // nombres; [] = no tiene → no se pide conductor
+const carrierForm = reactive({ carrierVehicleId: null, driverName: '' })
 const addBusy = ref(false)
+let carrierSearchTimer
+
+const resetCarrierStep = () => {
+  carrierSel.value = null
+  carrierVehOpts.value = []
+  carrierDriverOpts.value = []
+  Object.assign(carrierForm, { carrierVehicleId: null, driverName: '' })
+}
+
+const loadCarriers = async () => {
+  carrierLoading.value = true
+  try {
+    const d = await carriersService.list({
+      status: 'active', ordering: 'frequency', pageSize: 200, search: carrierSearch.value || undefined,
+    })
+    carrierList.value = d.results
+  } catch { carrierList.value = [] } finally { carrierLoading.value = false }
+}
+const onCarrierSearch = () => {
+  clearTimeout(carrierSearchTimer)
+  carrierSearchTimer = setTimeout(loadCarriers, 300)
+}
 
 watch(addDialog, open => {
   if (!open) return
   addTab.value = 'propio'
-  Object.assign(carrierForm, { carrierId: null, carrierVehicleId: null, driverName: '' })
+  carrierSearch.value = ''
+  resetCarrierStep()
 })
-watch(addTab, async tab => {
-  if (tab === 'tercerizado' && !carrierOpts.value.length) {
-    try {
-      const d = await carriersService.list({ status: 'active', pageSize: 200 })
-      carrierOpts.value = d.results.map(c => ({ title: c.name, value: c.id }))
-    } catch { carrierOpts.value = [] }
-  }
+watch(addTab, tab => {
+  if (tab === 'tercerizado' && !carrierList.value.length) loadCarriers()
 })
-watch(() => carrierForm.carrierId, async id => {
-  carrierForm.carrierVehicleId = null
-  carrierForm.driverName = ''
+
+const pickCarrier = async c => {
+  carrierSel.value = c
   carrierVehOpts.value = []
   carrierDriverOpts.value = []
-  if (!id) return
+  Object.assign(carrierForm, { carrierVehicleId: null, driverName: '' })
   try {
     const [veh, drv] = await Promise.all([
-      carrierVehiclesService.list({ carrierId: id, status: 'active', pageSize: 200 }),
-      carrierDriversService.list({ carrierId: id, status: 'active', pageSize: 200 }).catch(() => ({ results: [] })),
+      carrierVehiclesService.list({ carrierId: c.id, status: 'active', pageSize: 200 }),
+      carrierDriversService.list({ carrierId: c.id, status: 'active', pageSize: 200 }).catch(() => ({ results: [] })),
     ])
     carrierVehOpts.value = veh.results.map(v => ({
       title: [v.plate, [v.brand, v.model].filter(Boolean).join(' ')].filter(Boolean).join(' · '),
@@ -678,7 +699,8 @@ watch(() => carrierForm.carrierId, async id => {
     carrierDriverOpts.value = drv.results.map(x => x.name)
     if (carrierVehOpts.value.length === 1) carrierForm.carrierVehicleId = carrierVehOpts.value[0].value
   } catch { /* */ }
-})
+}
+
 const submitCarrierRow = async () => {
   if (!carrierForm.carrierVehicleId) { notify('Elegí un vehículo del transportista.', 'warning'); return }
   addBusy.value = true
@@ -1202,29 +1224,58 @@ const onMmRectUp = () => {
           </template>
 
           <template v-else>
-            <VAutocomplete
-              v-model="carrierForm.carrierId" :items="carrierOpts"
-              label="Transportista" prepend-inner-icon="ri-building-line" class="mb-3"
-              no-data-text="Sin transportistas afiliados"
-            />
-            <VSelect
-              v-model="carrierForm.carrierVehicleId" :items="carrierVehOpts"
-              label="Vehículo" prepend-inner-icon="ri-car-line" class="mb-3"
-              :disabled="!carrierForm.carrierId"
-              no-data-text="Este transportista no tiene vehículos"
-            />
-            <VCombobox
-              v-model="carrierForm.driverName" :items="carrierDriverOpts"
-              label="Conductor (opcional)" prepend-inner-icon="ri-user-line"
-              :disabled="!carrierForm.carrierId"
-            />
+            <!-- paso 1: elegir transportista -->
+            <template v-if="!carrierSel">
+              <VTextField
+                v-model="carrierSearch" prepend-inner-icon="ri-search-line"
+                label="Buscar transportista" density="compact" hide-details clearable class="mb-2"
+                @update:model-value="onCarrierSearch"
+              />
+              <div class="text-caption text-medium-emphasis mb-1">Ordenados por frecuencia de uso</div>
+              <div v-if="carrierLoading" class="text-center py-4"><VProgressCircular indeterminate size="22" color="primary" /></div>
+              <VList v-else density="compact" max-height="280" class="pz-carrier-list">
+                <VListItem
+                  v-for="c in carrierList" :key="c.id"
+                  :title="c.name"
+                  :subtitle="`${c.vehicleCount || 0} vehículo(s)${c.useCount ? ` · usado ${c.useCount}×` : ''}`"
+                  @click="pickCarrier(c)"
+                >
+                  <template #append><VIcon icon="ri-arrow-right-s-line" /></template>
+                </VListItem>
+                <VListItem v-if="!carrierList.length" title="Sin transportistas afiliados." class="text-medium-emphasis" />
+              </VList>
+            </template>
+
+            <!-- paso 2: vehículo + conductor -->
+            <template v-else>
+              <div class="d-flex align-center justify-space-between mb-3">
+                <div class="d-flex align-center ga-2">
+                  <VIcon icon="ri-building-line" size="18" />
+                  <span class="font-weight-medium">{{ carrierSel.name }}</span>
+                </div>
+                <VBtn size="small" variant="text" @click="resetCarrierStep">Cambiar</VBtn>
+              </div>
+              <VSelect
+                v-model="carrierForm.carrierVehicleId" :items="carrierVehOpts"
+                label="Vehículo" prepend-inner-icon="ri-car-line" class="mb-3"
+                no-data-text="Este transportista no tiene vehículos"
+              />
+              <VCombobox
+                v-if="carrierDriverOpts.length"
+                v-model="carrierForm.driverName" :items="carrierDriverOpts"
+                label="Conductor (opcional)" prepend-inner-icon="ri-user-line" clearable
+              />
+              <div v-else class="text-caption text-medium-emphasis">
+                Este transportista no tiene conductores registrados.
+              </div>
+            </template>
           </template>
         </VCardText>
         <VCardActions>
           <VSpacer />
           <VBtn variant="text" @click="addDialog = false">Cerrar</VBtn>
           <VBtn
-            v-if="addTab === 'tercerizado'" color="primary" :loading="addBusy"
+            v-if="addTab === 'tercerizado' && carrierSel" color="primary" :loading="addBusy"
             :disabled="!carrierForm.carrierVehicleId" @click="submitCarrierRow"
           >
             Agregar
@@ -1329,6 +1380,11 @@ const onMmRectUp = () => {
 .pz-rail-row--carrier {
   border-inline-start: 3px solid #d97706;
   background: rgb(217 119 6 / 5%);
+}
+.pz-carrier-list {
+  overflow-y: auto;
+  border: 1px solid rgb(var(--v-border-color), var(--v-border-opacity));
+  border-radius: 6px;
 }
 .pz-rail-foot {
   display: flex;

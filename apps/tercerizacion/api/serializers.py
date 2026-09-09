@@ -16,13 +16,14 @@ class CarrierSerializer(serializers.ModelSerializer):
     active = serializers.BooleanField(source="activo", required=False, default=True)
     notes = serializers.CharField(source="notas", required=False, allow_blank=True, default="")
     vehicleCount = serializers.IntegerField(source="vehiculos.count", read_only=True)
+    useCount = serializers.IntegerField(read_only=True, default=0)
     createdAt = serializers.DateTimeField(source="creado_en", read_only=True)
 
     class Meta:
         model = Transportista
         fields = (
             "id", "name", "documentId", "phone", "email", "isDriver",
-            "active", "notes", "vehicleCount", "createdAt",
+            "active", "notes", "vehicleCount", "useCount", "createdAt",
         )
 
     def create(self, validated_data):
