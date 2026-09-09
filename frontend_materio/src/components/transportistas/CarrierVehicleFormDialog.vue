@@ -19,7 +19,8 @@ const errs = ref({})
 const editing = computed(() => !!props.vehicle)
 const form = reactive({
   plate: '', vehicleTypeId: null, bodyTypeId: null,
-  brand: '', model: '', year: '', capacityUsefulTons: '', active: true,
+  brand: '', model: '', year: '', capacityUsefulTons: '',
+  lengthUsefulM: '', widthUsefulM: '', heightUsefulM: '', active: true,
 })
 
 onMounted(async () => {
@@ -34,6 +35,9 @@ onMounted(async () => {
       bodyTypeId: props.vehicle.bodyTypeId,
       brand: props.vehicle.brand || '', model: props.vehicle.model || '',
       year: props.vehicle.year ?? '', capacityUsefulTons: props.vehicle.capacityUsefulTons ?? '',
+      lengthUsefulM: props.vehicle.lengthUsefulM ?? '',
+      widthUsefulM: props.vehicle.widthUsefulM ?? '',
+      heightUsefulM: props.vehicle.heightUsefulM ?? '',
       active: props.vehicle.active ?? true,
     })
   }
@@ -60,6 +64,9 @@ const submit = async () => {
     model: form.model,
     year: numOrNull(form.year),
     capacityUsefulTons: numOrNull(form.capacityUsefulTons),
+    lengthUsefulM: numOrNull(form.lengthUsefulM),
+    widthUsefulM: numOrNull(form.widthUsefulM),
+    heightUsefulM: numOrNull(form.heightUsefulM),
     active: form.active,
   }
   try {
@@ -98,6 +105,10 @@ const submit = async () => {
           <VCol cols="6" sm="3"><VTextField v-model="form.model" label="Modelo" :error-messages="errs.model" /></VCol>
           <VCol cols="6" sm="3"><VTextField v-model="form.year" label="Año" type="number" :error-messages="errs.year" /></VCol>
           <VCol cols="6" sm="3"><VTextField v-model="form.capacityUsefulTons" label="Cap. útil (t)" type="number" :error-messages="errs.capacityUsefulTons" /></VCol>
+          <VCol cols="12" class="pb-0"><div class="text-caption text-medium-emphasis">Dimensiones útiles (m)</div></VCol>
+          <VCol cols="4"><VTextField v-model="form.lengthUsefulM" label="Largo" type="number" :error-messages="errs.lengthUsefulM" /></VCol>
+          <VCol cols="4"><VTextField v-model="form.widthUsefulM" label="Ancho" type="number" :error-messages="errs.widthUsefulM" /></VCol>
+          <VCol cols="4"><VTextField v-model="form.heightUsefulM" label="Alto" type="number" :error-messages="errs.heightUsefulM" /></VCol>
           <VCol cols="12"><VSwitch v-model="form.active" label="Activo" color="primary" /></VCol>
         </VRow>
       </VCardText>
