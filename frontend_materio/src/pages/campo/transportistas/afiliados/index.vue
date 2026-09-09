@@ -4,12 +4,24 @@ import { useRouter } from 'vue-router'
 
 import CrudResourcePage from '@/components/crud/CrudResourcePage.vue'
 import CarrierDetailDialog from '@/components/transportistas/CarrierDetailDialog.vue'
+import CarrierVehicleFormDialog from '@/components/transportistas/CarrierVehicleFormDialog.vue'
+import CarrierDriverFormDialog from '@/components/transportistas/CarrierDriverFormDialog.vue'
 import {
   carrierDriversService, carriersService, LICENSE_CATEGORIES,
 } from '@/services/carriersService'
 
 const router = useRouter()
 const tab = ref('carriers')
+
+// Alta rápida de vehículo / conductor desde la fila del transportista.
+const carriersRef = ref(null)
+const addVehicleFor = ref(null) // fila del transportista o null
+const addDriverFor = ref(null)
+const snackbar = ref({ show: false, text: '' })
+const afterCarrierChild = msg => {
+  carriersRef.value?.load?.()
+  snackbar.value = { show: true, text: msg }
+}
 
 const carrierColumns = [
   { key: 'name', label: 'Nombre / Razón social' },
@@ -86,11 +98,22 @@ onMounted(async () => {
     <VWindow v-model="tab">
       <VWindowItem value="carriers">
         <CrudResourcePage
+          ref="carriersRef"
           hide-header singular="transportista" :service="carriersService"
           :columns="carrierColumns" :fields="carrierFields"
           search-label="Buscar por nombre, documento, teléfono o email" label-field="name"
           detail-field="name"
         >
+          <template #row-actions="{ row }">
+            <VBtn
+              icon="ri-truck-line" variant="text" size="small" title="Agregar vehículo"
+              @click="addVehicleFor = row"
+            />
+            <VBtn
+              icon="ri-user-add-line" variant="text" size="small" title="Agregar conductor"
+              @click="addDriverFor = row"
+            />
+          </template>
           <template #detail="{ row, close }">
             <CarrierDetailDialog v-if="row" :carrier="row" @close="close" />
           </template>
@@ -110,5 +133,20 @@ onMounted(async () => {
         </CrudResourcePage>
       </VWindowItem>
     </VWindow>
+
+    <CarrierVehicleFormDialog
+      v-if="addVehicleFor"
+      :carrier-id="addVehicleFor.id" :carrier-name="addVehicleFor.name"
+      @close="addVehicleFor = null"
+      @saved="afterCarrierChild('Vehículo registrado.')"
+    />
+    <CarrierDriverFormDialog
+      v-if="addDriverFor"
+      :carrier-id="addDriverFor.id" :carrier-name="addDriverFor.name"
+      @close="addDriverFor = null"
+      @saved="afterCarrierChild('Conductor registrado.')"
+    />
+
+    <VSnackbar v-model="snackbar.show" color="success" timeout="3000">{{ snackbar.text }}</VSnackbar>
   </section>
 </template>

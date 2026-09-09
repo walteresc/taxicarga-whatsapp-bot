@@ -312,6 +312,7 @@ defineExpose({ load })
               </VChip>
             </td>
             <td class="text-right text-no-wrap">
+              <slot name="row-actions" :row="row" />
               <template v-if="canWrite">
                 <VBtn icon="ri-edit-line" variant="text" size="small" title="Editar" @click="openEdit(row)" />
                 <VBtn

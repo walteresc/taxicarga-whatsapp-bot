@@ -1,25 +1,23 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
-import { ApiError } from '@/services/apiClient'
-import {
-  carrierDriversService, carriersService, carrierVehiclesService,
-  fetchVehicleCatalog, LICENSE_CATEGORIES,
-} from '@/services/carriersService'
+import { carrierDriversService, carriersService, carrierVehiclesService } from '@/services/carriersService'
+import CarrierVehicleFormDialog from './CarrierVehicleFormDialog.vue'
+import CarrierDriverFormDialog from './CarrierDriverFormDialog.vue'
 
 const props = defineProps({
   carrier: { type: Object, default: null },
   carrierId: { type: [Number, String], default: null },
 })
-const emit = defineEmits(['close', 'changed'])
+defineEmits(['close'])
 
 const info = ref(props.carrier)
 const vehicles = ref([])
 const drivers = ref([])
 const loading = ref(true)
 const error = ref('')
-const vehicleTypes = ref([])
-const bodyTypes = ref([])
+const vehDialog = ref(false)
+const drvDialog = ref(false)
 
 const cid = computed(() => props.carrier?.id ?? props.carrierId)
 
@@ -37,10 +35,6 @@ onMounted(async () => {
     const [c] = await Promise.all([
       info.value ? Promise.resolve(info.value) : carriersService.get(cid.value),
       loadLists(),
-      fetchVehicleCatalog().then(cat => {
-        vehicleTypes.value = cat.vehicleTypes
-        bodyTypes.value = cat.bodyTypes
-      }).catch(() => {}),
     ])
     info.value = c
   } catch (e) {
@@ -51,104 +45,6 @@ onMounted(async () => {
 })
 
 const dash = v => v || '—'
-const snack = reactive({ show: false, text: '', color: 'success' })
-const notify = (text, color = 'success') => Object.assign(snack, { show: true, text, color })
-
-// ── Alta de vehículo ──────────────────────────────────────────────────
-const vehDialog = ref(false)
-const vehSaving = ref(false)
-const vehErr = ref({})
-const vehForm = reactive({
-  plate: '', vehicleTypeId: null, bodyTypeId: null,
-  brand: '', model: '', year: '', capacityUsefulTons: '', active: true,
-})
-const typeOptions = computed(() => vehicleTypes.value.map(t => ({ title: t.name, value: t.id })))
-const selType = computed(() => vehicleTypes.value.find(t => t.id === vehForm.vehicleTypeId))
-const bodyOptions = computed(() => {
-  const compat = selType.value?.compatibleBodyTypes || []
-  const ids = new Set(compat.map(c => c.id))
-  return bodyTypes.value.filter(b => ids.has(b.id)).map(b => ({ title: b.name, value: b.id }))
-})
-const bodyNA = computed(() => selType.value && !(selType.value.compatibleBodyTypes || []).length)
-const numOrNull = v => (v === '' || v == null ? null : Number(v))
-
-const openVehicle = () => {
-  Object.assign(vehForm, {
-    plate: '', vehicleTypeId: null, bodyTypeId: null,
-    brand: '', model: '', year: '', capacityUsefulTons: '', active: true,
-  })
-  vehErr.value = {}
-  vehDialog.value = true
-}
-const submitVehicle = async () => {
-  vehSaving.value = true
-  vehErr.value = {}
-  try {
-    await carrierVehiclesService.create({
-      carrierId: cid.value,
-      plate: vehForm.plate,
-      vehicleTypeId: vehForm.vehicleTypeId,
-      bodyTypeId: bodyNA.value ? null : vehForm.bodyTypeId,
-      brand: vehForm.brand,
-      model: vehForm.model,
-      year: numOrNull(vehForm.year),
-      capacityUsefulTons: numOrNull(vehForm.capacityUsefulTons),
-      active: vehForm.active,
-    })
-    vehDialog.value = false
-    notify('Vehículo registrado.')
-    await loadLists()
-    emit('changed')
-  } catch (e) {
-    if (e instanceof ApiError && Object.keys(e.fields).length) vehErr.value = e.fields
-    else notify(e.message || 'No se pudo guardar.', 'error')
-  } finally {
-    vehSaving.value = false
-  }
-}
-
-// ── Alta de conductor ─────────────────────────────────────────────────
-const drvDialog = ref(false)
-const drvSaving = ref(false)
-const drvErr = ref({})
-const drvForm = reactive({
-  name: '', documentId: '', phone: '', licenseNumber: '', licenseCategory: null,
-  licenseExpiresOn: '', isOwner: false, active: true,
-})
-const openDriver = () => {
-  Object.assign(drvForm, {
-    name: '', documentId: '', phone: '', licenseNumber: '', licenseCategory: null,
-    licenseExpiresOn: '', isOwner: false, active: true,
-  })
-  drvErr.value = {}
-  drvDialog.value = true
-}
-const submitDriver = async () => {
-  drvSaving.value = true
-  drvErr.value = {}
-  try {
-    await carrierDriversService.create({
-      carrierId: cid.value,
-      name: drvForm.name,
-      documentId: drvForm.documentId,
-      phone: drvForm.phone,
-      licenseNumber: drvForm.licenseNumber,
-      licenseCategory: drvForm.licenseCategory || '',
-      licenseExpiresOn: drvForm.licenseExpiresOn || null,
-      isOwner: drvForm.isOwner,
-      active: drvForm.active,
-    })
-    drvDialog.value = false
-    notify('Conductor registrado.')
-    await loadLists()
-    emit('changed')
-  } catch (e) {
-    if (e instanceof ApiError && Object.keys(e.fields).length) drvErr.value = e.fields
-    else notify(e.message || 'No se pudo guardar.', 'error')
-  } finally {
-    drvSaving.value = false
-  }
-}
 </script>
 
 <template>
@@ -180,7 +76,7 @@ const submitDriver = async () => {
         <template v-else>
           <div class="d-flex align-center justify-space-between mb-2">
             <span class="text-overline text-medium-emphasis">Vehículos ({{ vehicles.length }})</span>
-            <VBtn size="small" variant="tonal" prepend-icon="ri-add-line" @click="openVehicle">Agregar vehículo</VBtn>
+            <VBtn size="small" variant="tonal" prepend-icon="ri-add-line" @click="vehDialog = true">Agregar vehículo</VBtn>
           </div>
           <VTable v-if="vehicles.length" density="compact" class="mb-4">
             <thead><tr><th>Placa</th><th>Tipo / carrocería</th><th>Marca modelo</th><th>Cap. útil (t)</th><th>Estado</th></tr></thead>
@@ -198,7 +94,7 @@ const submitDriver = async () => {
 
           <div class="d-flex align-center justify-space-between mb-2">
             <span class="text-overline text-medium-emphasis">Conductores ({{ drivers.length }})</span>
-            <VBtn size="small" variant="tonal" prepend-icon="ri-add-line" @click="openDriver">Agregar conductor</VBtn>
+            <VBtn size="small" variant="tonal" prepend-icon="ri-add-line" @click="drvDialog = true">Agregar conductor</VBtn>
           </div>
           <VTable v-if="drivers.length" density="compact">
             <thead><tr><th>Nombre</th><th>DNI</th><th>Teléfono</th><th>Licencia</th><th>Titular</th></tr></thead>
@@ -217,67 +113,13 @@ const submitDriver = async () => {
       </VCardText>
     </VCard>
 
-    <!-- Alta de vehículo -->
-    <VDialog v-model="vehDialog" max-width="560" persistent>
-      <VCard>
-        <VCardTitle>Nuevo vehículo · {{ info?.name }}</VCardTitle>
-        <VCardText>
-          <VRow>
-            <VCol cols="12" sm="6"><VTextField v-model="vehForm.plate" label="Placa" :error-messages="vehErr.plate" /></VCol>
-            <VCol cols="12" sm="6">
-              <VSelect v-model="vehForm.vehicleTypeId" :items="typeOptions" label="Tipo de vehículo" :error-messages="vehErr.vehicleTypeId" />
-            </VCol>
-            <VCol cols="12" sm="6">
-              <VSelect
-                v-model="vehForm.bodyTypeId" :items="bodyOptions" label="Carrocería"
-                :disabled="!vehForm.vehicleTypeId || bodyNA" clearable
-                :hint="bodyNA ? 'Este tipo no lleva carrocería' : ''" persistent-hint
-                :error-messages="vehErr.bodyTypeId"
-              />
-            </VCol>
-            <VCol cols="6" sm="3"><VTextField v-model="vehForm.brand" label="Marca" :error-messages="vehErr.brand" /></VCol>
-            <VCol cols="6" sm="3"><VTextField v-model="vehForm.model" label="Modelo" :error-messages="vehErr.model" /></VCol>
-            <VCol cols="6" sm="3"><VTextField v-model="vehForm.year" label="Año" type="number" :error-messages="vehErr.year" /></VCol>
-            <VCol cols="6" sm="3"><VTextField v-model="vehForm.capacityUsefulTons" label="Cap. útil (t)" type="number" :error-messages="vehErr.capacityUsefulTons" /></VCol>
-            <VCol cols="12"><VSwitch v-model="vehForm.active" label="Activo" color="primary" /></VCol>
-          </VRow>
-        </VCardText>
-        <VCardActions>
-          <VSpacer />
-          <VBtn variant="text" :disabled="vehSaving" @click="vehDialog = false">Cancelar</VBtn>
-          <VBtn color="primary" :loading="vehSaving" :disabled="!vehForm.plate || !vehForm.vehicleTypeId" @click="submitVehicle">Guardar</VBtn>
-        </VCardActions>
-      </VCard>
-    </VDialog>
-
-    <!-- Alta de conductor -->
-    <VDialog v-model="drvDialog" max-width="560" persistent>
-      <VCard>
-        <VCardTitle>Nuevo conductor · {{ info?.name }}</VCardTitle>
-        <VCardText>
-          <VRow>
-            <VCol cols="12"><VTextField v-model="drvForm.name" label="Nombre completo" :error-messages="drvErr.name" /></VCol>
-            <VCol cols="12" sm="6"><VTextField v-model="drvForm.documentId" label="DNI" :error-messages="drvErr.documentId" /></VCol>
-            <VCol cols="12" sm="6"><VTextField v-model="drvForm.phone" label="Teléfono" :error-messages="drvErr.phone" /></VCol>
-            <VCol cols="12" sm="6"><VTextField v-model="drvForm.licenseNumber" label="N° de licencia" :error-messages="drvErr.licenseNumber" /></VCol>
-            <VCol cols="12" sm="6">
-              <VSelect v-model="drvForm.licenseCategory" :items="LICENSE_CATEGORIES" label="Categoría" clearable :error-messages="drvErr.licenseCategory" />
-            </VCol>
-            <VCol cols="12" sm="6">
-              <AppDateField v-model="drvForm.licenseExpiresOn" label="Vencimiento de licencia" density="comfortable" clearable :error-messages="drvErr.licenseExpiresOn" />
-            </VCol>
-            <VCol cols="12" sm="6" class="d-flex align-center"><VSwitch v-model="drvForm.isOwner" label="Es el titular" color="primary" hide-details /></VCol>
-            <VCol cols="12"><VSwitch v-model="drvForm.active" label="Activo" color="primary" /></VCol>
-          </VRow>
-        </VCardText>
-        <VCardActions>
-          <VSpacer />
-          <VBtn variant="text" :disabled="drvSaving" @click="drvDialog = false">Cancelar</VBtn>
-          <VBtn color="primary" :loading="drvSaving" :disabled="!drvForm.name || !drvForm.documentId" @click="submitDriver">Guardar</VBtn>
-        </VCardActions>
-      </VCard>
-    </VDialog>
-
-    <VSnackbar v-model="snack.show" :color="snack.color" timeout="3000">{{ snack.text }}</VSnackbar>
+    <CarrierVehicleFormDialog
+      v-if="vehDialog" :carrier-id="cid" :carrier-name="info?.name || ''"
+      @close="vehDialog = false" @saved="loadLists"
+    />
+    <CarrierDriverFormDialog
+      v-if="drvDialog" :carrier-id="cid" :carrier-name="info?.name || ''"
+      @close="drvDialog = false" @saved="loadLists"
+    />
   </VDialog>
 </template>
