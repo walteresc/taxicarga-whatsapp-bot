@@ -12,13 +12,15 @@ export const LICENSE_CATEGORIES = [
 
 // Catálogo para los selects del alta de vehículos.
 export const fetchVehicleCatalog = async () => {
-  const [types, bodies] = await Promise.all([
+  const [types, bodies, categories] = await Promise.all([
     apiClient.get('/api/v2/vehicle-types/', { pageSize: 200, status: 'active' }),
     apiClient.get('/api/v2/body-types/', { pageSize: 200, status: 'active' }),
+    apiClient.get('/api/v2/vehicle-categories/', { pageSize: 300 }).catch(() => ({ results: [] })),
   ])
 
   return {
     vehicleTypes: types.results,
     bodyTypes: bodies.results,
+    categories: categories.results,
   }
 }

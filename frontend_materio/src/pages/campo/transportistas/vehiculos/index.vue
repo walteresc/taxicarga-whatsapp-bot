@@ -11,20 +11,28 @@ const bodyTypes = ref([])
 const loading = ref(true)
 const loadError = ref('')
 const search = ref('')
-const statusFilter = ref('') // '' | 'active' | 'inactive'
-const categoryFilter = ref(null) // null | 'livianos' | 'medianos' | 'pesados'
+const onlyActive = ref(false)
+const weightFilter = ref(null) // 'livianos' | 'medianos' | 'pesados'
+const bodyTypeFilter = ref(null)
+const categoryFilter = ref(null) // CategoriaVehiculo id ("Camión 2ton")
+const vehicleCategories = ref([])
 let searchTimer
 
-const STATUS_SEGMENTS = [
-  { value: '', label: 'Todos' },
-  { value: 'active', label: 'Activos' },
-  { value: 'inactive', label: 'Inactivos' },
-]
-const CATEGORY_OPTIONS = [
+const WEIGHT_OPTIONS = [
   { title: 'Livianos', value: 'livianos' },
   { title: 'Medianos', value: 'medianos' },
   { title: 'Pesados', value: 'pesados' },
 ]
+const hasFilters = computed(() =>
+  !!search.value || onlyActive.value || weightFilter.value || bodyTypeFilter.value || categoryFilter.value)
+const clearFilters = () => {
+  search.value = ''
+  onlyActive.value = false
+  weightFilter.value = null
+  bodyTypeFilter.value = null
+  categoryFilter.value = null
+  load()
+}
 
 const load = async () => {
   loading.value = true
@@ -32,8 +40,10 @@ const load = async () => {
   try {
     rows.value = (await carrierVehiclesService.list({
       search: search.value || undefined,
-      status: statusFilter.value || undefined,
-      category: categoryFilter.value || undefined,
+      status: onlyActive.value ? 'active' : undefined,
+      category: weightFilter.value || undefined,
+      bodyTypeId: bodyTypeFilter.value || undefined,
+      categoryId: categoryFilter.value || undefined,
       pageSize: 200,
     })).results
   } catch (e) {
@@ -43,12 +53,18 @@ const load = async () => {
   }
 }
 const onSearch = () => { clearTimeout(searchTimer); searchTimer = setTimeout(load, 350) }
+const bodyTypeOptions = computed(() => bodyTypes.value.map(b => ({ title: b.name, value: b.id })))
+const categoryOptions = computed(() => vehicleCategories.value.map(c => ({
+  title: c.vehicleTypeName ? `${c.name} (${c.vehicleTypeName})` : c.name,
+  value: c.id,
+})))
 
 onMounted(async () => {
   try {
     const [cat, c] = await Promise.all([fetchVehicleCatalog(), carriersService.list({ pageSize: 500, status: 'active' })])
     vehicleTypes.value = cat.vehicleTypes
     bodyTypes.value = cat.bodyTypes
+    vehicleCategories.value = cat.categories || []
     carriers.value = c.results
   } catch { /* la lista igual carga */ }
   await load()
@@ -163,28 +179,38 @@ const dims = r => [r.lengthUsefulM, r.widthUsefulM, r.heightUsefulM].every(x => 
     </div>
 
     <VCard>
-      <VCardText class="d-flex flex-wrap align-center ga-4">
+      <VCardText class="d-flex flex-wrap align-center ga-3">
         <VTextField
           v-model="search" prepend-inner-icon="ri-search-line"
           label="Buscar por placa, marca, modelo o transportista"
-          density="compact" hide-details clearable style="max-width: 340px;"
+          density="compact" hide-details clearable style="max-width: 300px;"
           @update:model-value="onSearch"
         />
-        <div class="d-flex flex-wrap ga-2">
-          <VChip
-            v-for="s in STATUS_SEGMENTS" :key="s.value"
-            :color="statusFilter === s.value ? 'primary' : undefined"
-            :variant="statusFilter === s.value ? 'flat' : 'tonal'"
-            @click="statusFilter = s.value; load()"
-          >
-            {{ s.label }}
-          </VChip>
-        </div>
+        <VSwitch
+          v-model="onlyActive" label="Solo activos" color="primary"
+          density="compact" hide-details @update:model-value="load"
+        />
         <VSelect
-          v-model="categoryFilter" :items="CATEGORY_OPTIONS" label="Categoría"
-          density="compact" hide-details clearable style="max-width: 170px;"
+          v-model="weightFilter" :items="WEIGHT_OPTIONS" label="Peso"
+          density="compact" hide-details clearable style="max-width: 150px;"
           @update:model-value="load"
         />
+        <VSelect
+          v-model="categoryFilter" :items="categoryOptions" label="Categoría"
+          density="compact" hide-details clearable style="max-width: 210px;"
+          @update:model-value="load"
+        />
+        <VSelect
+          v-model="bodyTypeFilter" :items="bodyTypeOptions" label="Carrocería"
+          density="compact" hide-details clearable style="max-width: 180px;"
+          @update:model-value="load"
+        />
+        <VChip
+          v-if="hasFilters" variant="tonal" prepend-icon="ri-close-line"
+          @click="clearFilters"
+        >
+          Todos
+        </VChip>
       </VCardText>
 
       <VAlert v-if="loadError" type="error" variant="tonal" class="ma-4">
