@@ -186,6 +186,13 @@ const dims = r => [r.lengthUsefulM, r.widthUsefulM, r.heightUsefulM].every(x => 
           density="compact" hide-details clearable style="max-width: 300px;"
           @update:model-value="onSearch"
         />
+        <VChip
+          :color="!hasFilters ? 'primary' : undefined"
+          :variant="!hasFilters ? 'flat' : 'tonal'"
+          @click="clearFilters"
+        >
+          Todos
+        </VChip>
         <VSwitch
           v-model="onlyActive" label="Solo activos" color="primary"
           density="compact" hide-details @update:model-value="load"
@@ -205,12 +212,6 @@ const dims = r => [r.lengthUsefulM, r.widthUsefulM, r.heightUsefulM].every(x => 
           density="compact" hide-details clearable style="max-width: 180px;"
           @update:model-value="load"
         />
-        <VChip
-          v-if="hasFilters" variant="tonal" prepend-icon="ri-close-line"
-          @click="clearFilters"
-        >
-          Todos
-        </VChip>
       </VCardText>
 
       <VAlert v-if="loadError" type="error" variant="tonal" class="ma-4">
