@@ -141,19 +141,11 @@ const removeRow = async row => {
 
 <template>
   <section>
-    <div class="d-flex flex-wrap align-center justify-space-between ga-4 mb-4">
-      <div>
-        <h1 class="text-h4 font-weight-bold mb-1">Asistencia</h1>
-        <p class="text-body-1 text-medium-emphasis mb-0">
-          Asistencia registrada por día. Las horas trabajadas, las horas extra del día y el saldo acumulado se calculan solos.
-        </p>
-      </div>
-      <div class="d-flex align-center ga-1">
-        <VBtn icon="ri-arrow-left-s-line" variant="tonal" @click="shiftDay(-1)" />
-        <AppDateField v-model="date" hide-details style="max-width: 175px;" @update:model-value="load" />
-        <VBtn icon="ri-arrow-right-s-line" variant="tonal" @click="shiftDay(1)" />
-        <VBtn variant="text" @click="today">Hoy</VBtn>
-      </div>
+    <div class="mb-4">
+      <h1 class="text-h4 font-weight-bold mb-1">Asistencia</h1>
+      <p class="text-body-1 text-medium-emphasis mb-0">
+        Asistencia registrada por día. Las horas trabajadas, las horas extra del día y el saldo acumulado se calculan solos.
+      </p>
     </div>
 
     <VAlert v-if="error" type="error" variant="tonal" class="mb-4">
@@ -163,9 +155,12 @@ const removeRow = async row => {
 
     <VCard>
       <VCardText class="d-flex flex-wrap align-center justify-space-between ga-3">
-        <div>
-          <div class="text-caption text-medium-emphasis">Asistencia del</div>
-          <div class="text-subtitle-1 font-weight-medium text-capitalize">{{ prettyDate }}</div>
+        <div class="d-flex flex-wrap align-center ga-2">
+          <VBtn icon="ri-arrow-left-s-line" variant="tonal" size="small" @click="shiftDay(-1)" />
+          <AppDateField v-model="date" hide-details style="flex: 0 0 190px; width: 190px;" @update:model-value="load" />
+          <VBtn icon="ri-arrow-right-s-line" variant="tonal" size="small" @click="shiftDay(1)" />
+          <VBtn variant="text" size="small" @click="today">Hoy</VBtn>
+          <span class="text-body-2 text-medium-emphasis text-capitalize ms-2">{{ prettyDate }}</span>
         </div>
         <VBtn prepend-icon="ri-add-line" @click="openCreate">Registrar asistencia</VBtn>
       </VCardText>

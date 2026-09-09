@@ -46,10 +46,10 @@ onMounted(load)
             { title: 'Rango', value: 'range' },
           ]"
         />
-        <AppDateField v-if="filters.period !== 'range'" v-model="filters.on" label="En la fecha" hide-details style="max-width: 170px;" />
+        <AppDateField v-if="filters.period !== 'range'" v-model="filters.on" label="En la fecha" hide-details style="flex: 0 0 190px; width: 190px;" />
         <template v-else>
-          <AppDateField v-model="filters.from" label="Desde" hide-details style="max-width: 170px;" />
-          <AppDateField v-model="filters.to" label="Hasta" hide-details style="max-width: 170px;" />
+          <AppDateField v-model="filters.from" label="Desde" hide-details style="flex: 0 0 190px; width: 190px;" />
+          <AppDateField v-model="filters.to" label="Hasta" hide-details style="flex: 0 0 190px; width: 190px;" />
         </template>
         <VSelect
           v-model="filters.advisor" label="Asesor" density="compact" hide-details clearable style="max-width: 170px;"
