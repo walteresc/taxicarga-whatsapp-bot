@@ -197,11 +197,17 @@ const create = async () => {
             @click:append-inner="showPwd = !showPwd"
             @update:model-value="clearErr(createErr, 'password')"
           />
-          <div class="text-overline mb-1">Roles</div>
-          <div v-if="err(createErr, 'roles').length" class="text-caption text-error mb-1">{{ err(createErr, 'roles').join(' ') }}</div>
+          <div class="text-overline mb-1">Roles <span class="text-error">*</span></div>
+          <div
+            v-if="err(createErr, 'roles').length || !newUser.roles.length"
+            class="text-caption text-error mb-1"
+          >
+            {{ err(createErr, 'roles').join(' ') || 'Marcá al menos un rol.' }}
+          </div>
           <VCheckbox
             v-for="r in roles" :key="r.name" v-model="newUser.roles" :value="r.name"
             :label="r.name" :hint="r.description" persistent-hint density="compact" hide-details="auto"
+            @update:model-value="clearErr(createErr, 'roles')"
           />
         </VCardText>
         <VCardActions>
@@ -209,7 +215,7 @@ const create = async () => {
           <VBtn variant="text" @click="createOpen = false">Cancelar</VBtn>
           <VBtn
             color="primary" :loading="busy"
-            :disabled="!newUser.username || newUser.password.length < 8"
+            :disabled="!newUser.username || newUser.password.length < 8 || !newUser.roles.length"
             @click="create"
           >Crear</VBtn>
         </VCardActions>

@@ -119,6 +119,8 @@ class UserListView(_Base):
         if User.objects.filter(username__iexact=username).exists():
             raise ValidationError({"username": "Ya existe un usuario con ese nombre."})
         roles = _clean_roles(d.get("roles"))
+        if not roles:
+            raise ValidationError({"roles": "Marcá al menos un rol para el usuario."})
         _check_password(password)
 
         user = User.objects.create_user(

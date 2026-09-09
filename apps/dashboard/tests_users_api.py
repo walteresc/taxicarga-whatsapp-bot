@@ -74,8 +74,19 @@ class UsersApiTests(APITestCase):
 
     def test_alta_password_debil_400(self):
         self.client.force_login(self.admin)
-        r = self.client.post("/api/v2/users/", {"username": "x1", "password": "123"}, format="json")
+        r = self.client.post("/api/v2/users/", {
+            "username": "x1", "password": "123", "roles": ["Asesor de Ventas"],
+        }, format="json")
         self.assertEqual(r.status_code, 400)
+        self.assertIn("password", r.data.get("fields", {}))
+
+    def test_alta_sin_rol_400(self):
+        self.client.force_login(self.admin)
+        r = self.client.post("/api/v2/users/", {
+            "username": "sinrol", "password": "ClaveSegura123",
+        }, format="json")
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("roles", r.data.get("fields", {}))
 
     def test_asesor_no_puede_crear_usuarios(self):
         self.client.force_login(self.other)
