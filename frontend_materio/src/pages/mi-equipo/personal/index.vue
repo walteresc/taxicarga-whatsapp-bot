@@ -3,8 +3,8 @@ import { onMounted, reactive, ref, watch } from 'vue'
 
 import { ApiError, apiClient } from '@/services/apiClient'
 import PayrollConfigDialog from '@/components/planilla/PayrollConfigDialog.vue'
+import PersonnelDetailDialog from '@/components/planilla/PersonnelDetailDialog.vue'
 import { assistantsService, driversService, LICENSE_CATEGORIES } from '@/services/personnelService'
-import { payrollConfigService } from '@/services/payrollService'
 
 const TYPE = {
   conductor: { label: 'Conductor', color: 'primary', icon: 'ri-steering-line' },
@@ -33,18 +33,10 @@ let searchTimer
 const snackbar = reactive({ show: false, text: '', color: 'success' })
 const notify = (text, color = 'success') => Object.assign(snackbar, { show: true, text, color })
 
-// ── Configuración de planilla por trabajador ────────────────────────────
-const PAYROLL_LABEL = { planilla: 'Planilla', honorarios: 'Honorarios' }
-const payrollByWorker = ref({}) // `${type}:${workerId}` -> config
+// ── Saldo de horas extra por trabajador (para la columna del listado) ───
 const balanceByWorker = ref({}) // `${type}:${workerId}` -> saldo de horas extra
 const payrollKey = row => `${row.type}:${row.sourceId}`
 const loadPayroll = async () => {
-  try {
-    const data = await payrollConfigService.list({ pageSize: 500 })
-    const map = {}
-    for (const c of data.results) map[`${c.workerType}:${c.workerId}`] = c
-    payrollByWorker.value = map
-  } catch { /* la columna simplemente queda vacía */ }
   try {
     const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima' }).format(new Date())
     const data = await apiClient.get('/api/v2/payroll/summary', { from: `${today.slice(0, 7)}-01`, to: today })
@@ -54,6 +46,7 @@ const loadPayroll = async () => {
   } catch { /* la columna simplemente queda vacía */ }
 }
 const payrollDialog = ref(null) // fila del trabajador o null
+const detailWorker = ref(null) // fila del trabajador o null
 
 const balanceLabel = h => (h == null ? '—' : `${h > 0 ? '+' : ''}${h.toFixed(2)}`)
 const balanceClass = h => (h == null || h === 0 ? '' : (h > 0 ? 'text-success' : 'text-error'))
@@ -204,15 +197,17 @@ const submit = async () => {
       <VTable>
         <thead>
           <tr>
-            <th>Nombre</th><th>Tipo</th><th>Documento</th><th>Teléfono</th><th>Detalle</th>
-            <th>Planilla</th><th class="text-right">Saldo H. Extras</th><th>Estado</th><th class="text-right">Acciones</th>
+            <th>Nombre</th><th>Tipo</th><th>Documento</th><th>Teléfono</th>
+            <th class="text-right">Saldo H. Extras</th><th>Estado</th><th class="text-right">Acciones</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-if="loading"><td colspan="9" class="text-center py-8"><VProgressCircular indeterminate color="primary" /></td></tr>
-          <tr v-else-if="!rows.length"><td colspan="9" class="text-center text-medium-emphasis py-10">Sin personal para el filtro.</td></tr>
+          <tr v-if="loading"><td colspan="7" class="text-center py-8"><VProgressCircular indeterminate color="primary" /></td></tr>
+          <tr v-else-if="!rows.length"><td colspan="7" class="text-center text-medium-emphasis py-10">Sin personal para el filtro.</td></tr>
           <tr v-for="row in rows" v-else :key="row.id">
-            <td class="font-weight-medium">{{ row.name }}</td>
+            <td>
+              <button type="button" class="crud-link font-weight-medium" @click="detailWorker = row">{{ row.name }}</button>
+            </td>
             <td>
               <VChip size="small" :color="TYPE[row.type]?.color" variant="tonal">
                 <VIcon start :icon="TYPE[row.type]?.icon" size="14" /> {{ TYPE[row.type]?.label }}
@@ -220,21 +215,15 @@ const submit = async () => {
             </td>
             <td>{{ row.documentId || '—' }}</td>
             <td>{{ row.phone || '—' }}</td>
-            <td class="text-medium-emphasis text-body-2">{{ row.detail || '—' }}</td>
-            <td>
-              <VChip
-                v-if="payrollByWorker[payrollKey(row)]"
-                size="small" color="primary" variant="tonal"
-              >
-                {{ PAYROLL_LABEL[payrollByWorker[payrollKey(row)].contractType] }}
-              </VChip>
-              <span v-else class="text-caption text-disabled">Sin configurar</span>
-            </td>
             <td class="text-right font-weight-medium" :class="balanceClass(balanceByWorker[payrollKey(row)])">
               {{ balanceLabel(balanceByWorker[payrollKey(row)]) }}
             </td>
             <td><VChip size="small" :color="row.active ? 'success' : 'secondary'">{{ row.active ? 'Activo' : 'Inactivo' }}</VChip></td>
             <td class="text-right text-no-wrap">
+              <VBtn
+                size="small" variant="text" icon="ri-eye-line"
+                title="Ver detalle" @click="detailWorker = row"
+              />
               <VBtn
                 size="small" variant="text" icon="ri-money-dollar-circle-line"
                 title="Configuración de planilla" @click="payrollDialog = row"
@@ -288,6 +277,25 @@ const submit = async () => {
       @saved="() => { notify('Configuración de planilla guardada.'); loadPayroll() }"
     />
 
+    <PersonnelDetailDialog
+      v-if="detailWorker"
+      :worker="detailWorker"
+      @close="detailWorker = null"
+      @edit="row => { detailWorker = null; openEdit(row) }"
+      @edit-payroll="row => { detailWorker = null; payrollDialog = row }"
+    />
+
     <VSnackbar v-model="snackbar.show" :color="snackbar.color" timeout="3500">{{ snackbar.text }}</VSnackbar>
   </section>
 </template>
+
+<style scoped>
+.crud-link {
+  color: rgb(var(--v-theme-primary));
+  cursor: pointer;
+  text-align: start;
+}
+.crud-link:hover {
+  text-decoration: underline;
+}
+</style>
