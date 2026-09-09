@@ -394,6 +394,7 @@ def _resumen_fila(c, desde, hasta, tipo):
     return {
         "trabajadorId": c.id,
         "workerType": c.tipo,
+        "workerId": c.worker_id,
         "workerName": c.nombre,
         "contractType": c.tipo_contrato,
         "periodFrom": desde.isoformat(),

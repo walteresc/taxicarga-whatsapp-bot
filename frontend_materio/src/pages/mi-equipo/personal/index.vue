@@ -36,6 +36,7 @@ const notify = (text, color = 'success') => Object.assign(snackbar, { show: true
 // ── Configuración de planilla por trabajador ────────────────────────────
 const PAYROLL_LABEL = { planilla: 'Planilla', honorarios: 'Honorarios' }
 const payrollByWorker = ref({}) // `${type}:${workerId}` -> config
+const balanceByWorker = ref({}) // `${type}:${workerId}` -> saldo de horas extra
 const payrollKey = row => `${row.type}:${row.sourceId}`
 const loadPayroll = async () => {
   try {
@@ -44,8 +45,18 @@ const loadPayroll = async () => {
     for (const c of data.results) map[`${c.workerType}:${c.workerId}`] = c
     payrollByWorker.value = map
   } catch { /* la columna simplemente queda vacía */ }
+  try {
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima' }).format(new Date())
+    const data = await apiClient.get('/api/v2/payroll/summary', { from: `${today.slice(0, 7)}-01`, to: today })
+    const map = {}
+    for (const r of data.rows) map[`${r.workerType}:${r.workerId}`] = r.balanceHours
+    balanceByWorker.value = map
+  } catch { /* la columna simplemente queda vacía */ }
 }
 const payrollDialog = ref(null) // fila del trabajador o null
+
+const balanceLabel = h => (h == null ? '—' : `${h > 0 ? '+' : ''}${h.toFixed(2)}`)
+const balanceClass = h => (h == null || h === 0 ? '' : (h > 0 ? 'text-success' : 'text-error'))
 
 const load = async () => {
   loading.value = true
@@ -194,12 +205,12 @@ const submit = async () => {
         <thead>
           <tr>
             <th>Nombre</th><th>Tipo</th><th>Documento</th><th>Teléfono</th><th>Detalle</th>
-            <th>Planilla</th><th>Estado</th><th class="text-right">Acciones</th>
+            <th>Planilla</th><th class="text-right">Saldo H. Extras</th><th>Estado</th><th class="text-right">Acciones</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-if="loading"><td colspan="8" class="text-center py-8"><VProgressCircular indeterminate color="primary" /></td></tr>
-          <tr v-else-if="!rows.length"><td colspan="8" class="text-center text-medium-emphasis py-10">Sin personal para el filtro.</td></tr>
+          <tr v-if="loading"><td colspan="9" class="text-center py-8"><VProgressCircular indeterminate color="primary" /></td></tr>
+          <tr v-else-if="!rows.length"><td colspan="9" class="text-center text-medium-emphasis py-10">Sin personal para el filtro.</td></tr>
           <tr v-for="row in rows" v-else :key="row.id">
             <td class="font-weight-medium">{{ row.name }}</td>
             <td>
@@ -218,6 +229,9 @@ const submit = async () => {
                 {{ PAYROLL_LABEL[payrollByWorker[payrollKey(row)].contractType] }}
               </VChip>
               <span v-else class="text-caption text-disabled">Sin configurar</span>
+            </td>
+            <td class="text-right font-weight-medium" :class="balanceClass(balanceByWorker[payrollKey(row)])">
+              {{ balanceLabel(balanceByWorker[payrollKey(row)]) }}
             </td>
             <td><VChip size="small" :color="row.active ? 'success' : 'secondary'">{{ row.active ? 'Activo' : 'Inactivo' }}</VChip></td>
             <td class="text-right text-no-wrap">
