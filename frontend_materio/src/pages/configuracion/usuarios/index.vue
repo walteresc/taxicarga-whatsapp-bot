@@ -29,16 +29,24 @@ onMounted(async () => {
   await load()
 })
 
+// Errores por campo que devuelve la API ({ error, fields }). `err(obj, 'campo')`
+// entrega el array de mensajes para bindear en :error-messages.
+const err = (obj, key) => obj[key] || []
+const clearErr = (obj, key) => { if (obj[key]) delete obj[key] }
+
 const editing = ref(null)
 const form = reactive({ roles: [], active: true, fullName: '', email: '', password: '' })
+const editErr = ref({})
 const busy = ref(false)
 
 const openEdit = u => {
   editing.value = u
+  editErr.value = {}
   Object.assign(form, { roles: [...u.roles], active: u.active, fullName: u.fullName, email: u.email, password: '' })
 }
 const save = async () => {
   busy.value = true
+  editErr.value = {}
   try {
     const body = { roles: form.roles, active: form.active, fullName: form.fullName, email: form.email }
     if (form.password) body.password = form.password
@@ -47,24 +55,33 @@ const save = async () => {
     if (i >= 0) rows.value[i] = updated
     editing.value = null
     notify('Usuario actualizado.')
-  } catch (e) { notify(e.message || 'No se pudo guardar.', 'error') } finally { busy.value = false }
+  } catch (e) {
+    editErr.value = e.fields || {}
+    notify(e.message || 'No se pudo guardar.', 'error')
+  } finally { busy.value = false }
 }
 
 // --- Alta ---
 const createOpen = ref(false)
 const newUser = reactive({ username: '', fullName: '', email: '', password: '', roles: [] })
+const createErr = ref({})
 const openCreate = () => {
   Object.assign(newUser, { username: '', fullName: '', email: '', password: '', roles: [] })
+  createErr.value = {}
   createOpen.value = true
 }
 const create = async () => {
   busy.value = true
+  createErr.value = {}
   try {
     await userCreate({ ...newUser })
     createOpen.value = false
     notify('Usuario creado.')
     await load()
-  } catch (e) { notify(e.message || 'No se pudo crear.', 'error') } finally { busy.value = false }
+  } catch (e) {
+    createErr.value = e.fields || {}
+    notify(e.message || 'No se pudo crear.', 'error')
+  } finally { busy.value = false }
 }
 </script>
 
@@ -119,13 +136,21 @@ const create = async () => {
       <VCard v-if="editing">
         <VCardTitle>{{ editing.username }}</VCardTitle>
         <VCardText>
-          <VTextField v-model="form.fullName" label="Nombre completo" class="mb-2" />
-          <VTextField v-model="form.email" label="Correo" type="email" class="mb-2" />
+          <VTextField
+            v-model="form.fullName" label="Nombre completo" class="mb-2"
+            :error-messages="err(editErr, 'fullName')" @update:model-value="clearErr(editErr, 'fullName')"
+          />
+          <VTextField
+            v-model="form.email" label="Correo" type="email" class="mb-2"
+            :error-messages="err(editErr, 'email')" @update:model-value="clearErr(editErr, 'email')"
+          />
           <VTextField
             v-model="form.password" label="Nueva contraseña (dejá vacío para no cambiarla)"
             type="password" class="mb-3" autocomplete="new-password"
+            :error-messages="err(editErr, 'password')" @update:model-value="clearErr(editErr, 'password')"
           />
           <div class="text-overline mb-1">Roles</div>
+          <div v-if="err(editErr, 'roles').length" class="text-caption text-error mb-1">{{ err(editErr, 'roles').join(' ') }}</div>
           <VCheckbox
             v-for="r in roles" :key="r.name" v-model="form.roles" :value="r.name"
             :label="r.name" :hint="r.description" persistent-hint density="compact" hide-details="auto"
@@ -145,11 +170,25 @@ const create = async () => {
       <VCard>
         <VCardTitle>Nuevo usuario</VCardTitle>
         <VCardText>
-          <VTextField v-model="newUser.username" label="Nombre de usuario" class="mb-2" autocomplete="off" />
-          <VTextField v-model="newUser.fullName" label="Nombre completo" class="mb-2" />
-          <VTextField v-model="newUser.email" label="Correo" type="email" class="mb-2" />
-          <VTextField v-model="newUser.password" label="Contraseña (mín. 8 caracteres)" type="password" class="mb-3" autocomplete="new-password" />
+          <VTextField
+            v-model="newUser.username" label="Nombre de usuario" class="mb-2" autocomplete="off"
+            :error-messages="err(createErr, 'username')" @update:model-value="clearErr(createErr, 'username')"
+          />
+          <VTextField
+            v-model="newUser.fullName" label="Nombre completo" class="mb-2"
+            :error-messages="err(createErr, 'fullName')" @update:model-value="clearErr(createErr, 'fullName')"
+          />
+          <VTextField
+            v-model="newUser.email" label="Correo" type="email" class="mb-2"
+            :error-messages="err(createErr, 'email')" @update:model-value="clearErr(createErr, 'email')"
+          />
+          <VTextField
+            v-model="newUser.password" label="Contraseña (mín. 8 caracteres)" type="password" class="mb-3"
+            autocomplete="new-password"
+            :error-messages="err(createErr, 'password')" @update:model-value="clearErr(createErr, 'password')"
+          />
           <div class="text-overline mb-1">Roles</div>
+          <div v-if="err(createErr, 'roles').length" class="text-caption text-error mb-1">{{ err(createErr, 'roles').join(' ') }}</div>
           <VCheckbox
             v-for="r in roles" :key="r.name" v-model="newUser.roles" :value="r.name"
             :label="r.name" :hint="r.description" persistent-hint density="compact" hide-details="auto"
