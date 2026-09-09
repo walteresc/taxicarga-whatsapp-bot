@@ -677,16 +677,44 @@ class QuoteNegotiateView(_Base):
         elif cot.estado != "en_negociacion":
             raise ValidationError("Esta cotización no se puede poner en negociación en su estado actual.")
 
+        from apps.tercerizacion import negociacion as neg
+
         fields = []
         raw_price = d.get("clientPrice")
+        client_price = None
         if raw_price not in (None, ""):
-            cot.precio_cliente = _decimal(raw_price, "precio del cliente", positive=True)
+            client_price = _decimal(raw_price, "precio del cliente", positive=True)
+            cot.precio_cliente = client_price
             fields.append("precio_cliente")
         if fields:
             cot.save(update_fields=fields + ["actualizada_en"])
         note = (d.get("note") or "").strip()
         if note:
             _auditar(cot.lead, request.user, "negociacion_nota", {"nota": note})
+
+        revs = list(cot.revisiones.order_by("-numero"))
+        hilo, _creado = neg.abrir_hilo(
+            cot.lead, neg.HiloNegociacion.TIPO_VENTA, usuario=request.user,
+            cotizacion=cot, contraparte=cot.lead.cliente,
+            monto_objetivo=revs[0].precio_final if revs else None,
+        )
+        if client_price is not None:
+            try:
+                neg.publicar_mensaje(
+                    hilo, emisor=neg.MensajeNegociacion.EMISOR_CLIENTE,
+                    autor=request.user, texto=note, propuesta_monto=client_price,
+                )
+            except neg.NegociacionError:
+                pass
+        elif note:
+            try:
+                neg.publicar_mensaje(
+                    hilo, emisor=neg.MensajeNegociacion.EMISOR_TAXICARGA,
+                    autor=request.user, texto=note,
+                )
+            except neg.NegociacionError:
+                pass
+
         return Response(shapes.quote_detail(get_object_or_404(_quote_qs(), pk=pk)))
 
 
@@ -734,6 +762,12 @@ class QuoteToOutsourcingView(_Base):
             )
             _auditar(cot.lead, request.user, "derivada_a_tercerizacion",
                      {"publicacion": pub.codigo, "modo_precio": modo})
+
+            from apps.tercerizacion import negociacion as neg
+            neg.abrir_hilo(
+                cot.lead, neg.HiloNegociacion.TIPO_COMPRA, usuario=request.user,
+                publicacion=pub, monto_objetivo=precio_ref,
+            )
 
         return Response({"ok": True, "publicationCode": pub.codigo, "created": pub_creada})
 

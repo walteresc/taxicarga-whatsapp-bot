@@ -328,6 +328,176 @@ class TransportistaVehiculo(models.Model):
         super().save(*args, **kwargs)
 
 
+class HiloNegociacion(models.Model):
+    """Una mesa de negociación de precio alrededor de una carga (Lead). Dos
+    frentes por carga: `venta` (cliente ↔ TaxiCarga) y `compra` (TaxiCarga ↔
+    transportista) — puede haber varios hilos `compra`, uno por transportista.
+    Canal-agnóstico: los mensajes traen su propio `canal` (crm/portal/whatsapp)."""
+
+    TIPO_VENTA = "venta"
+    TIPO_COMPRA = "compra"
+    TIPOS = [
+        (TIPO_VENTA, "Venta (cliente)"),
+        (TIPO_COMPRA, "Compra (transportista)"),
+    ]
+
+    ESTADO_ABIERTA = "abierta"
+    ESTADO_PAUSADA = "pausada"        # el asesor congeló la mesa (control)
+    ESTADO_ACUERDO = "acuerdo"        # hay un monto aceptado
+    ESTADO_SIN_ACUERDO = "sin_acuerdo"
+    ESTADO_CERRADA = "cerrada"
+    ESTADOS = [
+        (ESTADO_ABIERTA, "Abierta"),
+        (ESTADO_PAUSADA, "Pausada"),
+        (ESTADO_ACUERDO, "Con acuerdo"),
+        (ESTADO_SIN_ACUERDO, "Sin acuerdo"),
+        (ESTADO_CERRADA, "Cerrada"),
+    ]
+
+    lead = models.ForeignKey(
+        "leads.Lead", on_delete=models.CASCADE, related_name="hilos_negociacion",
+    )
+    tipo = models.CharField(max_length=8, choices=TIPOS)
+    estado = models.CharField(max_length=12, choices=ESTADOS, default=ESTADO_ABIERTA)
+
+    cotizacion = models.ForeignKey(
+        "cotizador.CotizacionComercial",
+        on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="hilos_negociacion",
+    )
+    publicacion = models.ForeignKey(
+        PublicacionCarga,
+        on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="hilos_negociacion",
+    )
+    contraparte = models.ForeignKey(
+        "clientes.Cliente",
+        on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="hilos_negociacion",
+        help_text="El cliente (venta) o el transportista (compra) con quien se negocia.",
+    )
+
+    monto_objetivo = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+        help_text="Venta: precio de venta que busca TaxiCarga. Compra: costo tope.",
+    )
+    monto_actual = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+        help_text="Última propuesta viva sobre la mesa.",
+    )
+    monto_acordado = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+    )
+
+    supervisor = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+", help_text="Asesor que controla el hilo (queda al pausar).",
+    )
+    motivo_pausa = models.CharField(max_length=200, blank=True)
+
+    creado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+    creado_en = models.DateTimeField(auto_now_add=True)
+    actualizado_en = models.DateTimeField(auto_now=True)
+    cerrado_en = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-actualizado_en"]
+        verbose_name = "Hilo de negociación"
+        verbose_name_plural = "Hilos de negociación"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["lead", "tipo", "contraparte"],
+                condition=models.Q(contraparte__isnull=False),
+                name="hilo_unico_por_lead_tipo_contraparte",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.get_tipo_display()} · {self.lead_id} · {self.get_estado_display()}"
+
+
+class MensajeNegociacion(models.Model):
+    """Un mensaje dentro de un HiloNegociacion. `tipo=propuesta` lleva un monto
+    y un estado (pendiente → aceptada/contraofertada/rechazada); esas son las
+    únicas transiciones que mueven `monto_acordado` del hilo."""
+
+    EMISOR_CLIENTE = "cliente"
+    EMISOR_TAXICARGA = "taxicarga"
+    EMISOR_TRANSPORTISTA = "transportista"
+    EMISOR_SISTEMA = "sistema"
+    EMISORES = [
+        (EMISOR_CLIENTE, "Cliente"),
+        (EMISOR_TAXICARGA, "TaxiCarga"),
+        (EMISOR_TRANSPORTISTA, "Transportista"),
+        (EMISOR_SISTEMA, "Sistema"),
+    ]
+
+    CANAL_CRM = "crm"
+    CANAL_PORTAL = "portal"
+    CANAL_WHATSAPP = "whatsapp"
+    CANALES = [
+        (CANAL_CRM, "CRM"),
+        (CANAL_PORTAL, "Portal"),
+        (CANAL_WHATSAPP, "WhatsApp"),
+    ]
+
+    TIPO_TEXTO = "texto"
+    TIPO_PROPUESTA = "propuesta"
+    TIPO_SISTEMA = "sistema"
+    TIPOS = [
+        (TIPO_TEXTO, "Texto"),
+        (TIPO_PROPUESTA, "Propuesta"),
+        (TIPO_SISTEMA, "Sistema"),
+    ]
+
+    PROP_PENDIENTE = "pendiente"
+    PROP_ACEPTADA = "aceptada"
+    PROP_CONTRAOFERTADA = "contraofertada"
+    PROP_RECHAZADA = "rechazada"
+    PROP_ESTADOS = [
+        (PROP_PENDIENTE, "Pendiente"),
+        (PROP_ACEPTADA, "Aceptada"),
+        (PROP_CONTRAOFERTADA, "Contraofertada"),
+        (PROP_RECHAZADA, "Rechazada"),
+    ]
+
+    hilo = models.ForeignKey(
+        HiloNegociacion, on_delete=models.CASCADE, related_name="mensajes",
+    )
+    emisor = models.CharField(max_length=14, choices=EMISORES)
+    autor = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+", help_text="Usuario del CRM que tipeó el mensaje, si aplica.",
+    )
+    canal = models.CharField(max_length=10, choices=CANALES, default=CANAL_CRM)
+    tipo = models.CharField(max_length=10, choices=TIPOS, default=TIPO_TEXTO)
+    texto = models.TextField(blank=True)
+    propuesta_monto = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+    )
+    propuesta_estado = models.CharField(
+        max_length=14, choices=PROP_ESTADOS, blank=True,
+    )
+    respondido_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+    respondido_en = models.DateTimeField(null=True, blank=True)
+    mensaje_whatsapp = models.ForeignKey(
+        "whatsapp.MensajeWhatsApp", on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["creado_en"]
+        verbose_name = "Mensaje de negociación"
+        verbose_name_plural = "Mensajes de negociación"
+
+    def __str__(self):
+        return f"{self.get_emisor_display()}: {self.texto[:40] or self.propuesta_monto}"
+
+
 class TransportistaConductor(models.Model):
     """Conductor de un transportista externo. MODELADO — sin UI todavía."""
 

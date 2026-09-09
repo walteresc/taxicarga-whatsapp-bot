@@ -62,7 +62,7 @@ const MENU = [
   { title: 'Transportistas', icon: 'ri-team-line', to: '/transportistas/afiliados', roles: OPS },
   { title: 'Vehículos afiliados', icon: 'ri-truck-line', to: '/transportistas/vehiculos', roles: OPS },
   { title: 'Publicaciones', icon: 'ri-megaphone-line', to: '/tercerizacion/publicaciones', roles: OPS, soon: true },
-  { title: 'Negociaciones', icon: 'ri-discuss-line', to: '/tercerizacion/negociaciones', roles: OPS, soon: true },
+  { title: 'Negociaciones', icon: 'ri-discuss-line', to: '/tercerizacion/negociaciones', roles: OPS },
   { title: 'Asignaciones', icon: 'ri-user-shared-line', to: '/tercerizacion/asignaciones', roles: OPS, soon: true },
 
   { heading: 'Analítica', roles: ADMIN_SUP },

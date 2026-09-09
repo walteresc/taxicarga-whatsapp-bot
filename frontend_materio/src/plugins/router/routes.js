@@ -76,6 +76,11 @@ export const routes = [
       },
       { path: 'campo/transportistas/afiliados', redirect: '/transportistas/afiliados' },
       { path: 'campo/transportistas/vehiculos', redirect: '/transportistas/vehiculos' },
+      {
+        path: 'tercerizacion/negociaciones',
+        component: () => import('@/pages/tercerizacion/negociaciones/index.vue'),
+        meta: { roles: OPERATIONS_ROLES },
+      },
 
       // CONFIGURACIÓN
       {

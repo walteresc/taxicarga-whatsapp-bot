@@ -1,6 +1,9 @@
 from django.contrib import admin
 
-from .models import OfertaTransportista, PublicacionCarga, TransportistaBotState
+from .models import (
+    HiloNegociacion, MensajeNegociacion, OfertaTransportista, PublicacionCarga,
+    TransportistaBotState,
+)
 
 
 class OfertaTransportistaInline(admin.TabularInline):
@@ -29,3 +32,25 @@ class OfertaTransportistaAdmin(admin.ModelAdmin):
 class TransportistaBotStateAdmin(admin.ModelAdmin):
     list_display = ["conversacion", "paso", "publicacion_activa", "actualizado_en"]
     list_filter = ["paso"]
+
+
+class MensajeNegociacionInline(admin.TabularInline):
+    model = MensajeNegociacion
+    extra = 0
+    fields = ["emisor", "canal", "tipo", "texto", "propuesta_monto", "propuesta_estado", "creado_en"]
+    readonly_fields = ["creado_en"]
+
+
+@admin.register(HiloNegociacion)
+class HiloNegociacionAdmin(admin.ModelAdmin):
+    list_display = ["id", "lead", "tipo", "estado", "contraparte", "monto_actual", "monto_acordado", "actualizado_en"]
+    list_filter = ["tipo", "estado"]
+    search_fields = ["lead__codigo", "contraparte__nombre", "publicacion__codigo"]
+    inlines = [MensajeNegociacionInline]
+
+
+@admin.register(MensajeNegociacion)
+class MensajeNegociacionAdmin(admin.ModelAdmin):
+    list_display = ["id", "hilo", "emisor", "tipo", "canal", "propuesta_monto", "propuesta_estado", "creado_en"]
+    list_filter = ["emisor", "tipo", "canal", "propuesta_estado"]
+    search_fields = ["hilo__lead__codigo", "texto"]
