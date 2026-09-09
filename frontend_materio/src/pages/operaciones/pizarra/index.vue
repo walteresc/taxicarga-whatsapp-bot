@@ -475,6 +475,23 @@ const confirmPicker = async () => {
   else await commitAssign(c.service, c.rid, mins)
 }
 
+// ── Conductor del vehículo (clic en la placa) ─────────────────────────
+const driverDialog = ref(null) // recurso o null
+const setResourceDriver = async (r, driverId) => {
+  const asgs = board.value.assignments.filter(a => a.resourceId === r.id)
+  if (!asgs.length) {
+    notify('Este vehículo no tiene servicios este día. Asigná el conductor al asignar un servicio.', 'warning')
+    driverDialog.value = null
+    return
+  }
+  try {
+    await Promise.all(asgs.map(a => pizarraEdit({ assignmentId: a.id, driverId: driverId ?? null })))
+    notify(driverId ? 'Conductor asignado a los servicios del vehículo.' : 'Conductor quitado.')
+    driverDialog.value = null
+    await load(true)
+  } catch (e) { notify(e.message || 'No se pudo cambiar el conductor.', 'error') }
+}
+
 // ── Panel lateral: editar una barra o asignar un servicio ──────────────
 const panel = ref(false)
 const panelKind = ref('assigned')
@@ -787,7 +804,12 @@ const onMmRectUp = () => {
             >
               <div class="d-flex align-center justify-space-between ga-1">
                 <div class="d-flex align-center ga-1" style="min-inline-size: 0;">
-                  <span class="font-weight-medium text-truncate">{{ r.label }}</span>
+                  <button
+                    type="button" class="pz-plate text-truncate"
+                    title="Asignar o quitar conductor" @click="driverDialog = r"
+                  >
+                    {{ r.label }}
+                  </button>
                   <VChip size="x-small" variant="tonal" class="flex-shrink-0">{{ (barsByResource[r.id] || []).length }}</VChip>
                 </div>
                 <div class="d-flex flex-shrink-0">
@@ -803,9 +825,13 @@ const onMmRectUp = () => {
                   />
                 </div>
               </div>
-              <div class="text-caption text-medium-emphasis text-truncate">
-                {{ r.driverName || 'sin conductor' }}<span v-if="r.sublabel"> · {{ r.sublabel }}</span>
-              </div>
+              <button
+                type="button" class="pz-driver text-caption text-truncate"
+                :class="r.driverName ? 'text-medium-emphasis' : 'text-primary'"
+                title="Asignar o quitar conductor" @click="driverDialog = r"
+              >
+                {{ r.driverName || '+ asignar conductor' }}<span v-if="r.sublabel" class="text-medium-emphasis"> · {{ r.sublabel }}</span>
+              </button>
             </div>
             <div class="pz-rail-foot" :style="{ height: FOOT_H + 'px' }">
               <VBtn size="small" variant="text" prepend-icon="ri-add-line" @click="addDialog = true">
@@ -1068,6 +1094,37 @@ const onMmRectUp = () => {
       </VCard>
     </VDialog>
 
+    <!-- conductor del vehículo -->
+    <VDialog :model-value="!!driverDialog" max-width="380" @update:model-value="driverDialog = null">
+      <VCard v-if="driverDialog">
+        <VCardTitle class="text-body-1">Conductor · {{ driverDialog.label }}</VCardTitle>
+        <VCardText>
+          <div class="text-caption text-medium-emphasis mb-3">
+            <template v-if="(barsByResource[driverDialog.id] || []).length">
+              Se aplica a los {{ (barsByResource[driverDialog.id] || []).length }} servicio(s) de este vehículo en la fecha.
+            </template>
+            <template v-else>Este vehículo no tiene servicios este día.</template>
+          </div>
+          <VAutocomplete
+            :items="driverOptions" :model-value="driverDialog.driverId"
+            label="Conductor" prepend-inner-icon="ri-user-line" hide-details
+            :disabled="!(barsByResource[driverDialog.id] || []).length"
+            @update:model-value="v => setResourceDriver(driverDialog, v)"
+          />
+        </VCardText>
+        <VCardActions>
+          <VBtn
+            v-if="driverDialog.driverId" variant="text" color="error"
+            @click="setResourceDriver(driverDialog, null)"
+          >
+            Quitar conductor
+          </VBtn>
+          <VSpacer />
+          <VBtn variant="text" @click="driverDialog = null">Cerrar</VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
+
     <ServiceViewDialog
       v-if="detailLeadId"
       :lead-id="detailLeadId"
@@ -1126,6 +1183,21 @@ const onMmRectUp = () => {
   padding-inline: 6px;
   background: rgb(var(--v-theme-surface));
 }
+.pz-plate {
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 0 2px;
+}
+.pz-plate:hover { background: rgba(var(--v-theme-primary), 0.1); }
+.pz-driver {
+  cursor: pointer;
+  text-align: start;
+  border-radius: 4px;
+  padding: 0 2px;
+  max-inline-size: 100%;
+}
+.pz-driver:hover { text-decoration: underline; }
 .pz-lane-foot {
   border-block-start: 1px solid rgb(var(--v-border-color), var(--v-border-opacity));
 }
