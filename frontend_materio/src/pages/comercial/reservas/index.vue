@@ -271,6 +271,12 @@ const submitCancel = async () => {
                 size="small" variant="text" icon="ri-team-line" title="Asignar a un equipo" @click="openAssign(row)"
               />
               <VBtn
+                v-if="row.assignmentState !== 'asignado' && row.state !== 'completed' && row.state !== 'cancelled'"
+                size="small" variant="text" icon="ri-arrow-left-right-line"
+                :title="row.executionMode === 'propio' ? 'Pasar a transportistas' : 'Pasar a nuestro equipo'"
+                @click="setMode(row, row.executionMode === 'propio' ? 'tercerizado' : 'propio')"
+              />
+              <VBtn
                 v-if="row.state !== 'completed' && row.state !== 'cancelled'"
                 size="small" variant="text" icon="ri-money-dollar-circle-line" title="Registrar pago" @click="openPay(row)"
               />

@@ -2,6 +2,8 @@
 import { onMounted, reactive, ref, watch } from 'vue'
 
 import { apiClient } from '@/services/apiClient'
+import { bookingSetMode } from '@/services/commercialService'
+import { pizarraUnassign } from '@/services/pizarraService'
 import ReassignScheduleDialog from './ReassignScheduleDialog.vue'
 
 const STATE = {
@@ -65,6 +67,22 @@ const notify = (text, color = 'success') => Object.assign(snackbar, { show: true
 
 const reassignRow = ref(null)
 const afterReassign = async () => { notify('Programación reasignada.'); await load() }
+
+const switchMode = async row => {
+  const to = row.executionMode === 'propio' ? 'tercerizado' : 'propio'
+  const label = to === 'propio' ? 'nuestro equipo' : 'transportistas'
+  const who = [row.plate, row.driverName].filter(Boolean).join(' · ') || 'el vehículo actual'
+  if (!confirm(`Se quita la asignación actual (${who}) y el servicio pasa a ${label}. Después lo reasignás desde la Pizarra. ¿Seguir?`)) return
+  try {
+    await pizarraUnassign(row.id)
+    await bookingSetMode(row.serviceId, to)
+    notify(`Servicio pasado a ${label}.`)
+    await load()
+  } catch (e) {
+    notify(e.message || 'No se pudo cambiar la modalidad.', 'error')
+    await load()
+  }
+}
 
 const setState = async (row, target) => {
   try {
@@ -152,6 +170,12 @@ const setState = async (row, target) => {
                 v-if="REASSIGNABLE.has(row.state)"
                 size="small" variant="text" icon="ri-team-line" title="Reasignar (vehículo / conductor / hora)"
                 @click="reassignRow = row"
+              />
+              <VBtn
+                v-if="REASSIGNABLE.has(row.state)"
+                size="small" variant="text" icon="ri-arrow-left-right-line"
+                :title="row.executionMode === 'propio' ? 'Pasar a transportistas' : 'Pasar a nuestro equipo'"
+                @click="switchMode(row)"
               />
               <VMenu v-if="NEXT[row.state]?.length">
                 <template #activator="{ props }">
