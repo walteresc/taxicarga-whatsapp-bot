@@ -31,8 +31,8 @@ const props = defineProps({
   toggleField: { type: String, default: 'active' }, // habilita estado + activar/desactivar
   deletable: { type: Boolean, default: true }, // false = sin borrado duro (solo desactivar)
   labelField: { type: String, default: 'name' }, // para los mensajes ("<X> guardado")
-  // Columna cuyo valor abre el detalle (slot #detail) al hacer clic. '' = sin detalle.
-  detailField: { type: String, default: '' },
+  // Columna(s) cuyo valor abre el detalle (slot #detail) al hacer clic. '' = sin detalle.
+  detailField: { type: [String, Array], default: '' },
   writeRoles: { type: Array, default: () => ['Administrador', 'Supervisor', 'Asesor de Ventas'] },
 })
 
@@ -40,6 +40,10 @@ const emit = defineEmits(['changed'])
 
 const auth = useAuthStore()
 const canWrite = computed(() => auth.hasAnyRole(...props.writeRoles))
+
+const isDetailCol = key => (Array.isArray(props.detailField)
+  ? props.detailField.includes(key)
+  : props.detailField === key)
 
 // --- estado de la lista ---
 const rows = ref([])
@@ -299,7 +303,7 @@ defineExpose({ load })
                 {{ col.chip(row)?.text ?? cellValue(row, col) }}
               </VChip>
               <button
-                v-else-if="detailField && col.key === detailField"
+                v-else-if="isDetailCol(col.key)"
                 type="button" class="crud-link" @click="detailRow = row"
               >
                 {{ cellValue(row, col) }}

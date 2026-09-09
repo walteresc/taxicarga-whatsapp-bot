@@ -102,17 +102,23 @@ onMounted(async () => {
           hide-header singular="transportista" :service="carriersService"
           :columns="carrierColumns" :fields="carrierFields"
           search-label="Buscar por nombre, documento, teléfono o email" label-field="name"
-          detail-field="name"
+          :detail-field="['name', 'vehicleCount']"
         >
           <template #row-actions="{ row }">
             <VBtn
-              icon="ri-truck-line" variant="text" size="small" title="Agregar vehículo"
+              variant="tonal" size="small" class="me-1"
+              prepend-icon="ri-add-line" title="Agregar vehículo"
               @click="addVehicleFor = row"
-            />
+            >
+              Vehículo
+            </VBtn>
             <VBtn
-              icon="ri-user-add-line" variant="text" size="small" title="Agregar conductor"
+              variant="tonal" size="small" class="me-1"
+              prepend-icon="ri-add-line" title="Agregar conductor"
               @click="addDriverFor = row"
-            />
+            >
+              Conductor
+            </VBtn>
           </template>
           <template #detail="{ row, close }">
             <CarrierDetailDialog v-if="row" :carrier="row" @close="close" />
