@@ -191,13 +191,13 @@ const dims = r => [r.lengthUsefulM, r.widthUsefulM, r.heightUsefulM].every(x => 
           density="compact" hide-details @update:model-value="load"
         />
         <VSelect
-          v-model="weightFilter" :items="WEIGHT_OPTIONS" label="Peso"
-          density="compact" hide-details clearable style="max-width: 150px;"
+          v-model="weightFilter" :items="WEIGHT_OPTIONS" label="Categoría"
+          density="compact" hide-details clearable style="max-width: 160px;"
           @update:model-value="load"
         />
         <VSelect
-          v-model="categoryFilter" :items="categoryOptions" label="Categoría"
-          density="compact" hide-details clearable style="max-width: 210px;"
+          v-model="categoryFilter" :items="categoryOptions" label="Clasificación"
+          density="compact" hide-details clearable style="max-width: 220px;"
           @update:model-value="load"
         />
         <VSelect
@@ -224,7 +224,7 @@ const dims = r => [r.lengthUsefulM, r.widthUsefulM, r.heightUsefulM].every(x => 
         <thead>
           <tr>
             <th>Placa</th><th>Transportista</th><th>Tipo</th><th>Carrocería</th>
-            <th>Marca / Modelo</th><th class="text-right">Cap. útil</th><th>Categoría</th>
+            <th>Marca / Modelo</th><th class="text-right">Cap. útil</th><th>Clasificación</th>
             <th>L×A×A</th><th>Estado</th><th class="text-right">Acciones</th>
           </tr>
         </thead>
