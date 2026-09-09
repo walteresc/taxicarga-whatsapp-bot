@@ -1173,10 +1173,22 @@ const onMmRectUp = () => {
       <VCard>
         <VCardTitle>Agregar a la pizarra</VCardTitle>
         <VCardText class="pt-2">
-          <VBtnToggle v-model="addTab" mandatory density="comfortable" class="mb-4" color="primary">
-            <VBtn value="propio" prepend-icon="ri-team-line">Nuestro equipo</VBtn>
-            <VBtn value="tercerizado" prepend-icon="ri-truck-line">Transportistas</VBtn>
-          </VBtnToggle>
+          <div class="d-flex flex-wrap ga-2 mb-4">
+            <VChip
+              :color="addTab === 'propio' ? 'primary' : undefined"
+              :variant="addTab === 'propio' ? 'flat' : 'tonal'"
+              @click="addTab = 'propio'"
+            >
+              <VIcon start icon="ri-team-line" size="16" /> Nuestro equipo
+            </VChip>
+            <VChip
+              :color="addTab === 'tercerizado' ? 'primary' : undefined"
+              :variant="addTab === 'tercerizado' ? 'flat' : 'tonal'"
+              @click="addTab = 'tercerizado'"
+            >
+              <VIcon start icon="ri-truck-line" size="16" /> Transportistas
+            </VChip>
+          </div>
 
           <template v-if="addTab === 'propio'">
             <VList density="compact">
