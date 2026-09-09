@@ -23,9 +23,9 @@ class PublicacionCargaAdmin(admin.ModelAdmin):
 
 @admin.register(OfertaTransportista)
 class OfertaTransportistaAdmin(admin.ModelAdmin):
-    list_display = ["publicacion", "cliente", "precio_ofertado", "estado", "creado_en"]
+    list_display = ["publicacion", "transportista", "cliente", "precio_ofertado", "monto_actual", "estado", "creado_en"]
     list_filter = ["estado"]
-    search_fields = ["publicacion__codigo", "cliente__nombre", "cliente__telefono"]
+    search_fields = ["publicacion__codigo", "transportista__nombre", "cliente__nombre", "cliente__telefono"]
 
 
 @admin.register(TransportistaBotState)

@@ -103,6 +103,12 @@ class PublicacionCarga(models.Model):
     )
     adjudicada_en = models.DateTimeField(null=True, blank=True)
 
+    publicada_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+    publicada_en = models.DateTimeField(null=True, blank=True)
+
     class Meta:
         ordering = ["-creado_en"]
         verbose_name = "Publicación de carga"
@@ -141,8 +147,21 @@ class OfertaTransportista(models.Model):
     )
     cliente = models.ForeignKey(
         "clientes.Cliente",
-        on_delete=models.CASCADE,
+        on_delete=models.CASCADE, null=True, blank=True,
         related_name="ofertas_transportista",
+        help_text="Contacto de WhatsApp que ofertó (canal whatsapp). NULL si la "
+                   "ofertó el asesor por CRM/portal a nombre de un afiliado.",
+    )
+    transportista = models.ForeignKey(
+        "Transportista",
+        on_delete=models.CASCADE, null=True, blank=True,
+        related_name="ofertas",
+        help_text="Transportista afiliado (canal crm/portal, y necesario para adjudicar).",
+    )
+    transportista_vehiculo = models.ForeignKey(
+        "TransportistaVehiculo",
+        on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+        help_text="Vehículo con el que cubriría el servicio (se fija al adjudicar).",
     )
     precio_ofertado = models.DecimalField(
         max_digits=10, decimal_places=2, null=True, blank=True,
@@ -176,7 +195,13 @@ class OfertaTransportista(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=["publicacion", "cliente"],
+                condition=models.Q(cliente__isnull=False),
                 name="una_oferta_por_transportista_por_publicacion",
+            ),
+            models.UniqueConstraint(
+                fields=["publicacion", "transportista"],
+                condition=models.Q(transportista__isnull=False),
+                name="una_oferta_por_afiliado_por_publicacion",
             ),
         ]
 
@@ -374,7 +399,13 @@ class HiloNegociacion(models.Model):
         "clientes.Cliente",
         on_delete=models.SET_NULL, null=True, blank=True,
         related_name="hilos_negociacion",
-        help_text="El cliente (venta) o el transportista (compra) con quien se negocia.",
+        help_text="Venta: el cliente. Compra: el contacto de WhatsApp del transportista (si lo hay).",
+    )
+    transportista = models.ForeignKey(
+        "Transportista",
+        on_delete=models.CASCADE, null=True, blank=True,
+        related_name="hilos_negociacion",
+        help_text="Compra: el transportista afiliado con quien se negocia.",
     )
 
     monto_objetivo = models.DecimalField(
@@ -411,6 +442,11 @@ class HiloNegociacion(models.Model):
                 fields=["lead", "tipo", "contraparte"],
                 condition=models.Q(contraparte__isnull=False),
                 name="hilo_unico_por_lead_tipo_contraparte",
+            ),
+            models.UniqueConstraint(
+                fields=["lead", "tipo", "transportista"],
+                condition=models.Q(transportista__isnull=False),
+                name="hilo_compra_unico_por_afiliado",
             ),
         ]
 

@@ -16,16 +16,22 @@ class NegociacionError(Exception):
 
 
 def abrir_hilo(lead, tipo, *, usuario=None, cotizacion=None, publicacion=None,
-               contraparte=None, monto_objetivo=None):
-    """Idempotente por (lead, tipo, contraparte). Rellena los vínculos y el
-    monto objetivo si llegan después de la creación."""
+               contraparte=None, transportista=None, monto_objetivo=None):
+    """Idempotente. `venta` se deduplica por (lead, tipo, contraparte);
+    `compra` por (lead, tipo, transportista afiliado). Rellena vínculos y monto
+    objetivo si llegan después de la creación."""
+    if transportista is not None:
+        lookup = {"lead": lead, "tipo": tipo, "transportista": transportista}
+    else:
+        lookup = {"lead": lead, "tipo": tipo, "contraparte": contraparte}
     hilo, creado = HiloNegociacion.objects.get_or_create(
-        lead=lead, tipo=tipo, contraparte=contraparte,
+        **lookup,
         defaults={
             "creado_por": usuario,
             "supervisor": usuario,
             "cotizacion": cotizacion,
             "publicacion": publicacion,
+            "contraparte": contraparte,
             "monto_objetivo": monto_objetivo,
         },
     )

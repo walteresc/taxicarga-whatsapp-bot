@@ -2,6 +2,7 @@ from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from . import negociacion_views as neg
+from . import publicaciones_views as pubv
 from .views import CarrierDriverViewSet, CarrierVehicleViewSet, CarrierViewSet
 
 router = DefaultRouter()
@@ -17,4 +18,10 @@ urlpatterns = router.urls + [
     path("negotiations/<int:pk>/pause", neg.NegotiationPauseView.as_view(), name="v2-negotiation-pause"),
     path("negotiations/<int:pk>/resume", neg.NegotiationResumeView.as_view(), name="v2-negotiation-resume"),
     path("negotiations/<int:pk>/close", neg.NegotiationCloseView.as_view(), name="v2-negotiation-close"),
+
+    path("publications/", pubv.PublicationListView.as_view(), name="v2-publication-list"),
+    path("publications/<int:pk>/", pubv.PublicationDetailView.as_view(), name="v2-publication-detail"),
+    path("publications/<int:pk>/publish", pubv.PublicationPublishView.as_view(), name="v2-publication-publish"),
+    path("publications/<int:pk>/offers", pubv.PublicationOffersView.as_view(), name="v2-publication-offers"),
+    path("publications/<int:pk>/award", pubv.PublicationAwardView.as_view(), name="v2-publication-award"),
 ]

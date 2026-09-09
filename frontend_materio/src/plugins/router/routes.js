@@ -81,6 +81,11 @@ export const routes = [
         component: () => import('@/pages/tercerizacion/negociaciones/index.vue'),
         meta: { roles: OPERATIONS_ROLES },
       },
+      {
+        path: 'tercerizacion/publicaciones',
+        component: () => import('@/pages/tercerizacion/publicaciones/index.vue'),
+        meta: { roles: OPERATIONS_ROLES },
+      },
 
       // CONFIGURACIÓN
       {
