@@ -190,10 +190,15 @@ export const routes = [
     component: () => import('@/layouts/portal.vue'),
     children: [
       { path: '', redirect: '/portal/cargas' },
-      { path: 'cargas', component: () => import('@/pages/portal/cargas/index.vue'), meta: { portal: true } },
-      { path: 'ofertas', component: () => import('@/pages/portal/ofertas/index.vue'), meta: { portal: true } },
-      { path: 'asignaciones', component: () => import('@/pages/portal/asignaciones/index.vue'), meta: { portal: true } },
-      { path: 'negociaciones', component: () => import('@/pages/portal/negociaciones/index.vue'), meta: { portal: true } },
+      { path: 'cargas', component: () => import('@/pages/portal/cargas/index.vue'), meta: { portal: 'carrier' } },
+      { path: 'ofertas', component: () => import('@/pages/portal/ofertas/index.vue'), meta: { portal: 'carrier' } },
+      { path: 'asignaciones', component: () => import('@/pages/portal/asignaciones/index.vue'), meta: { portal: 'carrier' } },
+      { path: 'negociaciones', component: () => import('@/pages/portal/negociaciones/index.vue'), meta: { portal: 'carrier' } },
+
+      { path: 'cliente', redirect: '/portal/cliente/mis-cargas' },
+      { path: 'cliente/mis-cargas', component: () => import('@/pages/portal/cliente/mis-cargas/index.vue'), meta: { portal: 'customer' } },
+      { path: 'cliente/publicar', component: () => import('@/pages/portal/cliente/publicar/index.vue'), meta: { portal: 'customer' } },
+      { path: 'cliente/carga/:code', component: () => import('@/pages/portal/cliente/carga/index.vue'), meta: { portal: 'customer' } },
     ],
   },
   {

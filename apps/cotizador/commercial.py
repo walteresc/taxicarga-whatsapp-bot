@@ -233,6 +233,34 @@ def registrar_cotizacion_desde_chat(conversacion, precio_final, *, condiciones="
     return revision
 
 
+def crear_cotizacion_portal(lead, precio_final, *, en_negociacion=False, condiciones=""):
+    """El cliente aceptó (o pidió negociar) un precio desde el Portal del Cliente.
+    Deja una CotizacionComercial ENTREGADA (o EN_NEGOCIACION) con su revisión,
+    para que la carga entre a 'Cotizados' y un asesor la derive. Reutiliza una
+    cotización viva del lead si ya existe. Devuelve la CotizacionComercial."""
+    with transaction.atomic():
+        cotizacion = (CotizacionComercial.objects
+                      .filter(lead=lead,
+                              estado__in=("borrador", "enviada", "entregada", "en_negociacion"))
+                      .order_by("-actualizada_en").first())
+        if cotizacion is None:
+            cotizacion = CotizacionComercial.objects.create(
+                codigo=_nuevo_codigo(), lead=lead,
+                channel=lead.whatsapp_channel, origen="asesor", moneda="PEN",
+                estado="entregada",
+            )
+            numero = 1
+        else:
+            ultima = cotizacion.revisiones.order_by("-numero").first()
+            numero = (ultima.numero if ultima else 0) + 1
+        revision = _crear_revision(cotizacion, None, precio_final, numero, condiciones=condiciones)
+    marcar_revision_enviada(revision)  # fija estado='enviada' + proyecta el lead a COTIZADO
+    cotizacion.refresh_from_db()
+    cotizacion.estado = "en_negociacion" if en_negociacion else "entregada"
+    cotizacion.save(update_fields=["estado", "actualizada_en"])
+    return cotizacion
+
+
 def _crear_revision(cotizacion, actor, precio_final, numero, **datos):
     precio = Decimal(str(precio_final))
     costo = _decimal_opcional(datos.get("costo_estimado"))

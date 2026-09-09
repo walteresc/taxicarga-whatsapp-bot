@@ -20,6 +20,7 @@ ROLES = [
     "Conductor",
     "Ayudante",
     "Transportista",       # portal externo: solo ve sus cargas/ofertas/asignaciones
+    "Cliente Portal",      # portal externo del cliente: publica cargas y las sigue
 ]
 
 

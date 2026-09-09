@@ -18,9 +18,12 @@ export const useAuthStore = defineStore('auth', () => {
   const hasRole = role => roles.value.includes(role)
   const hasAnyRole = (...wanted) => wanted.some(r => roles.value.includes(r))
 
-  // Portal del Transportista: usuario externo con ficha Transportista activa.
+  // Portales externos (misma sesión, shell propio, sin acceso al CRM).
   const carrierId = computed(() => user.value?.carrierId ?? null)
   const isCarrier = computed(() => !!carrierId.value)
+  const portalCustomerId = computed(() => user.value?.portalCustomerId ?? null)
+  const isCustomer = computed(() => !!portalCustomerId.value)
+  const isExternal = computed(() => isCarrier.value || isCustomer.value)
 
   const _fetchUser = async () => {
     try {
@@ -55,6 +58,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   return {
     user, loaded, isAuthenticated, roles, hasRole, hasAnyRole,
-    carrierId, isCarrier, ensureLoaded, reload, clear,
+    carrierId, isCarrier, portalCustomerId, isCustomer, isExternal,
+    ensureLoaded, reload, clear,
   }
 })

@@ -21,14 +21,20 @@ router.beforeEach(async to => {
   if (!auth.isAuthenticated)
     return isPublic ? true : { path: '/login', query: { next: to.fullPath } }
 
-  const isPortal = to.meta?.portal === true
+  const portalKind = to.meta?.portal   // 'carrier' | 'customer' | undefined
 
-  // El transportista vive dentro del portal: nunca ve el CRM.
-  if (auth.isCarrier)
-    return isPortal || isPublic ? (isPublic ? { path: '/portal/cargas' } : true) : { path: '/portal/cargas' }
+  // Los usuarios externos viven dentro de su portal: nunca ven el CRM ni el otro portal.
+  if (auth.isCarrier) {
+    if (portalKind === 'carrier') return true
+    return { path: '/portal/cargas' }
+  }
+  if (auth.isCustomer) {
+    if (portalKind === 'customer') return true
+    return { path: '/portal/cliente/mis-cargas' }
+  }
 
-  // Un usuario del CRM no entra al portal.
-  if (isPortal)
+  // Un usuario del CRM no entra a ningún portal.
+  if (portalKind)
     return { path: '/forbidden' }
 
   if (isPublic)

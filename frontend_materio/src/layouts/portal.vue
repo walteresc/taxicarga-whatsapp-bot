@@ -5,16 +5,24 @@ import { useRouter } from 'vue-router'
 import { authService } from '@/services/authService'
 import { useAuthStore } from '@/stores/authStore'
 
+import { computed } from 'vue'
+
 const auth = useAuthStore()
 const router = useRouter()
 const drawer = ref(true)
 
-const NAV = [
+const CARRIER_NAV = [
   { title: 'Cargas disponibles', icon: 'ri-inbox-line', to: '/portal/cargas' },
   { title: 'Mis ofertas', icon: 'ri-price-tag-3-line', to: '/portal/ofertas' },
   { title: 'Mis asignaciones', icon: 'ri-calendar-check-line', to: '/portal/asignaciones' },
   { title: 'Negociaciones', icon: 'ri-discuss-line', to: '/portal/negociaciones' },
 ]
+const CUSTOMER_NAV = [
+  { title: 'Mis cargas', icon: 'ri-archive-line', to: '/portal/cliente/mis-cargas' },
+  { title: 'Publicar carga', icon: 'ri-add-box-line', to: '/portal/cliente/publicar' },
+]
+const NAV = computed(() => (auth.isCustomer ? CUSTOMER_NAV : CARRIER_NAV))
+const heading = computed(() => (auth.isCustomer ? 'Portal Cliente' : 'Portal Transportista'))
 
 const logout = async () => {
   await authService.logout()
@@ -27,8 +35,10 @@ const logout = async () => {
   <VApp>
     <VNavigationDrawer v-model="drawer" :width="248">
       <div class="pa-4">
-        <div class="text-h6 font-weight-bold">Portal Transportista</div>
-        <div class="text-caption text-medium-emphasis">{{ auth.user?.carrierName || auth.user?.full_name }}</div>
+        <div class="text-h6 font-weight-bold">{{ heading }}</div>
+        <div class="text-caption text-medium-emphasis">
+          {{ auth.user?.carrierName || auth.user?.portalCustomerName || auth.user?.full_name }}
+        </div>
       </div>
       <VDivider />
       <VList nav density="comfortable">

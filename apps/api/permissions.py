@@ -62,6 +62,21 @@ class IsCarrier(BasePermission):
         return t is not None and t.activo
 
 
+def customer_portal_for(user):
+    """El `ClienteUsuario` de un usuario del Portal del Cliente, o None."""
+    if not user or not user.is_authenticated:
+        return None
+    cu = getattr(user, "cliente_portal", None)
+    return cu if (cu and cu.activo) else None
+
+
+class IsPortalCustomer(BasePermission):
+    message = "Acceso exclusivo del Portal del Cliente."
+
+    def has_permission(self, request, view):
+        return customer_portal_for(request.user) is not None
+
+
 def role_names(user):
     """Lista de roles (grupos) del usuario, en inglés canónico interno del
     proyecto (que ya está en español). El superusuario obtiene 'Administrador'

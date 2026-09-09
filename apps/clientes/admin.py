@@ -1,6 +1,20 @@
 from django.contrib import admin
 
-from .models import Cliente, Conversacion
+from .models import Cliente, ClienteUsuario, Conversacion, Empresa
+
+
+@admin.register(Empresa)
+class EmpresaAdmin(admin.ModelAdmin):
+    list_display = ["razon_social", "ruc", "activo", "creado_en"]
+    search_fields = ["razon_social", "ruc"]
+
+
+@admin.register(ClienteUsuario)
+class ClienteUsuarioAdmin(admin.ModelAdmin):
+    list_display = ["usuario", "cliente", "empresa", "rol", "activo"]
+    list_filter = ["rol", "activo"]
+    search_fields = ["usuario__username", "cliente__nombre", "empresa__razon_social"]
+    raw_id_fields = ["usuario", "cliente", "empresa"]
 
 
 class ConversacionInline(admin.TabularInline):

@@ -226,4 +226,53 @@ class Conversacion(models.Model):
     def __str__(self):
         return f"{self.cliente} - {self.fecha:%Y-%m-%d %H:%M}"
 
-# Create your models here.
+
+class Empresa(models.Model):
+    """Cuenta de empresa del Portal del Cliente (F6). Agrupa uno o más contactos
+    `Cliente` y uno o más `ClienteUsuario` (login). Por ahora se usa 1 usuario
+    por empresa, pero el modelo ya soporta varios."""
+
+    razon_social = models.CharField(max_length=200)
+    ruc = models.CharField(max_length=20, blank=True, db_index=True)
+    direccion_fiscal = models.CharField(max_length=255, blank=True)
+    activo = models.BooleanField(default=True)
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Empresa (portal)"
+        verbose_name_plural = "Empresas (portal)"
+        ordering = ["razon_social"]
+
+    def __str__(self):
+        return self.razon_social
+
+
+class ClienteUsuario(models.Model):
+    """Login del Portal del Cliente. Enlaza un `User` (grupo 'Cliente Portal')
+    con el `Cliente` (contacto) que representa, y opcionalmente una `Empresa`."""
+
+    ROL_TITULAR = "titular"
+    ROL_OPERADOR = "operador"
+    ROLES = [(ROL_TITULAR, "Titular"), (ROL_OPERADOR, "Operador")]
+
+    usuario = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="cliente_portal",
+    )
+    cliente = models.ForeignKey(
+        Cliente, on_delete=models.CASCADE, related_name="usuarios_portal",
+    )
+    empresa = models.ForeignKey(
+        Empresa, on_delete=models.SET_NULL, null=True, blank=True, related_name="usuarios",
+    )
+    rol = models.CharField(max_length=10, choices=ROLES, default=ROL_TITULAR)
+    activo = models.BooleanField(default=True)
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Usuario del portal del cliente"
+        verbose_name_plural = "Usuarios del portal del cliente"
+
+    def __str__(self):
+        return f"{self.usuario_id or '—'} → {self.cliente}"
+
