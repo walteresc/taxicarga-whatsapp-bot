@@ -21,6 +21,16 @@ router.beforeEach(async to => {
   if (!auth.isAuthenticated)
     return isPublic ? true : { path: '/login', query: { next: to.fullPath } }
 
+  const isPortal = to.meta?.portal === true
+
+  // El transportista vive dentro del portal: nunca ve el CRM.
+  if (auth.isCarrier)
+    return isPortal || isPublic ? (isPublic ? { path: '/portal/cargas' } : true) : { path: '/portal/cargas' }
+
+  // Un usuario del CRM no entra al portal.
+  if (isPortal)
+    return { path: '/forbidden' }
+
   if (isPublic)
     return { path: '/atencion/bandeja-entrada' }
 

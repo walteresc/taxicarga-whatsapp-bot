@@ -281,6 +281,12 @@ class Transportista(models.Model):
         related_name="transportistas_afiliados",
         help_text="Contacto de WhatsApp asociado, si existe.",
     )
+    usuario = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="transportista_perfil",
+        help_text="Cuenta de acceso al Portal del Transportista (grupo 'Transportista').",
+    )
     es_conductor = models.BooleanField(
         default=False, help_text="El transportista también maneja sus vehículos.",
     )

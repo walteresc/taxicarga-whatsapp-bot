@@ -34,6 +34,17 @@ class TransportistaBotStateAdmin(admin.ModelAdmin):
     list_filter = ["paso"]
 
 
+from .models import Transportista
+
+
+@admin.register(Transportista)
+class TransportistaAdmin(admin.ModelAdmin):
+    list_display = ["nombre", "documento", "telefono", "usuario", "activo", "es_conductor"]
+    list_filter = ["activo", "es_conductor"]
+    search_fields = ["nombre", "documento", "telefono", "usuario__username"]
+    raw_id_fields = ["cliente", "usuario"]
+
+
 class MensajeNegociacionInline(admin.TabularInline):
     model = MensajeNegociacion
     extra = 0

@@ -2,6 +2,7 @@ from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from . import negociacion_views as neg
+from . import portal_views as portal
 from . import publicaciones_views as pubv
 from .views import CarrierDriverViewSet, CarrierVehicleViewSet, CarrierViewSet
 
@@ -24,4 +25,15 @@ urlpatterns = router.urls + [
     path("publications/<int:pk>/publish", pubv.PublicationPublishView.as_view(), name="v2-publication-publish"),
     path("publications/<int:pk>/offers", pubv.PublicationOffersView.as_view(), name="v2-publication-offers"),
     path("publications/<int:pk>/award", pubv.PublicationAwardView.as_view(), name="v2-publication-award"),
+
+    # Portal del Transportista
+    path("portal/carrier/me", portal.CarrierMeView.as_view(), name="v2-portal-carrier-me"),
+    path("portal/carrier/loads", portal.CarrierLoadsView.as_view(), name="v2-portal-carrier-loads"),
+    path("portal/carrier/loads/<str:code>/offer", portal.CarrierOfferView.as_view(), name="v2-portal-carrier-offer"),
+    path("portal/carrier/offers", portal.CarrierOffersView.as_view(), name="v2-portal-carrier-offers"),
+    path("portal/carrier/assignments", portal.CarrierAssignmentsView.as_view(), name="v2-portal-carrier-assignments"),
+    path("portal/carrier/negotiations", portal.CarrierNegotiationsView.as_view(), name="v2-portal-carrier-negotiations"),
+    path("portal/carrier/negotiations/<int:pk>/", portal.CarrierNegotiationDetailView.as_view(), name="v2-portal-carrier-negotiation-detail"),
+    path("portal/carrier/negotiations/<int:pk>/messages", portal.CarrierNegotiationMessagesView.as_view(), name="v2-portal-carrier-negotiation-messages"),
+    path("portal/carrier/negotiations/messages/<int:pk>/respond", portal.CarrierNegotiationRespondView.as_view(), name="v2-portal-carrier-negotiation-respond"),
 ]

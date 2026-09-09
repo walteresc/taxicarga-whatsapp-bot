@@ -19,6 +19,7 @@ ROLES = [
     "Finanzas",            # pagos, planilla, facturación, cobros
     "Conductor",
     "Ayudante",
+    "Transportista",       # portal externo: solo ve sus cargas/ofertas/asignaciones
 ]
 
 

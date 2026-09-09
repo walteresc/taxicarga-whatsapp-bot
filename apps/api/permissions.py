@@ -47,6 +47,21 @@ def puede_ver_margen(user):
     return user.groups.filter(name__in=ROLES_MARGEN).exists()
 
 
+def carrier_for(user):
+    """La ficha `Transportista` de un usuario del Portal del Transportista, o None."""
+    if not user or not user.is_authenticated:
+        return None
+    return getattr(user, "transportista_perfil", None)
+
+
+class IsCarrier(BasePermission):
+    message = "Acceso exclusivo del Portal del Transportista."
+
+    def has_permission(self, request, view):
+        t = carrier_for(request.user)
+        return t is not None and t.activo
+
+
 def role_names(user):
     """Lista de roles (grupos) del usuario, en inglés canónico interno del
     proyecto (que ya está en español). El superusuario obtiene 'Administrador'

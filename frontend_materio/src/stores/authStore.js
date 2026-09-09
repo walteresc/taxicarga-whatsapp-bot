@@ -18,6 +18,10 @@ export const useAuthStore = defineStore('auth', () => {
   const hasRole = role => roles.value.includes(role)
   const hasAnyRole = (...wanted) => wanted.some(r => roles.value.includes(r))
 
+  // Portal del Transportista: usuario externo con ficha Transportista activa.
+  const carrierId = computed(() => user.value?.carrierId ?? null)
+  const isCarrier = computed(() => !!carrierId.value)
+
   const _fetchUser = async () => {
     try {
       const res = await fetch('/dashboard/api/auth/user/', {
@@ -49,5 +53,8 @@ export const useAuthStore = defineStore('auth', () => {
 
   const clear = () => { user.value = null; loaded.value = true }
 
-  return { user, loaded, isAuthenticated, roles, hasRole, hasAnyRole, ensureLoaded, reload, clear }
+  return {
+    user, loaded, isAuthenticated, roles, hasRole, hasAnyRole,
+    carrierId, isCarrier, ensureLoaded, reload, clear,
+  }
 })

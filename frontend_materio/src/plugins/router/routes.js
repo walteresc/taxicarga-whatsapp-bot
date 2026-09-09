@@ -186,6 +186,17 @@ export const routes = [
     ],
   },
   {
+    path: '/portal',
+    component: () => import('@/layouts/portal.vue'),
+    children: [
+      { path: '', redirect: '/portal/cargas' },
+      { path: 'cargas', component: () => import('@/pages/portal/cargas/index.vue'), meta: { portal: true } },
+      { path: 'ofertas', component: () => import('@/pages/portal/ofertas/index.vue'), meta: { portal: true } },
+      { path: 'asignaciones', component: () => import('@/pages/portal/asignaciones/index.vue'), meta: { portal: true } },
+      { path: 'negociaciones', component: () => import('@/pages/portal/negociaciones/index.vue'), meta: { portal: true } },
+    ],
+  },
+  {
     path: '/',
     component: () => import('@/layouts/blank.vue'),
     children: [

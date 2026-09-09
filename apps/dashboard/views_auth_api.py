@@ -6,12 +6,13 @@ from django.views.decorators.csrf import csrf_exempt, csrf_protect, ensure_csrf_
 import json
 import logging
 
-from apps.api.permissions import role_names
+from apps.api.permissions import carrier_for, role_names
 
 logger = logging.getLogger(__name__)
 
 
 def _user_payload(user):
+    carrier = carrier_for(user)
     return {
         'id': user.id,
         'username': user.username,
@@ -20,6 +21,8 @@ def _user_payload(user):
         'is_staff': user.is_staff,
         'is_superuser': user.is_superuser,
         'roles': role_names(user),
+        'carrierId': carrier.id if (carrier and carrier.activo) else None,
+        'carrierName': carrier.nombre if (carrier and carrier.activo) else None,
     }
 
 
