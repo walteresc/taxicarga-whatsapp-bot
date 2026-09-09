@@ -58,9 +58,12 @@ const MENU = [
     ],
   },
 
-  { heading: 'Transportistas', roles: OPS },
-  { title: 'Afiliados', icon: 'ri-team-line', to: '/transportistas/afiliados', roles: OPS },
-  { title: 'Vehículos', icon: 'ri-truck-line', to: '/transportistas/vehiculos', roles: OPS },
+  { heading: 'Tercerización', roles: OPS },
+  { title: 'Transportistas', icon: 'ri-team-line', to: '/transportistas/afiliados', roles: OPS },
+  { title: 'Vehículos afiliados', icon: 'ri-truck-line', to: '/transportistas/vehiculos', roles: OPS },
+  { title: 'Publicaciones', icon: 'ri-megaphone-line', to: '/tercerizacion/publicaciones', roles: OPS, soon: true },
+  { title: 'Negociaciones', icon: 'ri-discuss-line', to: '/tercerizacion/negociaciones', roles: OPS, soon: true },
+  { title: 'Asignaciones', icon: 'ri-user-shared-line', to: '/tercerizacion/asignaciones', roles: OPS, soon: true },
 
   { heading: 'Analítica', roles: ADMIN_SUP },
   { title: 'Ventas vivas', icon: 'ri-line-chart-line', to: '/analitica/ventas', roles: ADMIN_SUP },
