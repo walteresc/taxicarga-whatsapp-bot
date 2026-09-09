@@ -746,9 +746,11 @@ class BookingSetModeView(_Base):
         mode = (request.data.get("mode") or "").strip()
         if mode not in (Servicio.MODALIDAD_PROPIO, Servicio.MODALIDAD_TERCERIZADO):
             return Response({"error": "Modalidad no válida."}, status=400)
-        if servicio.programaciones.filter(conductor__isnull=False).exists():
+        from django.db.models import Q
+        if (servicio.programaciones.exclude(estado_operativo="cancelado")
+                .filter(Q(conductor__isnull=False) | Q(transportista_vehiculo__isnull=False)).exists()):
             return Response(
-                {"error": "Ya está asignada a un conductor; primero quitá la asignación."},
+                {"error": "Ya está asignada a un equipo; primero quitá la asignación."},
                 status=409,
             )
         servicio.modalidad_ejecucion = mode

@@ -2,8 +2,10 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 
 import { driversService } from '@/services/personnelService'
+import { carrierDriversService, carriersService, carrierVehiclesService } from '@/services/carriersService'
 import {
-  fetchPizarra, pizarraAssign, pizarraEdit, pizarraMove, pizarraUnassign,
+  fetchPizarra, pizarraAddCarrierRow, pizarraAssign, pizarraEdit, pizarraMove,
+  pizarraRemoveCarrierRow, pizarraUnassign,
 } from '@/services/pizarraService'
 import ServiceViewDialog from '@/pages/atencion/bandeja-entrada/components/ServiceViewDialog.vue'
 
@@ -138,8 +140,10 @@ const today = () => { date.value = limaDate(); load() }
 
 const hasAssignment = rid => board.value.assignments.some(a => a.resourceId === rid)
 // Vehículos propios siempre visibles salvo que se oculten; ocultos vuelven si tienen servicio.
+// Las filas de transportista son server-driven: nunca se filtran por localStorage.
 const resources = computed(() =>
-  board.value.resources.filter(r => !hidden.value.has(r.id) || hasAssignment(r.id)))
+  board.value.resources.filter(r =>
+    r.kind === 'tercerizado' || !hidden.value.has(r.id) || hasAssignment(r.id)))
 
 const barsByResource = computed(() => {
   const map = {}
@@ -436,7 +440,8 @@ const commitAssign = async (s, rid, mins) => {
     serviceCode: s.serviceCode, customer: s.customer,
     originDistrict: s.originDistrict, destDistrict: s.destDistrict, route: s.route,
     start: startHHMM, end: toHHMM(mins + 60), state: 'programado',
-    price: s.price, mode: s.mode, assignedAuto: false, driverName: null, helpers: [],
+    price: s.price, mode: rid.startsWith('t') ? 'tercerizado' : s.mode,
+    assignedAuto: false, driverName: null, helpers: [],
   })
   board.value.unassigned = board.value.unassigned.filter(x => x.serviceId !== s.serviceId)
   try {
@@ -477,6 +482,7 @@ const confirmPicker = async () => {
 
 // ── Conductor del vehículo (clic en la placa) ─────────────────────────
 const driverDialog = ref(null) // recurso o null
+const externalDriverInput = ref('') // para filas de transportista
 const setResourceDriver = async (r, driverId) => {
   const asgs = board.value.assignments.filter(a => a.resourceId === r.id)
   if (!asgs.length) {
@@ -491,6 +497,18 @@ const setResourceDriver = async (r, driverId) => {
     await load(true)
   } catch (e) { notify(e.message || 'No se pudo cambiar el conductor.', 'error') }
 }
+const setCarrierDriver = async r => {
+  const nombre = (externalDriverInput.value || '').trim()
+  try {
+    await pizarraAddCarrierRow({ date: date.value, carrierVehicleId: r.carrierVehicleId, driverName: nombre })
+    const asgs = board.value.assignments.filter(a => a.resourceId === r.id)
+    await Promise.all(asgs.map(a => pizarraEdit({ assignmentId: a.id, externalDriverName: nombre })))
+    notify('Conductor actualizado.')
+    driverDialog.value = null
+    await load(true)
+  } catch (e) { notify(e.message || 'No se pudo actualizar el conductor.', 'error') }
+}
+watch(driverDialog, r => { externalDriverInput.value = r?.driverName || '' })
 
 // ── Panel lateral: editar una barra o asignar un servicio ──────────────
 const panel = ref(false)
@@ -499,7 +517,10 @@ const sel = ref(null)
 const form = reactive({ resourceId: null, driverId: null, start: '', end: '', state: '' })
 const driverOptions = computed(() => drivers.value.map(d => ({ title: d.name, value: d.id })))
 const resourceOptions = computed(() =>
-  resources.value.map(r => ({ title: `${r.label}${r.driverName ? ` · ${r.driverName}` : ''}`, value: r.id })))
+  resources.value.map(r => ({
+    title: `${r.kind === 'tercerizado' ? '🚚 ' : ''}${r.label}${r.driverName ? ` · ${r.driverName}` : ''}`,
+    value: r.id,
+  })))
 const openPanel = bar => {
   panelKind.value = 'assigned'
   sel.value = bar
@@ -603,7 +624,74 @@ const hideResource = rid => { hidden.value.add(rid); hidden.value = new Set(hidd
 const showResource = rid => { hidden.value.delete(rid); hidden.value = new Set(hidden.value); persistHidden() }
 const addDialog = ref(false)
 const hiddenResources = computed(() =>
-  board.value.resources.filter(r => hidden.value.has(r.id) && !hasAssignment(r.id)))
+  board.value.resources.filter(r =>
+    r.kind !== 'tercerizado' && hidden.value.has(r.id) && !hasAssignment(r.id)))
+
+// Quitar de la pizarra: propios → localStorage; transportistas → server.
+const removeResource = async r => {
+  if (r.kind === 'tercerizado') {
+    try {
+      await pizarraRemoveCarrierRow({ date: date.value, resourceId: r.id })
+      await load(true)
+    } catch (e) { notify(e.message || 'No se pudo quitar la fila.', 'error') }
+  } else {
+    hideResource(r.id)
+  }
+}
+
+// ── Agregar transportista a la pizarra ─────────────────────────────────
+const addTab = ref('propio')
+const carrierOpts = ref([])
+const carrierVehOpts = ref([])
+const carrierDriverOpts = ref([])
+const carrierForm = reactive({ carrierId: null, carrierVehicleId: null, driverName: '' })
+const addBusy = ref(false)
+
+watch(addDialog, open => {
+  if (!open) return
+  addTab.value = 'propio'
+  Object.assign(carrierForm, { carrierId: null, carrierVehicleId: null, driverName: '' })
+})
+watch(addTab, async tab => {
+  if (tab === 'tercerizado' && !carrierOpts.value.length) {
+    try {
+      const d = await carriersService.list({ status: 'active', pageSize: 200 })
+      carrierOpts.value = d.results.map(c => ({ title: c.name, value: c.id }))
+    } catch { carrierOpts.value = [] }
+  }
+})
+watch(() => carrierForm.carrierId, async id => {
+  carrierForm.carrierVehicleId = null
+  carrierForm.driverName = ''
+  carrierVehOpts.value = []
+  carrierDriverOpts.value = []
+  if (!id) return
+  try {
+    const [veh, drv] = await Promise.all([
+      carrierVehiclesService.list({ carrierId: id, status: 'active', pageSize: 200 }),
+      carrierDriversService.list({ carrierId: id, status: 'active', pageSize: 200 }).catch(() => ({ results: [] })),
+    ])
+    carrierVehOpts.value = veh.results.map(v => ({
+      title: [v.plate, [v.brand, v.model].filter(Boolean).join(' ')].filter(Boolean).join(' · '),
+      value: v.id,
+    }))
+    carrierDriverOpts.value = drv.results.map(x => x.name)
+    if (carrierVehOpts.value.length === 1) carrierForm.carrierVehicleId = carrierVehOpts.value[0].value
+  } catch { /* */ }
+})
+const submitCarrierRow = async () => {
+  if (!carrierForm.carrierVehicleId) { notify('Elegí un vehículo del transportista.', 'warning'); return }
+  addBusy.value = true
+  try {
+    await pizarraAddCarrierRow({
+      date: date.value,
+      carrierVehicleId: carrierForm.carrierVehicleId,
+      driverName: carrierForm.driverName || undefined,
+    })
+    addDialog.value = false
+    await load(true)
+  } catch (e) { notify(e.message || 'No se pudo agregar el transportista.', 'error') } finally { addBusy.value = false }
+}
 
 // ── Vista general: minimapa + navegación entre servicios fuera de pantalla ─
 const TOTAL_W = 24 * 60 * PX_PER_MIN
@@ -799,11 +887,14 @@ const onMmRectUp = () => {
               </div>
             </div>
             <div
-              v-for="r in resources" :key="r.id" class="pz-rail-row" :style="{ height: ROW_H + 'px' }"
+              v-for="r in resources" :key="r.id" class="pz-rail-row"
+              :class="{ 'pz-rail-row--carrier': r.kind === 'tercerizado' }"
+              :style="{ height: ROW_H + 'px' }"
               @contextmenu.prevent="openCtx($event, 'resource', r)"
             >
               <div class="d-flex align-center justify-space-between ga-1">
                 <div class="d-flex align-center ga-1" style="min-inline-size: 0;">
+                  <VIcon v-if="r.kind === 'tercerizado'" icon="ri-truck-line" size="13" class="flex-shrink-0 text-warning" />
                   <button
                     type="button" class="pz-plate text-truncate"
                     title="Asignar o quitar conductor" @click="driverDialog = r"
@@ -889,6 +980,7 @@ const onMmRectUp = () => {
 
             <div
               v-for="r in resources" :key="r.id" class="pz-lane"
+              :class="{ 'pz-lane--carrier': r.kind === 'tercerizado' }"
               :data-resource-id="r.id" :style="{ height: ROW_H + 'px' }"
             >
               <div v-for="h in HOURS" :key="h" class="pz-tick" :style="{ left: (h * 60 * PX_PER_MIN) + 'px' }" />
@@ -998,7 +1090,7 @@ const onMmRectUp = () => {
           <VListItem prepend-icon="ri-file-list-3-line" title="Ver detalle del servicio" @click="openDetail(ctx.item.leadId)" />
         </template>
         <template v-else-if="ctx.kind === 'resource'">
-          <VListItem prepend-icon="ri-eye-off-line" title="Quitar de la pizarra" @click="hideResource(ctx.item.id)" />
+          <VListItem prepend-icon="ri-eye-off-line" title="Quitar de la pizarra" @click="removeResource(ctx.item)" />
         </template>
       </VList>
     </VMenu>
@@ -1077,19 +1169,54 @@ const onMmRectUp = () => {
     </div>
 
     <!-- agregar vehículo a la pizarra -->
-    <VDialog v-model="addDialog" max-width="420">
+    <VDialog v-model="addDialog" max-width="460">
       <VCard>
-        <VCardTitle>Agregar vehículo a la pizarra</VCardTitle>
-        <VList>
-          <VListItem v-for="r in hiddenResources" :key="r.id" :title="r.label" :subtitle="r.sublabel">
-            <template #append>
-              <VBtn size="small" variant="tonal" @click="showResource(r.id)">Agregar</VBtn>
-            </template>
-          </VListItem>
-          <VListItem v-if="!hiddenResources.length" title="No hay vehículos ocultos." class="text-medium-emphasis" />
-        </VList>
+        <VCardTitle>Agregar a la pizarra</VCardTitle>
+        <VCardText class="pt-2">
+          <VBtnToggle v-model="addTab" mandatory density="comfortable" class="mb-4" color="primary">
+            <VBtn value="propio" prepend-icon="ri-team-line">Nuestro equipo</VBtn>
+            <VBtn value="tercerizado" prepend-icon="ri-truck-line">Transportistas</VBtn>
+          </VBtnToggle>
+
+          <template v-if="addTab === 'propio'">
+            <VList density="compact">
+              <VListItem v-for="r in hiddenResources" :key="r.id" :title="r.label" :subtitle="r.sublabel">
+                <template #append>
+                  <VBtn size="small" variant="tonal" @click="showResource(r.id)">Agregar</VBtn>
+                </template>
+              </VListItem>
+              <VListItem v-if="!hiddenResources.length" title="No hay vehículos ocultos." class="text-medium-emphasis" />
+            </VList>
+          </template>
+
+          <template v-else>
+            <VAutocomplete
+              v-model="carrierForm.carrierId" :items="carrierOpts"
+              label="Transportista" prepend-inner-icon="ri-building-line" class="mb-3"
+              no-data-text="Sin transportistas afiliados"
+            />
+            <VSelect
+              v-model="carrierForm.carrierVehicleId" :items="carrierVehOpts"
+              label="Vehículo" prepend-inner-icon="ri-car-line" class="mb-3"
+              :disabled="!carrierForm.carrierId"
+              no-data-text="Este transportista no tiene vehículos"
+            />
+            <VCombobox
+              v-model="carrierForm.driverName" :items="carrierDriverOpts"
+              label="Conductor (opcional)" prepend-inner-icon="ri-user-line"
+              :disabled="!carrierForm.carrierId"
+            />
+          </template>
+        </VCardText>
         <VCardActions>
-          <VSpacer /><VBtn variant="text" @click="addDialog = false">Cerrar</VBtn>
+          <VSpacer />
+          <VBtn variant="text" @click="addDialog = false">Cerrar</VBtn>
+          <VBtn
+            v-if="addTab === 'tercerizado'" color="primary" :loading="addBusy"
+            :disabled="!carrierForm.carrierVehicleId" @click="submitCarrierRow"
+          >
+            Agregar
+          </VBtn>
         </VCardActions>
       </VCard>
     </VDialog>
@@ -1105,7 +1232,14 @@ const onMmRectUp = () => {
             </template>
             <template v-else>Este vehículo no tiene servicios este día.</template>
           </div>
+
+          <VCombobox
+            v-if="driverDialog.kind === 'tercerizado'"
+            v-model="externalDriverInput" :items="[]"
+            label="Conductor del transportista" prepend-inner-icon="ri-user-line" hide-details clearable
+          />
           <VAutocomplete
+            v-else
             :items="driverOptions" :model-value="driverDialog.driverId"
             label="Conductor" prepend-inner-icon="ri-user-line" hide-details
             :disabled="!(barsByResource[driverDialog.id] || []).length"
@@ -1114,12 +1248,15 @@ const onMmRectUp = () => {
         </VCardText>
         <VCardActions>
           <VBtn
-            v-if="driverDialog.driverId" variant="text" color="error"
+            v-if="driverDialog.kind !== 'tercerizado' && driverDialog.driverId" variant="text" color="error"
             @click="setResourceDriver(driverDialog, null)"
           >
             Quitar conductor
           </VBtn>
           <VSpacer />
+          <VBtn v-if="driverDialog.kind === 'tercerizado'" color="primary" variant="text" @click="setCarrierDriver(driverDialog)">
+            Guardar
+          </VBtn>
           <VBtn variant="text" @click="driverDialog = null">Cerrar</VBtn>
         </VCardActions>
       </VCard>
@@ -1176,6 +1313,10 @@ const onMmRectUp = () => {
   background: rgb(var(--v-theme-surface));
   border-block-end: 1px solid rgb(var(--v-border-color), var(--v-border-opacity));
   cursor: context-menu;
+}
+.pz-rail-row--carrier {
+  border-inline-start: 3px solid #d97706;
+  background: rgb(217 119 6 / 5%);
 }
 .pz-rail-foot {
   display: flex;
@@ -1234,6 +1375,7 @@ const onMmRectUp = () => {
 }
 
 .pz-lane { position: relative; border-block-end: 1px solid rgb(var(--v-border-color), var(--v-border-opacity)); }
+.pz-lane--carrier { background: rgb(217 119 6 / 4%); }
 .pz-tick { position: absolute; inset-block: 0; inline-size: 1px; background: rgb(var(--v-border-color), 0.5); }
 .pz-now { position: absolute; inset-block: 0; inline-size: 2px; background: rgb(var(--v-theme-error)); z-index: 1; }
 

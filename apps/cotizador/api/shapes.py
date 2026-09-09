@@ -350,11 +350,19 @@ def _booking_assignment(servicio):
     """(assignmentState, executor) — quién ejecuta y en qué punto está.
       sin_asignar → nadie todavía
       publicado   → OFERTA abierta en el grupo de transportistas
-      asignado    → hay una programación con conductor (o transportista)
+      asignado    → hay una programación con conductor propio o con transportista
     """
-    prog = servicio.programaciones.exclude(estado_operativo="cancelado").select_related("conductor").first()
-    if prog and prog.conductor_id:
-        return "asignado", prog.conductor.nombre
+    prog = (servicio.programaciones.exclude(estado_operativo="cancelado")
+            .select_related("conductor", "transportista", "transportista_vehiculo").first())
+    if prog:
+        if prog.conductor_id:
+            return "asignado", prog.conductor.nombre
+        if prog.transportista_vehiculo_id:
+            return "asignado", (
+                prog.conductor_externo
+                or (prog.transportista.nombre if prog.transportista_id else None)
+                or prog.transportista_vehiculo.placa
+            )
     if servicio.publicaciones_tercerizacion.filter(estado="abierta").exists():
         return "publicado", None
     return "sin_asignar", None
@@ -397,9 +405,15 @@ def booking_item(servicio):
 def booking_detail(servicio):
     out = booking_item(servicio)
     out["service"] = lead_summary(servicio.lead_origen) if servicio.lead_origen else None
-    prog = servicio.programaciones.exclude(estado_operativo="cancelado").select_related("vehiculo").first()
+    prog = (servicio.programaciones.exclude(estado_operativo="cancelado")
+            .select_related("vehiculo", "transportista_vehiculo").first())
     out["assignmentId"] = prog.id if prog else None
     out["assignedVehicleId"] = prog.vehiculo_id if prog else None
+    out["assignedCarrierVehicleId"] = prog.transportista_vehiculo_id if prog else None
+    out["assignedPlate"] = (
+        (prog.vehiculo.placa if prog.vehiculo_id else prog.transportista_vehiculo.placa)
+        if prog and (prog.vehiculo_id or prog.transportista_vehiculo_id) else None
+    )
     out["assignedStart"] = prog.hora_inicio.strftime("%H:%M") if prog and prog.hora_inicio else None
     out["assignedEnd"] = prog.hora_fin.strftime("%H:%M") if prog and prog.hora_fin else None
     out["addressOrigin"] = servicio.direccion_origen or None

@@ -142,7 +142,21 @@ class ProgramacionServicio(models.Model):
         EquipoDia, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="servicios",
     )
-    vehiculo = models.ForeignKey(Vehiculo, on_delete=models.PROTECT, related_name="programaciones")
+    vehiculo = models.ForeignKey(
+        Vehiculo, on_delete=models.PROTECT, related_name="programaciones",
+        null=True, blank=True,
+    )
+    transportista = models.ForeignKey(
+        "tercerizacion.Transportista", on_delete=models.PROTECT,
+        related_name="programaciones", null=True, blank=True,
+    )
+    transportista_vehiculo = models.ForeignKey(
+        "tercerizacion.TransportistaVehiculo", on_delete=models.PROTECT,
+        related_name="programaciones", null=True, blank=True,
+    )
+    conductor_externo = models.CharField(
+        max_length=160, blank=True, verbose_name="Conductor del transportista",
+    )
     conductor = models.ForeignKey(
         Conductor, on_delete=models.PROTECT, related_name="programaciones",
         null=True, blank=True,
@@ -168,6 +182,49 @@ class ProgramacionServicio(models.Model):
         verbose_name = "Programación de servicio"
         verbose_name_plural = "Programaciones de servicios"
         ordering = ["fecha", "hora_inicio"]
+        constraints = [
+            models.CheckConstraint(
+                name="prog_vehiculo_xor_transportista",
+                condition=(
+                    models.Q(vehiculo__isnull=False, transportista_vehiculo__isnull=True)
+                    | models.Q(vehiculo__isnull=True, transportista_vehiculo__isnull=False)
+                ),
+            ),
+        ]
 
     def __str__(self):
         return f"{self.servicio.codigo} - {self.fecha} {self.hora_inicio}"
+
+    @property
+    def es_tercerizado(self):
+        return self.transportista_vehiculo_id is not None
+
+
+class FilaPizarraTransportista(models.Model):
+    """Fila de un vehículo de transportista agregada a la Pizarra de un día,
+    para poder asignarle servicios a mano aunque todavía no tenga ninguno."""
+
+    fecha = models.DateField()
+    transportista_vehiculo = models.ForeignKey(
+        "tercerizacion.TransportistaVehiculo", on_delete=models.PROTECT,
+        related_name="filas_pizarra",
+    )
+    conductor_externo = models.CharField(max_length=160, blank=True)
+    creado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+",
+    )
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Fila de transportista en la pizarra"
+        verbose_name_plural = "Filas de transportistas en la pizarra"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["fecha", "transportista_vehiculo"],
+                name="fila_pizarra_unica_por_fecha_vehiculo",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.fecha} · {self.transportista_vehiculo_id}"

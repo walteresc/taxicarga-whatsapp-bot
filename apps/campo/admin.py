@@ -1,6 +1,9 @@
 from django.contrib import admin
 
-from .models import Ayudante, Conductor, EquipoDia, EquipoFrecuente, ProgramacionServicio, Vehiculo
+from .models import (
+    Ayudante, Conductor, EquipoDia, EquipoFrecuente, FilaPizarraTransportista,
+    ProgramacionServicio, Vehiculo,
+)
 
 
 @admin.register(Vehiculo)
@@ -43,7 +46,21 @@ class EquipoFrecuenteAdmin(admin.ModelAdmin):
 
 @admin.register(ProgramacionServicio)
 class ProgramacionServicioAdmin(admin.ModelAdmin):
-    list_display = ["servicio", "fecha", "hora_inicio", "vehiculo", "conductor", "estado_operativo"]
+    list_display = [
+        "servicio", "fecha", "hora_inicio", "vehiculo", "transportista_vehiculo",
+        "conductor", "conductor_externo", "estado_operativo",
+    ]
     list_filter = ["estado_operativo", "fecha"]
-    search_fields = ["servicio__codigo", "vehiculo__placa", "conductor__nombre"]
+    search_fields = [
+        "servicio__codigo", "vehiculo__placa", "conductor__nombre",
+        "transportista_vehiculo__placa", "conductor_externo",
+    ]
+    list_select_related = ["servicio", "vehiculo", "conductor", "transportista_vehiculo"]
     filter_horizontal = ["ayudantes"]
+
+
+@admin.register(FilaPizarraTransportista)
+class FilaPizarraTransportistaAdmin(admin.ModelAdmin):
+    list_display = ["fecha", "transportista_vehiculo", "conductor_externo", "creado_por", "creado_en"]
+    list_filter = ["fecha"]
+    search_fields = ["transportista_vehiculo__placa", "conductor_externo"]

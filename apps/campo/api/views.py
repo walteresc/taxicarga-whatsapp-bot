@@ -134,7 +134,10 @@ class ScheduleViewSet(V2ModelViewSet):
 
         p = self.request.query_params
         qs = (ProgramacionServicio.objects
-              .select_related("servicio", "servicio__cliente", "vehiculo", "conductor", "equipo_dia")
+              .select_related(
+                  "servicio", "servicio__cliente", "vehiculo", "conductor", "equipo_dia",
+                  "transportista", "transportista_vehiculo",
+              )
               .prefetch_related("ayudantes"))
         if p.get("date"):
             qs = qs.filter(fecha=p["date"])
@@ -145,8 +148,10 @@ class ScheduleViewSet(V2ModelViewSet):
         state = (p.get("state") or "").strip()
         if state:
             qs = qs.filter(estado_operativo=state)
-        qs = apply_search(qs, p.get("search"),
-                          ("servicio__codigo", "servicio__cliente__nombre", "vehiculo__placa", "conductor__nombre"))
+        qs = apply_search(qs, p.get("search"), (
+            "servicio__codigo", "servicio__cliente__nombre", "vehiculo__placa",
+            "conductor__nombre", "transportista_vehiculo__placa", "conductor_externo",
+        ))
         return apply_ordering(qs, p.get("ordering"),
                               {"date": "fecha", "time": "hora_inicio"}, ("fecha", "hora_inicio"))
 
@@ -190,14 +195,20 @@ class PizarraView(APIView):
         except ValueError:
             day = timezone.localdate()
 
+        from apps.campo.models import FilaPizarraTransportista
+        from apps.tercerizacion.models import TransportistaVehiculo
+
         progs = list(
             ProgramacionServicio.objects
             .filter(fecha=day).exclude(estado_operativo="cancelado")
-            .select_related("servicio", "servicio__cliente", "servicio__lead_origen", "vehiculo", "conductor")
+            .select_related(
+                "servicio", "servicio__cliente", "servicio__lead_origen", "vehiculo", "conductor",
+                "transportista_vehiculo", "transportista_vehiculo__transportista", "transportista",
+            )
             .prefetch_related("ayudantes")
         )
 
-        # Recursos = vehículos propios activos + los que tengan una programación ese día.
+        # Recursos propios = vehículos activos + los que tengan una programación ese día.
         veh_ids = {p.vehiculo_id for p in progs if p.vehiculo_id}
         vehiculos = list(
             Vehiculo.objects.filter(models.Q(activo=True) | models.Q(id__in=veh_ids))
@@ -211,7 +222,7 @@ class PizarraView(APIView):
 
         resources = [
             {
-                "id": f"v{v.id}", "kind": "propio", "vehicleId": v.id,
+                "id": f"v{v.id}", "kind": "propio", "vehicleId": v.id, "carrierVehicleId": None,
                 "label": f"{v.placa}", "sublabel": f"{v.marca} {v.modelo}".strip(),
                 "driverId": driver_by_veh.get(v.id, (None, None))[0],
                 "driverName": driver_by_veh.get(v.id, (None, None))[1],
@@ -219,15 +230,43 @@ class PizarraView(APIView):
             for v in vehiculos
         ]
 
+        # Recursos de transportistas = filas agregadas ese día + los que tengan programación.
+        filas = list(FilaPizarraTransportista.objects.filter(fecha=day))
+        tv_ids = {p.transportista_vehiculo_id for p in progs if p.transportista_vehiculo_id}
+        tv_ids |= {f.transportista_vehiculo_id for f in filas}
+        driver_txt_by_tv = {f.transportista_vehiculo_id: f.conductor_externo for f in filas}
+        for p in sorted(progs, key=lambda x: x.hora_inicio):
+            if p.transportista_vehiculo_id and p.conductor_externo:
+                driver_txt_by_tv[p.transportista_vehiculo_id] = p.conductor_externo
+        if tv_ids:
+            for tv in (TransportistaVehiculo.objects
+                       .filter(id__in=tv_ids).select_related("transportista").order_by("placa")):
+                sub = " · ".join(filter(None, [
+                    f"{tv.marca} {tv.modelo}".strip(), tv.transportista.nombre,
+                ]))
+                resources.append({
+                    "id": f"t{tv.id}", "kind": "tercerizado",
+                    "vehicleId": None, "carrierVehicleId": tv.id, "carrierId": tv.transportista_id,
+                    "label": tv.placa, "sublabel": sub,
+                    "driverId": None, "driverName": driver_txt_by_tv.get(tv.id) or None,
+                })
+
         def _hhmm(t):
             return t.strftime("%H:%M") if t else None
+
+        def _res_id(p):
+            if p.vehiculo_id:
+                return f"v{p.vehiculo_id}"
+            if p.transportista_vehiculo_id:
+                return f"t{p.transportista_vehiculo_id}"
+            return None
 
         assignments = []
         for p in progs:
             s = p.servicio
             assignments.append({
                 "id": p.id,
-                "resourceId": f"v{p.vehiculo_id}" if p.vehiculo_id else None,
+                "resourceId": _res_id(p),
                 "serviceId": s.id if s else None,
                 "leadId": s.lead_origen_id if s else None,
                 "serviceCode": s.codigo if s else "—",
@@ -241,7 +280,7 @@ class PizarraView(APIView):
                 "price": float(p.monto) if p.monto is not None else None,
                 "mode": s.modalidad_ejecucion if s else "propio",
                 "assignedAuto": p.origen_asignacion == "auto",
-                "driverName": p.conductor.nombre if p.conductor_id else None,
+                "driverName": p.conductor.nombre if p.conductor_id else (p.conductor_externo or None),
                 "helpers": [a.nombre for a in p.ayudantes.all()],
             })
 
@@ -280,21 +319,35 @@ class PizarraView(APIView):
 
 
 def _pizarra_resource(resource_id):
-    """resourceId 'v<id>' → Vehiculo. (transportistas: Fase 2b)"""
+    """resourceId 'v<id>' → campo.Vehiculo · 't<id>' → tercerizacion.TransportistaVehiculo."""
     from apps.campo.models import Vehiculo
-    if not resource_id or not resource_id.startswith("v"):
+    from apps.tercerizacion.models import TransportistaVehiculo
+    if not resource_id or len(resource_id) < 2:
+        return None
+    prefijo, resto = resource_id[0], resource_id[1:]
+    try:
+        pk = int(resto)
+    except ValueError:
         return None
     try:
-        return Vehiculo.objects.get(pk=int(resource_id[1:]))
-    except (Vehiculo.DoesNotExist, ValueError):
+        if prefijo == "v":
+            return Vehiculo.objects.get(pk=pk)
+        if prefijo == "t":
+            return TransportistaVehiculo.objects.select_related("transportista").get(pk=pk)
+    except (Vehiculo.DoesNotExist, TransportistaVehiculo.DoesNotExist):
         return None
+    return None
 
 
-def _pizarra_conflicto(vehiculo, fecha, hora_ini, hora_fin, exclude_id=None):
+def _es_tv(obj):
+    from apps.tercerizacion.models import TransportistaVehiculo
+    return isinstance(obj, TransportistaVehiculo)
+
+
+def _pizarra_conflicto(recurso, fecha, hora_ini, hora_fin, exclude_id=None):
     from apps.campo.models import ProgramacionServicio
-    qs = ProgramacionServicio.objects.filter(
-        vehiculo=vehiculo, fecha=fecha,
-    ).exclude(estado_operativo="cancelado")
+    qs = ProgramacionServicio.objects.filter(fecha=fecha).exclude(estado_operativo="cancelado")
+    qs = qs.filter(transportista_vehiculo=recurso) if _es_tv(recurso) else qs.filter(vehiculo=recurso)
     if exclude_id:
         qs = qs.exclude(pk=exclude_id)
     qs = qs.filter(
@@ -307,10 +360,14 @@ def _pizarra_conflicto(vehiculo, fecha, hora_ini, hora_fin, exclude_id=None):
 
 class PizarraMutationView(APIView):
     """Acciones de la Pizarra sin recargar:
-      POST /api/v2/pizarra/assign     {serviceId, resourceId, start}
-      POST /api/v2/pizarra/move       {assignmentId, resourceId, start}
-      POST /api/v2/pizarra/unassign   {assignmentId}
-      POST /api/v2/pizarra/edit       {assignmentId, driverId?, helperIds?, start?, end?, state?}
+      POST /api/v2/pizarra/assign             {serviceId, resourceId, start, end?, driverId?, externalDriverName?}
+      POST /api/v2/pizarra/move               {assignmentId, resourceId, start}
+      POST /api/v2/pizarra/unassign           {assignmentId}
+      POST /api/v2/pizarra/edit               {assignmentId, driverId?|externalDriverName?, helperIds?, start?, end?, state?}
+      POST /api/v2/pizarra/add-carrier-row    {date, carrierVehicleId, driverName?}
+      POST /api/v2/pizarra/remove-carrier-row {date, resourceId}
+
+    resourceId = 'v<id>' (vehículo propio) | 't<id>' (vehículo de transportista).
     """
     permission_classes = [HasAnyRole("Administrador", "Supervisor", "Asesor de Ventas")]
 
@@ -318,9 +375,12 @@ class PizarraMutationView(APIView):
         return api_exception_handler
 
     def post(self, request, action):
+        from datetime import date as _date
         from datetime import datetime, timedelta
 
-        from apps.campo.models import Ayudante, Conductor, ProgramacionServicio
+        from apps.campo.models import (
+            Ayudante, Conductor, FilaPizarraTransportista, ProgramacionServicio,
+        )
         from apps.servicios.models import Servicio
         from apps.servicios.utils import parse_horario
 
@@ -332,6 +392,62 @@ class PizarraMutationView(APIView):
             except (ValueError, TypeError):
                 return None
 
+        def _parse_date(v):
+            try:
+                return _date.fromisoformat((v or "").strip())
+            except ValueError:
+                return None
+
+        def _fila_conductor(tv, fecha):
+            fila = FilaPizarraTransportista.objects.filter(
+                fecha=fecha, transportista_vehiculo=tv,
+            ).first()
+            return fila.conductor_externo if fila else ""
+
+        def _set_modalidad(servicio, modalidad):
+            if servicio.modalidad_ejecucion != modalidad:
+                servicio.modalidad_ejecucion = modalidad
+                servicio.save(update_fields=["modalidad_ejecucion"])
+
+        if action == "add-carrier-row":
+            from apps.tercerizacion.models import TransportistaVehiculo
+            fecha = _parse_date(d.get("date"))
+            if not fecha:
+                return Response({"error": "Fecha inválida."}, status=400)
+            tv = TransportistaVehiculo.objects.filter(pk=d.get("carrierVehicleId")).first()
+            if not tv:
+                return Response({"error": "Vehículo de transportista no encontrado."}, status=404)
+            fila, _ = FilaPizarraTransportista.objects.get_or_create(
+                fecha=fecha, transportista_vehiculo=tv,
+                defaults={"creado_por": request.user if request.user.is_authenticated else None},
+            )
+            nombre = (d.get("driverName") or "").strip()
+            if nombre and nombre != fila.conductor_externo:
+                fila.conductor_externo = nombre
+                fila.save(update_fields=["conductor_externo"])
+            return Response({"ok": True, "resourceId": f"t{tv.id}"})
+
+        if action == "remove-carrier-row":
+            fecha = _parse_date(d.get("date"))
+            rid = d.get("resourceId") or ""
+            if not fecha or not rid.startswith("t"):
+                return Response({"error": "Datos inválidos."}, status=400)
+            try:
+                tv_id = int(rid[1:])
+            except ValueError:
+                return Response({"error": "Datos inválidos."}, status=400)
+            if ProgramacionServicio.objects.filter(
+                fecha=fecha, transportista_vehiculo_id=tv_id,
+            ).exclude(estado_operativo="cancelado").exists():
+                return Response(
+                    {"error": "Esta fila tiene servicios asignados. Quitá las asignaciones primero."},
+                    status=409,
+                )
+            FilaPizarraTransportista.objects.filter(
+                fecha=fecha, transportista_vehiculo_id=tv_id,
+            ).delete()
+            return Response({"ok": True})
+
         if action == "unassign":
             ps = get_object_or_404(ProgramacionServicio, pk=d.get("assignmentId"))
             ps.delete()
@@ -339,8 +455,8 @@ class PizarraMutationView(APIView):
 
         if action == "assign":
             servicio = get_object_or_404(Servicio, pk=d.get("serviceId"))
-            veh = _pizarra_resource(d.get("resourceId"))
-            if not veh:
+            recurso = _pizarra_resource(d.get("resourceId"))
+            if not recurso:
                 return Response({"error": "Vehículo no encontrado."}, status=404)
             if ProgramacionServicio.objects.filter(servicio=servicio).exclude(estado_operativo="cancelado").exists():
                 return Response({"error": "El servicio ya está asignado."}, status=409)
@@ -350,38 +466,75 @@ class PizarraMutationView(APIView):
             hora_fin = _time(d.get("end")) or (
                 datetime.combine(servicio.fecha_servicio, hora_ini) + timedelta(hours=1)
             ).time()
-            conductor = Conductor.objects.filter(pk=d["driverId"]).first() if d.get("driverId") else None
-            c = _pizarra_conflicto(veh, servicio.fecha_servicio, hora_ini, hora_fin)
+            c = _pizarra_conflicto(recurso, servicio.fecha_servicio, hora_ini, hora_fin)
             if c:
                 return Response({"error": f"Choca con {c.servicio.codigo if c.servicio else 'otra'} ({c.hora_inicio:%H:%M})"}, status=409)
-            ps = ProgramacionServicio.objects.create(
-                servicio=servicio, vehiculo=veh, conductor=conductor,
-                fecha=servicio.fecha_servicio, hora_inicio=hora_ini, hora_fin=hora_fin,
-                monto=servicio.precio or 0,
-            )
+
+            if _es_tv(recurso):
+                cond_ext = (
+                    (d.get("externalDriverName") or "").strip()
+                    or _fila_conductor(recurso, servicio.fecha_servicio)
+                )
+                ps = ProgramacionServicio.objects.create(
+                    servicio=servicio, vehiculo=None,
+                    transportista=recurso.transportista, transportista_vehiculo=recurso,
+                    conductor_externo=cond_ext,
+                    fecha=servicio.fecha_servicio, hora_inicio=hora_ini, hora_fin=hora_fin,
+                    monto=servicio.precio or 0,
+                )
+                _set_modalidad(servicio, Servicio.MODALIDAD_TERCERIZADO)
+            else:
+                conductor = Conductor.objects.filter(pk=d["driverId"]).first() if d.get("driverId") else None
+                ps = ProgramacionServicio.objects.create(
+                    servicio=servicio, vehiculo=recurso, conductor=conductor,
+                    fecha=servicio.fecha_servicio, hora_inicio=hora_ini, hora_fin=hora_fin,
+                    monto=servicio.precio or 0,
+                )
             return Response({"ok": True, "id": ps.id})
 
         ps = get_object_or_404(ProgramacionServicio.objects.select_related("servicio"), pk=d.get("assignmentId"))
 
         if action == "move":
-            veh = _pizarra_resource(d.get("resourceId")) or ps.vehiculo
+            destino = _pizarra_resource(d.get("resourceId"))
+            if destino is None:
+                destino = ps.transportista_vehiculo or ps.vehiculo
             hora_ini = _time(d.get("start")) or ps.hora_inicio
             dur = timedelta(hours=1)
             if ps.hora_fin:
                 dur = datetime.combine(ps.fecha, ps.hora_fin) - datetime.combine(ps.fecha, ps.hora_inicio)
             hora_fin = (datetime.combine(ps.fecha, hora_ini) + dur).time()
-            c = _pizarra_conflicto(veh, ps.fecha, hora_ini, hora_fin, exclude_id=ps.pk)
+            c = _pizarra_conflicto(destino, ps.fecha, hora_ini, hora_fin, exclude_id=ps.pk)
             if c:
                 return Response({"error": f"Choca con {c.servicio.codigo if c.servicio else 'otra'} ({c.hora_inicio:%H:%M})"}, status=409)
-            ps.vehiculo = veh
+
+            fields = ["hora_inicio", "hora_fin"]
             ps.hora_inicio = hora_ini
             ps.hora_fin = hora_fin
-            ps.save(update_fields=["vehiculo", "hora_inicio", "hora_fin"])
+            if _es_tv(destino):
+                ps.vehiculo = None
+                ps.conductor = None
+                ps.transportista = destino.transportista
+                ps.transportista_vehiculo = destino
+                ps.conductor_externo = _fila_conductor(destino, ps.fecha)
+                nueva_mod = Servicio.MODALIDAD_TERCERIZADO
+            else:
+                ps.transportista = None
+                ps.transportista_vehiculo = None
+                ps.conductor_externo = ""
+                ps.vehiculo = destino
+                nueva_mod = Servicio.MODALIDAD_PROPIO
+            fields += ["vehiculo", "conductor", "transportista", "transportista_vehiculo", "conductor_externo"]
+            ps.save(update_fields=fields)
+            _set_modalidad(ps.servicio, nueva_mod)
             return Response({"ok": True})
 
         if action == "edit":
             fields = []
-            if "driverId" in d:
+            es_terc = ps.transportista_vehiculo_id is not None
+            if es_terc and "externalDriverName" in d:
+                ps.conductor_externo = (d.get("externalDriverName") or "").strip()
+                fields.append("conductor_externo")
+            if not es_terc and "driverId" in d:
                 ps.conductor = Conductor.objects.filter(pk=d["driverId"]).first()
                 fields.append("conductor")
             if "start" in d and _time(d["start"]):
@@ -395,7 +548,7 @@ class PizarraMutationView(APIView):
                 fields.append("estado_operativo")
             if fields:
                 ps.save(update_fields=fields)
-            if "helperIds" in d:
+            if not es_terc and "helperIds" in d:
                 ps.ayudantes.set(Ayudante.objects.filter(pk__in=d["helperIds"] or []))
             return Response({"ok": True})
 

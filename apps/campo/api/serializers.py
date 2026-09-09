@@ -80,9 +80,13 @@ class ScheduleSerializer(serializers.ModelSerializer):
     executionMode = serializers.CharField(source="servicio.modalidad_ejecucion", read_only=True)
     customerName = serializers.SerializerMethodField()
     vehicleId = serializers.IntegerField(source="vehiculo_id", read_only=True)
-    plate = serializers.CharField(source="vehiculo.placa", read_only=True)
+    plate = serializers.CharField(source="vehiculo.placa", read_only=True, default=None)
     driverId = serializers.IntegerField(source="conductor_id", read_only=True)
-    driverName = serializers.CharField(source="conductor.nombre", read_only=True)
+    driverName = serializers.CharField(source="conductor.nombre", read_only=True, default=None)
+    carrierVehicleId = serializers.IntegerField(source="transportista_vehiculo_id", read_only=True)
+    carrierPlate = serializers.CharField(source="transportista_vehiculo.placa", read_only=True, default=None)
+    carrierName = serializers.CharField(source="transportista.nombre", read_only=True, default=None)
+    externalDriverName = serializers.CharField(source="conductor_externo", read_only=True)
     helpers = serializers.SerializerMethodField()
     teamId = serializers.IntegerField(source="equipo_dia_id", read_only=True)
     autoAssigned = serializers.SerializerMethodField()
@@ -94,6 +98,7 @@ class ScheduleSerializer(serializers.ModelSerializer):
             "id", "date", "startTime", "endTime", "amount", "state",
             "serviceId", "serviceCode", "leadId", "executionMode", "customerName",
             "vehicleId", "plate", "driverId", "driverName",
+            "carrierVehicleId", "carrierPlate", "carrierName", "externalDriverName",
             "helpers", "teamId", "autoAssigned", "notes",
         )
 
