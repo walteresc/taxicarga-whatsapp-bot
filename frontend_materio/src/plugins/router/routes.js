@@ -99,6 +99,11 @@ export const routes = [
         meta: { roles: ['Administrador', 'Supervisor'] },
       },
       { path: 'sistema/bot', redirect: '/configuracion/bot' },
+      {
+        path: 'configuracion/usuarios',
+        component: () => import('@/pages/configuracion/usuarios/index.vue'),
+        meta: { roles: ['Administrador', 'Admin de sistema'] },
+      },
 
       // COMERCIAL
       {

@@ -206,8 +206,8 @@ const margin = computed(() => detail.value?.margin || {})
             </div>
           </VCardText>
 
-          <!-- Margen -->
-          <VCardText class="py-2">
+          <!-- Margen (solo Gerencia/Supervisor/Despacho/Finanzas) -->
+          <VCardText v-if="detail.margin" class="py-2">
             <VSheet rounded class="pa-3 d-flex flex-wrap ga-6" color="rgba(var(--v-theme-on-surface), 0.04)">
               <div><div class="text-caption text-medium-emphasis">Venta al cliente</div><div class="font-weight-medium">{{ soles(margin.sale) }}</div></div>
               <div><div class="text-caption text-medium-emphasis">Costo tercerización</div><div class="font-weight-medium">{{ soles(margin.cost) }}</div></div>
@@ -221,9 +221,9 @@ const margin = computed(() => detail.value?.margin || {})
                 <div class="text-caption text-medium-emphasis">Objetivo</div><div class="font-weight-medium">{{ soles(detail.targetAmount) }}</div>
               </div>
             </VSheet>
-            <div v-if="detail.pauseReason" class="text-caption text-warning mt-2">
-              <VIcon icon="ri-pause-circle-line" size="14" /> Pausada: {{ detail.pauseReason }}
-            </div>
+          </VCardText>
+          <VCardText v-if="detail.pauseReason" class="py-2 text-caption text-warning">
+            <VIcon icon="ri-pause-circle-line" size="14" /> Pausada: {{ detail.pauseReason }}
           </VCardText>
 
           <VDivider />

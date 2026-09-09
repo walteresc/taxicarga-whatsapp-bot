@@ -11,16 +11,19 @@
 from django.core.exceptions import ValidationError
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.api.exceptions import api_exception_handler
 from apps.api.pagination import StandardPagination
-from apps.api.permissions import HasAnyRole
+from apps.api.permissions import HasAnyRole, puede_ver_margen
 from apps.tercerizacion import negociacion as neg
 from apps.tercerizacion.models import HiloNegociacion, MensajeNegociacion
 
-_ROLES = ("Administrador", "Supervisor", "Asesor de Ventas")
+# Asesor de Ventas entra pero solo ve los hilos de venta (el gate de compra/margen
+# está en la vista). Gerencia/Despacho/Finanzas ven todo.
+_ROLES = ("Administrador", "Gerencia", "Supervisor", "Asesor de Ventas", "Despacho", "Finanzas")
 
 _STATE_EN = {
     "abierta": "open", "pausada": "paused", "acuerdo": "agreement",
@@ -92,9 +95,14 @@ def mensaje_item(m):
     }
 
 
-def hilo_detail(hilo):
+def hilo_detail(hilo, *, ver_margen=True):
     out = hilo_item(hilo)
     out["messages"] = [mensaje_item(m) for m in hilo.mensajes.select_related("autor").order_by("creado_en")]
+    out["canSeeMargin"] = ver_margen
+    if not ver_margen:
+        out["siblings"] = []
+        out["margin"] = None
+        return out
     sibling_type = (
         HiloNegociacion.TIPO_COMPRA if hilo.tipo == HiloNegociacion.TIPO_VENTA
         else HiloNegociacion.TIPO_VENTA
@@ -118,6 +126,16 @@ class _Base(APIView):
     def get_exception_handler(self):
         return api_exception_handler
 
+    def _ver_margen(self):
+        return puede_ver_margen(self.request.user)
+
+    def _guard(self, hilo):
+        if hilo.tipo == HiloNegociacion.TIPO_COMPRA and not self._ver_margen():
+            raise PermissionDenied("No tenés acceso a las negociaciones de compra.")
+
+    def _detail(self, hilo):
+        return hilo_detail(hilo, ver_margen=self._ver_margen())
+
 
 _HILO_QS = HiloNegociacion.objects.select_related(
     "lead", "contraparte", "publicacion", "cotizacion",
@@ -128,6 +146,8 @@ class NegotiationListView(_Base):
     def get(self, request):
         p = request.query_params
         qs = _HILO_QS
+        if not puede_ver_margen(request.user):
+            qs = qs.filter(tipo=HiloNegociacion.TIPO_VENTA)
         t = p.get("type")
         if t in _TYPE_ES:
             qs = qs.filter(tipo=_TYPE_ES[t])
@@ -154,12 +174,14 @@ class NegotiationListView(_Base):
 class NegotiationDetailView(_Base):
     def get(self, request, pk):
         hilo = get_object_or_404(_HILO_QS, pk=pk)
-        return Response(hilo_detail(hilo))
+        self._guard(hilo)
+        return Response(self._detail(hilo))
 
 
 class NegotiationMessagesView(_Base):
     def post(self, request, pk):
         hilo = get_object_or_404(_HILO_QS, pk=pk)
+        self._guard(hilo)
         d = request.data
         sender = _SENDER_ES.get(d.get("sender") or "taxicarga")
         if sender not in ("cliente", "taxicarga", "transportista"):
@@ -179,7 +201,7 @@ class NegotiationMessagesView(_Base):
         except neg.NegociacionError as e:
             raise ValidationError(str(e))
         hilo.refresh_from_db()
-        return Response(hilo_detail(hilo))
+        return Response(self._detail(hilo))
 
 
 class NegotiationRespondView(_Base):
@@ -187,6 +209,7 @@ class NegotiationRespondView(_Base):
         mensaje = get_object_or_404(
             MensajeNegociacion.objects.select_related("hilo", "hilo__lead"), pk=pk,
         )
+        self._guard(mensaje.hilo)
         d = request.data
         action_map = {"accept": "aceptar", "counter": "contraofertar", "reject": "rechazar"}
         accion = action_map.get(d.get("action"))
@@ -200,35 +223,38 @@ class NegotiationRespondView(_Base):
             )
         except neg.NegociacionError as e:
             raise ValidationError(str(e))
-        return Response(hilo_detail(get_object_or_404(_HILO_QS, pk=mensaje.hilo_id)))
+        return Response(self._detail(get_object_or_404(_HILO_QS, pk=mensaje.hilo_id)))
 
 
 class NegotiationPauseView(_Base):
     def post(self, request, pk):
         hilo = get_object_or_404(_HILO_QS, pk=pk)
+        self._guard(hilo)
         try:
             neg.pausar_hilo(hilo, request.user, (request.data.get("reason") or "").strip())
         except neg.NegociacionError as e:
             raise ValidationError(str(e))
-        return Response(hilo_detail(hilo))
+        return Response(self._detail(hilo))
 
 
 class NegotiationResumeView(_Base):
     def post(self, request, pk):
         hilo = get_object_or_404(_HILO_QS, pk=pk)
+        self._guard(hilo)
         try:
             neg.reanudar_hilo(hilo, request.user)
         except neg.NegociacionError as e:
             raise ValidationError(str(e))
-        return Response(hilo_detail(hilo))
+        return Response(self._detail(hilo))
 
 
 class NegotiationCloseView(_Base):
     def post(self, request, pk):
         hilo = get_object_or_404(_HILO_QS, pk=pk)
+        self._guard(hilo)
         agreement = bool(request.data.get("agreement"))
         neg.cerrar_hilo(hilo, request.user, con_acuerdo=agreement)
-        return Response(hilo_detail(hilo))
+        return Response(self._detail(hilo))
 
 
 def _parse_amount(raw):

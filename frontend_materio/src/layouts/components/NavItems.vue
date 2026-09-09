@@ -18,6 +18,8 @@ onUnmounted(() => pipeline.stop())
 const OPS = ['Administrador', 'Supervisor', 'Asesor de Ventas']
 const ADMIN_SUP = ['Administrador', 'Supervisor']
 const ADMIN = ['Administrador']
+const DESPACHO = ['Administrador', 'Gerencia', 'Supervisor', 'Despacho']
+const SISTEMA = ['Administrador', 'Admin de sistema']
 
 // Menú declarativo.
 //  - `to`        : ruta (VerticalNavLink)
@@ -61,7 +63,7 @@ const MENU = [
   { heading: 'Tercerización', roles: OPS },
   { title: 'Transportistas', icon: 'ri-team-line', to: '/transportistas/afiliados', roles: OPS },
   { title: 'Vehículos afiliados', icon: 'ri-truck-line', to: '/transportistas/vehiculos', roles: OPS },
-  { title: 'Publicaciones', icon: 'ri-megaphone-line', to: '/tercerizacion/publicaciones', roles: OPS },
+  { title: 'Publicaciones', icon: 'ri-megaphone-line', to: '/tercerizacion/publicaciones', roles: DESPACHO },
   { title: 'Negociaciones', icon: 'ri-discuss-line', to: '/tercerizacion/negociaciones', roles: OPS },
   { title: 'Asignaciones', icon: 'ri-user-shared-line', to: '/tercerizacion/asignaciones', roles: OPS, soon: true },
 
@@ -69,7 +71,7 @@ const MENU = [
   { title: 'Ventas vivas', icon: 'ri-line-chart-line', to: '/analitica/ventas', roles: ADMIN_SUP },
   { title: 'Histórico', icon: 'ri-bar-chart-box-line', to: '/analitica/benchmark', roles: ADMIN_SUP },
 
-  { heading: 'Configuración', roles: ADMIN_SUP },
+  { heading: 'Configuración', roles: [...ADMIN_SUP, 'Admin de sistema'] },
   { title: 'BOT', icon: 'ri-robot-line', to: '/configuracion/bot', roles: ADMIN_SUP },
   {
     title: 'Operaciones', icon: 'ri-settings-3-line', roles: ADMIN_SUP, children: [
@@ -77,7 +79,7 @@ const MENU = [
       { title: 'Precios y comisiones', icon: 'ri-percent-line', to: '/configuracion/precios-comisiones', roles: ADMIN_SUP, soon: true },
     ],
   },
-  { title: 'Usuarios y permisos', icon: 'ri-shield-user-line', to: '/configuracion/usuarios', roles: ADMIN, soon: true },
+  { title: 'Usuarios y permisos', icon: 'ri-shield-user-line', to: '/configuracion/usuarios', roles: SISTEMA },
 ]
 
 const visibleFor = item => {

@@ -129,3 +129,33 @@ class ApiNegociacionTests(APITestCase):
 
         r = self.client.post(f"/api/v2/negotiations/{self.hilo.id}/resume", {}, format="json")
         self.assertEqual(r.data["state"], "open")
+
+
+class MargenGateTests(APITestCase):
+    def setUp(self):
+        self.asesor = User.objects.create_user("ases_margen", password="x")
+        self.asesor.groups.add(Group.objects.get_or_create(name="Asesor de Ventas")[0])
+        self.jefe = User.objects.create_user("jefe_margen", password="x")
+        self.jefe.groups.add(Group.objects.get_or_create(name="Gerencia")[0])
+        self.lead = _lead(9)
+        self.venta, _ = neg.abrir_hilo(self.lead, HiloNegociacion.TIPO_VENTA,
+                                       usuario=self.jefe, contraparte=self.lead.cliente)
+        self.compra, _ = neg.abrir_hilo(self.lead, HiloNegociacion.TIPO_COMPRA, usuario=self.jefe)
+
+    def test_asesor_no_ve_hilos_de_compra_ni_margen(self):
+        self.client.force_login(self.asesor)
+        codes = {h["type"] for h in self.client.get("/api/v2/negotiations/").data["results"]}
+        self.assertEqual(codes, {"sale"})
+
+        r = self.client.get(f"/api/v2/negotiations/{self.venta.id}/")
+        self.assertIsNone(r.data["margin"])
+        self.assertFalse(r.data["canSeeMargin"])
+
+        self.assertEqual(self.client.get(f"/api/v2/negotiations/{self.compra.id}/").status_code, 403)
+
+    def test_gerencia_ve_compra_y_margen(self):
+        self.client.force_login(self.jefe)
+        r = self.client.get(f"/api/v2/negotiations/{self.venta.id}/")
+        self.assertTrue(r.data["canSeeMargin"])
+        self.assertIsNotNone(r.data["margin"])
+        self.assertEqual(self.client.get(f"/api/v2/negotiations/{self.compra.id}/").status_code, 200)

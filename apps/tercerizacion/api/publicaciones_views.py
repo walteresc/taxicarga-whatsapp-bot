@@ -22,7 +22,8 @@ from apps.tercerizacion.models import (
     OfertaTransportista, PublicacionCarga, Transportista, TransportistaVehiculo,
 )
 
-_ROLES = ("Administrador", "Supervisor", "Despacho", "Asesor de Ventas")
+# Publicaciones exponen el costo de tercerización → mismo criterio que el margen.
+_ROLES = ("Administrador", "Gerencia", "Supervisor", "Despacho")
 
 _STATE_EN = {
     "borrador": "draft", "abierta": "open", "publicada": "open",

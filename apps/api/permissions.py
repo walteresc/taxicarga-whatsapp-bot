@@ -31,6 +31,22 @@ def HasAnyRole(*roles):
     return _HasAnyRole
 
 
+# Roles que pueden ver costos de tercerización y el margen (venta − costo).
+# Decisión de negocio (F4): el Asesor de Ventas ve la venta pero no el costo de compra.
+ROLES_MARGEN = ("Administrador", "Gerencia", "Supervisor", "Despacho", "Finanzas")
+
+# Roles que administran usuarios y permisos.
+ROLES_ADMIN_SISTEMA = ("Administrador", "Admin de sistema")
+
+
+def puede_ver_margen(user):
+    if not user or not user.is_authenticated:
+        return False
+    if user.is_superuser:
+        return True
+    return user.groups.filter(name__in=ROLES_MARGEN).exists()
+
+
 def role_names(user):
     """Lista de roles (grupos) del usuario, en inglés canónico interno del
     proyecto (que ya está en español). El superusuario obtiene 'Administrador'
