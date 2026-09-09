@@ -15,6 +15,7 @@ const HOURS_H = 28
 const CHIP_W = 160
 const CHIP_H = 58
 const PEEK = 22 // desfase de las barras superpuestas
+const FOOT_H = 46 // fila "Agregar vehículo" al pie del carril
 
 const frontId = ref(null) // barra superpuesta traída al frente por clic
 
@@ -727,13 +728,6 @@ const onMmRectUp = () => {
     </VAlert>
 
     <VCard>
-      <div v-if="hiddenResources.length" class="d-flex justify-end px-4 py-2">
-        <VBtn size="small" variant="tonal" prepend-icon="ri-add-line" @click="addDialog = true">
-          Agregar vehículo
-        </VBtn>
-      </div>
-      <VDivider v-if="hiddenResources.length" />
-
       <div v-if="!loading && resources.length" class="pz-minimap-wrap px-4 pt-3 pb-1">
         <div ref="minimap" class="pz-minimap" @click="onMinimapClick">
           <div v-for="h in [3, 6, 9, 12, 15, 18, 21]" :key="h" class="pz-mm-tick" :style="{ left: (h / 24 * 100) + '%' }" />
@@ -812,6 +806,11 @@ const onMmRectUp = () => {
               <div class="text-caption text-medium-emphasis text-truncate">
                 {{ r.driverName || 'sin conductor' }}<span v-if="r.sublabel"> · {{ r.sublabel }}</span>
               </div>
+            </div>
+            <div class="pz-rail-foot" :style="{ height: FOOT_H + 'px' }">
+              <VBtn size="small" variant="text" prepend-icon="ri-add-line" @click="addDialog = true">
+                Agregar vehículo
+              </VBtn>
             </div>
           </div>
 
@@ -895,6 +894,7 @@ const onMmRectUp = () => {
                 </div>
               </div>
             </div>
+            <div class="pz-lane-foot" :style="{ height: FOOT_H + 'px' }" />
           </div>
         </div>
         </div>
@@ -1119,6 +1119,15 @@ const onMmRectUp = () => {
   background: rgb(var(--v-theme-surface));
   border-block-end: 1px solid rgb(var(--v-border-color), var(--v-border-opacity));
   cursor: context-menu;
+}
+.pz-rail-foot {
+  display: flex;
+  align-items: center;
+  padding-inline: 6px;
+  background: rgb(var(--v-theme-surface));
+}
+.pz-lane-foot {
+  border-block-start: 1px solid rgb(var(--v-border-color), var(--v-border-opacity));
 }
 
 .pz-grid { position: relative; }
