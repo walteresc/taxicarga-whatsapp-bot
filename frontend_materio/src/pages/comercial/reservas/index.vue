@@ -335,12 +335,6 @@ const submitCancel = async () => {
               <VBtn size="small" variant="text" icon="ri-eye-line" title="Ver detalle del servicio" :disabled="!row.leadId" @click="openServiceView(row)" />
               <VBtn size="small" variant="text" icon="ri-chat-3-line" title="Abrir conversación" :disabled="!row.conversationId" @click="openConversation(row)" />
               <VBtn
-                v-if="row.assignmentState !== 'asignado' && row.state !== 'completed' && row.state !== 'cancelled'"
-                size="small" variant="text" icon="ri-arrow-left-right-line"
-                :title="row.executionMode === 'propio' ? 'Pasar a transportistas' : 'Pasar a nuestro equipo'"
-                @click="setMode(row, row.executionMode === 'propio' ? 'tercerizado' : 'propio')"
-              />
-              <VBtn
                 v-if="row.state !== 'completed' && row.state !== 'cancelled'"
                 size="small" variant="text" icon="ri-money-dollar-circle-line" title="Registrar pago" @click="openPay(row)"
               />
