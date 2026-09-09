@@ -45,6 +45,7 @@ const submitQuote = async () => {
 }
 
 const signup = reactive({ password: '', isCompany: false, ruc: '', razonSocial: '', website: '' })
+const showPwd = ref(false)
 const signupOk = computed(() => signup.password.length >= 8)
 const submitSignup = async () => {
   busy.value = true
@@ -133,7 +134,12 @@ const submitSignup = async () => {
             <div class="text-subtitle-1 font-weight-medium mb-3">Creá tu cuenta</div>
             <VTextField :model-value="quote.contact.name" label="Nombre" readonly variant="filled" density="comfortable" class="mb-2" />
             <VTextField :model-value="quote.contact.phone" label="Teléfono" readonly variant="filled" density="comfortable" class="mb-2" />
-            <VTextField v-model="signup.password" label="Contraseña (mín. 8 caracteres)" type="password" density="comfortable" class="mb-3" />
+            <VTextField
+              v-model="signup.password" label="Contraseña (mín. 8 caracteres)" density="comfortable" class="mb-3"
+              :type="showPwd ? 'text' : 'password'" autocomplete="new-password"
+              :append-inner-icon="showPwd ? 'ri-eye-off-line' : 'ri-eye-line'"
+              @click:append-inner="showPwd = !showPwd"
+            />
             <VCheckbox v-model="signup.isCompany" label="Es una empresa" density="compact" hide-details />
             <template v-if="signup.isCompany">
               <VTextField v-model="signup.razonSocial" label="Razón social" density="comfortable" class="mt-2 mb-2" />

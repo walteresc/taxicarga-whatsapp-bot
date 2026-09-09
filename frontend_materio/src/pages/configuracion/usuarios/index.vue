@@ -34,6 +34,8 @@ onMounted(async () => {
 const err = (obj, key) => obj[key] || []
 const clearErr = (obj, key) => { if (obj[key]) delete obj[key] }
 
+const showPwd = ref(false)
+
 const editing = ref(null)
 const form = reactive({ roles: [], active: true, fullName: '', email: '', password: '' })
 const editErr = ref({})
@@ -42,6 +44,7 @@ const busy = ref(false)
 const openEdit = u => {
   editing.value = u
   editErr.value = {}
+  showPwd.value = false
   Object.assign(form, { roles: [...u.roles], active: u.active, fullName: u.fullName, email: u.email, password: '' })
 }
 const save = async () => {
@@ -67,6 +70,7 @@ const newUser = reactive({ username: '', fullName: '', email: '', password: '', 
 const createErr = ref({})
 const openCreate = () => {
   Object.assign(newUser, { username: '', fullName: '', email: '', password: '', roles: [] })
+  showPwd.value = false
   createErr.value = {}
   createOpen.value = true
 }
@@ -146,8 +150,11 @@ const create = async () => {
           />
           <VTextField
             v-model="form.password" label="Nueva contraseña (dejá vacío para no cambiarla)"
-            type="password" class="mb-3" autocomplete="new-password"
-            :error-messages="err(editErr, 'password')" @update:model-value="clearErr(editErr, 'password')"
+            :type="showPwd ? 'text' : 'password'" class="mb-3" autocomplete="new-password"
+            :append-inner-icon="showPwd ? 'ri-eye-off-line' : 'ri-eye-line'"
+            :error-messages="err(editErr, 'password')"
+            @click:append-inner="showPwd = !showPwd"
+            @update:model-value="clearErr(editErr, 'password')"
           />
           <div class="text-overline mb-1">Roles</div>
           <div v-if="err(editErr, 'roles').length" class="text-caption text-error mb-1">{{ err(editErr, 'roles').join(' ') }}</div>
@@ -183,9 +190,12 @@ const create = async () => {
             :error-messages="err(createErr, 'email')" @update:model-value="clearErr(createErr, 'email')"
           />
           <VTextField
-            v-model="newUser.password" label="Contraseña (mín. 8 caracteres)" type="password" class="mb-3"
-            autocomplete="new-password"
-            :error-messages="err(createErr, 'password')" @update:model-value="clearErr(createErr, 'password')"
+            v-model="newUser.password" label="Contraseña (mín. 8 caracteres)" class="mb-3"
+            :type="showPwd ? 'text' : 'password'" autocomplete="new-password"
+            :append-inner-icon="showPwd ? 'ri-eye-off-line' : 'ri-eye-line'"
+            :error-messages="err(createErr, 'password')"
+            @click:append-inner="showPwd = !showPwd"
+            @update:model-value="clearErr(createErr, 'password')"
           />
           <div class="text-overline mb-1">Roles</div>
           <div v-if="err(createErr, 'roles').length" class="text-caption text-error mb-1">{{ err(createErr, 'roles').join(' ') }}</div>
