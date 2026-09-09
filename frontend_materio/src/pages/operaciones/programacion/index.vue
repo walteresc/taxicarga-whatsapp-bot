@@ -19,8 +19,8 @@ const NEXT = {
   en_servicio: ['finalizado', 'cancelado'],
 }
 const EXEC = {
-  propio: { label: 'Nuestro equipo', color: 'primary', icon: 'ri-team-line' },
-  tercerizado: { label: 'Transportistas', color: 'secondary', icon: 'ri-truck-line' },
+  propio: { label: 'Nuestro equipo', color: 'info', icon: 'ri-team-line' },
+  tercerizado: { label: 'Transportistas', color: 'warning', icon: 'ri-truck-line' },
 }
 const REASSIGNABLE = new Set(['programado', 'en_ruta'])
 

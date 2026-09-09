@@ -40,8 +40,8 @@ const CONCEPTS = [
 ]
 
 const EXEC = {
-  propio: { label: 'Nuestro equipo', color: 'primary', icon: 'ri-team-line' },
-  tercerizado: { label: 'Transportistas', color: 'secondary', icon: 'ri-truck-line' },
+  propio: { label: 'Nuestro equipo', color: 'info', icon: 'ri-team-line' },
+  tercerizado: { label: 'Transportistas', color: 'warning', icon: 'ri-truck-line' },
 }
 // Filtro combinado modalidad + estado de asignación.
 const SEGMENTS = [
