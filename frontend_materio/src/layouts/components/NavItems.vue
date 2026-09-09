@@ -19,6 +19,7 @@ const OPS = ['Administrador', 'Supervisor', 'Asesor de Ventas']
 const ADMIN_SUP = ['Administrador', 'Supervisor']
 const ADMIN = ['Administrador']
 const DESPACHO = ['Administrador', 'Gerencia', 'Supervisor', 'Despacho']
+const DESPACHO_MARGEN = ['Administrador', 'Gerencia', 'Supervisor', 'Despacho', 'Finanzas']
 const SISTEMA = ['Administrador', 'Admin de sistema']
 
 // Menú declarativo.
@@ -67,9 +68,10 @@ const MENU = [
   { title: 'Negociaciones', icon: 'ri-discuss-line', to: '/tercerizacion/negociaciones', roles: OPS },
   { title: 'Asignaciones', icon: 'ri-user-shared-line', to: '/tercerizacion/asignaciones', roles: OPS, soon: true },
 
-  { heading: 'Analítica', roles: ADMIN_SUP },
+  { heading: 'Analítica', roles: [...ADMIN_SUP, 'Gerencia', 'Despacho', 'Finanzas'] },
   { title: 'Ventas vivas', icon: 'ri-line-chart-line', to: '/analitica/ventas', roles: ADMIN_SUP },
   { title: 'Histórico', icon: 'ri-bar-chart-box-line', to: '/analitica/benchmark', roles: ADMIN_SUP },
+  { title: 'Propio vs Tercerizado', icon: 'ri-scales-3-line', to: '/analitica/tercerizacion', roles: DESPACHO_MARGEN },
 
   { heading: 'Configuración', roles: [...ADMIN_SUP, 'Admin de sistema'] },
   { title: 'BOT', icon: 'ri-robot-line', to: '/configuracion/bot', roles: ADMIN_SUP },

@@ -11,7 +11,7 @@ import datetime as dt
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.api.permissions import HasAnyRole
+from apps.api.permissions import HasAnyRole, ROLES_MARGEN
 from apps.dashboard import services_reportes as R
 
 from .reports_mappers import rename
@@ -62,4 +62,21 @@ class SalesReportView(APIView):
             "collections": R.cobranzas(desde, hasta, filtros=filtros),
             "filterOptions": R.opciones_filtro(),
         }
+        return Response(rename(data))
+
+
+class OutsourcingReportView(APIView):
+    """Propio vs Tercerizado + margen (F8). Expone el costo de compra → mismo
+    criterio de acceso que el margen en Negociaciones (Gerencia/Supervisor/
+    Despacho/Finanzas)."""
+    permission_classes = [HasAnyRole(*ROLES_MARGEN)]
+
+    def get(self, request):
+        qp = request.query_params
+        period_es = _PERIOD_ES.get(qp.get("period"), "mes")
+        desde, hasta = R.parse_rango(qp.get("from"), qp.get("to"), period_es, qp.get("on"))
+        span = (hasta - desde).days
+        agrupacion = "mes" if span > 120 else ("semana" if span > 45 else "dia")
+        data = R.propio_vs_tercerizado(desde, hasta, agrupacion=agrupacion)
+        data["period"] = qp.get("period") or "month"
         return Response(rename(data))

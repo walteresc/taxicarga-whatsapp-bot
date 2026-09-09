@@ -39,6 +39,9 @@ KEYS = {
     "codigo": "code", "cliente": "customer", "saldo": "balance", "dias": "days",
     "metodo_pago": "method",
     "pagado": "paid", "amortizado": "partial", "sin_precio": "noPrice",
+    # propio vs tercerizado (F8) — la mayoría de claves ya vienen en inglés
+    "resumen": "summary", "serie": "series",
+    "total_facturado": "totalRevenue", "margen_tercerizado": "outsourcedMargin",
     # opciones de filtro
     "asesores": "advisors", "canales": "channels", "tipos": "types",
     "id": "id", "username": "username", "first_name": "firstName", "last_name": "lastName",

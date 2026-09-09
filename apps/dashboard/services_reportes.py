@@ -520,6 +520,107 @@ def cobranzas(desde, hasta, *, filtros=None):
 
 
 # --------------------------------------------------------------------------- #
+#  Propio vs Tercerizado + margen (F8)
+# --------------------------------------------------------------------------- #
+
+def propio_vs_tercerizado(desde, hasta, *, agrupacion="mes", filtros=None):
+    """Servicios confirmados en el rango, partidos por `modalidad_ejecucion`.
+    Para los tercerizados calcula el costo (monto de la programación con
+    transportista, que F3 fija al adjudicar) y el margen = venta − costo.
+
+    Fecha de referencia: `fecha_confirmacion` (igual que Ventas vivas, para que
+    los totales reconcilien). Con la base vacía devuelve ceros, no excepción.
+    """
+    filtros = filtros or {}
+    from apps.campo.models import ProgramacionServicio
+
+    base = Servicio.objects.filter(
+        fecha_confirmacion__gte=desde, fecha_confirmacion__lte=hasta,
+    ).exclude(estado=SERVICIO_CANCELADO)
+    base = _aplicar_filtros_servicio(base, filtros)
+
+    monto = _monto_servicio()
+    MOD = {"propio": "propio", "tercerizado": "tercerizado", "por_definir": "por_definir"}
+
+    # Costo de tercerización por servicio: la programación tercerizada no cancelada.
+    costo_por_servicio = dict(
+        ProgramacionServicio.objects
+        .filter(servicio__in=base, transportista_vehiculo__isnull=False)
+        .exclude(estado_operativo="cancelado")
+        .values_list("servicio_id")
+        .annotate(c=Coalesce(Sum("monto"), Value(_CERO), output_field=_DEC))
+        .values_list("servicio_id", "c")
+    )
+
+    filas = {
+        k: {"modality": k, "count": 0, "revenue": _CERO, "cost": _CERO, "margin": _CERO}
+        for k in MOD
+    }
+    for row in (base.values("modalidad_ejecucion")
+                .annotate(n=Count("id"), rev=Coalesce(Sum(monto), Value(_CERO), output_field=_DEC))):
+        k = MOD.get(row["modalidad_ejecucion"], "propio")
+        filas[k]["count"] += row["n"]
+        filas[k]["revenue"] += row["rev"]
+
+    # cost/margin solo para tercerizado (por servicio, sumando lo que haya)
+    terc_ids = list(base.filter(modalidad_ejecucion="tercerizado").values_list("id", flat=True))
+    costo_terc = sum((costo_por_servicio.get(i, _CERO) for i in terc_ids), _CERO)
+    filas["tercerizado"]["cost"] = costo_terc
+    filas["tercerizado"]["margin"] = filas["tercerizado"]["revenue"] - costo_terc
+
+    def _f(x):
+        return round(float(x), 2)
+
+    resumen = []
+    for k in ("propio", "tercerizado", "por_definir"):
+        f = filas[k]
+        rev = f["revenue"]
+        resumen.append({
+            "modality": k,
+            "count": f["count"],
+            "revenue": _f(rev),
+            "cost": _f(f["cost"]) if k == "tercerizado" else None,
+            "margin": _f(f["margin"]) if k == "tercerizado" else None,
+            "marginPct": (_pct(float(f["margin"]), float(rev)) if (k == "tercerizado" and rev) else None),
+        })
+
+    trunc = _trunc_para(agrupacion)
+    serie_rev = {
+        (r["bucket"], MOD.get(r["modalidad_ejecucion"], "propio")): r
+        for r in (base.annotate(bucket=trunc("fecha_confirmacion"))
+                  .values("bucket", "modalidad_ejecucion")
+                  .annotate(n=Count("id"), rev=Coalesce(Sum(monto), Value(_CERO), output_field=_DEC)))
+    }
+    buckets = sorted({b for (b, _m) in serie_rev})
+    serie = []
+    for b in buckets:
+        prop = serie_rev.get((b, "propio"), {})
+        terc = serie_rev.get((b, "tercerizado"), {})
+        terc_bucket_ids = list(
+            base.filter(modalidad_ejecucion="tercerizado")
+            .annotate(bk=trunc("fecha_confirmacion")).filter(bk=b).values_list("id", flat=True)
+        )
+        terc_cost = sum((costo_por_servicio.get(i, _CERO) for i in terc_bucket_ids), _CERO)
+        terc_rev = terc.get("rev", _CERO)
+        serie.append({
+            "bucket": b,
+            "ownRevenue": _f(prop.get("rev", _CERO)),
+            "outsourcedRevenue": _f(terc_rev),
+            "outsourcedCost": _f(terc_cost),
+            "outsourcedMargin": _f(terc_rev - terc_cost),
+        })
+
+    total_rev = sum((f["revenue"] for f in filas.values()), _CERO)
+    return {
+        "desde": desde, "hasta": hasta, "agrupacion": agrupacion,
+        "resumen": resumen,
+        "serie": serie,
+        "total_facturado": _f(total_rev),
+        "margen_tercerizado": _f(filas["tercerizado"]["margin"]),
+    }
+
+
+# --------------------------------------------------------------------------- #
 #  Opciones para los filtros
 # --------------------------------------------------------------------------- #
 

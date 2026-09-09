@@ -178,6 +178,11 @@ export const routes = [
         component: () => import('@/pages/analitica/benchmark.vue'),
         meta: { roles: ANALYTICS_ROLES },
       },
+      {
+        path: 'analitica/tercerizacion',
+        component: () => import('@/pages/analitica/tercerizacion.vue'),
+        meta: { roles: ['Administrador', 'Gerencia', 'Supervisor', 'Despacho', 'Finanzas'] },
+      },
 
       {
         path: 'forbidden',
