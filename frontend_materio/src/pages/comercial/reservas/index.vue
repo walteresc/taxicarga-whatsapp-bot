@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 
 import { useRouter } from 'vue-router'
 
@@ -58,7 +58,15 @@ const error = ref('')
 const search = ref('')
 const stateFilter = ref('')
 const segment = ref('')
+const day = ref('') // '' = todas las fechas
 let searchTimer
+
+const limaToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima' }).format(new Date())
+const shiftDay = n => {
+  const base = new Date(`${day.value || limaToday()}T12:00:00`)
+  base.setDate(base.getDate() + n)
+  day.value = new Intl.DateTimeFormat('en-CA').format(base)
+}
 
 const snackbar = reactive({ show: false, text: '', color: 'success' })
 const notify = (t, c = 'success') => Object.assign(snackbar, { show: true, text: t, color: c })
@@ -72,6 +80,7 @@ const load = async () => {
     rows.value = (await bookingList({
       search: search.value,
       state: stateFilter.value,
+      date: day.value || undefined,
       mode: k === 'mode' ? v : undefined,
       assignment: k === 'assign' ? v : undefined,
     })).results
@@ -89,6 +98,7 @@ const setMode = async (row, mode) => {
   }
 }
 const onSearch = () => { clearTimeout(searchTimer); searchTimer = setTimeout(load, 350) }
+watch(day, load)
 onMounted(load)
 
 const detail = ref(null)
@@ -270,6 +280,16 @@ const submitCancel = async () => {
 
     <VCard>
       <VCardText class="d-flex flex-wrap align-center ga-4">
+        <div class="d-flex align-center ga-1">
+          <VBtn icon="ri-arrow-left-s-line" variant="text" size="small" @click="shiftDay(-1)" />
+          <AppDateField
+            v-model="day" hide-details clearable
+            placeholder="Todas las fechas"
+            style="flex: 0 0 190px; width: 190px;"
+          />
+          <VBtn icon="ri-arrow-right-s-line" variant="text" size="small" @click="shiftDay(1)" />
+          <VBtn size="small" variant="text" @click="day = limaToday()">Hoy</VBtn>
+        </div>
         <VTextField v-model="search" prepend-inner-icon="ri-search-line" label="Buscar código, cliente o ruta" density="compact" hide-details clearable style="max-width: 300px;" @update:model-value="onSearch" />
         <div class="d-flex flex-wrap ga-2">
           <VChip

@@ -16,6 +16,7 @@ const props = defineProps({
   disabled: { type: Boolean, default: false },
   hint: { type: String, default: undefined },
   persistentHint: { type: Boolean, default: false },
+  placeholder: { type: String, default: 'dd/mm/aaaa' },
   errorMessages: { type: [String, Array], default: () => [] },
   min: { type: String, default: undefined },
   max: { type: String, default: undefined },
@@ -73,7 +74,7 @@ const pick = val => {
         :persistent-hint="persistentHint"
         readonly
         prepend-inner-icon="ri-calendar-line"
-        placeholder="dd/mm/aaaa"
+        :placeholder="placeholder"
         @click:clear="emit('update:modelValue', '')"
       />
     </template>

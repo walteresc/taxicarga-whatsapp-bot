@@ -189,6 +189,10 @@ def bookings_queryset(params):
     elif params.get("active") == "1":
         qs = qs.exclude(estado__in=(SERVICIO_FINALIZADO, SERVICIO_CANCELADO))
 
+    date = (params.get("date") or "").strip()
+    if date:
+        qs = qs.filter(fecha_servicio=date)
+
     mode = (params.get("mode") or "").strip()
     if mode in (Servicio.MODALIDAD_PROPIO, Servicio.MODALIDAD_TERCERIZADO):
         qs = qs.filter(modalidad_ejecucion=mode)
