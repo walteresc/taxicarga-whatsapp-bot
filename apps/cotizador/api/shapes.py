@@ -377,6 +377,7 @@ def booking_item(servicio):
         "route": f"{servicio.distrito_origen or '?'} → {servicio.distrito_destino or '?'}",
         "type": servicio.tipo_servicio or None,
         "serviceDate": _d(servicio.fecha_servicio),
+        "serviceTime": hora.strftime("%H:%M") if hora else None,
         "state": _BOOKING_STATE_EN.get(servicio.estado, servicio.estado),
         "price": float(servicio.precio) if servicio.precio is not None else None,
         "paid": float(servicio.total_pagado),

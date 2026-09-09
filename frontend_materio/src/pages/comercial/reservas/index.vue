@@ -10,6 +10,7 @@ import {
 import { usePipelineStore } from '@/stores/pipelineStore'
 import ServiceViewDialog from '@/pages/atencion/bandeja-entrada/components/ServiceViewDialog.vue'
 import QuickQuoteDialog from '@/pages/atencion/bandeja-entrada/components/QuickQuoteDialog.vue'
+import AssignBookingDialog from './AssignBookingDialog.vue'
 
 const router = useRouter()
 const pipeline = usePipelineStore()
@@ -130,17 +131,40 @@ const openConversation = row => {
   if (row.conversationId) router.push(`/atencion/bandeja-entrada?conversation=${row.conversationId}`)
 }
 
+// --- Asignar a un equipo ---
+const assignRow = ref(null)
+const openAssign = row => {
+  if (row.state === 'completed' || row.state === 'cancelled') {
+    notify('La reserva ya está cerrada.', 'warning'); return
+  }
+  if (!row.serviceDate) { notify('Definí la fecha del servicio antes de asignar.', 'warning'); return }
+  assignRow.value = row
+}
+const afterAssign = async () => {
+  notify('Reserva asignada.')
+  await load()
+  pipeline.bump()
+  if (detail.value) detail.value = await bookingDetail(detail.value.id).catch(() => detail.value)
+}
+
 const busy = ref(false)
 
-const payForm = reactive({ open: false, concept: 'parcial', method: 'yape', amount: '', note: '' })
+const payForm = reactive({ open: false, bookingId: null, code: '', concept: 'parcial', method: 'yape', amount: '', note: '' })
+const openPay = row => {
+  Object.assign(payForm, { open: true, bookingId: row.id, code: row.code, concept: 'parcial', method: 'yape', amount: '', note: '' })
+}
 const submitPay = async () => {
   busy.value = true
   try {
-    await bookingAddPayment(detail.value.id, { ...payForm })
+    await bookingAddPayment(payForm.bookingId, {
+      concept: payForm.concept, method: payForm.method, amount: payForm.amount, note: payForm.note,
+    })
     notify('Pago registrado.')
     payForm.open = false
     payForm.amount = ''
-    await refreshDetail()
+    await load()
+    pipeline.bump()
+    if (detail.value?.id === payForm.bookingId) detail.value = await bookingDetail(payForm.bookingId)
   } catch (e) { notify(e.message || 'No se pudo registrar el pago.', 'error') } finally { busy.value = false }
 }
 
@@ -173,7 +197,7 @@ const submitCancel = async () => {
       Reservas
     </h1>
     <p class="text-body-2 text-medium-emphasis mb-4">
-      Ventas cerradas. Registra pagos, finaliza o cancela. La asignación de equipo se hace en la Pizarra.
+      Ventas cerradas. Asigná a un equipo, registrá pagos, finalizá o cancelá. El detalle completo está en cada reserva.
     </p>
 
     <VCard>
@@ -201,23 +225,32 @@ const submitCancel = async () => {
 
       <VTable>
         <thead>
-          <tr><th>Código</th><th>Cliente</th><th>Ruta</th><th>Fecha</th><th>Ejecuta</th><th>Estado</th><th class="text-right">Precio</th><th class="text-right">Saldo</th><th>Pago</th><th class="text-right">Acciones</th></tr>
+          <tr>
+            <th>Código</th><th>Cliente</th><th>Ruta</th><th>Fecha</th><th>Hora</th>
+            <th>Estado</th><th class="text-right">Precio</th><th>Asignación</th><th>Pago</th>
+            <th class="text-right">Acciones</th>
+          </tr>
         </thead>
         <tbody>
           <tr v-if="loading"><td colspan="10" class="text-center py-8"><VProgressCircular indeterminate /></td></tr>
           <tr v-else-if="!rows.length"><td colspan="10" class="text-center text-medium-emphasis py-10">Sin reservas.</td></tr>
           <tr v-for="row in rows" v-else :key="row.id">
-            <td class="font-weight-medium text-primary" style="cursor: pointer;" title="Ver detalle" @click="openServiceView(row)">
-              <VBadge v-if="!row.seen" dot inline color="primary" class="me-1" title="Sin abrir" />{{ row.code }}
+            <td class="font-weight-medium">
+              <button type="button" class="rsv-link" title="Ver detalle" @click="openServiceView(row)">
+                <VBadge v-if="!row.seen" dot inline color="primary" class="me-1" title="Sin abrir" />{{ row.code }}
+              </button>
             </td>
             <td>{{ row.customerName }}</td>
             <td>{{ row.route }}<VChip v-if="row.isInterprovincial" size="x-small" color="warning" class="ms-1">Fuera de Lima</VChip></td>
-            <td>
-              {{ row.serviceDate || 'Por confirmar' }}
+            <td class="text-no-wrap">{{ row.serviceDate || 'Por confirmar' }}</td>
+            <td class="text-no-wrap">
+              {{ row.serviceTime || '—' }}
               <VChip v-if="row.isNight" size="x-small" color="deep-purple" variant="tonal" class="ms-1" title="Ventana nocturna">
                 <VIcon start icon="ri-moon-line" size="12" /> noche
               </VChip>
             </td>
+            <td><VChip size="small" :color="STATE[row.state]?.color">{{ STATE[row.state]?.label || row.state }}</VChip></td>
+            <td class="text-right">{{ soles(row.price) }}</td>
             <td class="text-no-wrap">
               <VChip size="small" :color="EXEC[row.executionMode]?.color" variant="tonal">
                 <VIcon start :icon="EXEC[row.executionMode]?.icon" size="14" />
@@ -229,13 +262,18 @@ const submitCancel = async () => {
                 <template v-else>sin asignar</template>
               </div>
             </td>
-            <td><VChip size="small" :color="STATE[row.state]?.color">{{ STATE[row.state]?.label || row.state }}</VChip></td>
-            <td class="text-right">{{ soles(row.price) }}</td>
-            <td class="text-right">{{ soles(row.balance) }}</td>
             <td><VChip size="x-small" :color="PAY[row.paymentState]?.color">{{ PAY[row.paymentState]?.label }}</VChip></td>
             <td class="text-right text-no-wrap">
               <VBtn size="small" variant="text" icon="ri-eye-line" title="Ver detalle del servicio" :disabled="!row.leadId" @click="openServiceView(row)" />
               <VBtn size="small" variant="text" icon="ri-chat-3-line" title="Abrir conversación" :disabled="!row.conversationId" @click="openConversation(row)" />
+              <VBtn
+                v-if="row.assignmentState !== 'asignado' && row.state !== 'completed' && row.state !== 'cancelled'"
+                size="small" variant="text" icon="ri-team-line" title="Asignar a un equipo" @click="openAssign(row)"
+              />
+              <VBtn
+                v-if="row.state !== 'completed' && row.state !== 'cancelled'"
+                size="small" variant="text" icon="ri-money-dollar-circle-line" title="Registrar pago" @click="openPay(row)"
+              />
               <VBtn size="small" variant="tonal" class="ms-1" @click="openDetail(row)">Gestionar</VBtn>
             </td>
           </tr>
@@ -294,7 +332,13 @@ const submitCancel = async () => {
         </VCardText>
 
         <VCardActions v-if="detail && detail.state !== 'completed' && detail.state !== 'cancelled'" class="flex-wrap px-4 pb-4 ga-2">
-          <VBtn variant="text" :disabled="busy" @click="payForm.open = true">Registrar pago</VBtn>
+          <VBtn
+            v-if="detail.assignmentState !== 'asignado'" variant="text" :disabled="busy"
+            @click="openAssign(detail)"
+          >
+            Asignar
+          </VBtn>
+          <VBtn variant="text" :disabled="busy" @click="openPay(detail)">Registrar pago</VBtn>
           <VBtn variant="text" color="error" :disabled="busy" @click="cancelForm.open = true">Cancelar</VBtn>
           <VSpacer />
           <VBtn variant="text" @click="detailOpen = false">Cerrar</VBtn>
@@ -309,7 +353,7 @@ const submitCancel = async () => {
     <!-- Pago -->
     <VDialog v-model="payForm.open" max-width="440">
       <VCard>
-        <VCardTitle>Registrar pago</VCardTitle>
+        <VCardTitle>Registrar pago{{ payForm.code ? ` · ${payForm.code}` : '' }}</VCardTitle>
         <VCardText>
           <VSelect v-model="payForm.concept" :items="CONCEPTS" label="Concepto" class="mb-2" />
           <VSelect v-model="payForm.method" :items="METHODS" label="Método" class="mb-2" />
@@ -378,6 +422,23 @@ const submitCancel = async () => {
       @done="afterServiceAction"
     />
 
+    <AssignBookingDialog
+      v-if="assignRow"
+      :booking="assignRow"
+      @close="assignRow = null"
+      @assigned="afterAssign"
+    />
+
     <VSnackbar v-model="snackbar.show" :color="snackbar.color" timeout="3500">{{ snackbar.text }}</VSnackbar>
   </section>
 </template>
+
+<style scoped>
+.rsv-link {
+  color: rgb(var(--v-theme-primary));
+  cursor: pointer;
+}
+.rsv-link:hover {
+  text-decoration: underline;
+}
+</style>
