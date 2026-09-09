@@ -397,6 +397,11 @@ def booking_item(servicio):
 def booking_detail(servicio):
     out = booking_item(servicio)
     out["service"] = lead_summary(servicio.lead_origen) if servicio.lead_origen else None
+    prog = servicio.programaciones.exclude(estado_operativo="cancelado").select_related("vehiculo").first()
+    out["assignmentId"] = prog.id if prog else None
+    out["assignedVehicleId"] = prog.vehiculo_id if prog else None
+    out["assignedStart"] = prog.hora_inicio.strftime("%H:%M") if prog and prog.hora_inicio else None
+    out["assignedEnd"] = prog.hora_fin.strftime("%H:%M") if prog and prog.hora_fin else None
     out["addressOrigin"] = servicio.direccion_origen or None
     out["addressDestination"] = servicio.direccion_destino or None
     out["schedule"] = servicio.horario_servicio or None

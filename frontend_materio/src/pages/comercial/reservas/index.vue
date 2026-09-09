@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 
 import { useRouter } from 'vue-router'
 
@@ -7,10 +7,11 @@ import {
   bookingAddPayment, bookingCancel, bookingDetail, bookingFinalize, bookingList,
   bookingSetMode, leadServiceData,
 } from '@/services/commercialService'
+import { driversService } from '@/services/personnelService'
+import { fetchPizarra, pizarraAssign, pizarraUnassign } from '@/services/pizarraService'
 import { usePipelineStore } from '@/stores/pipelineStore'
 import ServiceViewDialog from '@/pages/atencion/bandeja-entrada/components/ServiceViewDialog.vue'
 import QuickQuoteDialog from '@/pages/atencion/bandeja-entrada/components/QuickQuoteDialog.vue'
-import AssignBookingDialog from './AssignBookingDialog.vue'
 
 const router = useRouter()
 const pipeline = usePipelineStore()
@@ -92,12 +93,95 @@ onMounted(load)
 
 const detail = ref(null)
 const detailOpen = ref(false)
+
+// --- Asignación (inline en el diálogo de gestión) ---
+const assign = reactive({ loading: false, resources: [], drivers: [], editing: false })
+const assignForm = reactive({ resourceId: null, driverId: null, start: '', end: '' })
+const assignBusy = ref(false)
+
+const resourceItems = computed(() => assign.resources.map(r => ({
+  title: r.sublabel ? `${r.label} — ${r.sublabel}` : r.label,
+  value: r.id, driverId: r.driverId,
+})))
+const driverItems = computed(() => assign.drivers.map(d => ({ title: d.name, value: d.id })))
+
+const loadAssignOptions = async () => {
+  if (!detail.value?.serviceDate) { assign.resources = []; return }
+  assign.loading = true
+  try {
+    const [board, drv] = await Promise.all([
+      fetchPizarra(detail.value.serviceDate),
+      driversService.list({ status: 'active', pageSize: 200 }).catch(() => ({ results: [] })),
+    ])
+    assign.resources = (board.resources || []).filter(r => r.kind === 'propio')
+    assign.drivers = drv.results || []
+  } catch { assign.resources = [] } finally { assign.loading = false }
+}
+
+const resetAssignForm = () => {
+  const d = detail.value || {}
+  Object.assign(assignForm, {
+    resourceId: d.assignedVehicleId ? `v${d.assignedVehicleId}` : null,
+    driverId: null,
+    start: d.assignedStart || d.serviceTime || '08:00',
+    end: d.assignedEnd || '',
+  })
+}
+
+const onAssignResource = id => {
+  const r = resourceItems.value.find(x => x.value === id)
+  if (r?.driverId && !assignForm.driverId) assignForm.driverId = r.driverId
+}
+
 const openDetail = async row => {
   detail.value = null
   detailOpen.value = true
-  try { detail.value = await bookingDetail(row.id) } catch (e) { notify(e.message, 'error') }
+  assign.editing = false
+  try {
+    detail.value = await bookingDetail(row.id)
+    resetAssignForm()
+    loadAssignOptions()
+  } catch (e) { notify(e.message, 'error') }
 }
-const refreshDetail = async () => { detail.value = await bookingDetail(detail.value.id); await load(); pipeline.bump() }
+const refreshDetail = async () => {
+  detail.value = await bookingDetail(detail.value.id)
+  resetAssignForm()
+  await load()
+  pipeline.bump()
+}
+
+const submitAssign = async () => {
+  if (!assignForm.resourceId) { notify('Elegí un vehículo.', 'warning'); return }
+  assignBusy.value = true
+  try {
+    await pizarraAssign({
+      serviceId: detail.value.id,
+      resourceId: assignForm.resourceId,
+      start: assignForm.start || undefined,
+      end: assignForm.end || undefined,
+      driverId: assignForm.driverId || undefined,
+    })
+    notify('Reserva asignada.')
+    assign.editing = false
+    await refreshDetail()
+  } catch (e) { notify(e.message || 'No se pudo asignar.', 'error') } finally { assignBusy.value = false }
+}
+
+const unassignBooking = async () => {
+  if (!detail.value?.assignmentId) return
+  if (!confirm('¿Quitar la asignación de esta reserva?')) return
+  assignBusy.value = true
+  try {
+    await pizarraUnassign(detail.value.assignmentId)
+    notify('Asignación quitada.')
+    await refreshDetail()
+  } catch (e) { notify(e.message || 'No se pudo quitar.', 'error') } finally { assignBusy.value = false }
+}
+
+const toggleMode = () => {
+  if (!detail.value) return
+  setMode(detail.value, detail.value.executionMode === 'propio' ? 'tercerizado' : 'propio')
+}
 
 // --- Ver servicio (modal compartido con la bandeja) ---
 const viewOpen = ref(false)
@@ -129,22 +213,6 @@ const markRowSeen = () => {
 
 const openConversation = row => {
   if (row.conversationId) router.push(`/atencion/bandeja-entrada?conversation=${row.conversationId}`)
-}
-
-// --- Asignar a un equipo ---
-const assignRow = ref(null)
-const openAssign = row => {
-  if (row.state === 'completed' || row.state === 'cancelled') {
-    notify('La reserva ya está cerrada.', 'warning'); return
-  }
-  if (!row.serviceDate) { notify('Definí la fecha del servicio antes de asignar.', 'warning'); return }
-  assignRow.value = row
-}
-const afterAssign = async () => {
-  notify('Reserva asignada.')
-  await load()
-  pipeline.bump()
-  if (detail.value) detail.value = await bookingDetail(detail.value.id).catch(() => detail.value)
 }
 
 const busy = ref(false)
@@ -268,10 +336,6 @@ const submitCancel = async () => {
               <VBtn size="small" variant="text" icon="ri-chat-3-line" title="Abrir conversación" :disabled="!row.conversationId" @click="openConversation(row)" />
               <VBtn
                 v-if="row.assignmentState !== 'asignado' && row.state !== 'completed' && row.state !== 'cancelled'"
-                size="small" variant="text" icon="ri-team-line" title="Asignar a un equipo" @click="openAssign(row)"
-              />
-              <VBtn
-                v-if="row.assignmentState !== 'asignado' && row.state !== 'completed' && row.state !== 'cancelled'"
                 size="small" variant="text" icon="ri-arrow-left-right-line"
                 :title="row.executionMode === 'propio' ? 'Pasar a transportistas' : 'Pasar a nuestro equipo'"
                 @click="setMode(row, row.executionMode === 'propio' ? 'tercerizado' : 'propio')"
@@ -280,7 +344,10 @@ const submitCancel = async () => {
                 v-if="row.state !== 'completed' && row.state !== 'cancelled'"
                 size="small" variant="text" icon="ri-money-dollar-circle-line" title="Registrar pago" @click="openPay(row)"
               />
-              <VBtn size="small" variant="tonal" class="ms-1" @click="openDetail(row)">Gestionar</VBtn>
+              <VBtn
+                size="small" variant="text" icon="ri-team-line"
+                title="Gestionar asignación / equipo" @click="openDetail(row)"
+              />
             </td>
           </tr>
         </tbody>
@@ -307,22 +374,69 @@ const submitCancel = async () => {
             </tbody>
           </VTable>
 
-          <div class="text-overline mb-1">Ejecuta</div>
-          <div class="d-flex flex-wrap align-center ga-2 mb-4">
+          <div class="text-overline mb-1">Asignación</div>
+          <div class="d-flex flex-wrap align-center ga-2 mb-3">
             <VChip :color="EXEC[detail.executionMode]?.color" variant="tonal">
               <VIcon start :icon="EXEC[detail.executionMode]?.icon" size="16" /> {{ EXEC[detail.executionMode]?.label }}
             </VChip>
-            <span v-if="detail.assignmentState === 'asignado'" class="text-body-2">→ {{ detail.executor }}</span>
-            <span v-else-if="detail.assignmentState === 'publicado'" class="text-body-2 text-medium-emphasis">⏳ publicada en el grupo</span>
             <VBtn
-              v-if="detail.assignmentState !== 'asignado'"
-              size="small" variant="text"
-              :color="detail.executionMode === 'propio' ? 'secondary' : 'primary'"
-              @click="setMode(detail, detail.executionMode === 'propio' ? 'tercerizado' : 'propio')"
+              v-if="detail.assignmentState !== 'asignado' && detail.state !== 'completed' && detail.state !== 'cancelled'"
+              size="small" variant="tonal" icon="ri-arrow-left-right-line"
+              :title="detail.executionMode === 'propio' ? 'Pasar a transportistas' : 'Pasar a nuestro equipo'"
+              @click="toggleMode"
+            />
+            <span v-if="detail.assignmentState === 'publicado'" class="text-body-2 text-medium-emphasis">⏳ publicada en el grupo</span>
+          </div>
+
+          <!-- Ya asignada -->
+          <div v-if="detail.assignmentState === 'asignado'" class="d-flex flex-wrap align-center ga-3 mb-4">
+            <span class="text-body-2"><VIcon icon="ri-user-line" size="16" class="me-1" />{{ detail.executor }}</span>
+            <VBtn
+              v-if="detail.state !== 'completed' && detail.state !== 'cancelled'"
+              size="small" variant="text" color="error" :loading="assignBusy" @click="unassignBooking"
             >
-              {{ detail.executionMode === 'propio' ? 'Pasar a transportistas' : 'Pasar a nuestro equipo' }}
+              Quitar asignación
             </VBtn>
           </div>
+
+          <!-- Asignar (inline) -->
+          <template v-else-if="detail.state !== 'completed' && detail.state !== 'cancelled'">
+            <VAlert v-if="!detail.serviceDate" type="warning" variant="tonal" density="compact" class="mb-4">
+              Definí la fecha del servicio (en "Ver detalle") antes de asignar.
+            </VAlert>
+            <div v-else class="mb-4">
+              <div v-if="assign.loading" class="text-center py-3"><VProgressCircular indeterminate size="24" color="primary" /></div>
+              <template v-else>
+                <VRow dense>
+                  <VCol cols="12" sm="6">
+                    <VSelect
+                      v-model="assignForm.resourceId" :items="resourceItems" label="Vehículo"
+                      density="comfortable" prepend-inner-icon="ri-car-line" hide-details
+                      no-data-text="Sin vehículos disponibles ese día"
+                      @update:model-value="onAssignResource"
+                    />
+                  </VCol>
+                  <VCol cols="12" sm="6">
+                    <VAutocomplete
+                      v-model="assignForm.driverId" :items="driverItems" label="Conductor (opcional)"
+                      density="comfortable" prepend-inner-icon="ri-user-line" clearable hide-details
+                    />
+                  </VCol>
+                </VRow>
+                <div class="d-flex flex-wrap ga-6 mt-3">
+                  <AppTimeField v-model="assignForm.start" label="Inicio" density="comfortable" />
+                  <AppTimeField v-model="assignForm.end" label="Fin (opcional)" density="comfortable" />
+                </div>
+                <VBtn
+                  class="mt-3" color="primary" :loading="assignBusy"
+                  :disabled="!assignForm.resourceId" prepend-icon="ri-team-line"
+                  @click="submitAssign"
+                >
+                  Asignar a este vehículo
+                </VBtn>
+              </template>
+            </div>
+          </template>
 
           <div class="text-overline mb-1">Pagos</div>
           <VTable v-if="detail.payments.length" density="compact">
@@ -338,12 +452,6 @@ const submitCancel = async () => {
         </VCardText>
 
         <VCardActions v-if="detail && detail.state !== 'completed' && detail.state !== 'cancelled'" class="flex-wrap px-4 pb-4 ga-2">
-          <VBtn
-            v-if="detail.assignmentState !== 'asignado'" variant="text" :disabled="busy"
-            @click="openAssign(detail)"
-          >
-            Asignar
-          </VBtn>
           <VBtn variant="text" :disabled="busy" @click="openPay(detail)">Registrar pago</VBtn>
           <VBtn variant="text" color="error" :disabled="busy" @click="cancelForm.open = true">Cancelar</VBtn>
           <VSpacer />
@@ -426,13 +534,6 @@ const submitCancel = async () => {
       draggable
       @close="quoteOpen = false"
       @done="afterServiceAction"
-    />
-
-    <AssignBookingDialog
-      v-if="assignRow"
-      :booking="assignRow"
-      @close="assignRow = null"
-      @assigned="afterAssign"
     />
 
     <VSnackbar v-model="snackbar.show" :color="snackbar.color" timeout="3500">{{ snackbar.text }}</VSnackbar>
