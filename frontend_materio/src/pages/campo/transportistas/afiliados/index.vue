@@ -105,10 +105,10 @@ onMounted(async () => {
           :detail-field="['name', 'vehicleCount']"
         >
           <template #row-actions="{ row }">
-            <VBtn
-              icon="ri-truck-line" variant="text" size="small" title="Agregar vehículo"
-              @click="addVehicleFor = row"
-            />
+            <VBtn variant="text" size="small" title="Agregar vehículo" @click="addVehicleFor = row">
+              <VIcon icon="ri-truck-line" />
+              <VIcon icon="ri-add-line" size="12" style="margin-inline-start: -4px; margin-block-start: -8px;" />
+            </VBtn>
             <VBtn
               icon="ri-user-add-line" variant="text" size="small" title="Agregar conductor"
               @click="addDriverFor = row"

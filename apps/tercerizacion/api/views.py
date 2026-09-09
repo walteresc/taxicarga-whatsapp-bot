@@ -63,6 +63,8 @@ class CarrierVehicleViewSet(V2ModelViewSet):
         )
         if p.get("carrierId"):
             qs = qs.filter(transportista_id=p["carrierId"])
+        if p.get("category") in ("livianos", "medianos", "pesados"):
+            qs = qs.filter(categoria__categoria=p["category"])
         qs = apply_search(qs, p.get("search"), ("placa", "marca", "modelo", "transportista__nombre"))
         qs = apply_active_filter(qs, p.get("status"))
         return apply_ordering(qs, p.get("ordering"), _VEHICLE_ORDER, ("placa", "id"))

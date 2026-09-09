@@ -11,13 +11,31 @@ const bodyTypes = ref([])
 const loading = ref(true)
 const loadError = ref('')
 const search = ref('')
+const statusFilter = ref('') // '' | 'active' | 'inactive'
+const categoryFilter = ref(null) // null | 'livianos' | 'medianos' | 'pesados'
 let searchTimer
+
+const STATUS_SEGMENTS = [
+  { value: '', label: 'Todos' },
+  { value: 'active', label: 'Activos' },
+  { value: 'inactive', label: 'Inactivos' },
+]
+const CATEGORY_OPTIONS = [
+  { title: 'Livianos', value: 'livianos' },
+  { title: 'Medianos', value: 'medianos' },
+  { title: 'Pesados', value: 'pesados' },
+]
 
 const load = async () => {
   loading.value = true
   loadError.value = ''
   try {
-    rows.value = (await carrierVehiclesService.list({ search: search.value, pageSize: 200 })).results
+    rows.value = (await carrierVehiclesService.list({
+      search: search.value || undefined,
+      status: statusFilter.value || undefined,
+      category: categoryFilter.value || undefined,
+      pageSize: 200,
+    })).results
   } catch (e) {
     loadError.value = e.message || 'No se pudo cargar.'
   } finally {
@@ -145,12 +163,27 @@ const dims = r => [r.lengthUsefulM, r.widthUsefulM, r.heightUsefulM].every(x => 
     </div>
 
     <VCard>
-      <VCardText>
+      <VCardText class="d-flex flex-wrap align-center ga-4">
         <VTextField
           v-model="search" prepend-inner-icon="ri-search-line"
           label="Buscar por placa, marca, modelo o transportista"
-          density="compact" hide-details clearable style="max-width: 380px;"
+          density="compact" hide-details clearable style="max-width: 340px;"
           @update:model-value="onSearch"
+        />
+        <div class="d-flex flex-wrap ga-2">
+          <VChip
+            v-for="s in STATUS_SEGMENTS" :key="s.value"
+            :color="statusFilter === s.value ? 'primary' : undefined"
+            :variant="statusFilter === s.value ? 'flat' : 'tonal'"
+            @click="statusFilter = s.value; load()"
+          >
+            {{ s.label }}
+          </VChip>
+        </div>
+        <VSelect
+          v-model="categoryFilter" :items="CATEGORY_OPTIONS" label="Categoría"
+          density="compact" hide-details clearable style="max-width: 170px;"
+          @update:model-value="load"
         />
       </VCardText>
 
