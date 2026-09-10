@@ -4,10 +4,14 @@ import { useRouter } from 'vue-router'
 
 import { carriersService, carrierVehiclesService } from '@/services/carriersService'
 import {
+  outsourcingSettings, outsourcingSettingsUpdate,
   publicationAddOffer, publicationAward, publicationDetail, publicationList, publicationPublish,
 } from '@/services/publicationService'
+import { useAuthStore } from '@/stores/authStore'
 
 const router = useRouter()
+const auth = useAuthStore()
+const canManageSettings = computed(() => auth.hasAnyRole('Administrador', 'Gerencia', 'Supervisor', 'Despacho'))
 
 const STATE = {
   draft: { label: 'Borrador', color: 'default' },
@@ -53,7 +57,26 @@ const loadList = async () => {
   } catch (e) { notify(e.message || 'No se pudo cargar.', 'error') } finally { loadingList.value = false }
 }
 const onSearch = () => { clearTimeout(searchTimer); searchTimer = setTimeout(loadList, 350) }
-onMounted(loadList)
+
+const autoDerive = ref(false)
+const autoDeriveBusy = ref(false)
+const loadAutoDerive = async () => {
+  try { autoDerive.value = (await outsourcingSettings()).autoDeriveInterprovincial } catch { /* sin permiso: se oculta */ }
+}
+const toggleAutoDerive = async val => {
+  autoDeriveBusy.value = true
+  try {
+    autoDerive.value = (await outsourcingSettingsUpdate({ autoDeriveInterprovincial: val })).autoDeriveInterprovincial
+    notify(autoDerive.value
+      ? 'Las cargas interprovinciales completas se publicarán solas a los transportistas.'
+      : 'Derivación automática desactivada. El asesor cotiza o deriva a mano.')
+  } catch (e) {
+    autoDerive.value = !val
+    notify(e.message || 'No se pudo cambiar.', 'error')
+  } finally { autoDeriveBusy.value = false }
+}
+
+onMounted(() => { loadList(); if (canManageSettings.value) loadAutoDerive() })
 
 const detail = ref(null)
 const selectedId = ref(null)
@@ -147,6 +170,21 @@ const awarded = computed(() => detail.value?.state === 'awarded')
       Cargas derivadas a tercerización. El Despacho las publica a los transportistas, registra las ofertas
       y adjudica — al adjudicar se crea la programación con el transportista.
     </p>
+
+    <VCard v-if="canManageSettings" variant="tonal" class="mb-4">
+      <VCardText class="d-flex align-center flex-wrap ga-2 py-2">
+        <VSwitch
+          v-model="autoDerive" :loading="autoDeriveBusy" color="primary" density="compact" hide-details
+          label="Derivar interprovinciales automáticamente"
+          @update:model-value="toggleAutoDerive"
+        />
+        <span class="text-caption text-medium-emphasis">
+          Con esto activo, una carga interprovincial con datos completos se publica sola a los transportistas
+          (precio abierto: ellos proponen), sin que el asesor la cotice. Si está apagado, el asesor la cotiza
+          o la deriva a mano.
+        </span>
+      </VCardText>
+    </VCard>
 
     <VRow>
       <VCol cols="12" md="5">

@@ -129,6 +129,31 @@ _PUB_QS = PublicacionCarga.objects.select_related(
 ).prefetch_related("ofertas")
 
 
+class OutsourcingSettingsView(_Base):
+    """GET/PATCH /api/v2/outsourcing/settings — política de derivación.
+
+        {"autoDeriveInterprovincial": bool}
+
+    Con el flag activo, una carga interprovincial con datos completos se publica
+    sola a los transportistas (precio abierto) sin pasar por el asesor.
+    """
+
+    def _payload(self, cfg):
+        return {"autoDeriveInterprovincial": cfg.derivar_interprovincial_auto}
+
+    def get(self, request):
+        from apps.servicios.models import ConfiguracionOperaciones
+        return Response(self._payload(ConfiguracionOperaciones.get_solo()))
+
+    def patch(self, request):
+        from apps.servicios.models import ConfiguracionOperaciones
+        cfg = ConfiguracionOperaciones.get_solo()
+        if "autoDeriveInterprovincial" in request.data:
+            cfg.derivar_interprovincial_auto = bool(request.data["autoDeriveInterprovincial"])
+            cfg.save(update_fields=["derivar_interprovincial_auto", "actualizado_en"])
+        return Response(self._payload(cfg))
+
+
 class PublicationListView(_Base):
     def get(self, request):
         p = request.query_params

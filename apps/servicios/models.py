@@ -344,6 +344,12 @@ class ConfiguracionOperaciones(models.Model):
 
     ventana_nocturna_inicio = models.TimeField(default=_t(17, 0))
     ventana_nocturna_fin = models.TimeField(default=_t(7, 0))
+    derivar_interprovincial_auto = models.BooleanField(
+        default=False,
+        help_text="Si está activo, las cargas interprovinciales se publican solas "
+                   "a los transportistas (modo de precio abierto) en cuanto tienen "
+                   "los datos completos, sin que el asesor las cotice.",
+    )
     actualizado_en = models.DateTimeField(auto_now=True)
 
     class Meta:

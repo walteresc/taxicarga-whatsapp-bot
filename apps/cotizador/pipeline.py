@@ -12,12 +12,16 @@ Orden de prioridad (una oportunidad cae en la primera que cumple):
     Cotizaciones  : CotizacionComercial con precio ya enviado al cliente
     Reservas      : existe Servicio (venta cerrada)
 """
+import logging
+
 from django.db import transaction
 from django.utils import timezone
 
 from apps.cotizador.models import CotizacionComercial, SolicitudCotizacion
 from apps.leads.models import Lead
 from apps.servicios.models import SERVICIO_CANCELADO, SERVICIO_FINALIZADO, Servicio
+
+logger = logging.getLogger(__name__)
 
 _SOLICITUD_ACTIVA = (SolicitudCotizacion.PENDIENTE, SolicitudCotizacion.EN_PROCESO)
 
@@ -105,6 +109,17 @@ def sync_review_request(lead):
     """
     if not lead.requiere_asesor or lead.estado in (Lead.CERRADO, Lead.PERDIDO):
         return None
+
+    # Derivación automática de interprovinciales: si está activada en Configuración
+    # y la carga ya tiene los datos completos, se publica sola a los transportistas
+    # y NO entra a la cola de revisión del asesor.
+    try:
+        from apps.tercerizacion.services import derivar_interprovincial_si_corresponde
+        if derivar_interprovincial_si_corresponde(lead):
+            return None
+    except Exception:
+        logger.exception("Fallo la derivación automática de interprovincial para lead %s", lead.pk)
+
     activa = SolicitudCotizacion.objects.filter(lead=lead, estado__in=_SOLICITUD_ACTIVA).first()
     if activa:
         # Si aparecieron señales nuevas en un barrido posterior (ej. el cliente

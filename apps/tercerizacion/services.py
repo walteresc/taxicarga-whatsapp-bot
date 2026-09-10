@@ -133,6 +133,56 @@ def tercerizar_carga(servicio, usuario, *, modo_precio=None, precio_publicado=No
     return publicacion, True
 
 
+def derivar_interprovincial_si_corresponde(lead, usuario=None):
+    """Si la carga es interprovincial y el flag de Configuración está activo,
+    la publica sola a los transportistas (precio abierto: ellos proponen) en
+    cuanto tiene los datos completos, sin que el asesor la cotice. Idempotente
+    y sin efectos si falta algún dato. Devuelve la `PublicacionCarga` o None.
+
+    Se llama desde `pipeline.sync_review_request` (que corre en cada save de un
+    lead con `requiere_asesor`), así se dispara sola al completarse los datos.
+    """
+    if not getattr(lead, "es_interprovincial", False):
+        return None
+
+    from apps.servicios.models import ConfiguracionOperaciones, Servicio
+    if not ConfiguracionOperaciones.get_solo().derivar_interprovincial_auto:
+        return None
+
+    servicio = Servicio.objects.filter(lead_origen=lead).first()
+    if servicio:
+        existente = servicio.publicaciones_tercerizacion.filter(
+            estado__in=_ESTADOS_PUBLICACION_ACTIVA,
+        ).first()
+        if existente:
+            return existente
+
+    from apps.ia.conversation_policy import booking_missing_fields
+    if booking_missing_fields(lead):
+        return None
+
+    from apps.cotizador.pipeline import _auditar
+    from apps.servicios.services import crear_servicio_desde_lead
+    from apps.tercerizacion import negociacion as neg
+
+    with transaction.atomic():
+        servicio, _creado = crear_servicio_desde_lead(lead, usuario=usuario)
+        if servicio.modalidad_ejecucion != Servicio.MODALIDAD_TERCERIZADO:
+            servicio.modalidad_ejecucion = Servicio.MODALIDAD_TERCERIZADO
+            servicio.save(update_fields=["modalidad_ejecucion"])
+        pub, _pub_creada = tercerizar_carga(
+            servicio, usuario,
+            modo_precio=PublicacionCarga.PRECIO_ABIERTO,
+            estado=PublicacionCarga.ESTADO_ABIERTA,
+        )
+        neg.abrir_hilo(
+            lead, neg.HiloNegociacion.TIPO_COMPRA, usuario=usuario, publicacion=pub,
+        )
+        _auditar(lead, usuario, "derivada_interprovincial_auto",
+                 {"publicacion": pub.codigo})
+    return pub
+
+
 # ---------------------------------------------------------------------------
 # Fase 2: identificación de transportistas — sin bot todavía, solo detecta y
 # enruta. El bot de clientes NUNCA debe ver estos mensajes.

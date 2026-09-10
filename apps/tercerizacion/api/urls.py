@@ -20,6 +20,8 @@ urlpatterns = router.urls + [
     path("negotiations/<int:pk>/resume", neg.NegotiationResumeView.as_view(), name="v2-negotiation-resume"),
     path("negotiations/<int:pk>/close", neg.NegotiationCloseView.as_view(), name="v2-negotiation-close"),
 
+    path("outsourcing/settings", pubv.OutsourcingSettingsView.as_view(), name="v2-outsourcing-settings"),
+
     path("publications/", pubv.PublicationListView.as_view(), name="v2-publication-list"),
     path("publications/<int:pk>/", pubv.PublicationDetailView.as_view(), name="v2-publication-detail"),
     path("publications/<int:pk>/publish", pubv.PublicationPublishView.as_view(), name="v2-publication-publish"),
