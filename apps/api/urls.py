@@ -13,4 +13,5 @@ urlpatterns = [
     path("", include("apps.tercerizacion.api.urls")),
     path("", include("apps.planilla.api.urls")),
     path("", include("apps.agente.api.urls")),
+    path("", include("apps.pagos.api.urls")),
 ]

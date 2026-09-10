@@ -11,6 +11,7 @@ import { driversService } from '@/services/personnelService'
 import { fetchPizarra, pizarraAssign, pizarraUnassign } from '@/services/pizarraService'
 import { usePipelineStore } from '@/stores/pipelineStore'
 import { useAuthStore } from '@/stores/authStore'
+import { bookingPaymentLink } from '@/services/paymentsService'
 import ServiceViewDialog from '@/pages/atencion/bandeja-entrada/components/ServiceViewDialog.vue'
 import QuickQuoteDialog from '@/pages/atencion/bandeja-entrada/components/QuickQuoteDialog.vue'
 
@@ -280,6 +281,18 @@ const submitPay = async () => {
     pipeline.bump()
     if (detail.value?.id === payForm.bookingId) detail.value = await bookingDetail(payForm.bookingId)
   } catch (e) { notify(e.message || 'No se pudo registrar el pago.', 'error') } finally { busy.value = false }
+}
+
+const linkForm = reactive({ open: false, url: '', amount: 0 })
+const copyLink = () => { try { navigator.clipboard?.writeText(linkForm.url); notify('Copiado.') } catch { /* ignore */ } }
+const genPaymentLink = async (installmentId = null) => {
+  busy.value = true
+  try {
+    const r = await bookingPaymentLink(detail.value.id, { installmentId: installmentId || undefined })
+    const full = `${window.location.origin}${r.url}`
+    Object.assign(linkForm, { open: true, url: full, amount: r.amount })
+    try { await navigator.clipboard.writeText(full) } catch { /* ignore */ }
+  } catch (e) { notify(e.message || 'No se pudo generar el link.', 'error') } finally { busy.value = false }
 }
 
 const planForm = reactive({ open: false, scheme: 'adelanto_saldo' })
@@ -560,6 +573,7 @@ const submitCancel = async () => {
 
         <VCardActions v-if="detail && detail.state !== 'completed' && detail.state !== 'cancelled'" class="flex-wrap px-4 pb-4 ga-2">
           <VBtn variant="text" :disabled="busy" @click="openPay(detail)">Registrar pago</VBtn>
+          <VBtn variant="text" :disabled="busy || !detail.balance" prepend-icon="ri-link" @click="genPaymentLink()">Link de pago</VBtn>
           <VBtn variant="text" color="error" :disabled="busy" @click="cancelForm.open = true">Cancelar</VBtn>
           <VSpacer />
           <VBtn variant="text" @click="detailOpen = false">Cerrar</VBtn>
@@ -589,6 +603,23 @@ const submitCancel = async () => {
           <VSpacer />
           <VBtn variant="text" @click="payForm.open = false">Cancelar</VBtn>
           <VBtn color="primary" :loading="busy" :disabled="!payForm.amount" @click="submitPay">Registrar</VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
+
+    <!-- Link de pago -->
+    <VDialog v-model="linkForm.open" max-width="460">
+      <VCard>
+        <VCardTitle>Link de pago · {{ soles(linkForm.amount) }}</VCardTitle>
+        <VCardText>
+          <p class="text-body-2 text-medium-emphasis mb-2">
+            Copiado al portapapeles. Mandáselo al cliente por WhatsApp — al pagar, la cuota se salda sola.
+          </p>
+          <VTextField :model-value="linkForm.url" readonly density="compact" append-inner-icon="ri-file-copy-line"
+            @click:append-inner="copyLink" />
+        </VCardText>
+        <VCardActions>
+          <VSpacer /><VBtn variant="text" @click="linkForm.open = false">Cerrar</VBtn>
         </VCardActions>
       </VCard>
     </VDialog>

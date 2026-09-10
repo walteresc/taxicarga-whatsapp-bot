@@ -4,7 +4,7 @@ import { useRoute } from 'vue-router'
 
 import {
   customerAccept, customerLoad, customerNegotiate, customerNegotiation,
-  customerNegotiationRespond, customerNegotiationSend, customerRequestAdvisor,
+  customerNegotiationRespond, customerNegotiationSend, customerPay, customerRequestAdvisor,
 } from '@/services/customerPortalService'
 
 const route = useRoute()
@@ -44,6 +44,15 @@ const doRequestAdvisor = async () => {
   busy.value = true
   try { await customerRequestAdvisor(code); await refresh(); notify('Listo, un asesor te va a contactar.') }
   catch (e) { notify(e.message, 'error') } finally { busy.value = false }
+}
+
+const billing = computed(() => load.value?.billing || null)
+const doPay = async installmentId => {
+  busy.value = true
+  try {
+    const r = await customerPay(code, { installmentId })
+    window.location.assign(r.url)
+  } catch (e) { notify(e.message, 'error'); busy.value = false }
 }
 
 const negForm = reactive({ open: false, counterOffer: '', note: '' })
@@ -120,6 +129,31 @@ const price = computed(() => load.value?.price || {})
                   </VBtn>
                 </div>
               </template>
+            </VCardText>
+          </VCard>
+
+          <!-- Pagos -->
+          <VCard v-if="billing" class="mb-4">
+            <VCardText>
+              <div class="d-flex align-center mb-2">
+                <span class="text-overline">Pagos</span>
+                <VSpacer />
+                <span class="text-body-2">Saldo: <strong>{{ soles(billing.balance) }}</strong></span>
+              </div>
+              <VTable density="compact" class="text-body-2">
+                <tbody>
+                  <tr v-for="i in billing.installments" :key="i.id">
+                    <td>{{ i.label }}<span v-if="i.dueDate" class="text-caption text-medium-emphasis"> · vence {{ i.dueDate }}</span></td>
+                    <td class="text-right">{{ soles(i.amount) }}</td>
+                    <td class="text-right" style="width: 120px;">
+                      <VChip v-if="i.state === 'pagada'" size="x-small" color="success">Pagada</VChip>
+                      <VBtn v-else size="x-small" color="primary" :loading="busy" @click="doPay(i.id)">
+                        Pagar {{ soles(i.amount - i.paid) }}
+                      </VBtn>
+                    </td>
+                  </tr>
+                </tbody>
+              </VTable>
             </VCardText>
           </VCard>
 

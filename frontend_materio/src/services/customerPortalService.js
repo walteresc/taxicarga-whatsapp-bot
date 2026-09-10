@@ -14,3 +14,4 @@ export const customerNegotiation = code => apiClient.get(`${P}/loads/${code}/neg
 export const customerNegotiationSend = (code, body) => apiClient.post(`${P}/loads/${code}/negotiation/messages`, body)
 export const customerNegotiationRespond = (code, messageId, body) =>
   apiClient.post(`${P}/loads/${code}/negotiation/messages/${messageId}/respond`, body)
+export const customerPay = (code, body) => apiClient.post(`${P}/loads/${code}/pay`, body || {})

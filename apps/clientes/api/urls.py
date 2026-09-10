@@ -12,6 +12,7 @@ urlpatterns = router.urls + [
     path("portal/customer/loads", pc.CustomerLoadsView.as_view(), name="v2-portal-customer-loads"),
     path("portal/customer/loads/<str:code>", pc.CustomerLoadDetailView.as_view(), name="v2-portal-customer-load"),
     path("portal/customer/loads/<str:code>/accept", pc.CustomerLoadAcceptView.as_view(), name="v2-portal-customer-accept"),
+    path("portal/customer/loads/<str:code>/pay", pc.CustomerLoadPayView.as_view(), name="v2-portal-customer-pay"),
     path("portal/customer/loads/<str:code>/request-advisor", pc.CustomerLoadRequestAdvisorView.as_view(), name="v2-portal-customer-request-advisor"),
     path("portal/customer/loads/<str:code>/negotiate", pc.CustomerLoadNegotiateView.as_view(), name="v2-portal-customer-negotiate"),
     path("portal/customer/loads/<str:code>/negotiation", pc.CustomerNegotiationView.as_view(), name="v2-portal-customer-negotiation"),

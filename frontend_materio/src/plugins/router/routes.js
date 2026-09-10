@@ -237,6 +237,11 @@ export const routes = [
         meta: { public: true },
       },
       {
+        path: 'pagar/:token',
+        component: () => import('@/pages/pagar.vue'),
+        meta: { public: true },
+      },
+      {
         path: '/:pathMatch(.*)*',
         component: () => import('@/pages/[...error].vue'),
       },

@@ -76,6 +76,7 @@ INSTALLED_APPS = [
     "apps.catalogo",
     "apps.planilla",
     "apps.agente",
+    "apps.pagos",
 ]
 
 LOGIN_URL = "/dashboard/login/"
@@ -215,6 +216,13 @@ YCLOUD_SENDER_PHONE = config("YCLOUD_SENDER_PHONE", default="")  # E.164 format:
 YCLOUD_ENABLED = env_bool("YCLOUD_ENABLED", default=False)
 
 CHATWOOT_INTEGRATION_ENABLED = env_bool("CHATWOOT_INTEGRATION_ENABLED", default=False)
+
+# Pasarela de pago. "fake" (default) simula todo el flujo sin credenciales;
+# "culqi" usa las llaves de abajo. Ver apps/pagos/pasarelas.py.
+PASARELA_PAGO = config("PASARELA_PAGO", default="fake").strip().lower()
+CULQI_PUBLIC_KEY = config("CULQI_PUBLIC_KEY", default="")
+CULQI_SECRET_KEY = env_value("CULQI_SECRET_KEY", default="")
+CULQI_WEBHOOK_SECRET = env_value("CULQI_WEBHOOK_SECRET", default="")
 CHATWOOT_SHADOW_SYNC_ENABLED = env_bool("CHATWOOT_SHADOW_SYNC_ENABLED", default=False)
 
 # Bot de transportistas (tercerización de cargas) — desactivado por defecto.

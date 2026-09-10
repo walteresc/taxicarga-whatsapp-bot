@@ -11,10 +11,10 @@ logger = logging.getLogger(__name__)
 STATIC_BUILD_PATH = Path(__file__).resolve().parent.parent.parent / 'static_build'
 INDEX_HTML = STATIC_BUILD_PATH / 'index.html'
 
-# Rutas del SPA que se sirven SIN sesión: solo la propia pantalla de acceso.
-# Todo lo demás exige usuario autenticado (el shell de la app no se entrega a
-# anónimos — mismo criterio que las APIs del panel).
-SPA_PUBLIC_PATHS = {'/login', '/register', '/forgot-password'}
+# Rutas del SPA que se sirven SIN sesión: acceso, alta de invitado, cotización
+# rápida y el checkout de pago por link. Todo lo demás exige usuario autenticado.
+SPA_PUBLIC_PATHS = {'/login', '/register', '/forgot-password', '/cotizar'}
+SPA_PUBLIC_PREFIXES = ('/pagar/',)
 
 # Rutas que NO deben ser manejadas por SPA fallback
 SPA_EXCLUDED_PREFIXES = [
@@ -46,7 +46,10 @@ def spa_fallback(request):
     pública es redirigido a /login conservando el destino en ?next=.
     """
     path = request.path.rstrip('/') or '/'
-    if not request.user.is_authenticated and path not in SPA_PUBLIC_PATHS:
+    es_publica = path in SPA_PUBLIC_PATHS or any(
+        request.path.startswith(p) for p in SPA_PUBLIC_PREFIXES
+    )
+    if not request.user.is_authenticated and not es_publica:
         return HttpResponseRedirect('/login?' + urlencode({'next': request.get_full_path()}))
 
     if not INDEX_HTML.exists():

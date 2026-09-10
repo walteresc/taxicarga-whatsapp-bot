@@ -271,6 +271,7 @@ METODO_PAGO_CHOICES = [
     ("plin", "Plin"),
     ("bcp_personal", "BCP Persona Natural"),
     ("bcp_sos", "BCP SOS Empresa"),
+    ("tarjeta", "Tarjeta / pasarela"),
     ("otro", "Otro"),
 ]
 

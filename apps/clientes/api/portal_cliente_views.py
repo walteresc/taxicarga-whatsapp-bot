@@ -167,6 +167,20 @@ def load_detail(lead):
     out["tracking"] = _tracking(lead)
     cot = lead.cotizaciones_comerciales.order_by("-actualizada_en").first()
     out["negotiating"] = bool(cot and cot.estado == "en_negociacion")
+
+    servicio = getattr(lead, "servicio_generado", None)
+    if servicio and servicio.precio:
+        from apps.servicios.cobro import estado_cobro
+        e = estado_cobro(servicio)
+        # el cliente ve sus cuotas y cuánto debe, nada más
+        out["billing"] = {
+            "total": e["total"], "paid": e["paid"], "balance": e["balance"],
+            "installments": [
+                {"id": i["id"], "label": i["triggerLabel"], "dueDate": i["dueDate"],
+                 "amount": i["amount"], "paid": i["paid"], "state": i["state"]}
+                for i in e["installments"]
+            ],
+        }
     return out
 
 
@@ -269,6 +283,26 @@ class CustomerLoadsView(_Portal):
 class CustomerLoadDetailView(_Portal):
     def get(self, request, code):
         return Response(load_detail(self._lead(code)))
+
+
+class CustomerLoadPayView(_Portal):
+    """Genera una orden de pago para una cuota (la indicada, o la próxima
+    pendiente) y devuelve el link del checkout público."""
+
+    def post(self, request, code):
+        from apps.pagos import services as pagos
+        lead = self._lead(code)
+        servicio = getattr(lead, "servicio_generado", None)
+        if not servicio:
+            raise ValidationError("Todavía no hay una reserva confirmada para pagar.")
+        orden = pagos.crear_orden(
+            servicio,
+            cuota_id=request.data.get("installmentId"),
+            usuario=request.user, origen="portal",
+            email=self.cu.cliente.correo or "",
+        )
+        return Response({"token": orden.token, "url": f"/pagar/{orden.token}",
+                         "amount": float(orden.monto), "state": orden.estado})
 
 
 class CustomerLoadAcceptView(_Portal):
