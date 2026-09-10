@@ -261,6 +261,102 @@ def crear_cotizacion_portal(lead, precio_final, *, en_negociacion=False, condici
     return cotizacion
 
 
+def cerrar_precio_de_cotizacion(cot, precio, *, usuario, nota=""):
+    """Cierra el precio de venta con el cliente. Si difiere de la última
+    revisión, crea y envía una revisión a ese precio; luego acepta la cotización
+    y crea la reserva. Devuelve `(servicio, created)`.
+
+    Lo llaman `QuoteClosePriceView` y la capacidad `cerrar_precio` del agente.
+    """
+    from apps.cotizador.delivery import queue_revision_whatsapp
+    from apps.cotizador.pipeline import _auditar
+    from apps.dashboard.views_quotes import _quote_message
+    from apps.ia.conversation_policy import booking_missing_fields
+    from apps.servicios.services import crear_servicio_desde_lead
+
+    if cot.estado not in ("enviada", "entregada", "en_negociacion"):
+        raise ValidationError("Esta cotización no se puede cerrar en su estado actual.")
+    precio = Decimal(str(precio))
+    if precio <= 0:
+        raise ValidationError("El precio acordado debe ser mayor que cero.")
+    missing = booking_missing_fields(cot.lead)
+    if missing:
+        raise ValidationError(
+            "Faltan datos obligatorios para crear la reserva ("
+            + ", ".join(missing) + "). Complétalos en el lead."
+        )
+
+    revs = list(cot.revisiones.order_by("-numero"))
+    last_price = revs[0].precio_final if revs else None
+
+    with transaction.atomic():
+        cot.precio_acordado = precio
+        cot.save(update_fields=["precio_acordado", "actualizada_en"])
+        if last_price is None or precio != last_price:
+            revision = crear_revision(
+                cot, usuario, precio, condiciones=(nota or ""), vigencia_dias=7,
+                mensaje_whatsapp=_quote_message(cot.lead, precio, 7),
+            )
+            queue_revision_whatsapp(revision.id, actor=usuario)
+            marcar_revision_enviada(revision)
+        cambiar_estado_cotizacion(cot.id, "aceptada")
+        servicio, created = crear_servicio_desde_lead(
+            cot.lead, usuario=usuario, require_accepted_revision=True,
+        )
+        _auditar(cot.lead, usuario, "precio_cerrado",
+                 {"cotizacion": cot.codigo, "reserva": servicio.codigo, "precio": str(precio)})
+    return servicio, created
+
+
+def derivar_cotizacion_a_tercerizacion(cot, *, modo_precio, usuario, precio_ref=None):
+    """Crea la reserva marcada 'tercerizado' + una PublicacionCarga en BORRADOR
+    + el hilo de compra. Devuelve `(publicacion, pub_creada)`.
+
+    Lo llaman `QuoteToOutsourcingView` y la capacidad `derivar_a_tercerizacion`.
+    """
+    from apps.cotizador.pipeline import _auditar
+    from apps.ia.conversation_policy import booking_missing_fields
+    from apps.servicios.models import Servicio
+    from apps.servicios.services import crear_servicio_desde_lead
+    from apps.tercerizacion import negociacion as neg
+    from apps.tercerizacion.models import PublicacionCarga
+    from apps.tercerizacion.services import tercerizar_carga
+
+    modo = (modo_precio or PublicacionCarga.PRECIO_ABIERTO).strip()
+    if modo not in dict(PublicacionCarga.MODOS_PRECIO):
+        raise ValidationError({"priceMode": "Modo de precio no válido."})
+    if precio_ref not in (None, ""):
+        precio_ref = Decimal(str(precio_ref))
+        if precio_ref <= 0:
+            raise ValidationError("El precio referencial debe ser mayor que cero.")
+    else:
+        precio_ref = None
+
+    missing = booking_missing_fields(cot.lead)
+    if missing:
+        raise ValidationError(
+            "Faltan datos obligatorios para derivar (" + ", ".join(missing)
+            + "). Complétalos en el lead."
+        )
+
+    with transaction.atomic():
+        servicio, _created = crear_servicio_desde_lead(cot.lead, usuario=usuario)
+        if servicio.modalidad_ejecucion != Servicio.MODALIDAD_TERCERIZADO:
+            servicio.modalidad_ejecucion = Servicio.MODALIDAD_TERCERIZADO
+            servicio.save(update_fields=["modalidad_ejecucion"])
+        pub, pub_creada = tercerizar_carga(
+            servicio, usuario, modo_precio=modo, precio_publicado=precio_ref,
+            estado=PublicacionCarga.ESTADO_BORRADOR,
+        )
+        _auditar(cot.lead, usuario, "derivada_a_tercerizacion",
+                 {"publicacion": pub.codigo, "modo_precio": modo})
+        neg.abrir_hilo(
+            cot.lead, neg.HiloNegociacion.TIPO_COMPRA, usuario=usuario,
+            publicacion=pub, monto_objetivo=precio_ref,
+        )
+    return pub, pub_creada
+
+
 def _crear_revision(cotizacion, actor, precio_final, numero, **datos):
     precio = Decimal(str(precio_final))
     costo = _decimal_opcional(datos.get("costo_estimado"))

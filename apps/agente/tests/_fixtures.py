@@ -57,12 +57,12 @@ class Mundo:
         self.lead = Lead.objects.create(
             cliente=self.cliente, tipo_servicio="mudanza", origen_carga="portal_cliente",
             distrito_origen="Miraflores", distrito_destino="Surco",
-            direccion_origen="Av Larco 100", direccion_destino="Av Primavera 500",
+            direccion_origen="Av. Larco 100", direccion_destino="Av. Primavera 500",
             fecha_servicio=date.today() + timedelta(days=4), horario_servicio="09:00",
         )
         replace_lead_route(self.lead, [
-            {"tipo": "origen", "distrito": "Miraflores", "direccion": "Av Larco 100"},
-            {"tipo": "destino", "distrito": "Surco", "direccion": "Av Primavera 500"},
+            {"tipo": "origen", "distrito": "Miraflores", "direccion": "Av. Larco 100"},
+            {"tipo": "destino", "distrito": "Surco", "direccion": "Av. Primavera 500"},
         ])
         self.cotizacion = crear_cotizacion_portal(self.lead, 900, en_negociacion=True)
         self.cotizacion.precio_cliente = 800
@@ -77,9 +77,13 @@ class Mundo:
         self.lead2 = Lead.objects.create(
             cliente=self.cliente2, tipo_servicio="carga", origen_carga="asesor_crm",
             distrito_origen="Lima", distrito_destino="Callao",
-            direccion_origen="Jr X 1", direccion_destino="Jr Y 2",
+            direccion_origen="Jr. X 1", direccion_destino="Jr. Y 2",
             fecha_servicio=date.today() + timedelta(days=3), horario_servicio="08:00",
         )
+        replace_lead_route(self.lead2, [
+            {"tipo": "origen", "distrito": "Lima", "direccion": "Jr. X 1"},
+            {"tipo": "destino", "distrito": "Callao", "direccion": "Jr. Y 2"},
+        ])
         self.servicio2 = Servicio.objects.create(
             lead_origen=self.lead2, cliente=self.cliente2, tipo_servicio="carga",
             distrito_origen="Lima", distrito_destino="Callao", horario_servicio="08:00",
