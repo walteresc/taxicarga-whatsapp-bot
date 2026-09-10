@@ -93,6 +93,14 @@ def crear_servicio_desde_lead(lead, usuario=None, revision=None, *, require_acce
         )
         for order, location in enumerate(route_for_lead(lead))
     ])
+
+    if servicio.precio:
+        from apps.servicios.cobro import aplicar_esquema
+        try:
+            aplicar_esquema(servicio, usuario=usuario)
+        except Exception:
+            pass  # el asesor puede fijar el plan de cobro a mano después
+
     return servicio, True
 
 
@@ -110,7 +118,7 @@ CONCEPTOS_PAGO_REAL = ("adelanto", "parcial", "final")
 
 
 def registrar_pago(servicio, *, concepto, metodo_pago, monto, usuario=None,
-                   fecha_pago=None, observaciones=""):
+                   fecha_pago=None, observaciones="", cuota_id=None):
     try:
         monto = Decimal(str(monto))
     except (InvalidOperation, TypeError):
@@ -121,11 +129,16 @@ def registrar_pago(servicio, *, concepto, metodo_pago, monto, usuario=None,
         raise ValidationError({"concept": "Concepto no reconocido."})
     if metodo_pago not in dict(PagoReserva._meta.get_field("metodo_pago").choices):
         raise ValidationError({"method": "Método de pago no reconocido."})
-    return PagoReserva.objects.create(
+    pago = PagoReserva.objects.create(
         servicio=servicio, concepto=concepto, metodo_pago=metodo_pago,
         monto=monto, fecha_pago=fecha_pago or timezone.now(),
         observaciones=observaciones or "", usuario_registro=usuario,
     )
+    if concepto in CONCEPTOS_PAGO_REAL and servicio.cuotas.exists():
+        from apps.servicios.cobro import asignar_pago, recalcular_cuotas
+        recalcular_cuotas(servicio)
+        asignar_pago(pago, cuota_id=cuota_id)
+    return pago
 
 
 def finalizar_servicio(servicio, actor, *, monto_final=None, metodo_final="yape",

@@ -54,3 +54,10 @@ export const bookingAddPayment = (id, body) => apiClient.post(`${P}/bookings/${i
 export const bookingFinalize = id => apiClient.post(`${P}/bookings/${id}/finalize`)
 export const bookingCancel = (id, reason) => apiClient.post(`${P}/bookings/${id}/cancel`, { reason })
 export const bookingSetMode = (id, mode) => apiClient.post(`${P}/bookings/${id}/set-mode`, { mode })
+
+// --- Plan de cobro (cuotas) ---
+export const bookingBilling = id => apiClient.get(`${P}/bookings/${id}/billing`)
+export const bookingSetBilling = (id, body) => apiClient.put(`${P}/bookings/${id}/billing`, body)
+export const billingPresets = () => apiClient.get('/api/v2/billing/presets')
+export const billingSettings = () => apiClient.get('/api/v2/billing/settings')
+export const billingSettingsUpdate = body => apiClient.patch('/api/v2/billing/settings', body)

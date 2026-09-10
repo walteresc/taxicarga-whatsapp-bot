@@ -275,9 +275,67 @@ METODO_PAGO_CHOICES = [
 ]
 
 
+class CuotaServicio(models.Model):
+    """Una cuota del plan de cobro de un servicio: cuándo se espera cobrarla
+    (`disparador`) y cuánto (`base` + `valor`). Un `PagoReserva` la salda."""
+
+    DISP_RESERVA = "reserva"
+    DISP_ORIGEN = "origen"
+    DISP_DESTINO = "destino"
+    DISP_DIAS = "dias"
+    DISP_FECHA = "fecha"
+    DISPARADORES = [
+        (DISP_RESERVA, "Al reservar"),
+        (DISP_ORIGEN, "En el origen"),
+        (DISP_DESTINO, "En el destino"),
+        (DISP_DIAS, "A X días del servicio"),
+        (DISP_FECHA, "Fecha fija"),
+    ]
+    BASE_PORCENTAJE = "porcentaje"
+    BASE_MONTO = "monto"
+    BASES = [(BASE_PORCENTAJE, "% del total"), (BASE_MONTO, "Monto fijo")]
+
+    servicio = models.ForeignKey(Servicio, on_delete=models.CASCADE, related_name="cuotas")
+    orden = models.PositiveSmallIntegerField(default=1)
+    disparador = models.CharField(max_length=10, choices=DISPARADORES, default=DISP_RESERVA)
+    dias = models.PositiveSmallIntegerField(null=True, blank=True)
+    fecha_vencimiento = models.DateField(null=True, blank=True)
+    base = models.CharField(max_length=10, choices=BASES, default=BASE_PORCENTAJE)
+    valor = models.DecimalField(max_digits=10, decimal_places=2)
+    monto = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    creado_en = models.DateTimeField(auto_now_add=True)
+    actualizado_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["servicio", "orden"]
+        verbose_name = "Cuota de cobro"
+        verbose_name_plural = "Plan de cobro"
+        constraints = [
+            models.UniqueConstraint(fields=["servicio", "orden"], name="cuota_servicio_orden_unico"),
+        ]
+
+    def __str__(self):
+        return f"{self.servicio.codigo} · cuota {self.orden} ({self.get_disparador_display()})"
+
+    @property
+    def pagado(self):
+        from decimal import Decimal
+        from django.db.models import Sum
+        return self.pagos.aggregate(t=Sum("monto"))["t"] or Decimal(0)
+
+    @property
+    def estado(self):
+        if self.pagado <= 0:
+            return "pendiente"
+        return "pagada" if self.pagado >= self.monto else "parcial"
+
+
 class PagoReserva(models.Model):
     servicio = models.ForeignKey(
         Servicio, on_delete=models.CASCADE, related_name="pagos"
+    )
+    cuota = models.ForeignKey(
+        CuotaServicio, on_delete=models.SET_NULL, null=True, blank=True, related_name="pagos",
     )
     concepto = models.CharField(max_length=20, choices=CONCEPTO_PAGO_CHOICES)
     metodo_pago = models.CharField(max_length=20, choices=METODO_PAGO_CHOICES)
@@ -366,6 +424,15 @@ class ConfiguracionOperaciones(models.Model):
         max_digits=10, decimal_places=2, default=0,
         help_text="Los servicios tercerizados por debajo de este monto no pagan "
                   "comisión a la plataforma. 0 = todos comisionan.",
+    )
+    esquema_cobro_default = models.CharField(
+        max_length=32, default="adelanto_saldo",
+        help_text="Plan de cuotas que se aplica a una reserva nueva "
+                  "(el asesor lo puede cambiar por servicio).",
+    )
+    adelanto_pct_default = models.DecimalField(
+        max_digits=5, decimal_places=2, default=30,
+        help_text="% de adelanto del esquema 'adelanto + saldo'.",
     )
     actualizado_en = models.DateTimeField(auto_now=True)
 

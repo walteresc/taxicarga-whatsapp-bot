@@ -808,8 +808,69 @@ class BookingPaymentView(_Base):
             monto=d.get("amount"),
             usuario=request.user,
             observaciones=d.get("note") or "",
+            cuota_id=d.get("installmentId"),
         )
         return Response(shapes.booking_detail(_booking(pk)))
+
+
+class BookingBillingView(_Base):
+    """GET plan de cobro; PUT lo reemplaza con un preset o cuotas a medida."""
+
+    def get(self, request, pk):
+        from apps.servicios.cobro import estado_cobro
+        return Response(estado_cobro(_booking(pk)))
+
+    def put(self, request, pk):
+        from apps.servicios.cobro import aplicar_esquema, estado_cobro
+        servicio = _booking(pk)
+        aplicar_esquema(
+            servicio,
+            preset=request.data.get("scheme"),
+            cuotas=request.data.get("installments"),
+            usuario=request.user,
+        )
+        return Response(estado_cobro(servicio))
+
+
+class BillingPresetsView(_Base):
+    def get(self, request):
+        from apps.servicios.cobro import presets_disponibles
+        return Response({"presets": presets_disponibles()})
+
+
+class BillingSettingsView(_Base):
+    def get(self, request):
+        from apps.servicios.models import ConfiguracionOperaciones
+        cfg = ConfiguracionOperaciones.get_solo()
+        return Response({
+            "defaultScheme": cfg.esquema_cobro_default,
+            "defaultAdvancePercent": float(cfg.adelanto_pct_default),
+        })
+
+    def patch(self, request):
+        from decimal import Decimal, InvalidOperation
+
+        from apps.servicios.cobro import PRESETS
+        from apps.servicios.models import ConfiguracionOperaciones
+        cfg = ConfiguracionOperaciones.get_solo()
+        campos = []
+        if "defaultScheme" in request.data:
+            if request.data["defaultScheme"] not in PRESETS:
+                raise ValidationError({"defaultScheme": "Esquema no reconocido."})
+            cfg.esquema_cobro_default = request.data["defaultScheme"]
+            campos.append("esquema_cobro_default")
+        if "defaultAdvancePercent" in request.data:
+            try:
+                pct = Decimal(str(request.data["defaultAdvancePercent"]))
+            except (InvalidOperation, TypeError):
+                raise ValidationError({"defaultAdvancePercent": "Porcentaje no válido."})
+            if not (Decimal(0) < pct < Decimal(100)):
+                raise ValidationError({"defaultAdvancePercent": "Debe estar entre 0 y 100."})
+            cfg.adelanto_pct_default = pct
+            campos.append("adelanto_pct_default")
+        if campos:
+            cfg.save(update_fields=campos + ["actualizado_en"])
+        return self.get(request)
 
 
 class BookingFinalizeView(_Base):

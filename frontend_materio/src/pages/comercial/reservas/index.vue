@@ -4,12 +4,13 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 import {
-  bookingAddPayment, bookingCancel, bookingDetail, bookingFinalize, bookingList,
-  bookingSetMode, leadServiceData,
+  billingPresets, billingSettings, billingSettingsUpdate, bookingAddPayment, bookingCancel,
+  bookingDetail, bookingFinalize, bookingList, bookingSetBilling, bookingSetMode, leadServiceData,
 } from '@/services/commercialService'
 import { driversService } from '@/services/personnelService'
 import { fetchPizarra, pizarraAssign, pizarraUnassign } from '@/services/pizarraService'
 import { usePipelineStore } from '@/stores/pipelineStore'
+import { useAuthStore } from '@/stores/authStore'
 import ServiceViewDialog from '@/pages/atencion/bandeja-entrada/components/ServiceViewDialog.vue'
 import QuickQuoteDialog from '@/pages/atencion/bandeja-entrada/components/QuickQuoteDialog.vue'
 
@@ -72,6 +73,28 @@ const snackbar = reactive({ show: false, text: '', color: 'success' })
 const notify = (t, c = 'success') => Object.assign(snackbar, { show: true, text: t, color: c })
 const soles = n => `S/ ${Math.round(n || 0).toLocaleString('es-PE')}`
 
+const auth = useAuthStore()
+const canConfigBilling = computed(() => auth.hasAnyRole('Administrador', 'Gerencia', 'Supervisor'))
+const billCfg = reactive({ scheme: 'adelanto_saldo', advance: 30, presets: [] })
+const billCfgBusy = ref(false)
+const loadBillCfg = async () => {
+  try {
+    const [s, p] = await Promise.all([billingSettings(), billingPresets()])
+    billCfg.scheme = s.defaultScheme
+    billCfg.advance = s.defaultAdvancePercent
+    billCfg.presets = p.presets
+  } catch { /* sin permiso */ }
+}
+const saveBillCfg = async patch => {
+  billCfgBusy.value = true
+  try {
+    const s = await billingSettingsUpdate(patch)
+    billCfg.scheme = s.defaultScheme
+    billCfg.advance = s.defaultAdvancePercent
+    notify('Guardado.')
+  } catch (e) { notify(e.message || 'No se pudo guardar.', 'error') } finally { billCfgBusy.value = false }
+}
+
 const load = async () => {
   loading.value = true
   error.value = ''
@@ -99,7 +122,7 @@ const setMode = async (row, mode) => {
 }
 const onSearch = () => { clearTimeout(searchTimer); searchTimer = setTimeout(load, 350) }
 watch(day, load)
-onMounted(load)
+onMounted(() => { load(); if (canConfigBilling.value) loadBillCfg() })
 
 const detail = ref(null)
 const detailOpen = ref(false)
@@ -227,15 +250,28 @@ const openConversation = row => {
 
 const busy = ref(false)
 
-const payForm = reactive({ open: false, bookingId: null, code: '', concept: 'parcial', method: 'yape', amount: '', note: '' })
+const INST_STATE = { pendiente: 'default', parcial: 'warning', pagada: 'success' }
+const instItems = computed(() => (detail.value?.billing?.installments || []).map(i => ({
+  title: `${i.order}. ${i.triggerLabel}${i.dueDate ? ` (${i.dueDate})` : ''} — ${soles(i.amount)} · ${i.state}`,
+  value: i.id,
+  props: { disabled: i.state === 'pagada' },
+})))
+
+const payForm = reactive({ open: false, bookingId: null, code: '', concept: 'parcial', method: 'yape', amount: '', note: '', installmentId: null })
 const openPay = row => {
-  Object.assign(payForm, { open: true, bookingId: row.id, code: row.code, concept: 'parcial', method: 'yape', amount: '', note: '' })
+  const next = (detail.value?.billing?.installments || []).find(i => i.state !== 'pagada')
+  Object.assign(payForm, {
+    open: true, bookingId: row.id, code: row.code, concept: 'parcial', method: 'yape',
+    amount: next ? String(Math.round(next.amount - next.paid)) : '', note: '',
+    installmentId: next?.id ?? null,
+  })
 }
 const submitPay = async () => {
   busy.value = true
   try {
     await bookingAddPayment(payForm.bookingId, {
       concept: payForm.concept, method: payForm.method, amount: payForm.amount, note: payForm.note,
+      installmentId: payForm.installmentId || undefined,
     })
     notify('Pago registrado.')
     payForm.open = false
@@ -244,6 +280,25 @@ const submitPay = async () => {
     pipeline.bump()
     if (detail.value?.id === payForm.bookingId) detail.value = await bookingDetail(payForm.bookingId)
   } catch (e) { notify(e.message || 'No se pudo registrar el pago.', 'error') } finally { busy.value = false }
+}
+
+const planForm = reactive({ open: false, scheme: 'adelanto_saldo' })
+const planPresets = ref([])
+const openPlan = async () => {
+  if (!planPresets.value.length) {
+    try { planPresets.value = (await billingPresets()).presets } catch { /* ignore */ }
+  }
+  planForm.scheme = 'adelanto_saldo'
+  planForm.open = true
+}
+const submitPlan = async () => {
+  busy.value = true
+  try {
+    await bookingSetBilling(detail.value.id, { scheme: planForm.scheme })
+    planForm.open = false
+    notify('Plan de cobro actualizado.')
+    detail.value = await bookingDetail(detail.value.id)
+  } catch (e) { notify(e.message || 'No se pudo.', 'error') } finally { busy.value = false }
 }
 
 const finForm = reactive({ open: false, finalAmount: '', method: 'yape', note: '' })
@@ -277,6 +332,24 @@ const submitCancel = async () => {
     <p class="text-body-2 text-medium-emphasis mb-4">
       Ventas cerradas. Asigná a un equipo, registrá pagos, finalizá o cancelá. El detalle completo está en cada reserva.
     </p>
+
+    <VCard v-if="canConfigBilling" variant="tonal" class="mb-4">
+      <VCardText class="d-flex flex-wrap align-center ga-3 py-3">
+        <span class="text-body-2 font-weight-medium">Cobro por defecto</span>
+        <VSelect
+          :model-value="billCfg.scheme" :items="billCfg.presets.map(p => ({ title: p.label, value: p.key }))"
+          density="compact" hide-details style="max-width: 260px;" :loading="billCfgBusy"
+          @update:model-value="v => saveBillCfg({ defaultScheme: v })"
+        />
+        <VTextField
+          v-model.number="billCfg.advance" label="Adelanto (%)" type="number" density="compact" hide-details
+          suffix="%" style="max-width: 130px;" @blur="saveBillCfg({ defaultAdvancePercent: billCfg.advance })"
+        />
+        <span class="text-caption text-medium-emphasis">
+          Plan de cuotas que se aplica a una reserva nueva. El asesor lo puede cambiar en cada reserva.
+        </span>
+      </VCardText>
+    </VCard>
 
     <VCard>
       <VCardText class="d-flex flex-wrap align-center ga-4">
@@ -453,6 +526,25 @@ const submitCancel = async () => {
             </div>
           </template>
 
+          <div class="d-flex align-center mb-1">
+            <span class="text-overline">Plan de cobro</span>
+            <VSpacer />
+            <VBtn
+              v-if="detail.state !== 'completed' && detail.state !== 'cancelled'"
+              size="x-small" variant="text" @click="openPlan"
+            >Cambiar</VBtn>
+          </div>
+          <VTable v-if="detail.billing?.installments?.length" density="compact" class="mb-3">
+            <tbody>
+              <tr v-for="i in detail.billing.installments" :key="i.id">
+                <td>{{ i.order }}. {{ i.triggerLabel }}<span v-if="i.dueDate" class="text-caption text-medium-emphasis"> · {{ i.dueDate }}</span></td>
+                <td class="text-right">{{ soles(i.amount) }}</td>
+                <td class="text-right"><VChip size="x-small" :color="INST_STATE[i.state]">{{ i.state }}</VChip></td>
+              </tr>
+            </tbody>
+          </VTable>
+          <p v-else class="text-medium-emphasis text-caption mb-3">Sin plan de cobro. Usá "Cambiar" para definirlo.</p>
+
           <div class="text-overline mb-1">Pagos</div>
           <VTable v-if="detail.payments.length" density="compact">
             <thead><tr><th>Fecha</th><th>Concepto</th><th>Método</th><th class="text-right">Monto</th></tr></thead>
@@ -484,6 +576,10 @@ const submitCancel = async () => {
       <VCard>
         <VCardTitle>Registrar pago{{ payForm.code ? ` · ${payForm.code}` : '' }}</VCardTitle>
         <VCardText>
+          <VSelect
+            v-if="instItems.length" v-model="payForm.installmentId" :items="instItems"
+            label="Cuota que salda" class="mb-2" clearable
+          />
           <VSelect v-model="payForm.concept" :items="CONCEPTS" label="Concepto" class="mb-2" />
           <VSelect v-model="payForm.method" :items="METHODS" label="Método" class="mb-2" />
           <VTextField v-model="payForm.amount" label="Monto (S/)" type="number" class="mb-2" />
@@ -493,6 +589,27 @@ const submitCancel = async () => {
           <VSpacer />
           <VBtn variant="text" @click="payForm.open = false">Cancelar</VBtn>
           <VBtn color="primary" :loading="busy" :disabled="!payForm.amount" @click="submitPay">Registrar</VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
+
+    <!-- Plan de cobro -->
+    <VDialog v-model="planForm.open" max-width="420">
+      <VCard>
+        <VCardTitle>Plan de cobro</VCardTitle>
+        <VCardText>
+          <p class="text-body-2 text-medium-emphasis mb-3">
+            Reemplaza el plan de cuotas del servicio. Los pagos ya registrados quedan aplicados a la primera cuota.
+          </p>
+          <VSelect
+            v-model="planForm.scheme" label="Esquema"
+            :items="planPresets.map(p => ({ title: p.label, value: p.key }))"
+          />
+        </VCardText>
+        <VCardActions>
+          <VSpacer />
+          <VBtn variant="text" @click="planForm.open = false">Cancelar</VBtn>
+          <VBtn color="primary" :loading="busy" @click="submitPlan">Aplicar</VBtn>
         </VCardActions>
       </VCard>
     </VDialog>

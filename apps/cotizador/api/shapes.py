@@ -445,7 +445,10 @@ def booking_detail(servicio):
             "amount": float(p.monto),
             "paidAt": _d(p.fecha_pago),
             "note": p.observaciones,
+            "installmentId": p.cuota_id,
         }
         for p in servicio.pagos.order_by("-fecha_pago")
     ]
+    from apps.servicios.cobro import estado_cobro
+    out["billing"] = estado_cobro(servicio)
     return out
