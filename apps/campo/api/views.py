@@ -318,44 +318,14 @@ class PizarraView(APIView):
         })
 
 
-def _pizarra_resource(resource_id):
-    """resourceId 'v<id>' → campo.Vehiculo · 't<id>' → tercerizacion.TransportistaVehiculo."""
-    from apps.campo.models import Vehiculo
-    from apps.tercerizacion.models import TransportistaVehiculo
-    if not resource_id or len(resource_id) < 2:
-        return None
-    prefijo, resto = resource_id[0], resource_id[1:]
-    try:
-        pk = int(resto)
-    except ValueError:
-        return None
-    try:
-        if prefijo == "v":
-            return Vehiculo.objects.get(pk=pk)
-        if prefijo == "t":
-            return TransportistaVehiculo.objects.select_related("transportista").get(pk=pk)
-    except (Vehiculo.DoesNotExist, TransportistaVehiculo.DoesNotExist):
-        return None
-    return None
-
-
-def _es_tv(obj):
-    from apps.tercerizacion.models import TransportistaVehiculo
-    return isinstance(obj, TransportistaVehiculo)
-
-
-def _pizarra_conflicto(recurso, fecha, hora_ini, hora_fin, exclude_id=None):
-    from apps.campo.models import ProgramacionServicio
-    qs = ProgramacionServicio.objects.filter(fecha=fecha).exclude(estado_operativo="cancelado")
-    qs = qs.filter(transportista_vehiculo=recurso) if _es_tv(recurso) else qs.filter(vehiculo=recurso)
-    if exclude_id:
-        qs = qs.exclude(pk=exclude_id)
-    qs = qs.filter(
-        models.Q(hora_fin__isnull=True) | models.Q(hora_fin__gt=hora_ini),
-    )
-    if hora_fin:
-        qs = qs.filter(hora_inicio__lt=hora_fin)
-    return qs.select_related("servicio").first()
+# La lógica de Pizarra (resolver recurso, conflictos, asignar/mover) vive en
+# apps/campo/services.py — compartida con el catálogo de capacidades del agente.
+from apps.campo.services import (  # noqa: E402
+    PizarraError, asignar_servicio, desasignar, mover_programacion,
+)
+from apps.campo.services import es_tv as _es_tv  # noqa: E402
+from apps.campo.services import hay_conflicto as _pizarra_conflicto  # noqa: E402
+from apps.campo.services import resolver_recurso as _pizarra_resource  # noqa: E402
 
 
 class PizarraMutationView(APIView):
@@ -398,17 +368,6 @@ class PizarraMutationView(APIView):
             except ValueError:
                 return None
 
-        def _fila_conductor(tv, fecha):
-            fila = FilaPizarraTransportista.objects.filter(
-                fecha=fecha, transportista_vehiculo=tv,
-            ).first()
-            return fila.conductor_externo if fila else ""
-
-        def _set_modalidad(servicio, modalidad):
-            if servicio.modalidad_ejecucion != modalidad:
-                servicio.modalidad_ejecucion = modalidad
-                servicio.save(update_fields=["modalidad_ejecucion"])
-
         if action == "add-carrier-row":
             from apps.tercerizacion.models import TransportistaVehiculo
             fecha = _parse_date(d.get("date"))
@@ -450,7 +409,7 @@ class PizarraMutationView(APIView):
 
         if action == "unassign":
             ps = get_object_or_404(ProgramacionServicio, pk=d.get("assignmentId"))
-            ps.delete()
+            desasignar(ps)
             return Response({"ok": True})
 
         if action == "assign":
@@ -458,74 +417,28 @@ class PizarraMutationView(APIView):
             recurso = _pizarra_resource(d.get("resourceId"))
             if not recurso:
                 return Response({"error": "Vehículo no encontrado."}, status=404)
-            if ProgramacionServicio.objects.filter(servicio=servicio).exclude(estado_operativo="cancelado").exists():
-                return Response({"error": "El servicio ya está asignado."}, status=409)
-            hora_ini = _time(d.get("start")) or parse_horario(servicio.horario_servicio)
-            if not servicio.fecha_servicio or not hora_ini:
-                return Response({"error": "El servicio necesita fecha y hora."}, status=409)
-            hora_fin = _time(d.get("end")) or (
-                datetime.combine(servicio.fecha_servicio, hora_ini) + timedelta(hours=1)
-            ).time()
-            c = _pizarra_conflicto(recurso, servicio.fecha_servicio, hora_ini, hora_fin)
-            if c:
-                return Response({"error": f"Choca con {c.servicio.codigo if c.servicio else 'otra'} ({c.hora_inicio:%H:%M})"}, status=409)
-
-            if _es_tv(recurso):
-                cond_ext = (
-                    (d.get("externalDriverName") or "").strip()
-                    or _fila_conductor(recurso, servicio.fecha_servicio)
+            conductor = None
+            if d.get("driverId") and not _es_tv(recurso):
+                conductor = Conductor.objects.filter(pk=d["driverId"]).first()
+            try:
+                ps = asignar_servicio(
+                    servicio, recurso,
+                    hora_inicio=_time(d.get("start")), hora_fin=_time(d.get("end")),
+                    conductor=conductor, conductor_externo=d.get("externalDriverName") or "",
+                    actor=request.user,
                 )
-                ps = ProgramacionServicio.objects.create(
-                    servicio=servicio, vehiculo=None,
-                    transportista=recurso.transportista, transportista_vehiculo=recurso,
-                    conductor_externo=cond_ext,
-                    fecha=servicio.fecha_servicio, hora_inicio=hora_ini, hora_fin=hora_fin,
-                    monto=servicio.precio or 0,
-                )
-                _set_modalidad(servicio, Servicio.MODALIDAD_TERCERIZADO)
-            else:
-                conductor = Conductor.objects.filter(pk=d["driverId"]).first() if d.get("driverId") else None
-                ps = ProgramacionServicio.objects.create(
-                    servicio=servicio, vehiculo=recurso, conductor=conductor,
-                    fecha=servicio.fecha_servicio, hora_inicio=hora_ini, hora_fin=hora_fin,
-                    monto=servicio.precio or 0,
-                )
+            except PizarraError as e:
+                return Response({"error": str(e)}, status=e.status)
             return Response({"ok": True, "id": ps.id})
 
         ps = get_object_or_404(ProgramacionServicio.objects.select_related("servicio"), pk=d.get("assignmentId"))
 
         if action == "move":
             destino = _pizarra_resource(d.get("resourceId"))
-            if destino is None:
-                destino = ps.transportista_vehiculo or ps.vehiculo
-            hora_ini = _time(d.get("start")) or ps.hora_inicio
-            dur = timedelta(hours=1)
-            if ps.hora_fin:
-                dur = datetime.combine(ps.fecha, ps.hora_fin) - datetime.combine(ps.fecha, ps.hora_inicio)
-            hora_fin = (datetime.combine(ps.fecha, hora_ini) + dur).time()
-            c = _pizarra_conflicto(destino, ps.fecha, hora_ini, hora_fin, exclude_id=ps.pk)
-            if c:
-                return Response({"error": f"Choca con {c.servicio.codigo if c.servicio else 'otra'} ({c.hora_inicio:%H:%M})"}, status=409)
-
-            fields = ["hora_inicio", "hora_fin"]
-            ps.hora_inicio = hora_ini
-            ps.hora_fin = hora_fin
-            if _es_tv(destino):
-                ps.vehiculo = None
-                ps.conductor = None
-                ps.transportista = destino.transportista
-                ps.transportista_vehiculo = destino
-                ps.conductor_externo = _fila_conductor(destino, ps.fecha)
-                nueva_mod = Servicio.MODALIDAD_TERCERIZADO
-            else:
-                ps.transportista = None
-                ps.transportista_vehiculo = None
-                ps.conductor_externo = ""
-                ps.vehiculo = destino
-                nueva_mod = Servicio.MODALIDAD_PROPIO
-            fields += ["vehiculo", "conductor", "transportista", "transportista_vehiculo", "conductor_externo"]
-            ps.save(update_fields=fields)
-            _set_modalidad(ps.servicio, nueva_mod)
+            try:
+                mover_programacion(ps, destino, hora_inicio=_time(d.get("start")), actor=request.user)
+            except PizarraError as e:
+                return Response({"error": str(e)}, status=e.status)
             return Response({"ok": True})
 
         if action == "edit":

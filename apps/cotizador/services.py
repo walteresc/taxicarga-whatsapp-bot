@@ -105,6 +105,63 @@ def _filter_outliers(prices):
     return [p for p in prices if lower <= p <= upper]
 
 
+def sugerir_precio_cierre(lead):
+    """Para una negociación de venta en curso: junta el rango técnico (histórico),
+    la contraoferta del cliente, nuestra última oferta y el monto sobre la mesa,
+    y propone un precio de cierre. Es una sugerencia — no escribe nada.
+    """
+    similars = _find_similar_services(lead)
+    n = len(similars)
+    if n >= 3:
+        prices = sorted(
+            (s.precio_final or s.precio_cotizado) for _sc, s in similars
+        )
+        filtered = _filter_outliers(prices)
+        if len(filtered) >= 3:
+            prices = filtered
+        piso = _percentile(prices, Decimal("0.20"))
+        techo = _percentile(prices, Decimal("0.80"))
+        centro = Decimal(str(median(prices))).quantize(Decimal("0.01"))
+    else:
+        piso, techo, centro = fallback_price_for_lead(lead)
+
+    cot = lead.cotizaciones_comerciales.order_by("-actualizada_en").first()
+    contraoferta = cot.precio_cliente if cot and cot.precio_cliente is not None else None
+    rev = cot.revisiones.order_by("-numero").first() if cot else None
+    nuestra_oferta = (
+        rev.precio_final if rev
+        else (lead.precio_recomendado if lead.precio_recomendado is not None else None)
+    )
+    hilo = (
+        lead.hilos_negociacion.filter(tipo="venta").order_by("-actualizado_en").first()
+    )
+    monto_mesa = hilo.monto_actual if hilo and hilo.monto_actual is not None else None
+
+    if contraoferta is not None and nuestra_oferta is not None:
+        sugerencia = ((Decimal(contraoferta) + Decimal(nuestra_oferta)) / 2).quantize(Decimal("0.01"))
+        motivo = "Punto medio entre la contraoferta del cliente y nuestra última oferta."
+    else:
+        candidatos = [x for x in (monto_mesa, nuestra_oferta, contraoferta) if x is not None]
+        sugerencia = Decimal(str(min(candidatos))) if candidatos else centro
+        motivo = "Sin contraoferta cerrada: se toma el monto más bajo sobre la mesa (o el centro técnico)."
+
+    if sugerencia < piso:
+        sugerencia = piso
+        motivo += " Ajustada al piso técnico."
+
+    return {
+        "sugerencia": float(sugerencia),
+        "piso_tecnico": float(piso),
+        "techo_tecnico": float(techo),
+        "centro_tecnico": float(centro),
+        "contraoferta_cliente": float(contraoferta) if contraoferta is not None else None,
+        "nuestra_oferta_actual": float(nuestra_oferta) if nuestra_oferta is not None else None,
+        "monto_en_negociacion": float(monto_mesa) if monto_mesa is not None else None,
+        "n_similares": n,
+        "motivo": motivo,
+    }
+
+
 def crear_servicio_historico_desde_lead(lead):
     if lead.estado != Lead.CERRADO:
         logger.info(
