@@ -19,7 +19,7 @@ from apps.api.exceptions import api_exception_handler
 from apps.api.pagination import StandardPagination
 from apps.api.permissions import HasAnyRole
 from apps.tercerizacion import liquidaciones as liq_svc
-from apps.tercerizacion.models import Liquidacion
+from apps.tercerizacion.models import Liquidacion, LotePago
 
 _ROLES = ("Administrador", "Gerencia", "Finanzas", "Despacho")
 
@@ -157,3 +157,84 @@ class SettlementVoidView(_Base):
         liq = get_object_or_404(_QS, pk=pk)
         liq_svc.anular_liquidacion(liq, usuario=request.user, motivo=(request.data.get("reason") or "").strip())
         return Response(item(get_object_or_404(_QS, pk=pk)))
+
+
+# --------------------------------------------------------------------------- #
+#  Lotes de pago a transportistas (P6)
+# --------------------------------------------------------------------------- #
+
+def batch_item(lote):
+    return {
+        "id": lote.id,
+        "state": lote.estado,
+        "method": lote.metodo,
+        "total": _num(lote.total),
+        "count": lote.cantidad,
+        "reference": lote.referencia,
+        "paidOn": _d(lote.fecha_pago),
+        "createdAt": _d(lote.creado_en),
+    }
+
+
+class BatchListView(_Base):
+    def get(self, request):
+        qs = LotePago.objects.all()
+        if request.query_params.get("state"):
+            qs = qs.filter(estado=request.query_params["state"])
+        paginator = StandardPagination()
+        page = paginator.paginate_queryset(qs.order_by("-creado_en"), request, view=self)
+        return paginator.get_paginated_response([batch_item(x) for x in page])
+
+    def post(self, request):
+        ids = request.data.get("ids") or []
+        qs = _QS
+        if ids:
+            qs = qs.filter(pk__in=ids)
+        else:  # crear desde los filtros de la lista
+            p = request.data
+            if p.get("carrier"):
+                qs = qs.filter(transportista_id=p["carrier"])
+            if p.get("from"):
+                qs = qs.filter(servicio__fecha_servicio__gte=p["from"])
+            if p.get("to"):
+                qs = qs.filter(servicio__fecha_servicio__lte=p["to"])
+        lote = liq_svc.crear_lote(list(qs), usuario=request.user,
+                                  metodo=request.data.get("method") or LotePago.METODO_TRANSFERENCIA)
+        return Response(_batch_detail(lote), status=201)
+
+
+def _batch_detail(lote):
+    out = batch_item(lote)
+    out["rows"] = liq_svc.filas_lote(lote)
+    out["settlements"] = [item(x) for x in lote.liquidaciones.select_related("servicio", "transportista")]
+    out["missingPayoutData"] = sum(1 for r in out["rows"] if not r["hasPayoutData"])
+    return out
+
+
+class BatchDetailView(_Base):
+    def get(self, request, pk):
+        return Response(_batch_detail(get_object_or_404(LotePago, pk=pk)))
+
+
+class BatchPayView(_Base):
+    def post(self, request, pk):
+        from datetime import datetime as _dt
+        lote = get_object_or_404(LotePago, pk=pk)
+        d = request.data
+        fecha = None
+        if d.get("date"):
+            try:
+                fecha = _dt.strptime(d["date"][:10], "%Y-%m-%d").date()
+            except ValueError:
+                raise ValidationError({"date": "Fecha no válida."})
+        liq_svc.marcar_lote_pagado(lote, usuario=request.user,
+                                   referencia=(d.get("reference") or "").strip(), fecha=fecha)
+        return Response(_batch_detail(get_object_or_404(LotePago, pk=pk)))
+
+
+class BatchVoidView(_Base):
+    permission_classes = [HasAnyRole("Administrador", "Gerencia", "Finanzas")]
+
+    def post(self, request, pk):
+        liq_svc.anular_lote(get_object_or_404(LotePago, pk=pk), usuario=request.user)
+        return Response({"ok": True})

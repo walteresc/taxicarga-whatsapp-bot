@@ -1,13 +1,18 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 
-import { carrierEarnings } from '@/services/settlementsService'
+import { carrierEarnings, carrierPayout, carrierPayoutUpdate } from '@/services/settlementsService'
 
 const STATE = {
   pending: { label: 'Pendiente', color: 'warning' },
   confirmed: { label: 'Confirmado', color: 'info' },
   settled: { label: 'Pagado', color: 'success' },
 }
+const BANKS = [
+  { title: 'BCP', value: 'bcp' }, { title: 'BBVA', value: 'bbva' }, { title: 'Interbank', value: 'interbank' },
+  { title: 'Scotiabank', value: 'scotiabank' }, { title: 'Banco de la Nación', value: 'nacion' }, { title: 'Otro', value: 'otro' },
+]
+const ACCT = [{ title: 'Ahorros', value: 'ahorros' }, { title: 'Corriente', value: 'corriente' }]
 const soles = n => `S/ ${Math.round(Math.abs(n)).toLocaleString('es-PE')}`
 
 const rows = ref([])
@@ -15,12 +20,23 @@ const summary = ref(null)
 const loading = ref(true)
 const error = ref('')
 
+const payout = reactive({ bank: '', accountType: '', account: '', cci: '', holder: '', yape: '' })
+const payoutBusy = ref(false)
+const savePayout = async () => {
+  payoutBusy.value = true
+  try { Object.assign(payout, await carrierPayoutUpdate({ ...payout })); notify('Datos de cobro guardados.') }
+  catch (e) { notify(e.message || 'No se pudo guardar.', 'error') } finally { payoutBusy.value = false }
+}
+const snackbar = reactive({ show: false, text: '', color: 'success' })
+const notify = (t, c = 'success') => Object.assign(snackbar, { show: true, text: t, color: c })
+
 onMounted(async () => {
   try {
-    const r = await carrierEarnings()
-    rows.value = r.results
-    summary.value = r.summary
-  } catch (e) { error.value = e.message || 'No se pudo cargar.' } finally { loading.value = false }
+    const [e, p] = await Promise.all([carrierEarnings(), carrierPayout()])
+    rows.value = e.results
+    summary.value = e.summary
+    Object.assign(payout, p)
+  } catch (err) { error.value = err.message || 'No se pudo cargar.' } finally { loading.value = false }
 })
 </script>
 
@@ -75,6 +91,26 @@ onMounted(async () => {
           </tbody>
         </VTable>
       </VCard>
+
+      <VCard class="mt-4">
+        <VCardText>
+          <div class="text-overline mb-2">Mis datos de cobro</div>
+          <p class="text-body-2 text-medium-emphasis mb-3">
+            A dónde te transfiere Lima Express. El CCI (20 dígitos) sirve para transferencias entre bancos.
+          </p>
+          <VRow dense>
+            <VCol cols="12" sm="6"><VSelect v-model="payout.bank" :items="BANKS" label="Banco" density="compact" clearable /></VCol>
+            <VCol cols="12" sm="6"><VSelect v-model="payout.accountType" :items="ACCT" label="Tipo de cuenta" density="compact" clearable /></VCol>
+            <VCol cols="12" sm="6"><VTextField v-model="payout.account" label="N° de cuenta" density="compact" /></VCol>
+            <VCol cols="12" sm="6"><VTextField v-model="payout.cci" label="CCI (20 dígitos)" density="compact" /></VCol>
+            <VCol cols="12" sm="6"><VTextField v-model="payout.holder" label="Titular de la cuenta" density="compact" /></VCol>
+            <VCol cols="12" sm="6"><VTextField v-model="payout.yape" label="Número Yape / Plin" density="compact" /></VCol>
+          </VRow>
+          <VBtn color="primary" :loading="payoutBusy" class="mt-2" @click="savePayout">Guardar</VBtn>
+        </VCardText>
+      </VCard>
     </template>
+
+    <VSnackbar v-model="snackbar.show" :color="snackbar.color" timeout="3000">{{ snackbar.text }}</VSnackbar>
   </section>
 </template>

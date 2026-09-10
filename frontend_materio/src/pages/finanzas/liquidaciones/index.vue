@@ -2,7 +2,8 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 
 import {
-  settlementList, settlementSettle, settlementSummary, settlementUpdate, settlementVoid,
+  batchCreate, batchPay, batchVoid, settlementList, settlementSettle,
+  settlementSummary, settlementUpdate, settlementVoid,
 } from '@/services/settlementsService'
 
 const STATE = {
@@ -94,6 +95,47 @@ const exportCsv = () => {
 }
 
 const netLabel = r => (r.net > 0 ? `Pagar ${soles(r.net)}` : r.net < 0 ? `Cobrar ${soles(-r.net)}` : '—')
+
+// --- lote de pago ---
+const selected = ref([])
+const selectable = r => r.net > 0 && ['pendiente', 'conciliada'].includes(r.state)
+const toggleAll = v => { selected.value = v ? rows.value.filter(selectable).map(r => r.id) : [] }
+const selTotal = computed(() => rows.value.filter(r => selected.value.includes(r.id)).reduce((a, r) => a + r.net, 0))
+
+const batch = reactive({ open: false, data: null, reference: '', date: '' })
+const makeBatch = async () => {
+  busy.value = true
+  try {
+    const d = await batchCreate({ ids: selected.value })
+    Object.assign(batch, { open: true, data: d, reference: '', date: new Date().toISOString().slice(0, 10) })
+    selected.value = []
+    await load()
+  } catch (e) { notify(e.message || 'No se pudo crear el lote.', 'error') } finally { busy.value = false }
+}
+const exportBatch = () => {
+  const head = ['Transportista', 'Documento', 'Banco', 'Tipo', 'Cuenta', 'CCI', 'Yape', 'Titular', 'Monto', 'Servicio']
+  const lines = batch.data.rows.map(r => [
+    r.carrier, r.document, r.bank, r.accountType, r.account, r.cci, r.yape, r.holder, r.amount, r.service,
+  ].join(';'))
+  const blob = new Blob(['﻿' + [head.join(';'), ...lines].join('\n')], { type: 'text/csv' })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = `lote-pago-${batch.data.id}.csv`
+  a.click()
+}
+const payBatch = async () => {
+  busy.value = true
+  try {
+    batch.data = await batchPay(batch.data.id, { reference: batch.reference || undefined, date: batch.date || undefined })
+    notify('Lote marcado como pagado. Las liquidaciones quedaron liquidadas.')
+    await load()
+  } catch (e) { notify(e.message || 'No se pudo.', 'error') } finally { busy.value = false }
+}
+const dropBatch = async () => {
+  busy.value = true
+  try { await batchVoid(batch.data.id); batch.open = false; notify('Lote anulado.'); await load() }
+  catch (e) { notify(e.message || 'No se pudo.', 'error') } finally { busy.value = false }
+}
 </script>
 
 <template>
@@ -138,6 +180,16 @@ const netLabel = r => (r.net > 0 ? `Pagar ${soles(r.net)}` : r.net < 0 ? `Cobrar
         <VSpacer />
         <VBtn size="small" variant="text" prepend-icon="ri-download-line" @click="exportCsv">Exportar CSV</VBtn>
       </VCardText>
+
+      <VExpandTransition>
+        <div v-if="selected.length" class="d-flex align-center flex-wrap ga-3 px-4 py-2 bg-primary" style="color: white;">
+          <span class="text-body-2">{{ selected.length }} seleccionadas · a pagar {{ soles(selTotal) }}</span>
+          <VSpacer />
+          <VBtn size="small" variant="flat" color="white" :loading="busy" @click="makeBatch">Crear lote de pago</VBtn>
+          <VBtn size="small" variant="text" color="white" @click="selected = []">Limpiar</VBtn>
+        </div>
+      </VExpandTransition>
+
       <VDivider />
       <VProgressLinear v-if="loading" indeterminate />
       <div v-else-if="!rows.length" class="text-center text-medium-emphasis py-10 text-body-2">Sin liquidaciones.</div>
@@ -145,6 +197,12 @@ const netLabel = r => (r.net > 0 ? `Pagar ${soles(r.net)}` : r.net < 0 ? `Cobrar
         <VTable density="compact" class="text-body-2">
           <thead>
             <tr>
+              <th style="width: 36px;">
+                <VCheckboxBtn density="compact"
+                  :model-value="selected.length > 0 && selected.length === rows.filter(selectable).length"
+                  :indeterminate="selected.length > 0 && selected.length < rows.filter(selectable).length"
+                  @update:model-value="toggleAll" />
+              </th>
               <th>Servicio</th><th>Transportista</th><th class="text-right">Precio</th>
               <th class="text-right">Costo</th><th class="text-right">Comisión</th><th class="text-right">Neto</th>
               <th>Cómo cobró el cliente</th><th>Estado</th><th></th>
@@ -152,6 +210,9 @@ const netLabel = r => (r.net > 0 ? `Pagar ${soles(r.net)}` : r.net < 0 ? `Cobrar
           </thead>
           <tbody>
             <tr v-for="r in rows" :key="r.id" :class="{ 'text-disabled': r.state === 'anulada' }">
+              <td>
+                <VCheckboxBtn v-if="selectable(r)" v-model="selected" :value="r.id" density="compact" />
+              </td>
               <td>
                 <div class="font-weight-medium">{{ r.serviceCode }}</div>
                 <div class="text-caption text-medium-emphasis">{{ r.route }}</div>
@@ -212,6 +273,54 @@ const netLabel = r => (r.net > 0 ? `Pagar ${soles(r.net)}` : r.net < 0 ? `Cobrar
           <VSpacer />
           <VBtn variant="text" @click="settleForm.open = false">Cancelar</VBtn>
           <VBtn color="success" :loading="busy" @click="doSettle">Confirmar</VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
+
+    <!-- Lote de pago -->
+    <VDialog v-model="batch.open" max-width="720">
+      <VCard v-if="batch.data">
+        <VCardTitle class="d-flex align-center">
+          Lote de pago #{{ batch.data.id }}
+          <VChip class="ms-2" size="small" :color="batch.data.state === 'pagado' ? 'success' : 'info'">
+            {{ batch.data.state === 'pagado' ? 'Pagado' : 'Borrador' }}
+          </VChip>
+          <VSpacer />
+          <span class="text-body-1">{{ batch.data.count }} pagos · {{ soles(batch.data.total) }}</span>
+        </VCardTitle>
+        <VCardText>
+          <VAlert v-if="batch.data.missingPayoutData" type="warning" variant="tonal" density="compact" class="mb-3">
+            {{ batch.data.missingPayoutData }} transportista(s) sin datos de cobro cargados. Completalos en su ficha
+            o pedíselos por el portal antes de transferir.
+          </VAlert>
+          <div style="overflow-x: auto;">
+            <VTable density="compact" class="text-body-2">
+              <thead><tr><th>Transportista</th><th>Banco</th><th>CCI / Cuenta</th><th>Yape</th><th class="text-right">Monto</th></tr></thead>
+              <tbody>
+                <tr v-for="(r, i) in batch.data.rows" :key="i" :class="{ 'text-error': !r.hasPayoutData }">
+                  <td>{{ r.holder }}<div class="text-caption text-medium-emphasis">{{ r.service }}</div></td>
+                  <td>{{ r.bank || '—' }}<span v-if="r.accountType" class="text-caption"> · {{ r.accountType }}</span></td>
+                  <td>{{ r.cci || r.account || '—' }}</td>
+                  <td>{{ r.yape || '—' }}</td>
+                  <td class="text-right font-weight-medium">{{ soles(r.amount) }}</td>
+                </tr>
+              </tbody>
+            </VTable>
+          </div>
+
+          <div v-if="batch.data.state !== 'pagado'" class="d-flex flex-wrap align-center ga-2 mt-4">
+            <VTextField v-model="batch.reference" label="Referencia del pago" density="compact" hide-details style="max-width: 240px;" />
+            <VTextField v-model="batch.date" label="Fecha" type="date" density="compact" hide-details style="max-width: 170px;" />
+          </div>
+        </VCardText>
+        <VCardActions class="flex-wrap ga-2 px-4 pb-4">
+          <VBtn variant="text" prepend-icon="ri-download-line" @click="exportBatch">Exportar CSV</VBtn>
+          <VSpacer />
+          <template v-if="batch.data.state !== 'pagado'">
+            <VBtn variant="text" color="error" :loading="busy" @click="dropBatch">Anular lote</VBtn>
+            <VBtn color="success" :loading="busy" @click="payBatch">Marcar todo pagado</VBtn>
+          </template>
+          <VBtn v-else variant="text" @click="batch.open = false">Cerrar</VBtn>
         </VCardActions>
       </VCard>
     </VDialog>

@@ -15,7 +15,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from django.db import transaction
 from django.utils import timezone
 
-from apps.tercerizacion.models import Liquidacion
+from apps.tercerizacion.models import Liquidacion, LotePago
 
 _Q = Decimal("0.01")
 
@@ -163,6 +163,93 @@ def anular_liquidacion(liq, *, usuario=None, motivo=""):
     liq.liquidado_por = usuario
     liq.save(update_fields=["estado", "nota", "liquidado_por", "actualizado_en"])
     return liq
+
+
+# ---------------------------------------------------------------------------
+# P6 · Lotes de pago a transportistas
+# ---------------------------------------------------------------------------
+
+def _liquidables(qs):
+    """Solo liquidaciones a favor del transportista, sin pagar ni anular, sin lote."""
+    return qs.filter(
+        estado__in=[Liquidacion.ESTADO_PENDIENTE, Liquidacion.ESTADO_CONCILIADA],
+        neto__gt=0, lote__isnull=True,
+    )
+
+
+@transaction.atomic
+def crear_lote(liquidaciones, *, usuario=None, metodo=LotePago.METODO_TRANSFERENCIA):
+    from django.core.exceptions import ValidationError
+
+    liqs = list(_liquidables(
+        Liquidacion.objects.filter(pk__in=[l.pk for l in liquidaciones]).select_for_update(),
+    ))
+    if not liqs:
+        raise ValidationError("Ninguna de las liquidaciones elegidas se puede agrupar en un lote.")
+    lote = LotePago.objects.create(
+        metodo=metodo, creado_por=usuario,
+        total=sum((l.neto for l in liqs), Decimal(0)), cantidad=len(liqs),
+    )
+    for l in liqs:
+        l.lote = lote
+        if l.estado == Liquidacion.ESTADO_PENDIENTE:
+            l.estado = Liquidacion.ESTADO_CONCILIADA
+        l.save(update_fields=["lote", "estado", "actualizado_en"])
+    return lote
+
+
+@transaction.atomic
+def marcar_lote_pagado(lote, *, usuario=None, referencia="", fecha=None):
+    from django.core.exceptions import ValidationError
+    if lote.estado != LotePago.ESTADO_BORRADOR:
+        raise ValidationError("El lote ya no está en borrador.")
+    fecha = fecha or timezone.localdate()
+    for liq in lote.liquidaciones.exclude(estado=Liquidacion.ESTADO_PAGADA):
+        if liq.medio_cobro_cliente == Liquidacion.MEDIO_POR_DEFINIR:
+            liq.medio_cobro_cliente = Liquidacion.MEDIO_PASARELA  # asunción por defecto
+        liq.estado = Liquidacion.ESTADO_PAGADA
+        liq.fecha_liquidacion = fecha
+        liq.referencia_pago = referencia or f"Lote #{lote.pk}"
+        liq.liquidado_por = usuario
+        liq.save()
+    lote.estado = LotePago.ESTADO_PAGADO
+    lote.referencia = referencia
+    lote.fecha_pago = fecha
+    lote.pagado_por = usuario
+    lote.save(update_fields=["estado", "referencia", "fecha_pago", "pagado_por", "actualizado_en"])
+    return lote
+
+
+@transaction.atomic
+def anular_lote(lote, *, usuario=None):
+    from django.core.exceptions import ValidationError
+    if lote.estado == LotePago.ESTADO_PAGADO:
+        raise ValidationError("Un lote pagado no se puede anular.")
+    lote.liquidaciones.update(lote=None)
+    lote.estado = LotePago.ESTADO_ANULADO
+    lote.save(update_fields=["estado", "actualizado_en"])
+    return lote
+
+
+def filas_lote(lote):
+    """Filas para el archivo de transferencias que se sube al banco."""
+    filas = []
+    for liq in lote.liquidaciones.select_related("transportista", "servicio"):
+        t = liq.transportista
+        filas.append({
+            "carrier": t.nombre,
+            "document": t.documento,
+            "bank": t.get_pago_banco_display() if t.pago_banco else "",
+            "accountType": t.get_pago_tipo_cuenta_display() if t.pago_tipo_cuenta else "",
+            "account": t.pago_numero_cuenta,
+            "cci": t.pago_cci,
+            "yape": t.pago_yape,
+            "holder": t.pago_titular or t.nombre,
+            "amount": float(liq.neto),
+            "service": liq.servicio.codigo,
+            "hasPayoutData": bool(t.pago_cci or t.pago_numero_cuenta or t.pago_yape),
+        })
+    return filas
 
 
 def resumen_transportista(transportista):

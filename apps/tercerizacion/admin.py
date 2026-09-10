@@ -1,9 +1,16 @@
 from django.contrib import admin
 
 from .models import (
-    HiloNegociacion, Liquidacion, MensajeNegociacion, OfertaTransportista,
+    HiloNegociacion, Liquidacion, LotePago, MensajeNegociacion, OfertaTransportista,
     PublicacionCarga, TramoComision, TransportistaBotState,
 )
+
+
+@admin.register(LotePago)
+class LotePagoAdmin(admin.ModelAdmin):
+    list_display = ["id", "estado", "metodo", "total", "cantidad", "referencia", "fecha_pago", "creado_en"]
+    list_filter = ["estado", "metodo"]
+    readonly_fields = ["creado_en", "actualizado_en"]
 
 
 @admin.register(TramoComision)

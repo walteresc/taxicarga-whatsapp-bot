@@ -292,6 +292,22 @@ class Transportista(models.Model):
     )
     activo = models.BooleanField(default=True)
     notas = models.TextField(blank=True)
+
+    # -- Datos de cobro (para liquidarle lo que la plataforma le debe) --
+    BANCOS = [
+        ("bcp", "BCP"), ("bbva", "BBVA"), ("interbank", "Interbank"),
+        ("scotiabank", "Scotiabank"), ("nacion", "Banco de la Nación"), ("otro", "Otro"),
+    ]
+    TIPOS_CUENTA = [("ahorros", "Ahorros"), ("corriente", "Corriente")]
+    pago_banco = models.CharField(max_length=12, choices=BANCOS, blank=True, default="")
+    pago_tipo_cuenta = models.CharField(max_length=10, choices=TIPOS_CUENTA, blank=True, default="")
+    pago_numero_cuenta = models.CharField(max_length=30, blank=True, default="")
+    pago_cci = models.CharField(
+        max_length=20, blank=True, default="",
+        help_text="Código de Cuenta Interbancario (20 dígitos) — para transferencias entre bancos.",
+    )
+    pago_titular = models.CharField(max_length=160, blank=True, default="")
+    pago_yape = models.CharField(max_length=20, blank=True, default="", help_text="Número Yape / Plin.")
     creado_por = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
     )
@@ -681,6 +697,9 @@ class Liquidacion(models.Model):
     )
 
     estado = models.CharField(max_length=12, choices=ESTADOS, default=ESTADO_PENDIENTE)
+    lote = models.ForeignKey(
+        "tercerizacion.LotePago", on_delete=models.SET_NULL, null=True, blank=True, related_name="liquidaciones",
+    )
     fecha_liquidacion = models.DateField(null=True, blank=True)
     referencia_pago = models.CharField(max_length=120, blank=True, default="")
     comprobante = models.CharField(max_length=255, blank=True, default="")
@@ -706,3 +725,46 @@ class Liquidacion(models.Model):
         if self.neto < 0:
             return "a_favor_plataforma"
         return "sin_movimiento"
+
+
+class LotePago(models.Model):
+    """Un lote para pagarle de una vez a varios transportistas (P6). Agrupa
+    liquidaciones a favor del transportista; al marcarse pagado, todas sus
+    liquidaciones quedan liquidadas con la misma referencia y fecha."""
+
+    ESTADO_BORRADOR = "borrador"
+    ESTADO_PAGADO = "pagado"
+    ESTADO_ANULADO = "anulado"
+    ESTADOS = [
+        (ESTADO_BORRADOR, "Borrador"),
+        (ESTADO_PAGADO, "Pagado"),
+        (ESTADO_ANULADO, "Anulado"),
+    ]
+    METODO_TRANSFERENCIA = "transferencia"
+    METODO_YAPE = "yape"
+    METODO_OTRO = "otro"
+    METODOS = [(METODO_TRANSFERENCIA, "Transferencia"), (METODO_YAPE, "Yape / Plin"), (METODO_OTRO, "Otro")]
+
+    estado = models.CharField(max_length=10, choices=ESTADOS, default=ESTADO_BORRADOR)
+    metodo = models.CharField(max_length=14, choices=METODOS, default=METODO_TRANSFERENCIA)
+    total = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    cantidad = models.PositiveIntegerField(default=0)
+    referencia = models.CharField(max_length=120, blank=True, default="")
+    fecha_pago = models.DateField(null=True, blank=True)
+    nota = models.TextField(blank=True, default="")
+    creado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+    pagado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+    creado_en = models.DateTimeField(auto_now_add=True)
+    actualizado_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Lote de pago a transportistas"
+        verbose_name_plural = "Lotes de pago a transportistas"
+        ordering = ["-creado_en"]
+
+    def __str__(self):
+        return f"Lote #{self.pk} · {self.cantidad} pagos · S/ {self.total:g} · {self.estado}"

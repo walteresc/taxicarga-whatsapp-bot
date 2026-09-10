@@ -14,7 +14,7 @@ from apps.servicios.models import ConfiguracionOperaciones, Servicio
 from apps.tercerizacion import adjudicacion as adj
 from apps.tercerizacion import liquidaciones as liq_svc
 from apps.tercerizacion.models import (
-    Liquidacion, PublicacionCarga, Transportista, TransportistaVehiculo,
+    Liquidacion, LotePago, PublicacionCarga, Transportista, TransportistaVehiculo,
 )
 
 User = get_user_model()
@@ -184,3 +184,70 @@ class PortalEarningsTests(APITestCase):
         self.assertEqual(r.data["results"][0]["amount"], 750.0)  # su neto, sin ver precio ni comisión
         self.assertNotIn("commission", r.data["results"][0])
         self.assertEqual(r.data["summary"]["pendingPayout"], 750.0)
+
+    def test_datos_de_cobro(self):
+        self.client.force_authenticate(self.cuser)
+        r = self.client.patch("/api/v2/portal/carrier/payout",
+                              {"bank": "bcp", "account": "1234567890", "holder": "Juan Perez"}, format="json")
+        self.assertEqual(r.status_code, 200)
+        self.carrier.refresh_from_db()
+        self.assertEqual(self.carrier.pago_banco, "bcp")
+        self.assertEqual(self.carrier.pago_numero_cuenta, "1234567890")
+
+
+class LotePagoTests(APITestCase):
+    def setUp(self):
+        ConfiguracionOperaciones.objects.filter(pk=1).delete()
+        for g in ("Finanzas",):
+            Group.objects.get_or_create(name=g)
+        self.fin = User.objects.create_user("b_fin", password="x")
+        self.fin.groups.add(Group.objects.get(name="Finanzas"))
+        self.client.force_authenticate(self.fin)
+        self.liqs = []
+        for i in range(3):
+            m = _mundo(30 + i, precio=1000, costo=800)
+            adj.adjudicar_publicacion(m["pub"], m["oferta"], m["user"])
+            liq = Liquidacion.objects.get(servicio=m["svc"])
+            m["carrier"].pago_cci = "0" * 20
+            m["carrier"].save()
+            self.liqs.append(liq)
+
+    def test_crear_lote_y_pagar(self):
+        r = self.client.post("/api/v2/settlements/batches",
+                             {"ids": [l.id for l in self.liqs]}, format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual(r.data["count"], 3)
+        self.assertEqual(r.data["total"], 2400.0)
+        self.assertEqual(r.data["missingPayoutData"], 0)
+        bid = r.data["id"]
+
+        # las liquidaciones quedan enganchadas al lote
+        for liq in self.liqs:
+            liq.refresh_from_db()
+            self.assertEqual(liq.lote_id, bid)
+            self.assertEqual(liq.estado, Liquidacion.ESTADO_CONCILIADA)
+
+        r = self.client.post(f"/api/v2/settlements/batches/{bid}/pay",
+                             {"reference": "BCP-lote-mayo", "date": "2026-09-21"}, format="json")
+        self.assertEqual(r.data["state"], "pagado")
+        for liq in self.liqs:
+            liq.refresh_from_db()
+            self.assertEqual(liq.estado, Liquidacion.ESTADO_PAGADA)
+            self.assertEqual(liq.referencia_pago, "BCP-lote-mayo")
+
+    def test_no_agrupa_liquidaciones_a_favor_de_la_plataforma(self):
+        # una en efectivo → neto negativo → no entra al lote
+        liq_svc_mod = __import__("apps.tercerizacion.liquidaciones", fromlist=["set_medio_cobro"])
+        liq_svc_mod.set_medio_cobro(self.liqs[0], Liquidacion.MEDIO_EFECTIVO_TRANSPORTISTA)
+        r = self.client.post("/api/v2/settlements/batches",
+                             {"ids": [l.id for l in self.liqs]}, format="json")
+        self.assertEqual(r.data["count"], 2)
+
+    def test_anular_lote_libera_liquidaciones(self):
+        bid = self.client.post("/api/v2/settlements/batches",
+                               {"ids": [l.id for l in self.liqs]}, format="json").data["id"]
+        r = self.client.post(f"/api/v2/settlements/batches/{bid}/void", {}, format="json")
+        self.assertEqual(r.status_code, 200)
+        for liq in self.liqs:
+            liq.refresh_from_db()
+            self.assertIsNone(liq.lote_id)

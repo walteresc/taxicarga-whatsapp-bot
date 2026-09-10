@@ -15,6 +15,12 @@ class CarrierSerializer(serializers.ModelSerializer):
     isDriver = serializers.BooleanField(source="es_conductor", required=False, default=False)
     active = serializers.BooleanField(source="activo", required=False, default=True)
     notes = serializers.CharField(source="notas", required=False, allow_blank=True, default="")
+    payoutBank = serializers.CharField(source="pago_banco", required=False, allow_blank=True, default="")
+    payoutAccountType = serializers.CharField(source="pago_tipo_cuenta", required=False, allow_blank=True, default="")
+    payoutAccount = serializers.CharField(source="pago_numero_cuenta", required=False, allow_blank=True, default="")
+    payoutCci = serializers.CharField(source="pago_cci", required=False, allow_blank=True, default="")
+    payoutHolder = serializers.CharField(source="pago_titular", required=False, allow_blank=True, default="")
+    payoutYape = serializers.CharField(source="pago_yape", required=False, allow_blank=True, default="")
     vehicleCount = serializers.IntegerField(source="vehiculos.count", read_only=True)
     useCount = serializers.IntegerField(read_only=True, default=0)
     createdAt = serializers.DateTimeField(source="creado_en", read_only=True)
@@ -23,7 +29,9 @@ class CarrierSerializer(serializers.ModelSerializer):
         model = Transportista
         fields = (
             "id", "name", "documentId", "phone", "email", "isDriver",
-            "active", "notes", "vehicleCount", "useCount", "createdAt",
+            "active", "notes", "payoutBank", "payoutAccountType", "payoutAccount",
+            "payoutCci", "payoutHolder", "payoutYape",
+            "vehicleCount", "useCount", "createdAt",
         )
 
     def create(self, validated_data):

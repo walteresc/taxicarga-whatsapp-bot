@@ -251,6 +251,36 @@ class CarrierEarningsView(_Portal):
         return Response({"summary": resumen_transportista(self.carrier), "results": rows})
 
 
+class CarrierPayoutView(_Portal):
+    """GET/PATCH los datos de cobro del propio transportista (a dónde le paga
+    la plataforma)."""
+
+    _MAP = {
+        "bank": "pago_banco", "accountType": "pago_tipo_cuenta", "account": "pago_numero_cuenta",
+        "cci": "pago_cci", "holder": "pago_titular", "yape": "pago_yape",
+    }
+
+    def _payload(self):
+        c = self.carrier
+        return {k: getattr(c, f) for k, f in self._MAP.items()}
+
+    def get(self, request):
+        return Response(self._payload())
+
+    def patch(self, request):
+        c = self.carrier
+        campos = []
+        for k, f in self._MAP.items():
+            if k in request.data:
+                setattr(c, f, (request.data[k] or "").strip())
+                campos.append(f)
+        if "cci" in request.data and c.pago_cci and not c.pago_cci.isdigit():
+            raise ValidationError({"cci": "El CCI son solo dígitos (20)."})
+        if campos:
+            c.save(update_fields=campos + ["actualizado_en"])
+        return Response(self._payload())
+
+
 def _carrier_msg(m):
     sender = {
         MensajeNegociacion.EMISOR_TRANSPORTISTA: "you",
