@@ -28,6 +28,18 @@ _OFERTAR_RE = re.compile(r"\bofert(ar|o|amos|a)\b|\bofre(c|zc)\w*\b", re.IGNOREC
 _CONSULTAR_RE = re.compile(r"\bconsult(ar|a|o)\b|\bduda\b|\bpregunta\b", re.IGNORECASE)
 _FOTOS_RE = re.compile(r"\bfotos?\b|\bimagen(es)?\b|\bfoto\b", re.IGNORECASE)
 _PRECIO_RE = re.compile(r"(\d+(?:\.\d+)?)")
+_ACEPTA_RE = re.compile(r"\bacept\w*\b|\bde acuerdo\b|\bok\b|\bdale\b|\blisto\b", re.IGNORECASE)
+
+
+_ESTADOS_RECIBE_OFERTAS = (
+    PublicacionCarga.ESTADO_ABIERTA,
+    PublicacionCarga.ESTADO_PUBLICADA,
+    PublicacionCarga.ESTADO_CON_OFERTAS,
+)
+
+
+def _recibe_ofertas(publicacion):
+    return publicacion.estado in _ESTADOS_RECIBE_OFERTAS
 
 
 def _es_ofertar(texto):
@@ -171,10 +183,10 @@ def process_transportista_bot_response(conversation, message):
         if not publicacion:
             # Ya se registró en tercerizacion_codigo_no_encontrado — nada más que hacer.
             return
-        if publicacion.estado != PublicacionCarga.ESTADO_ABIERTA:
+        if not _recibe_ofertas(publicacion):
             _responder(
                 conversation,
-                f"La publicación OFERTA-{codigo} ya no está abierta "
+                f"La publicación OFERTA-{codigo} ya no está recibiendo ofertas "
                 f"({publicacion.get_estado_display()}).",
             )
             return
@@ -191,10 +203,10 @@ def process_transportista_bot_response(conversation, message):
         return
 
     publicacion.refresh_from_db()
-    if publicacion.estado != PublicacionCarga.ESTADO_ABIERTA:
+    if not _recibe_ofertas(publicacion):
         _responder(
             conversation,
-            f"La publicación OFERTA-{publicacion.codigo} ya no está abierta "
+            f"La publicación OFERTA-{publicacion.codigo} ya no está recibiendo ofertas "
             f"({publicacion.get_estado_display()}).",
         )
         return
@@ -220,20 +232,33 @@ def process_transportista_bot_response(conversation, message):
         return  # no reconoce -> silencio
 
     if state.paso in (TransportistaBotState.PASO_RECOGIENDO_PRECIO, TransportistaBotState.PASO_CONVERSANDO):
+        # "acepto" a una propuesta viva de Lima Express en el hilo de compra.
+        if _ACEPTA_RE.search(texto) and _extraer_precio(texto) is None:
+            if _aceptar_propuesta_taxicarga(publicacion, conversation.cliente):
+                _responder(
+                    conversation,
+                    f"Cerrado en el monto propuesto por OFERTA-{publicacion.codigo}. "
+                    f"Un asesor te coordina los detalles.",
+                )
+                return
+            return  # nada que aceptar -> silencio
+
         precio = _extraer_precio(texto)
         if precio is not None:
-            oferta, creada = OfertaTransportista.objects.update_or_create(
-                publicacion=publicacion,
-                cliente=conversation.cliente,
-                defaults={
-                    "precio_ofertado": precio,
-                    "mensaje_origen": message,
-                    "estado": OfertaTransportista.ESTADO_PENDIENTE,
-                },
+            from apps.tercerizacion.adjudicacion import (
+                AdjudicacionError, registrar_oferta_desde_whatsapp,
             )
+            existe = publicacion.ofertas.filter(cliente=conversation.cliente).exists()
+            try:
+                registrar_oferta_desde_whatsapp(
+                    publicacion, conversation.cliente, precio, mensaje_whatsapp=message,
+                )
+            except AdjudicacionError as e:
+                _responder(conversation, str(e))
+                return
             state.paso = TransportistaBotState.PASO_CONVERSANDO
             state.save(update_fields=["paso", "actualizado_en"])
-            verbo = "Registrado" if creada else "Actualizado"
+            verbo = "Actualizado" if existe else "Registrado"
             _responder(
                 conversation,
                 f"{verbo}: S/ {precio} por OFERTA-{publicacion.codigo}. Un "
@@ -247,3 +272,103 @@ def process_transportista_bot_response(conversation, message):
         return  # no reconoce -> silencio
 
     return
+
+
+# ---------------------------------------------------------------------------
+# Salientes que dispara el CRM (adjudicación, contraoferta del asesor).
+# Solo alcanzan a transportistas que ofertaron por WhatsApp (Oferta.cliente).
+# ---------------------------------------------------------------------------
+
+def _conversacion_de(cliente):
+    if not cliente:
+        return None
+    return cliente.sesiones_whatsapp.order_by("-actualizada_en").first()
+
+
+def _aceptar_propuesta_taxicarga(publicacion, cliente):
+    """El transportista aceptó por WhatsApp la última propuesta pendiente de
+    Lima Express en su hilo de compra. Devuelve True si había algo que aceptar."""
+    from . import negociacion as neg
+    from .models import HiloNegociacion, MensajeNegociacion
+
+    hilo = (
+        HiloNegociacion.objects
+        .filter(publicacion=publicacion, tipo=HiloNegociacion.TIPO_COMPRA, contraparte=cliente)
+        .exclude(estado=HiloNegociacion.ESTADO_CERRADA)
+        .first()
+    )
+    if not hilo:
+        return False
+    prop = (
+        hilo.mensajes.filter(
+            emisor=MensajeNegociacion.EMISOR_TAXICARGA,
+            tipo=MensajeNegociacion.TIPO_PROPUESTA,
+            propuesta_estado=MensajeNegociacion.PROP_PENDIENTE,
+        )
+        .order_by("-creado_en")
+        .first()
+    )
+    if not prop:
+        return False
+    try:
+        neg.responder_propuesta(prop, "aceptar", usuario=None)
+    except neg.NegociacionError:
+        return False
+    return True
+
+
+def _bot_activo():
+    return bool(getattr(settings, "TRANSPORTISTA_BOT_ENABLED", False))
+
+
+def notificar_adjudicacion(publicacion):
+    """Avisa por WhatsApp a los transportistas que ofertaron: al ganador que se
+    le adjudicó, a los demás que se cerró con otro. Idempotente en la práctica
+    (se llama una vez, al adjudicar)."""
+    if not _bot_activo():
+        return
+    ganadora_id = publicacion.oferta_ganadora_id
+    for oferta in publicacion.ofertas.select_related("cliente"):
+        conv = _conversacion_de(oferta.cliente)
+        if not conv:
+            continue
+        if oferta.id == ganadora_id:
+            monto = oferta.monto_actual or oferta.precio_ofertado
+            _responder(
+                conv,
+                f"✅ Te adjudicamos OFERTA-{publicacion.codigo} por S/ {monto:g}. "
+                f"Un asesor te coordina los detalles del servicio.",
+            )
+        else:
+            _responder(
+                conv,
+                f"OFERTA-{publicacion.codigo} se adjudicó a otro transportista. "
+                f"Gracias por participar.",
+            )
+
+
+def notificar_mensaje_compra(hilo, mensaje):
+    """Reenvía por WhatsApp un mensaje/propuesta que el asesor puso en un hilo
+    de compra, si la contraparte llegó por WhatsApp. Se llama desde la API de
+    Negociaciones."""
+    from .models import HiloNegociacion, MensajeNegociacion
+
+    if not _bot_activo():
+        return
+    if hilo.tipo != HiloNegociacion.TIPO_COMPRA:
+        return
+    if mensaje.emisor != MensajeNegociacion.EMISOR_TAXICARGA:
+        return
+    conv = _conversacion_de(hilo.contraparte)
+    if not conv:
+        return
+    cod = hilo.publicacion.codigo if hilo.publicacion_id else ""
+    if mensaje.propuesta_monto is not None:
+        cuerpo = (
+            f"Lima Express te propone S/ {mensaje.propuesta_monto:g} por OFERTA-{cod}. "
+            f"Responde con un monto para seguir negociando, o *acepto*."
+        )
+    else:
+        cuerpo = mensaje.texto or ""
+    if cuerpo.strip():
+        _responder(conv, cuerpo)

@@ -194,14 +194,26 @@ class NegotiationMessagesView(_Base):
         if channel not in dict(MensajeNegociacion.CANALES):
             channel = MensajeNegociacion.CANAL_CRM
         try:
-            neg.publicar_mensaje(
+            msg = neg.publicar_mensaje(
                 hilo, emisor=sender, texto=text, autor=request.user,
                 canal=channel, propuesta_monto=amount,
             )
         except neg.NegociacionError as e:
             raise ValidationError(str(e))
+        _notificar_transportista_wa(hilo, msg)
         hilo.refresh_from_db()
         return Response(self._detail(hilo))
+
+
+def _notificar_transportista_wa(hilo, mensaje):
+    """Si el asesor escribió/propuso en un hilo de COMPRA y la contraparte llegó
+    por WhatsApp, el bot de transportistas se lo reenvía."""
+    try:
+        from apps.tercerizacion.bot_service import notificar_mensaje_compra
+        notificar_mensaje_compra(hilo, mensaje)
+    except Exception:  # noqa: BLE001
+        import logging
+        logging.getLogger(__name__).exception("notificar_mensaje_compra falló (hilo %s)", hilo.pk)
 
 
 class NegotiationRespondView(_Base):
@@ -217,12 +229,14 @@ class NegotiationRespondView(_Base):
             raise ValidationError("Acción no válida.")
         monto = _parse_amount(d.get("amount"))
         try:
-            neg.responder_propuesta(
+            resultado = neg.responder_propuesta(
                 mensaje, accion, usuario=request.user, monto=monto,
                 texto=(d.get("text") or "").strip(),
             )
         except neg.NegociacionError as e:
             raise ValidationError(str(e))
+        if accion == "contraofertar" and resultado is not None:
+            _notificar_transportista_wa(mensaje.hilo, resultado)
         return Response(self._detail(get_object_or_404(_HILO_QS, pk=mensaje.hilo_id)))
 
 

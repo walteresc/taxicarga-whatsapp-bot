@@ -409,7 +409,12 @@ def identificar_posible_transportista(conversacion, mensaje):
         return False
 
     publicacion = PublicacionCarga.objects.filter(
-        codigo=codigo, estado=PublicacionCarga.ESTADO_ABIERTA,
+        codigo=codigo,
+        estado__in=(
+            PublicacionCarga.ESTADO_ABIERTA,
+            PublicacionCarga.ESTADO_PUBLICADA,
+            PublicacionCarga.ESTADO_CON_OFERTAS,
+        ),
     ).first()
 
     if not publicacion:

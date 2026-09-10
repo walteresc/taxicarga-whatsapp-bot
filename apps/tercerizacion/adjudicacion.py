@@ -225,4 +225,11 @@ def adjudicar_publicacion(pub, oferta, usuario, *, transportista_vehiculo=None,
     from apps.tercerizacion.liquidaciones import generar_liquidacion
     generar_liquidacion(prog, usuario=usuario)
 
+    try:
+        from apps.tercerizacion.bot_service import notificar_adjudicacion
+        notificar_adjudicacion(pub)
+    except Exception:  # noqa: BLE001 — un fallo de WhatsApp no debe romper la adjudicación
+        import logging
+        logging.getLogger(__name__).exception("notificar_adjudicacion falló para pub %s", pub.pk)
+
     return prog
