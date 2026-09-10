@@ -68,6 +68,9 @@ const MENU = [
   { title: 'Negociaciones', icon: 'ri-discuss-line', to: '/tercerizacion/negociaciones', roles: OPS },
   { title: 'Asignaciones', icon: 'ri-user-shared-line', to: '/tercerizacion/asignaciones', roles: OPS, soon: true },
 
+  { heading: 'Finanzas', roles: ['Administrador', 'Gerencia', 'Despacho', 'Finanzas'] },
+  { title: 'Liquidaciones', icon: 'ri-wallet-3-line', to: '/finanzas/liquidaciones', roles: ['Administrador', 'Gerencia', 'Despacho', 'Finanzas'] },
+
   { heading: 'Analítica', roles: [...ADMIN_SUP, 'Gerencia', 'Despacho', 'Finanzas'] },
   { title: 'Ventas vivas', icon: 'ri-line-chart-line', to: '/analitica/ventas', roles: ADMIN_SUP },
   { title: 'Histórico', icon: 'ri-bar-chart-box-line', to: '/analitica/benchmark', roles: ADMIN_SUP },

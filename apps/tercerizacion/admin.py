@@ -1,8 +1,8 @@
 from django.contrib import admin
 
 from .models import (
-    HiloNegociacion, MensajeNegociacion, OfertaTransportista, PublicacionCarga,
-    TramoComision, TransportistaBotState,
+    HiloNegociacion, Liquidacion, MensajeNegociacion, OfertaTransportista,
+    PublicacionCarga, TramoComision, TransportistaBotState,
 )
 
 
@@ -12,6 +12,18 @@ class TramoComisionAdmin(admin.ModelAdmin):
     list_filter = ["categoria", "activo"]
     list_editable = ["porcentaje", "activo"]
     ordering = ["categoria", "monto_desde"]
+
+
+@admin.register(Liquidacion)
+class LiquidacionAdmin(admin.ModelAdmin):
+    list_display = [
+        "servicio", "transportista", "precio_servicio", "costo_transportista",
+        "comision_monto", "neto", "medio_cobro_cliente", "estado", "fecha_liquidacion",
+    ]
+    list_filter = ["estado", "medio_cobro_cliente", "sin_comision"]
+    search_fields = ["servicio__codigo", "transportista__nombre", "referencia_pago"]
+    date_hierarchy = "creado_en"
+    readonly_fields = ["creado_en", "actualizado_en"]
 
 
 class OfertaTransportistaInline(admin.TabularInline):

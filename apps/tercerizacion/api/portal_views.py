@@ -219,6 +219,38 @@ class CarrierAssignmentsView(_Portal):
         ]})
 
 
+class CarrierEarningsView(_Portal):
+    """Mis cobros: lo que la plataforma te va a pagar (o lo que le debés) por los
+    servicios tercerizados que ejecutaste. Nunca muestra el precio de venta al
+    cliente ni la comisión — solo tu neto."""
+
+    def get(self, request):
+        from apps.tercerizacion.liquidaciones import resumen_transportista
+        from apps.tercerizacion.models import Liquidacion
+
+        qs = (
+            Liquidacion.objects
+            .filter(transportista=self.carrier)
+            .exclude(estado=Liquidacion.ESTADO_ANULADA)
+            .select_related("servicio")
+            .order_by("-creado_en")
+        )
+        _STATE_EN = {"pendiente": "pending", "conciliada": "confirmed", "pagada": "settled"}
+        rows = [{
+            "id": l.id,
+            "serviceCode": l.servicio.codigo,
+            "route": f"{l.servicio.distrito_origen or '?'} → {l.servicio.distrito_destino or '?'}",
+            "date": _d(l.servicio.fecha_servicio),
+            # el transportista ve SU neto, con signo: + le pagan, - debe
+            "amount": _num(l.neto),
+            "youOwe": l.neto < 0,
+            "state": _STATE_EN.get(l.estado, l.estado),
+            "settledOn": _d(l.fecha_liquidacion),
+            "paymentRef": l.referencia_pago or None,
+        } for l in qs]
+        return Response({"summary": resumen_transportista(self.carrier), "results": rows})
+
+
 def _carrier_msg(m):
     sender = {
         MensajeNegociacion.EMISOR_TRANSPORTISTA: "you",

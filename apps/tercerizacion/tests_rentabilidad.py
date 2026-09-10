@@ -134,6 +134,12 @@ class OutsourcingSettingsMarkupAPITests(APITestCase):
         r = self.client.patch("/api/v2/outsourcing/settings", {"markupPercent": 500}, format="json")
         self.assertEqual(r.status_code, 400)
 
+    def test_patch_minimo_comisionable(self):
+        r = self.client.patch("/api/v2/outsourcing/settings", {"minCommissionableAmount": 300}, format="json")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data["minCommissionableAmount"], 300.0)
+        self.assertEqual(ConfiguracionOperaciones.get_solo().monto_minimo_comisionable, Decimal("300"))
+
 
 def _tramos_base():
     TramoComision.objects.bulk_create([

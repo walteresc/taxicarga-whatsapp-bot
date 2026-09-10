@@ -188,6 +188,11 @@ export const routes = [
         component: () => import('@/pages/analitica/tercerizacion.vue'),
         meta: { roles: ['Administrador', 'Gerencia', 'Supervisor', 'Despacho', 'Finanzas'] },
       },
+      {
+        path: 'finanzas/liquidaciones',
+        component: () => import('@/pages/finanzas/liquidaciones/index.vue'),
+        meta: { roles: ['Administrador', 'Gerencia', 'Finanzas', 'Despacho'] },
+      },
 
       {
         path: 'forbidden',
@@ -203,6 +208,7 @@ export const routes = [
       { path: 'cargas', component: () => import('@/pages/portal/cargas/index.vue'), meta: { portal: 'carrier' } },
       { path: 'ofertas', component: () => import('@/pages/portal/ofertas/index.vue'), meta: { portal: 'carrier' } },
       { path: 'asignaciones', component: () => import('@/pages/portal/asignaciones/index.vue'), meta: { portal: 'carrier' } },
+      { path: 'cobros', component: () => import('@/pages/portal/cobros/index.vue'), meta: { portal: 'carrier' } },
       { path: 'negociaciones', component: () => import('@/pages/portal/negociaciones/index.vue'), meta: { portal: 'carrier' } },
 
       { path: 'cliente', redirect: '/portal/cliente/mis-cargas' },

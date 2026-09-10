@@ -75,6 +75,11 @@ class Servicio(models.Model):
         max_length=20, choices=ESTADOS_SERVICIO, default=SERVICIO_PENDIENTE
     )
 
+    # Exención manual de comisión de tercerización (cortesía, servicio de prueba,
+    # cliente estratégico…). La liquidación respeta este flag.
+    sin_comision = models.BooleanField(default=False)
+    sin_comision_motivo = models.CharField(max_length=160, blank=True, default="")
+
     motivo_cancelacion = models.TextField(blank=True, null=True)
     atendido_por = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -356,6 +361,11 @@ class ConfiguracionOperaciones(models.Model):
                   "al cliente cuando una carga tercerizada no tiene cotización "
                   "propia (p.ej. 25 = costo + 25 %). Es la rentabilidad objetivo "
                   "de la plataforma en tercerización.",
+    )
+    monto_minimo_comisionable = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0,
+        help_text="Los servicios tercerizados por debajo de este monto no pagan "
+                  "comisión a la plataforma. 0 = todos comisionan.",
     )
     actualizado_en = models.DateTimeField(auto_now=True)
 

@@ -1,6 +1,7 @@
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 
+from . import liquidaciones_views as liqv
 from . import negociacion_views as neg
 from . import portal_views as portal
 from . import publicaciones_views as pubv
@@ -24,6 +25,12 @@ urlpatterns = router.urls + [
     path("outsourcing/commission-tiers", pubv.CommissionTiersView.as_view(), name="v2-commission-tiers"),
     path("outsourcing/commission-tiers/<int:pk>", pubv.CommissionTierDetailView.as_view(), name="v2-commission-tier-detail"),
 
+    path("settlements/", liqv.SettlementListView.as_view(), name="v2-settlement-list"),
+    path("settlements/summary", liqv.SettlementSummaryView.as_view(), name="v2-settlement-summary"),
+    path("settlements/<int:pk>/", liqv.SettlementDetailView.as_view(), name="v2-settlement-detail"),
+    path("settlements/<int:pk>/settle", liqv.SettlementSettleView.as_view(), name="v2-settlement-settle"),
+    path("settlements/<int:pk>/void", liqv.SettlementVoidView.as_view(), name="v2-settlement-void"),
+
     path("publications/", pubv.PublicationListView.as_view(), name="v2-publication-list"),
     path("publications/<int:pk>/", pubv.PublicationDetailView.as_view(), name="v2-publication-detail"),
     path("publications/<int:pk>/publish", pubv.PublicationPublishView.as_view(), name="v2-publication-publish"),
@@ -36,6 +43,7 @@ urlpatterns = router.urls + [
     path("portal/carrier/loads/<str:code>/offer", portal.CarrierOfferView.as_view(), name="v2-portal-carrier-offer"),
     path("portal/carrier/offers", portal.CarrierOffersView.as_view(), name="v2-portal-carrier-offers"),
     path("portal/carrier/assignments", portal.CarrierAssignmentsView.as_view(), name="v2-portal-carrier-assignments"),
+    path("portal/carrier/earnings", portal.CarrierEarningsView.as_view(), name="v2-portal-carrier-earnings"),
     path("portal/carrier/negotiations", portal.CarrierNegotiationsView.as_view(), name="v2-portal-carrier-negotiations"),
     path("portal/carrier/negotiations/<int:pk>/", portal.CarrierNegotiationDetailView.as_view(), name="v2-portal-carrier-negotiation-detail"),
     path("portal/carrier/negotiations/<int:pk>/messages", portal.CarrierNegotiationMessagesView.as_view(), name="v2-portal-carrier-negotiation-messages"),

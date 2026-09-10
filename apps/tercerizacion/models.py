@@ -623,3 +623,86 @@ class TramoComision(models.Model):
         cat = self.categoria or "general"
         tope = f"{self.monto_hasta:g}" if self.monto_hasta is not None else "∞"
         return f"[{cat}] S/ {self.monto_desde:g}–{tope}: {self.porcentaje:g}%"
+
+
+class Liquidacion(models.Model):
+    """Cuenta de un servicio tercerizado: qué cobró (o cobrará) el cliente, qué
+    se pactó con el transportista, y el **neto** entre la plataforma y el
+    transportista una vez descontada la comisión.
+
+    `neto` > 0  → la plataforma le paga esa cantidad al transportista.
+    `neto` < 0  → el transportista le debe esa cantidad a la plataforma
+                  (típico cuando cobró el servicio en efectivo).
+    """
+
+    MEDIO_POR_DEFINIR = "por_definir"
+    MEDIO_PASARELA = "pasarela"
+    MEDIO_TRANSFERENCIA = "transferencia"
+    MEDIO_EFECTIVO_TRANSPORTISTA = "efectivo_transportista"
+    MEDIOS = [
+        (MEDIO_POR_DEFINIR, "Por definir"),
+        (MEDIO_PASARELA, "Pasarela (el cliente pagó a la plataforma)"),
+        (MEDIO_TRANSFERENCIA, "Transferencia a la plataforma"),
+        (MEDIO_EFECTIVO_TRANSPORTISTA, "Efectivo cobrado por el transportista"),
+    ]
+
+    ESTADO_PENDIENTE = "pendiente"
+    ESTADO_CONCILIADA = "conciliada"
+    ESTADO_PAGADA = "pagada"
+    ESTADO_ANULADA = "anulada"
+    ESTADOS = [
+        (ESTADO_PENDIENTE, "Pendiente"),
+        (ESTADO_CONCILIADA, "Conciliada (lista para liquidar)"),
+        (ESTADO_PAGADA, "Liquidada"),
+        (ESTADO_ANULADA, "Anulada"),
+    ]
+
+    programacion = models.OneToOneField(
+        "campo.ProgramacionServicio", on_delete=models.CASCADE, related_name="liquidacion",
+    )
+    servicio = models.ForeignKey(
+        "servicios.Servicio", on_delete=models.CASCADE, related_name="liquidaciones",
+    )
+    transportista = models.ForeignKey(
+        Transportista, on_delete=models.PROTECT, related_name="liquidaciones",
+    )
+
+    precio_servicio = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    costo_transportista = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    comision_pct = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    comision_monto = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    sin_comision = models.BooleanField(default=False)
+    exencion_motivo = models.CharField(max_length=200, blank=True, default="")
+
+    medio_cobro_cliente = models.CharField(max_length=24, choices=MEDIOS, default=MEDIO_POR_DEFINIR)
+    neto = models.DecimalField(
+        max_digits=12, decimal_places=2, default=0,
+        help_text="Positivo: la plataforma paga al transportista. Negativo: el transportista debe a la plataforma.",
+    )
+
+    estado = models.CharField(max_length=12, choices=ESTADOS, default=ESTADO_PENDIENTE)
+    fecha_liquidacion = models.DateField(null=True, blank=True)
+    referencia_pago = models.CharField(max_length=120, blank=True, default="")
+    comprobante = models.CharField(max_length=255, blank=True, default="")
+    nota = models.TextField(blank=True, default="")
+    liquidado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+    creado_en = models.DateTimeField(auto_now_add=True)
+    actualizado_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Liquidación de tercerización"
+        verbose_name_plural = "Liquidaciones de tercerización"
+        ordering = ["-creado_en"]
+
+    def __str__(self):
+        return f"{self.servicio.codigo} · {self.transportista.nombre} · neto S/ {self.neto:g}"
+
+    @property
+    def direccion(self):
+        if self.neto > 0:
+            return "a_favor_transportista"
+        if self.neto < 0:
+            return "a_favor_plataforma"
+        return "sin_movimiento"

@@ -222,4 +222,7 @@ def adjudicar_publicacion(pub, oferta, usuario, *, transportista_vehiculo=None,
             else "Publicación adjudicada a otro transportista.",
         )
 
+    from apps.tercerizacion.liquidaciones import generar_liquidacion
+    generar_liquidacion(prog, usuario=usuario)
+
     return prog

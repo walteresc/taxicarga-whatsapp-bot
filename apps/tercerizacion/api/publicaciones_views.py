@@ -167,6 +167,7 @@ class OutsourcingSettingsView(_Base):
         return {
             "autoDeriveInterprovincial": cfg.derivar_interprovincial_auto,
             "markupPercent": float(cfg.markup_tercerizacion_porcentaje),
+            "minCommissionableAmount": float(cfg.monto_minimo_comisionable),
         }
 
     def get(self, request):
@@ -189,6 +190,15 @@ class OutsourcingSettingsView(_Base):
                 raise ValidationError({"markupPercent": "Debe estar entre 0 y 200."})
             cfg.markup_tercerizacion_porcentaje = pct
             campos.append("markup_tercerizacion_porcentaje")
+        if "minCommissionableAmount" in request.data:
+            try:
+                monto = Decimal(str(request.data["minCommissionableAmount"]))
+            except (InvalidOperation, TypeError):
+                raise ValidationError({"minCommissionableAmount": "Monto no válido."})
+            if monto < 0:
+                raise ValidationError({"minCommissionableAmount": "No puede ser negativo."})
+            cfg.monto_minimo_comisionable = monto
+            campos.append("monto_minimo_comisionable")
         if campos:
             cfg.save(update_fields=campos + ["actualizado_en"])
         return Response(self._payload(cfg))

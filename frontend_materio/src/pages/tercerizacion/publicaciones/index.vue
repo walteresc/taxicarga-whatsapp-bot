@@ -58,13 +58,14 @@ const loadList = async () => {
 }
 const onSearch = () => { clearTimeout(searchTimer); searchTimer = setTimeout(loadList, 350) }
 
-const settings = reactive({ autoDerive: false, markup: 25 })
+const settings = reactive({ autoDerive: false, markup: 25, minCommissionable: 0 })
 const settingsBusy = ref(false)
 const loadSettings = async () => {
   try {
     const s = await outsourcingSettings()
     settings.autoDerive = s.autoDeriveInterprovincial
     settings.markup = s.markupPercent
+    settings.minCommissionable = s.minCommissionableAmount
   } catch { /* sin permiso: se oculta */ }
 }
 const toggleAutoDerive = async val => {
@@ -84,6 +85,13 @@ const saveMarkup = async () => {
   try {
     settings.markup = (await outsourcingSettingsUpdate({ markupPercent: settings.markup })).markupPercent
     notify(`Markup de tercerización: ${settings.markup} %.`)
+  } catch (e) { notify(e.message || 'No se pudo guardar.', 'error') } finally { settingsBusy.value = false }
+}
+const saveMinCommissionable = async () => {
+  settingsBusy.value = true
+  try {
+    settings.minCommissionable = (await outsourcingSettingsUpdate({ minCommissionableAmount: settings.minCommissionable })).minCommissionableAmount
+    notify('Guardado.')
   } catch (e) { notify(e.message || 'No se pudo guardar.', 'error') } finally { settingsBusy.value = false }
 }
 
@@ -220,6 +228,16 @@ const awarded = computed(() => detail.value?.state === 'awarded')
           <span class="text-caption text-medium-emphasis">
             Recargo sobre el costo del transportista para fijar el precio al cliente cuando la carga no tiene
             cotización propia. Es la rentabilidad objetivo de la plataforma.
+          </span>
+        </div>
+        <div class="d-flex align-center flex-wrap ga-2">
+          <VTextField
+            v-model.number="settings.minCommissionable" type="number" density="compact" hide-details
+            label="Mínimo comisionable (S/)" style="max-width: 200px;"
+            prefix="S/" @blur="saveMinCommissionable"
+          />
+          <span class="text-caption text-medium-emphasis">
+            Los servicios tercerizados por debajo de este monto no pagan comisión. 0 = todos comisionan.
           </span>
         </div>
       </VCardText>
