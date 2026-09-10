@@ -29,7 +29,7 @@ from apps.api.exceptions import api_exception_handler
 from apps.api.pagination import StandardPagination
 from apps.api.permissions import HasAnyRole, IsCarrier, carrier_for
 from apps.encomiendas import services
-from apps.encomiendas.models import Envio, RutaReparto, TarifaZona, ZonaReparto
+from apps.encomiendas.models import Envio, RendicionCaja, RutaReparto, TarifaZona, ZonaReparto
 from apps.tercerizacion.models import Transportista, TransportistaVehiculo
 
 _ROLES = ("Administrador", "Gerencia", "Supervisor", "Despacho", "Asesor de Ventas")
@@ -78,6 +78,8 @@ def detail(e):
         "receivedBy": e.recibido_por or None,
         "podPhoto": f"/api/v2/shipments/{e.codigo}/pod-photo" if e.prueba_foto else None,
         "hasSignature": bool(e.prueba_firma),
+        "codCollected": _num(e.cod_cobrado), "codMethod": e.cod_medio or None,
+        "codToRemit": _num(e.cod_a_remitir), "codHandedOver": e.cod_rendido, "codRemitted": e.cod_remitido,
         "failReason": e.motivo_fallo or None,
         "attempts": e.intentos_entrega,
         "notes": e.notas,
@@ -381,9 +383,101 @@ class CarrierDeliveryEventView(_CarrierBase):
             prueba_foto=request.FILES.get("photo"),
             prueba_firma=(d.get("signature") or "").strip(),
             motivo_fallo=(d.get("failReason") or "").strip(),
+            cod_cobrado=d.get("codCollected"),
+            cod_medio=(d.get("codMethod") or "").strip(),
+            cod_comprobante=request.FILES.get("codReceipt"),
             usuario=request.user,
         )
         return Response({"ok": True, "state": envio.estado})
+
+
+# --------------------------------------------------------------------------- #
+#  Contra-entrega (COD) — Finanzas
+# --------------------------------------------------------------------------- #
+
+_ROLES_COD = ("Administrador", "Gerencia", "Finanzas", "Despacho")
+
+
+class _CodBase(APIView):
+    permission_classes = [HasAnyRole(*_ROLES_COD)]
+
+    def get_exception_handler(self):
+        return api_exception_handler
+
+
+class CodPendingView(_CodBase):
+    def get(self, request):
+        by = {}
+        for e in services.cod_por_rendir():
+            g = by.setdefault(e.transportista_id, {
+                "carrierId": e.transportista_id, "carrierName": e.transportista.nombre,
+                "count": 0, "total": 0.0, "shipments": [],
+            })
+            g["count"] += 1
+            g["total"] += float(e.cod_cobrado)
+            g["shipments"].append({"code": e.codigo, "amount": float(e.cod_cobrado), "method": e.cod_medio})
+        return Response({"groups": list(by.values())})
+
+
+class CodSettlementListView(_CodBase):
+    def get(self, request):
+        qs = RendicionCaja.objects.select_related("transportista")
+        if request.query_params.get("state"):
+            qs = qs.filter(estado=request.query_params["state"])
+        return Response({"results": [{
+            "code": r.codigo, "carrierName": r.transportista.nombre, "state": r.estado,
+            "expected": _num(r.esperado), "handedOver": _num(r.entregado), "difference": _num(r.diferencia),
+            "createdAt": _d(r.creado_en),
+        } for r in qs[:100]]})
+
+    def post(self, request):
+        carrier = get_object_or_404(Transportista, pk=request.data.get("carrierId"))
+        r = services.crear_rendicion(carrier, usuario=request.user)
+        return Response({"code": r.codigo, "expected": _num(r.esperado)}, status=201)
+
+
+class CodSettlementDetailView(_CodBase):
+    def get(self, request, code):
+        r = get_object_or_404(RendicionCaja.objects.select_related("transportista"), codigo=code)
+        return Response({
+            "code": r.codigo, "carrierName": r.transportista.nombre, "state": r.estado,
+            "expected": _num(r.esperado), "handedOver": _num(r.entregado), "difference": _num(r.diferencia),
+            "reference": r.referencia, "note": r.nota,
+            "shipments": [{"code": e.codigo, "amount": _num(e.cod_cobrado), "method": e.cod_medio,
+                           "recipient": e.destinatario_nombre} for e in r.envios.all()],
+        })
+
+    def post(self, request, code):
+        r = get_object_or_404(RendicionCaja, codigo=code)
+        d = request.data
+        if d.get("amount") in (None, ""):
+            raise ValidationError({"amount": "Ingresá cuánto entregó el motorizado."})
+        services.conciliar_rendicion(
+            r, entregado=d["amount"], usuario=request.user,
+            referencia=(d.get("reference") or "").strip(), nota=(d.get("note") or "").strip(),
+        )
+        return Response({"ok": True})
+
+
+class CodToRemitView(_CodBase):
+    def get(self, request):
+        by = {}
+        for e in services.cod_por_remitir().select_related("transportista"):
+            g = by.setdefault(e.remitente_nombre or "—", {
+                "sender": e.remitente_nombre or "—", "phone": e.remitente_telefono,
+                "count": 0, "total": 0.0, "shipments": [],
+            })
+            g["count"] += 1
+            g["total"] += float(e.cod_a_remitir)
+            g["shipments"].append({"code": e.codigo, "amount": float(e.cod_a_remitir)})
+        return Response({"groups": list(by.values())})
+
+    def post(self, request):
+        codes = request.data.get("shipmentCodes") or []
+        envios = list(Envio.objects.filter(codigo__in=codes))
+        n = services.marcar_remitido(envios, referencia=(request.data.get("reference") or "").strip(),
+                                     usuario=request.user)
+        return Response({"remitted": n})
 
 
 # --------------------------------------------------------------------------- #

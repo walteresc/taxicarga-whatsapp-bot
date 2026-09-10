@@ -177,7 +177,18 @@ const copyTrack = () => { try { navigator.clipboard?.writeText(trackUrl.value); 
                 <tr><td>Entrega</td><td>{{ detail.recipientFull.district }} · {{ detail.recipientFull.address }}<br><span class="text-caption">{{ detail.recipientFull.name }} {{ detail.recipientFull.phone }}</span></td></tr>
                 <tr><td>Paquete</td><td>{{ detail.package.content || '—' }} · {{ detail.package.weightKg }} kg</td></tr>
                 <tr><td>Precio</td><td>{{ soles(detail.price) }}</td></tr>
-                <tr v-if="detail.cod"><td>Contra-entrega</td><td class="text-warning">{{ soles(detail.codAmount) }}</td></tr>
+                <tr v-if="detail.cod">
+                  <td>Contra-entrega</td>
+                  <td>
+                    <span class="text-warning">{{ soles(detail.codAmount) }}</span>
+                    <template v-if="detail.codCollected != null">
+                      · cobrado {{ soles(detail.codCollected) }} ({{ detail.codMethod }})
+                      · a remitir <strong>{{ soles(detail.codToRemit) }}</strong>
+                      <VChip v-if="detail.codRemitted" size="x-small" color="success" class="ms-1">remitido</VChip>
+                      <VChip v-else-if="detail.codHandedOver" size="x-small" color="info" class="ms-1">rendido</VChip>
+                    </template>
+                  </td>
+                </tr>
                 <tr><td>Motorizado</td><td>{{ detail.carrierName || '— sin asignar' }}<span v-if="detail.routeCode" class="text-caption text-medium-emphasis"> · {{ detail.routeCode }}</span></td></tr>
                 <tr v-if="detail.receivedBy"><td>Recibió</td><td>{{ detail.receivedBy }}</td></tr>
                 <tr v-if="detail.podPhoto"><td>Prueba de entrega</td><td><a :href="detail.podPhoto" target="_blank">ver foto</a></td></tr>

@@ -50,8 +50,11 @@ const step = async (s, state) => {
 }
 
 // --- POD (entrega) ---
-const pod = reactive({ open: false, stop: null, receivedBy: '', photo: null, photoUrl: '' })
-const openPod = s => Object.assign(pod, { open: true, stop: s, receivedBy: '', photo: null, photoUrl: '' })
+const pod = reactive({ open: false, stop: null, receivedBy: '', photo: null, photoUrl: '', codAmount: '', codMethod: 'efectivo' })
+const openPod = s => Object.assign(pod, {
+  open: true, stop: s, receivedBy: '', photo: null, photoUrl: '',
+  codAmount: s.cod ? String(s.codAmount) : '', codMethod: 'efectivo',
+})
 const onPhoto = e => {
   const f = e.target.files?.[0]
   if (!f) return
@@ -59,12 +62,17 @@ const onPhoto = e => {
   pod.photoUrl = URL.createObjectURL(f)
 }
 const submitPod = async () => {
+  if (pod.stop.cod && !pod.codAmount) { notify('Registrá cuánto cobraste.', 'error'); return }
   busy.value = true
   try {
     const fd = new FormData()
     fd.append('state', 'entregado')
     fd.append('receivedBy', pod.receivedBy || '')
     if (pod.photo) fd.append('photo', pod.photo)
+    if (pod.stop.cod) {
+      fd.append('codCollected', pod.codAmount)
+      fd.append('codMethod', pod.codMethod)
+    }
     await carrierDeliveryEvent(pod.stop.code, fd)
     pod.open = false
     notify('Entregado ✓')
@@ -199,9 +207,18 @@ const submitFail = async () => {
       <VCard>
         <VCardTitle>Confirmar entrega</VCardTitle>
         <VCardText>
-          <p v-if="pod.stop?.cod" class="text-warning text-body-2 mb-3">
-            Cobrá {{ soles(pod.stop.codAmount) }} antes de entregar.
-          </p>
+          <VAlert v-if="pod.stop?.cod" type="warning" variant="tonal" class="mb-3">
+            <div class="text-body-1 font-weight-bold">Cobrá {{ soles(pod.stop.codAmount) }}</div>
+            <div class="text-caption">antes de entregar el paquete</div>
+          </VAlert>
+          <template v-if="pod.stop?.cod">
+            <VTextField v-model="pod.codAmount" label="¿Cuánto cobraste? (S/)" type="number" density="compact" class="mb-2" />
+            <VBtnToggle v-model="pod.codMethod" mandatory density="compact" class="mb-3" divided>
+              <VBtn value="efectivo" size="small">Efectivo</VBtn>
+              <VBtn value="yape" size="small">Yape / Plin</VBtn>
+              <VBtn value="tarjeta" size="small">Tarjeta</VBtn>
+            </VBtnToggle>
+          </template>
           <label class="d-block mb-3">
             <input type="file" accept="image/*" capture="environment" class="d-none" @change="onPhoto">
             <VCard variant="outlined" class="d-flex align-center justify-center" style="height: 140px; cursor: pointer;">

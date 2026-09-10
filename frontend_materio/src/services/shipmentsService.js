@@ -28,5 +28,14 @@ export const carrierRouteStart = () => apiClient.post('/api/v2/portal/carrier/ro
 export const carrierDeliveryEvent = (code, body) =>
   apiClient.post(`/api/v2/portal/carrier/deliveries/${code}/event`, body)
 
+// Contra-entrega (COD) — Finanzas
+export const codPending = () => apiClient.get('/api/v2/cod/pending')
+export const codToRemit = () => apiClient.get('/api/v2/cod/to-remit')
+export const codSettlements = params => apiClient.get('/api/v2/cod/settlements', params)
+export const codSettlementCreate = body => apiClient.post('/api/v2/cod/settlements', body)
+export const codSettlementDetail = code => apiClient.get(`/api/v2/cod/settlements/${code}`)
+export const codSettlementReconcile = (code, body) => apiClient.post(`/api/v2/cod/settlements/${code}`, body)
+export const codRemit = body => apiClient.post('/api/v2/cod/to-remit', body)
+
 // Público (sin sesión)
 export const trackShipment = token => apiClient.get(`/api/v2/track/${token}`)

@@ -8,7 +8,10 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 
-from .models import Envio, EventoTracking, RutaReparto, TarifaZona, ZonaReparto
+from .models import (
+    ConfiguracionEncomiendas, Envio, EventoTracking, RendicionCaja, RutaReparto,
+    TarifaZona, ZonaReparto,
+)
 
 _Q = Decimal("0.01")
 
@@ -120,15 +123,34 @@ def asignar_envio(envio, transportista, *, vehiculo=None, usuario=None):
     return envio
 
 
+def _calc_cod_a_remitir(cobrado):
+    """Lo que la plataforma le debe al remitente: lo cobrado, menos el envío (si
+    va incluido) y menos la comisión COD."""
+    cfg = ConfiguracionEncomiendas.get_solo()
+    cobrado = _dec(cobrado)
+    fee = (cobrado * _dec(cfg.comision_cod_porcentaje) / Decimal(100)).quantize(_Q, ROUND_HALF_UP)
+    return cobrado, fee, cfg.envio_incluido_en_cod
+
+
 @transaction.atomic
 def registrar_evento(envio, estado, *, descripcion="", ubicacion="", recibido_por="",
-                     prueba_foto=None, prueba_firma="", motivo_fallo="", usuario=None):
+                     prueba_foto=None, prueba_firma="", motivo_fallo="",
+                     cod_cobrado=None, cod_medio="", cod_comprobante=None, usuario=None):
     if estado not in dict(Envio.ESTADOS):
         raise ValidationError({"state": "Estado no válido."})
     if estado not in _TRANSICIONES.get(envio.estado, set()):
         raise ValidationError(
             f"No se puede pasar de «{envio.get_estado_display()}» a «{dict(Envio.ESTADOS)[estado]}»."
         )
+
+    # Validación de COD antes de mutar nada.
+    cod_monto = None
+    if estado == Envio.ESTADO_ENTREGADO and envio.es_contraentrega:
+        cod_monto = _dec(cod_cobrado if cod_cobrado not in (None, "") else envio.monto_contraentrega)
+        if cod_monto <= 0:
+            raise ValidationError({"codCollected": "Registrá cuánto cobraste contra entrega."})
+        if cod_medio and cod_medio not in dict(Envio.COD_MEDIOS):
+            raise ValidationError({"codMethod": "Medio de cobro no válido."})
 
     ahora = timezone.now()
     campos = ["estado", "actualizado_en"]
@@ -144,6 +166,16 @@ def registrar_evento(envio, estado, *, descripcion="", ubicacion="", recibido_po
         if prueba_firma:
             envio.prueba_firma = prueba_firma
         campos += ["entregado_en", "recibido_por", "prueba_foto", "prueba_firma"]
+        if envio.es_contraentrega:
+            cobrado, fee, incluye_envio = _calc_cod_a_remitir(cod_monto)
+            a_remitir = cobrado - fee - (_dec(envio.precio) if incluye_envio else Decimal(0))
+            envio.cod_cobrado = cobrado
+            envio.cod_medio = cod_medio or Envio.COD_EFECTIVO
+            envio.cod_cobrado_en = ahora
+            envio.cod_a_remitir = max(a_remitir, Decimal(0)).quantize(_Q)
+            if cod_comprobante is not None:
+                envio.cod_comprobante = cod_comprobante
+            campos += ["cod_cobrado", "cod_medio", "cod_cobrado_en", "cod_a_remitir", "cod_comprobante"]
     elif estado == Envio.ESTADO_FALLIDO:
         envio.motivo_fallo = motivo_fallo or descripcion or "No entregado"
         envio.intentos_entrega = (envio.intentos_entrega or 0) + 1
@@ -268,6 +300,67 @@ def ruta_progreso(ruta):
     hechas = ruta.paradas.filter(estado__in=[Envio.ESTADO_ENTREGADO, Envio.ESTADO_FALLIDO, Envio.ESTADO_DEVUELTO]).count()
     return {"total": total, "done": hechas,
             "delivered": ruta.paradas.filter(estado=Envio.ESTADO_ENTREGADO).count()}
+
+
+# --------------------------------------------------------------------------- #
+#  Contra-entrega (COD) — rendición de caja del motorizado + remisión al remitente (P3)
+# --------------------------------------------------------------------------- #
+
+def cod_por_rendir(transportista=None):
+    """Envíos COD cobrados que el motorizado todavía no rindió."""
+    qs = Envio.objects.filter(
+        es_contraentrega=True, estado=Envio.ESTADO_ENTREGADO,
+        cod_rendido=False, cod_cobrado__gt=0, rendicion__isnull=True,
+    ).select_related("transportista")
+    if transportista is not None:
+        qs = qs.filter(transportista=transportista)
+    return qs
+
+
+@transaction.atomic
+def crear_rendicion(transportista, *, envios=None, usuario=None):
+    envios = list(envios) if envios is not None else list(cod_por_rendir(transportista))
+    envios = [e for e in envios if e.transportista_id == transportista.id and e.cod_rendido is False and e.rendicion_id is None]
+    if not envios:
+        raise ValidationError("No hay contra-entregas por rendir de ese motorizado.")
+    esperado = sum((_dec(e.cod_cobrado) for e in envios), Decimal(0))
+    r = RendicionCaja.objects.create(transportista=transportista, esperado=esperado)
+    Envio.objects.filter(pk__in=[e.pk for e in envios]).update(rendicion=r)
+    return r
+
+
+@transaction.atomic
+def conciliar_rendicion(rendicion, *, entregado, usuario=None, referencia="", nota=""):
+    if rendicion.estado == RendicionCaja.ESTADO_CONCILIADA:
+        raise ValidationError("La rendición ya está conciliada.")
+    entregado = _dec(entregado)
+    rendicion.entregado = entregado
+    rendicion.diferencia = (entregado - rendicion.esperado).quantize(_Q)
+    rendicion.estado = RendicionCaja.ESTADO_CONCILIADA
+    rendicion.referencia = referencia or ""
+    if nota:
+        rendicion.nota = nota
+    rendicion.conciliada_por = usuario
+    rendicion.conciliada_en = timezone.now()
+    rendicion.save()
+    rendicion.envios.update(cod_rendido=True)
+    return rendicion
+
+
+def cod_por_remitir():
+    """Neto que la plataforma le debe a los remitentes (COD ya rendido, sin remitir)."""
+    return Envio.objects.filter(
+        es_contraentrega=True, estado=Envio.ESTADO_ENTREGADO,
+        cod_rendido=True, cod_remitido=False, cod_a_remitir__gt=0,
+    )
+
+
+@transaction.atomic
+def marcar_remitido(envios, *, referencia="", usuario=None):
+    n = Envio.objects.filter(pk__in=[e.pk for e in envios], cod_rendido=True, cod_remitido=False).update(
+        cod_remitido=True, cod_remitido_ref=referencia or "",
+    )
+    return n
 
 
 # --------------------------------------------------------------------------- #

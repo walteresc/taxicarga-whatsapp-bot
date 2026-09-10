@@ -194,6 +194,11 @@ export const routes = [
         meta: { roles: ['Administrador', 'Gerencia', 'Finanzas', 'Despacho'] },
       },
       {
+        path: 'finanzas/cod',
+        component: () => import('@/pages/finanzas/cod/index.vue'),
+        meta: { roles: ['Administrador', 'Gerencia', 'Finanzas', 'Despacho'] },
+      },
+      {
         path: 'encomiendas',
         component: () => import('@/pages/encomiendas/index.vue'),
         meta: { roles: ['Administrador', 'Gerencia', 'Supervisor', 'Despacho', 'Asesor de Ventas'] },

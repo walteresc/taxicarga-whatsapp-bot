@@ -9,7 +9,9 @@ from rest_framework.test import APITestCase
 
 from apps.catalogo.models import TipoVehiculo
 from apps.encomiendas import services
-from apps.encomiendas.models import Envio, RutaReparto, TarifaZona, ZonaReparto
+from apps.encomiendas.models import (
+    ConfiguracionEncomiendas, Envio, RendicionCaja, RutaReparto, TarifaZona, ZonaReparto,
+)
 from apps.tercerizacion.models import Transportista, TransportistaVehiculo
 
 User = get_user_model()
@@ -148,6 +150,37 @@ class ApiTests(APITestCase):
         e.refresh_from_db()
         self.assertEqual(e.estado, Envio.ESTADO_RECOGIDO)
 
+    def test_cod_flow_api(self):
+        ConfiguracionEncomiendas.objects.filter(pk=1).delete()
+        Group.objects.get_or_create(name="Finanzas")
+        Group.objects.get_or_create(name="Transportista")
+        fin = User.objects.create_user("cod_fin", password="x")
+        fin.groups.add(Group.objects.get(name="Finanzas"))
+        carrier = Transportista.objects.create(nombre="Moto COD")
+        cu = User.objects.create_user("cod_carrier", password="x")
+        cu.groups.add(Group.objects.get(name="Transportista"))
+        carrier.usuario = cu
+        carrier.save()
+        e = services.crear_envio(dict(BASE, es_contraentrega=True, monto_contraentrega=Decimal("80"), precio=Decimal("10")))
+        services.asignar_envio(e, carrier)
+        services.registrar_evento(e, Envio.ESTADO_EN_RUTA)
+
+        self.client.force_authenticate(cu)
+        r = self.client.post(f"/api/v2/portal/carrier/deliveries/{e.codigo}/event",
+                             {"state": "entregado", "receivedBy": "Ana", "codCollected": "80", "codMethod": "yape"},
+                             format="multipart")
+        self.assertEqual(r.status_code, 200, r.data)
+
+        self.client.force_authenticate(fin)
+        r = self.client.get("/api/v2/cod/pending")
+        self.assertEqual(r.data["groups"][0]["total"], 80.0)
+        r = self.client.post("/api/v2/cod/settlements", {"carrierId": carrier.id}, format="json")
+        code = r.data["code"]
+        r = self.client.post(f"/api/v2/cod/settlements/{code}", {"amount": "80", "reference": "yape-ok"}, format="json")
+        self.assertEqual(r.status_code, 200)
+        r = self.client.get("/api/v2/cod/to-remit")
+        self.assertEqual(len(r.data["groups"]), 1)
+
     def test_track_publico_sin_sesion(self):
         e = services.crear_envio(dict(BASE))
         r = self.client.get(f"/api/v2/track/{e.token}")
@@ -219,6 +252,43 @@ class RutaTests(APITestCase):
         e.refresh_from_db()
         self.assertEqual(e.intentos_entrega, 1)
         self.assertEqual(e.estado, Envio.ESTADO_FALLIDO)
+
+    def test_cod_calcula_a_remitir_y_bloquea_sin_monto(self):
+        from datetime import date
+        ConfiguracionEncomiendas.objects.filter(pk=1).delete()
+        c = self._carrier()
+        e = services.crear_envio(dict(BASE, es_contraentrega=True, monto_contraentrega=Decimal("120"), precio=Decimal("15")))
+        services.asignar_envio(e, c)
+        services.registrar_evento(e, Envio.ESTADO_EN_RUTA)
+        with self.assertRaises(ValidationError):
+            services.registrar_evento(e, Envio.ESTADO_ENTREGADO, recibido_por="X", cod_cobrado=0)
+        services.registrar_evento(e, Envio.ESTADO_ENTREGADO, recibido_por="X",
+                                  cod_cobrado=Decimal("120"), cod_medio="efectivo")
+        e.refresh_from_db()
+        # 120 - 3% (3.60) - envío 15 = 101.40
+        self.assertEqual(e.cod_cobrado, Decimal("120"))
+        self.assertEqual(e.cod_a_remitir, Decimal("101.40"))
+
+    def test_rendicion_de_caja(self):
+        from datetime import date
+        ConfiguracionEncomiendas.objects.filter(pk=1).delete()
+        c = self._carrier()
+        e = services.crear_envio(dict(BASE, es_contraentrega=True, monto_contraentrega=Decimal("100"), precio=Decimal("10")))
+        services.asignar_envio(e, c)
+        services.registrar_evento(e, Envio.ESTADO_EN_RUTA)
+        services.registrar_evento(e, Envio.ESTADO_ENTREGADO, recibido_por="X", cod_cobrado=Decimal("100"))
+
+        self.assertEqual(services.cod_por_rendir(c).count(), 1)
+        r = services.crear_rendicion(c)
+        self.assertEqual(r.esperado, Decimal("100"))
+        services.conciliar_rendicion(r, entregado=Decimal("100"), referencia="dep-1")
+        r.refresh_from_db()
+        self.assertEqual(r.estado, RendicionCaja.ESTADO_CONCILIADA)
+        self.assertEqual(r.diferencia, Decimal("0"))
+        e.refresh_from_db()
+        self.assertTrue(e.cod_rendido)
+        # ahora aparece por remitir
+        self.assertEqual(services.cod_por_remitir().count(), 1)
 
     def test_portal_ruta_y_pod(self):
         from datetime import date

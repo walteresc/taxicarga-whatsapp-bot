@@ -18,6 +18,11 @@ urlpatterns = [
     path("routes/<str:code>/start", views.RouteStartView.as_view(), name="v2-route-start"),
     path("routes/<str:code>/close", views.RouteCloseView.as_view(), name="v2-route-close"),
 
+    path("cod/pending", views.CodPendingView.as_view(), name="v2-cod-pending"),
+    path("cod/to-remit", views.CodToRemitView.as_view(), name="v2-cod-to-remit"),
+    path("cod/settlements", views.CodSettlementListView.as_view(), name="v2-cod-settlements"),
+    path("cod/settlements/<str:code>", views.CodSettlementDetailView.as_view(), name="v2-cod-settlement"),
+
     path("portal/carrier/deliveries", views.CarrierDeliveriesView.as_view(), name="v2-carrier-deliveries"),
     path("portal/carrier/route", views.CarrierRouteView.as_view(), name="v2-carrier-route"),
     path("portal/carrier/deliveries/<str:code>/event", views.CarrierDeliveryEventView.as_view(), name="v2-carrier-delivery-event"),

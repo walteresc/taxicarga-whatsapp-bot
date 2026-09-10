@@ -1,6 +1,18 @@
 from django.contrib import admin
 
-from .models import Envio, EventoTracking, RutaReparto, TarifaZona, ZonaReparto
+from .models import (
+    ConfiguracionEncomiendas, Envio, EventoTracking, RendicionCaja, RutaReparto,
+    TarifaZona, ZonaReparto,
+)
+
+admin.site.register(ConfiguracionEncomiendas)
+
+
+@admin.register(RendicionCaja)
+class RendicionCajaAdmin(admin.ModelAdmin):
+    list_display = ["codigo", "transportista", "esperado", "entregado", "diferencia", "estado", "creado_en"]
+    list_filter = ["estado"]
+    search_fields = ["codigo", "transportista__nombre"]
 
 
 @admin.register(RutaReparto)

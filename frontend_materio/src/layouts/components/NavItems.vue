@@ -74,6 +74,7 @@ const MENU = [
 
   { heading: 'Finanzas', roles: ['Administrador', 'Gerencia', 'Despacho', 'Finanzas'] },
   { title: 'Liquidaciones', icon: 'ri-wallet-3-line', to: '/finanzas/liquidaciones', roles: ['Administrador', 'Gerencia', 'Despacho', 'Finanzas'] },
+  { title: 'Contra-entrega (COD)', icon: 'ri-hand-coin-line', to: '/finanzas/cod', roles: ['Administrador', 'Gerencia', 'Despacho', 'Finanzas'] },
 
   { heading: 'Analítica', roles: [...ADMIN_SUP, 'Gerencia', 'Despacho', 'Finanzas'] },
   { title: 'Ventas vivas', icon: 'ri-line-chart-line', to: '/analitica/ventas', roles: ADMIN_SUP },

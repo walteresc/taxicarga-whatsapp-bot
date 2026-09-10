@@ -9,6 +9,33 @@ def _token():
     return secrets.token_urlsafe(16)
 
 
+class ConfiguracionEncomiendas(models.Model):
+    """Ajustes de encomiendas (singleton)."""
+
+    comision_cod_porcentaje = models.DecimalField(
+        max_digits=5, decimal_places=2, default=3,
+        help_text="Comisión de la plataforma sobre lo cobrado contra-entrega, en %.",
+    )
+    envio_incluido_en_cod = models.BooleanField(
+        default=True,
+        help_text="Si está activo, el monto contra-entrega incluye el precio del envío "
+                  "(la plataforma lo retiene). Si no, el envío se cobra aparte.",
+    )
+    actualizado_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Configuración de encomiendas"
+        verbose_name_plural = "Configuración de encomiendas"
+
+    def __str__(self):
+        return f"Comisión COD {self.comision_cod_porcentaje}%"
+
+    @classmethod
+    def get_solo(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+
 class ZonaReparto(models.Model):
     """Un grupo de distritos que se cotiza y rutea como una unidad
     (Lima Centro, Lima Norte, Callao, Balnearios…)."""
@@ -164,9 +191,22 @@ class Envio(models.Model):
     alto_cm = models.PositiveIntegerField(null=True, blank=True)
     valor_declarado = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
 
-    # -- Contra-entrega (COD) — se cobra en P3, acá solo se registra --
+    # -- Contra-entrega (COD) --
     es_contraentrega = models.BooleanField(default=False)
     monto_contraentrega = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    COD_EFECTIVO = "efectivo"
+    COD_YAPE = "yape"
+    COD_TARJETA = "tarjeta"
+    COD_MEDIOS = [(COD_EFECTIVO, "Efectivo"), (COD_YAPE, "Yape / Plin"), (COD_TARJETA, "Tarjeta")]
+    cod_cobrado = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    cod_medio = models.CharField(max_length=10, choices=COD_MEDIOS, blank=True, default="")
+    cod_cobrado_en = models.DateTimeField(null=True, blank=True)
+    cod_comprobante = models.FileField(upload_to="encomiendas/cod/%Y/%m/", null=True, blank=True)
+    # neto que la plataforma le debe al remitente por este envío
+    cod_a_remitir = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    cod_rendido = models.BooleanField(default=False, help_text="El motorizado entregó esta plata a la plataforma.")
+    cod_remitido = models.BooleanField(default=False, help_text="La plataforma le pagó al remitente su parte.")
+    cod_remitido_ref = models.CharField(max_length=120, blank=True, default="")
 
     # -- Precio del envío (lo paga el remitente / la tienda) --
     precio = models.DecimalField(max_digits=10, decimal_places=2, default=0)
@@ -182,6 +222,9 @@ class Envio(models.Model):
     )
     ruta = models.ForeignKey(
         RutaReparto, on_delete=models.SET_NULL, null=True, blank=True, related_name="paradas",
+    )
+    rendicion = models.ForeignKey(
+        "encomiendas.RendicionCaja", on_delete=models.SET_NULL, null=True, blank=True, related_name="envios",
     )
     orden_ruta = models.PositiveSmallIntegerField(default=0)
     recogido_en = models.DateTimeField(null=True, blank=True)
@@ -211,6 +254,46 @@ class Envio(models.Model):
         if not self.codigo:
             super().save(*args, **kwargs)
             self.codigo = f"ENC-{self.pk:05d}"
+            return super().save(update_fields=["codigo"])
+        return super().save(*args, **kwargs)
+
+
+class RendicionCaja(models.Model):
+    """El motorizado le entrega a la plataforma la plata que cobró contra-entrega.
+    Agrupa los envíos COD cobrados y todavía no rendidos de un transportista."""
+
+    ESTADO_PENDIENTE = "pendiente"
+    ESTADO_CONCILIADA = "conciliada"
+    ESTADOS = [(ESTADO_PENDIENTE, "Pendiente"), (ESTADO_CONCILIADA, "Conciliada")]
+
+    codigo = models.CharField(max_length=16, unique=True, blank=True)
+    transportista = models.ForeignKey(
+        "tercerizacion.Transportista", on_delete=models.PROTECT, related_name="rendiciones_caja",
+    )
+    esperado = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    entregado = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    diferencia = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    estado = models.CharField(max_length=12, choices=ESTADOS, default=ESTADO_PENDIENTE)
+    referencia = models.CharField(max_length=120, blank=True, default="")
+    nota = models.TextField(blank=True, default="")
+    conciliada_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+    creado_en = models.DateTimeField(auto_now_add=True)
+    conciliada_en = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-creado_en"]
+        verbose_name = "Rendición de caja"
+        verbose_name_plural = "Rendiciones de caja"
+
+    def __str__(self):
+        return f"{self.codigo} · {self.transportista.nombre} · S/ {self.esperado:g}"
+
+    def save(self, *args, **kwargs):
+        if not self.codigo:
+            super().save(*args, **kwargs)
+            self.codigo = f"REN-{self.pk:05d}"
             return super().save(update_fields=["codigo"])
         return super().save(*args, **kwargs)
 
