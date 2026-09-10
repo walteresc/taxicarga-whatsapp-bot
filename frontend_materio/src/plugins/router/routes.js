@@ -198,6 +198,11 @@ export const routes = [
         component: () => import('@/pages/encomiendas/index.vue'),
         meta: { roles: ['Administrador', 'Gerencia', 'Supervisor', 'Despacho', 'Asesor de Ventas'] },
       },
+      {
+        path: 'encomiendas/rutas',
+        component: () => import('@/pages/encomiendas/rutas/index.vue'),
+        meta: { roles: ['Administrador', 'Gerencia', 'Supervisor', 'Despacho'] },
+      },
 
       {
         path: 'forbidden',

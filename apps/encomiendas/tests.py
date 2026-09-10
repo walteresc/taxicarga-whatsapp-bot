@@ -9,7 +9,7 @@ from rest_framework.test import APITestCase
 
 from apps.catalogo.models import TipoVehiculo
 from apps.encomiendas import services
-from apps.encomiendas.models import Envio, TarifaZona, ZonaReparto
+from apps.encomiendas.models import Envio, RutaReparto, TarifaZona, ZonaReparto
 from apps.tercerizacion.models import Transportista, TransportistaVehiculo
 
 User = get_user_model()
@@ -162,3 +162,89 @@ class ApiTests(APITestCase):
         ase.groups.add(Group.objects.get(name="Asesor de Ventas"))
         self.client.force_authenticate(ase)
         self.assertEqual(self.client.get("/api/v2/shipments/").status_code, 200)
+
+
+class RutaTests(APITestCase):
+    @classmethod
+    def setUpTestData(cls):
+        _seed()
+
+    def _carrier(self):
+        c = Transportista.objects.create(nombre=f"Moto {Transportista.objects.count()}")
+        return c
+
+    def test_crear_ruta_ordena_por_zona(self):
+        c = self._carrier()
+        from datetime import date
+        e1 = services.crear_envio(dict(BASE, destino_distrito="Los Olivos"))   # Lima Norte (orden 2)
+        e2 = services.crear_envio(dict(BASE, destino_distrito="Miraflores"))   # Lima Moderna (orden 1)
+        r = services.crear_ruta(transportista=c, fecha=date.today(), envios=[e1, e2])
+        codes = list(r.paradas.order_by("orden_ruta").values_list("codigo", flat=True))
+        self.assertEqual(codes, [e2.codigo, e1.codigo])  # Moderna antes que Norte
+        e1.refresh_from_db()
+        self.assertEqual(e1.estado, Envio.ESTADO_ASIGNADO)
+        self.assertEqual(e1.transportista_id, c.id)
+
+    def test_iniciar_y_completar_cierra_ruta(self):
+        from datetime import date
+        c = self._carrier()
+        e = services.crear_envio(dict(BASE))
+        r = services.crear_ruta(transportista=c, fecha=date.today(), envios=[e])
+        services.iniciar_ruta(r)
+        r.refresh_from_db()
+        self.assertEqual(r.estado, RutaReparto.ESTADO_EN_CURSO)
+        e.refresh_from_db()
+        self.assertEqual(e.estado, Envio.ESTADO_EN_RUTA)
+        services.registrar_evento(e, Envio.ESTADO_ENTREGADO, recibido_por="X")
+        r.refresh_from_db()
+        self.assertEqual(r.estado, RutaReparto.ESTADO_CERRADA)  # se auto-cerró
+
+    def test_cerrar_ruta_devuelve_pendientes(self):
+        from datetime import date
+        c = self._carrier()
+        e = services.crear_envio(dict(BASE))
+        r = services.crear_ruta(transportista=c, fecha=date.today(), envios=[e])
+        services.iniciar_ruta(r)
+        services.cerrar_ruta(r)
+        e.refresh_from_db()
+        self.assertEqual(e.estado, Envio.ESTADO_DEVUELTO)
+
+    def test_fallo_incrementa_intentos(self):
+        from datetime import date
+        c = self._carrier()
+        e = services.crear_envio(dict(BASE))
+        services.asignar_envio(e, c)
+        services.registrar_evento(e, Envio.ESTADO_EN_RUTA)
+        services.registrar_evento(e, Envio.ESTADO_FALLIDO, motivo_fallo="nadie en casa")
+        e.refresh_from_db()
+        self.assertEqual(e.intentos_entrega, 1)
+        self.assertEqual(e.estado, Envio.ESTADO_FALLIDO)
+
+    def test_portal_ruta_y_pod(self):
+        from datetime import date
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        Group.objects.get_or_create(name="Transportista")
+        c = self._carrier()
+        cu = User.objects.create_user("ruta_carrier", password="x")
+        cu.groups.add(Group.objects.get(name="Transportista"))
+        c.usuario = cu
+        c.save()
+        e = services.crear_envio(dict(BASE))
+        r = services.crear_ruta(transportista=c, fecha=date.today(), envios=[e])
+
+        self.client.force_authenticate(cu)
+        resp = self.client.get("/api/v2/portal/carrier/route")
+        self.assertEqual(resp.data["route"]["code"], r.codigo)
+        self.assertEqual(len(resp.data["route"]["stops"]), 1)
+
+        self.client.post("/api/v2/portal/carrier/route")  # iniciar
+        foto = SimpleUploadedFile("pod.jpg", b"fakejpeg", content_type="image/jpeg")
+        resp = self.client.post(
+            f"/api/v2/portal/carrier/deliveries/{e.codigo}/event",
+            {"state": "entregado", "receivedBy": "Ana", "photo": foto}, format="multipart",
+        )
+        self.assertEqual(resp.status_code, 200)
+        e.refresh_from_db()
+        self.assertEqual(e.estado, Envio.ESTADO_ENTREGADO)
+        self.assertTrue(e.prueba_foto)

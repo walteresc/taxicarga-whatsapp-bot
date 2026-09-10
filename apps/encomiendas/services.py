@@ -8,7 +8,7 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.utils import timezone
 
-from .models import Envio, EventoTracking, TarifaZona, ZonaReparto
+from .models import Envio, EventoTracking, RutaReparto, TarifaZona, ZonaReparto
 
 _Q = Decimal("0.01")
 
@@ -89,9 +89,9 @@ def crear_envio(data, *, usuario=None):
 
 _TRANSICIONES = {
     Envio.ESTADO_REGISTRADO: {Envio.ESTADO_ASIGNADO, Envio.ESTADO_CANCELADO},
-    Envio.ESTADO_ASIGNADO: {Envio.ESTADO_RECOGIDO, Envio.ESTADO_REGISTRADO, Envio.ESTADO_CANCELADO},
+    Envio.ESTADO_ASIGNADO: {Envio.ESTADO_RECOGIDO, Envio.ESTADO_EN_RUTA, Envio.ESTADO_REGISTRADO, Envio.ESTADO_CANCELADO},
     Envio.ESTADO_RECOGIDO: {Envio.ESTADO_EN_RUTA, Envio.ESTADO_ENTREGADO, Envio.ESTADO_FALLIDO},
-    Envio.ESTADO_EN_RUTA: {Envio.ESTADO_ENTREGADO, Envio.ESTADO_FALLIDO},
+    Envio.ESTADO_EN_RUTA: {Envio.ESTADO_ENTREGADO, Envio.ESTADO_FALLIDO, Envio.ESTADO_DEVUELTO},
     Envio.ESTADO_FALLIDO: {Envio.ESTADO_EN_RUTA, Envio.ESTADO_DEVUELTO},
     Envio.ESTADO_ENTREGADO: set(),
     Envio.ESTADO_DEVUELTO: set(),
@@ -122,7 +122,7 @@ def asignar_envio(envio, transportista, *, vehiculo=None, usuario=None):
 
 @transaction.atomic
 def registrar_evento(envio, estado, *, descripcion="", ubicacion="", recibido_por="",
-                     prueba_foto="", motivo_fallo="", usuario=None):
+                     prueba_foto=None, prueba_firma="", motivo_fallo="", usuario=None):
     if estado not in dict(Envio.ESTADOS):
         raise ValidationError({"state": "Estado no válido."})
     if estado not in _TRANSICIONES.get(envio.estado, set()):
@@ -139,15 +139,22 @@ def registrar_evento(envio, estado, *, descripcion="", ubicacion="", recibido_po
     elif estado == Envio.ESTADO_ENTREGADO:
         envio.entregado_en = ahora
         envio.recibido_por = recibido_por or ""
-        envio.prueba_foto = prueba_foto or ""
-        campos += ["entregado_en", "recibido_por", "prueba_foto"]
+        if prueba_foto is not None:
+            envio.prueba_foto = prueba_foto
+        if prueba_firma:
+            envio.prueba_firma = prueba_firma
+        campos += ["entregado_en", "recibido_por", "prueba_foto", "prueba_firma"]
     elif estado == Envio.ESTADO_FALLIDO:
         envio.motivo_fallo = motivo_fallo or descripcion or "No entregado"
-        campos.append("motivo_fallo")
+        envio.intentos_entrega = (envio.intentos_entrega or 0) + 1
+        campos += ["motivo_fallo", "intentos_entrega"]
     envio.save(update_fields=campos)
 
     _evento(envio, estado, descripcion or dict(Envio.ESTADOS)[estado],
             ubicacion=ubicacion, usuario=usuario)
+
+    if estado in (Envio.ESTADO_ENTREGADO, Envio.ESTADO_FALLIDO) and envio.ruta_id:
+        _cerrar_ruta_si_termino(envio.ruta)
     return envio
 
 
@@ -159,6 +166,108 @@ def cancelar_envio(envio, *, motivo="", usuario=None):
     envio.save(update_fields=["estado", "actualizado_en"])
     _evento(envio, Envio.ESTADO_CANCELADO, motivo or "Cancelado.", usuario=usuario)
     return envio
+
+
+# --------------------------------------------------------------------------- #
+#  Rutas de reparto (P2)
+# --------------------------------------------------------------------------- #
+
+def _zona_orden(distrito):
+    z = ZonaReparto.para_distrito(distrito)
+    return (z.orden, (distrito or "").lower()) if z else (99, (distrito or "").lower())
+
+
+@transaction.atomic
+def crear_ruta(*, transportista, fecha, vehiculo=None, envios=None, usuario=None):
+    ruta = RutaReparto.objects.create(
+        transportista=transportista, transportista_vehiculo=vehiculo, fecha=fecha, creado_por=usuario,
+    )
+    for e in (envios or []):
+        agregar_a_ruta(ruta, e)
+    reordenar_ruta(ruta)
+    return ruta
+
+
+@transaction.atomic
+def agregar_a_ruta(ruta, envio):
+    if ruta.estado == RutaReparto.ESTADO_CERRADA:
+        raise ValidationError("La ruta ya está cerrada.")
+    if envio.estado not in (Envio.ESTADO_REGISTRADO, Envio.ESTADO_ASIGNADO, Envio.ESTADO_RECOGIDO, Envio.ESTADO_EN_RUTA):
+        raise ValidationError(f"{envio.codigo} ya no se puede rutear ({envio.get_estado_display()}).")
+    envio.ruta = ruta
+    envio.transportista = ruta.transportista
+    envio.transportista_vehiculo = ruta.transportista_vehiculo
+    if envio.estado == Envio.ESTADO_REGISTRADO:
+        envio.estado = Envio.ESTADO_ASIGNADO
+        _evento(envio, Envio.ESTADO_ASIGNADO, f"En ruta {ruta.codigo} con {ruta.transportista.nombre}.")
+    envio.save(update_fields=["ruta", "transportista", "transportista_vehiculo", "estado", "actualizado_en"])
+    return envio
+
+
+@transaction.atomic
+def quitar_de_ruta(ruta, envio):
+    if envio.estado in (Envio.ESTADO_ENTREGADO, Envio.ESTADO_FALLIDO):
+        raise ValidationError("Ese envío ya se cerró.")
+    envio.ruta = None
+    envio.orden_ruta = 0
+    envio.save(update_fields=["ruta", "orden_ruta", "actualizado_en"])
+    reordenar_ruta(ruta)
+
+
+@transaction.atomic
+def reordenar_ruta(ruta, *, orden_manual=None):
+    """`orden_manual` = lista de códigos en el orden deseado. Sin eso, ordena por
+    zona + distrito (agrupa entregas cercanas)."""
+    paradas = list(ruta.paradas.all())
+    if orden_manual:
+        pos = {c: i for i, c in enumerate(orden_manual)}
+        paradas.sort(key=lambda e: pos.get(e.codigo, 999))
+    else:
+        paradas.sort(key=lambda e: _zona_orden(e.destino_distrito))
+    for i, e in enumerate(paradas, start=1):
+        if e.orden_ruta != i:
+            e.orden_ruta = i
+            e.save(update_fields=["orden_ruta"])
+
+
+@transaction.atomic
+def iniciar_ruta(ruta):
+    if ruta.estado != RutaReparto.ESTADO_PLANIFICADA:
+        raise ValidationError("La ruta ya fue iniciada.")
+    if not ruta.paradas.exists():
+        raise ValidationError("La ruta no tiene envíos.")
+    ruta.estado = RutaReparto.ESTADO_EN_CURSO
+    ruta.iniciada_en = timezone.now()
+    ruta.save(update_fields=["estado", "iniciada_en", "actualizado_en"])
+    ruta.paradas.filter(estado__in=[Envio.ESTADO_ASIGNADO, Envio.ESTADO_RECOGIDO]).update(estado=Envio.ESTADO_EN_RUTA)
+    return ruta
+
+
+@transaction.atomic
+def cerrar_ruta(ruta, *, usuario=None):
+    ruta.estado = RutaReparto.ESTADO_CERRADA
+    ruta.cerrada_en = timezone.now()
+    ruta.save(update_fields=["estado", "cerrada_en", "actualizado_en"])
+    # los que quedaron sin entregar y sin fallar → devueltos
+    for e in ruta.paradas.filter(estado__in=list(Envio.ABIERTOS)):
+        e.estado = Envio.ESTADO_DEVUELTO
+        e.save(update_fields=["estado", "actualizado_en"])
+        _evento(e, Envio.ESTADO_DEVUELTO, "Ruta cerrada sin completar la entrega.", usuario=usuario)
+    return ruta
+
+
+def _cerrar_ruta_si_termino(ruta):
+    if ruta.estado == RutaReparto.ESTADO_EN_CURSO and not ruta.paradas.filter(estado__in=list(Envio.ABIERTOS)).exists():
+        ruta.estado = RutaReparto.ESTADO_CERRADA
+        ruta.cerrada_en = timezone.now()
+        ruta.save(update_fields=["estado", "cerrada_en", "actualizado_en"])
+
+
+def ruta_progreso(ruta):
+    total = ruta.paradas.count()
+    hechas = ruta.paradas.filter(estado__in=[Envio.ESTADO_ENTREGADO, Envio.ESTADO_FALLIDO, Envio.ESTADO_DEVUELTO]).count()
+    return {"total": total, "done": hechas,
+            "delivered": ruta.paradas.filter(estado=Envio.ESTADO_ENTREGADO).count()}
 
 
 # --------------------------------------------------------------------------- #

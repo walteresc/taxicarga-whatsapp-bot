@@ -10,8 +10,16 @@ urlpatterns = [
     path("shipments/<str:code>/assign", views.ShipmentAssignView.as_view(), name="v2-shipment-assign"),
     path("shipments/<str:code>/events", views.ShipmentEventsView.as_view(), name="v2-shipment-events"),
     path("shipments/<str:code>/cancel", views.ShipmentCancelView.as_view(), name="v2-shipment-cancel"),
+    path("shipments/<str:code>/pod-photo", views.ShipmentPodPhotoView.as_view(), name="v2-shipment-pod-photo"),
+
+    path("routes/", views.RouteListView.as_view(), name="v2-route-list"),
+    path("routes/<str:code>/", views.RouteDetailView.as_view(), name="v2-route-detail"),
+    path("routes/<str:code>/stops", views.RouteStopsView.as_view(), name="v2-route-stops"),
+    path("routes/<str:code>/start", views.RouteStartView.as_view(), name="v2-route-start"),
+    path("routes/<str:code>/close", views.RouteCloseView.as_view(), name="v2-route-close"),
 
     path("portal/carrier/deliveries", views.CarrierDeliveriesView.as_view(), name="v2-carrier-deliveries"),
+    path("portal/carrier/route", views.CarrierRouteView.as_view(), name="v2-carrier-route"),
     path("portal/carrier/deliveries/<str:code>/event", views.CarrierDeliveryEventView.as_view(), name="v2-carrier-delivery-event"),
 
     path("track/<str:token>", views.PublicTrackView.as_view(), name="v2-track"),

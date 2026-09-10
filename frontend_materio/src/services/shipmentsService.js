@@ -12,8 +12,19 @@ export const shipmentAssign = (code, body) => apiClient.post(`${S}/${code}/assig
 export const shipmentEvent = (code, body) => apiClient.post(`${S}/${code}/events`, body)
 export const shipmentCancel = (code, reason) => apiClient.post(`${S}/${code}/cancel`, { reason })
 
+// Rutas de reparto (P2)
+export const routeList = params => apiClient.get('/api/v2/routes/', params)
+export const routeCreate = body => apiClient.post('/api/v2/routes/', body)
+export const routeDetail = code => apiClient.get(`/api/v2/routes/${code}/`)
+export const routeStops = (code, body) => apiClient.post(`/api/v2/routes/${code}/stops`, body)
+export const routeStart = code => apiClient.post(`/api/v2/routes/${code}/start`, {})
+export const routeClose = code => apiClient.post(`/api/v2/routes/${code}/close`, {})
+
 // Portal del transportista
 export const carrierDeliveries = () => apiClient.get('/api/v2/portal/carrier/deliveries')
+export const carrierRoute = () => apiClient.get('/api/v2/portal/carrier/route')
+export const carrierRouteStart = () => apiClient.post('/api/v2/portal/carrier/route', {})
+// body puede ser objeto JSON o FormData (con la foto de POD) — apiClient detecta
 export const carrierDeliveryEvent = (code, body) =>
   apiClient.post(`/api/v2/portal/carrier/deliveries/${code}/event`, body)
 

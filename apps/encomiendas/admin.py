@@ -1,6 +1,14 @@
 from django.contrib import admin
 
-from .models import Envio, EventoTracking, TarifaZona, ZonaReparto
+from .models import Envio, EventoTracking, RutaReparto, TarifaZona, ZonaReparto
+
+
+@admin.register(RutaReparto)
+class RutaRepartoAdmin(admin.ModelAdmin):
+    list_display = ["codigo", "fecha", "estado", "transportista", "iniciada_en", "cerrada_en"]
+    list_filter = ["estado", "fecha"]
+    search_fields = ["codigo", "transportista__nombre"]
+    date_hierarchy = "fecha"
 
 
 @admin.register(ZonaReparto)

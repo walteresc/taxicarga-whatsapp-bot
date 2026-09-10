@@ -67,6 +67,52 @@ class TarifaZona(models.Model):
         return f"{self.origen} → {self.destino} [{self.nivel}] S/ {self.precio_base:g}"
 
 
+class RutaReparto(models.Model):
+    """Un conjunto ordenado de envíos que un motorizado reparte en un día."""
+
+    ESTADO_PLANIFICADA = "planificada"
+    ESTADO_EN_CURSO = "en_curso"
+    ESTADO_CERRADA = "cerrada"
+    ESTADOS = [
+        (ESTADO_PLANIFICADA, "Planificada"),
+        (ESTADO_EN_CURSO, "En curso"),
+        (ESTADO_CERRADA, "Cerrada"),
+    ]
+
+    codigo = models.CharField(max_length=16, unique=True, blank=True)
+    transportista = models.ForeignKey(
+        "tercerizacion.Transportista", on_delete=models.PROTECT, related_name="rutas_reparto",
+    )
+    transportista_vehiculo = models.ForeignKey(
+        "tercerizacion.TransportistaVehiculo", on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+    fecha = models.DateField()
+    estado = models.CharField(max_length=12, choices=ESTADOS, default=ESTADO_PLANIFICADA)
+    iniciada_en = models.DateTimeField(null=True, blank=True)
+    cerrada_en = models.DateTimeField(null=True, blank=True)
+    notas = models.TextField(blank=True, default="")
+    creado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+    creado_en = models.DateTimeField(auto_now_add=True)
+    actualizado_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-fecha", "-creado_en"]
+        verbose_name = "Ruta de reparto"
+        verbose_name_plural = "Rutas de reparto"
+
+    def __str__(self):
+        return f"{self.codigo} · {self.fecha} · {self.transportista.nombre}"
+
+    def save(self, *args, **kwargs):
+        if not self.codigo:
+            super().save(*args, **kwargs)
+            self.codigo = f"RUT-{self.pk:05d}"
+            return super().save(update_fields=["codigo"])
+        return super().save(*args, **kwargs)
+
+
 class Envio(models.Model):
     NIVEL_EXPRESS = TarifaZona.NIVEL_EXPRESS
     NIVEL_STANDARD = TarifaZona.NIVEL_STANDARD
@@ -134,11 +180,17 @@ class Envio(models.Model):
         "tercerizacion.TransportistaVehiculo", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="envios",
     )
+    ruta = models.ForeignKey(
+        RutaReparto, on_delete=models.SET_NULL, null=True, blank=True, related_name="paradas",
+    )
+    orden_ruta = models.PositiveSmallIntegerField(default=0)
     recogido_en = models.DateTimeField(null=True, blank=True)
     entregado_en = models.DateTimeField(null=True, blank=True)
     recibido_por = models.CharField(max_length=160, blank=True, default="")
-    prueba_foto = models.CharField(max_length=255, blank=True, default="")
+    prueba_foto = models.FileField(upload_to="encomiendas/pod/%Y/%m/", null=True, blank=True)
+    prueba_firma = models.TextField(blank=True, default="", help_text="Firma capturada (data URL).")
     motivo_fallo = models.CharField(max_length=200, blank=True, default="")
+    intentos_entrega = models.PositiveSmallIntegerField(default=0)
 
     notas = models.TextField(blank=True, default="")
     creado_por = models.ForeignKey(

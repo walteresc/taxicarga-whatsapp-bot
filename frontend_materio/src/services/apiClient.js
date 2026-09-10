@@ -40,8 +40,9 @@ const request = async (path, { method = 'GET', body, params, signal } = {}) => {
     if (s) url += `?${s}`
   }
 
+  const isForm = typeof FormData !== 'undefined' && body instanceof FormData
   const headers = { 'X-Requested-With': 'XMLHttpRequest' }
-  if (body !== undefined) headers['Content-Type'] = 'application/json'
+  if (body !== undefined && !isForm) headers['Content-Type'] = 'application/json'
   if (method !== 'GET' && method !== 'HEAD') {
     headers['X-CSRFToken'] = decodeURIComponent(getCookie('csrftoken'))
   }
@@ -51,7 +52,7 @@ const request = async (path, { method = 'GET', body, params, signal } = {}) => {
     headers,
     credentials: 'include',
     signal,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body: body === undefined ? undefined : isForm ? body : JSON.stringify(body),
   })
 
   if (response.status === 401) {

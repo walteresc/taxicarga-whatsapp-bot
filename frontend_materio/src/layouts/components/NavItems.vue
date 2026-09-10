@@ -63,6 +63,7 @@ const MENU = [
 
   { heading: 'Encomiendas', roles: [...DESPACHO, 'Asesor de Ventas'] },
   { title: 'Envíos', icon: 'ri-e-bike-2-line', to: '/encomiendas', roles: [...DESPACHO, 'Asesor de Ventas'] },
+  { title: 'Rutas de reparto', icon: 'ri-route-line', to: '/encomiendas/rutas', roles: DESPACHO },
 
   { heading: 'Tercerización', roles: OPS },
   { title: 'Transportistas', icon: 'ri-team-line', to: '/transportistas/afiliados', roles: OPS },

@@ -16,8 +16,11 @@ Portal del transportista:
 Público:
     GET /api/v2/track/<token>
 """
+from datetime import datetime
+
 from django.core.exceptions import ValidationError
 from django.shortcuts import get_object_or_404
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -26,7 +29,7 @@ from apps.api.exceptions import api_exception_handler
 from apps.api.pagination import StandardPagination
 from apps.api.permissions import HasAnyRole, IsCarrier, carrier_for
 from apps.encomiendas import services
-from apps.encomiendas.models import Envio, TarifaZona, ZonaReparto
+from apps.encomiendas.models import Envio, RutaReparto, TarifaZona, ZonaReparto
 from apps.tercerizacion.models import Transportista, TransportistaVehiculo
 
 _ROLES = ("Administrador", "Gerencia", "Supervisor", "Despacho", "Asesor de Ventas")
@@ -71,8 +74,12 @@ def detail(e):
                     "lengthCm": e.largo_cm, "widthCm": e.ancho_cm, "heightCm": e.alto_cm,
                     "declaredValue": _num(e.valor_declarado)},
         "carrierVehicleId": e.transportista_vehiculo_id,
+        "routeCode": e.ruta.codigo if e.ruta_id else None,
         "receivedBy": e.recibido_por or None,
+        "podPhoto": f"/api/v2/shipments/{e.codigo}/pod-photo" if e.prueba_foto else None,
+        "hasSignature": bool(e.prueba_firma),
         "failReason": e.motivo_fallo or None,
+        "attempts": e.intentos_entrega,
         "notes": e.notas,
         "events": [
             {"state": ev.estado, "label": dict(Envio.ESTADOS).get(ev.estado, ev.estado),
@@ -194,6 +201,106 @@ class ShipmentCancelView(_Base):
         return Response(detail(get_object_or_404(_QS, codigo=code)))
 
 
+class ShipmentPodPhotoView(_Base):
+    def get(self, request, code):
+        from django.http import FileResponse, Http404
+        envio = get_object_or_404(Envio, codigo=code)
+        if not envio.prueba_foto:
+            raise Http404("Sin foto de entrega.")
+        resp = FileResponse(envio.prueba_foto.open("rb"))
+        resp["Cache-Control"] = "private, max-age=86400"
+        return resp
+
+
+# --------------------------------------------------------------------------- #
+#  Rutas de reparto (P2)
+# --------------------------------------------------------------------------- #
+
+def route_item(r):
+    p = services.ruta_progreso(r)
+    return {
+        "code": r.codigo, "date": r.fecha.isoformat(), "state": r.estado,
+        "carrierId": r.transportista_id, "carrierName": r.transportista.nombre,
+        "total": p["total"], "done": p["done"], "delivered": p["delivered"],
+        "startedAt": _d(r.iniciada_en), "closedAt": _d(r.cerrada_en),
+    }
+
+
+def route_detail(r):
+    out = route_item(r)
+    out["stops"] = [{
+        "order": e.orden_ruta, "code": e.codigo, "state": e.estado,
+        "stateLabel": e.get_estado_display(),
+        "recipient": e.destinatario_nombre, "phone": e.destinatario_telefono,
+        "district": e.destino_distrito, "address": e.destino_direccion, "reference": e.destino_referencia,
+        "cod": e.es_contraentrega, "codAmount": _num(e.monto_contraentrega),
+        "package": e.contenido,
+    } for e in r.paradas.order_by("orden_ruta", "id")]
+    return out
+
+
+class RouteListView(_Base):
+    def get(self, request):
+        qs = RutaReparto.objects.select_related("transportista").prefetch_related("paradas")
+        p = request.query_params
+        if p.get("state"):
+            qs = qs.filter(estado=p["state"])
+        if p.get("date"):
+            qs = qs.filter(fecha=p["date"])
+        return Response({"results": [route_item(r) for r in qs[:100]]})
+
+    def post(self, request):
+        d = request.data
+        carrier = get_object_or_404(Transportista, pk=d.get("carrierId"))
+        try:
+            fecha = datetime.strptime(d.get("date", "")[:10], "%Y-%m-%d").date()
+        except ValueError:
+            raise ValidationError({"date": "Fecha requerida (AAAA-MM-DD)."})
+        vehiculo = None
+        if d.get("vehicleId"):
+            vehiculo = get_object_or_404(TransportistaVehiculo, pk=d["vehicleId"], transportista=carrier)
+        envios = list(Envio.objects.filter(codigo__in=d.get("shipments") or []))
+        ruta = services.crear_ruta(transportista=carrier, fecha=fecha, vehiculo=vehiculo,
+                                   envios=envios, usuario=request.user)
+        return Response(route_detail(ruta), status=201)
+
+
+class RouteDetailView(_Base):
+    def get(self, request, code):
+        return Response(route_detail(get_object_or_404(RutaReparto, codigo=code)))
+
+
+class RouteStopsView(_Base):
+    def post(self, request, code):
+        ruta = get_object_or_404(RutaReparto, codigo=code)
+        d = request.data
+        for c in d.get("add") or []:
+            e = Envio.objects.filter(codigo=c).first()
+            if e:
+                services.agregar_a_ruta(ruta, e)
+        for c in d.get("remove") or []:
+            e = ruta.paradas.filter(codigo=c).first()
+            if e:
+                services.quitar_de_ruta(ruta, e)
+        if d.get("order"):
+            services.reordenar_ruta(ruta, orden_manual=d["order"])
+        elif d.get("add"):
+            services.reordenar_ruta(ruta)
+        return Response(route_detail(get_object_or_404(RutaReparto, codigo=code)))
+
+
+class RouteStartView(_Base):
+    def post(self, request, code):
+        services.iniciar_ruta(get_object_or_404(RutaReparto, codigo=code))
+        return Response(route_detail(get_object_or_404(RutaReparto, codigo=code)))
+
+
+class RouteCloseView(_Base):
+    def post(self, request, code):
+        services.cerrar_ruta(get_object_or_404(RutaReparto, codigo=code), usuario=request.user)
+        return Response(route_detail(get_object_or_404(RutaReparto, codigo=code)))
+
+
 # --------------------------------------------------------------------------- #
 #  Portal del transportista — sus entregas
 # --------------------------------------------------------------------------- #
@@ -209,26 +316,59 @@ class _CarrierBase(APIView):
         self.carrier = carrier_for(request.user)
 
 
+def _stop_payload(e):
+    return {
+        "code": e.codigo, "state": e.estado, "order": e.orden_ruta,
+        "pickup": {"district": e.origen_distrito, "address": e.origen_direccion,
+                   "reference": e.origen_referencia, "contact": e.remitente_nombre, "phone": e.remitente_telefono},
+        "dropoff": {"district": e.destino_distrito, "address": e.destino_direccion,
+                    "reference": e.destino_referencia, "contact": e.destinatario_nombre, "phone": e.destinatario_telefono},
+        "package": e.contenido or "",
+        "weightKg": _num(e.peso_kg),
+        "cod": e.es_contraentrega, "codAmount": _num(e.monto_contraentrega),
+        "attempts": e.intentos_entrega,
+    }
+
+
 class CarrierDeliveriesView(_CarrierBase):
     def get(self, request):
-        qs = (Envio.objects.filter(transportista=self.carrier)
-              .exclude(estado__in=[Envio.ESTADO_CANCELADO, Envio.ESTADO_DEVUELTO])
+        qs = (Envio.objects.filter(transportista=self.carrier, ruta__isnull=True)
+              .filter(estado__in=list(Envio.ABIERTOS))
               .order_by("estado", "creado_en"))
-        return Response({"results": [{
-            "code": e.codigo,
-            "state": e.estado,
-            "level": e.nivel,
-            "pickup": {"district": e.origen_distrito, "address": e.origen_direccion,
-                       "reference": e.origen_referencia, "contact": e.remitente_nombre, "phone": e.remitente_telefono},
-            "dropoff": {"district": e.destino_distrito, "address": e.destino_direccion,
-                        "reference": e.destino_referencia, "contact": e.destinatario_nombre, "phone": e.destinatario_telefono},
-            "package": e.contenido,
-            "cod": e.es_contraentrega,
-            "codAmount": _num(e.monto_contraentrega),
-        } for e in qs]})
+        return Response({"results": [_stop_payload(e) for e in qs]})
+
+
+class CarrierRouteView(_CarrierBase):
+    """La ruta activa de hoy del motorizado (planificada o en curso)."""
+
+    def _ruta(self):
+        return (RutaReparto.objects
+                .filter(transportista=self.carrier,
+                        estado__in=[RutaReparto.ESTADO_PLANIFICADA, RutaReparto.ESTADO_EN_CURSO])
+                .order_by("fecha").first())
+
+    def get(self, request):
+        r = self._ruta()
+        if not r:
+            return Response({"route": None})
+        prog = services.ruta_progreso(r)
+        return Response({"route": {
+            "code": r.codigo, "date": r.fecha.isoformat(), "state": r.estado,
+            "total": prog["total"], "done": prog["done"], "delivered": prog["delivered"],
+            "stops": [_stop_payload(e) for e in r.paradas.order_by("orden_ruta", "id")],
+        }})
+
+    def post(self, request):
+        r = self._ruta()
+        if not r:
+            raise ValidationError("No tenés una ruta para hoy.")
+        services.iniciar_ruta(r)
+        return Response({"ok": True})
 
 
 class CarrierDeliveryEventView(_CarrierBase):
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
     def post(self, request, code):
         envio = get_object_or_404(Envio, codigo=code, transportista=self.carrier)
         d = request.data
@@ -238,6 +378,8 @@ class CarrierDeliveryEventView(_CarrierBase):
         services.registrar_evento(
             envio, d["state"], descripcion=(d.get("detail") or "").strip(),
             recibido_por=(d.get("receivedBy") or "").strip(),
+            prueba_foto=request.FILES.get("photo"),
+            prueba_firma=(d.get("signature") or "").strip(),
             motivo_fallo=(d.get("failReason") or "").strip(),
             usuario=request.user,
         )

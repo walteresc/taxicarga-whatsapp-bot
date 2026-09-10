@@ -178,9 +178,10 @@ const copyTrack = () => { try { navigator.clipboard?.writeText(trackUrl.value); 
                 <tr><td>Paquete</td><td>{{ detail.package.content || '—' }} · {{ detail.package.weightKg }} kg</td></tr>
                 <tr><td>Precio</td><td>{{ soles(detail.price) }}</td></tr>
                 <tr v-if="detail.cod"><td>Contra-entrega</td><td class="text-warning">{{ soles(detail.codAmount) }}</td></tr>
-                <tr><td>Motorizado</td><td>{{ detail.carrierName || '— sin asignar' }}</td></tr>
+                <tr><td>Motorizado</td><td>{{ detail.carrierName || '— sin asignar' }}<span v-if="detail.routeCode" class="text-caption text-medium-emphasis"> · {{ detail.routeCode }}</span></td></tr>
                 <tr v-if="detail.receivedBy"><td>Recibió</td><td>{{ detail.receivedBy }}</td></tr>
-                <tr v-if="detail.failReason"><td>No entregado</td><td class="text-error">{{ detail.failReason }}</td></tr>
+                <tr v-if="detail.podPhoto"><td>Prueba de entrega</td><td><a :href="detail.podPhoto" target="_blank">ver foto</a></td></tr>
+                <tr v-if="detail.failReason"><td>No entregado</td><td class="text-error">{{ detail.failReason }} <span v-if="detail.attempts">({{ detail.attempts }} intento/s)</span></td></tr>
               </tbody>
             </VTable>
           </VCardText>
