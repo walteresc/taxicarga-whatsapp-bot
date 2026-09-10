@@ -1,4 +1,5 @@
 <script setup>
+import AgentChat from '@/components/AgentChat.vue'
 import DefaultLayoutWithVerticalNav from './components/DefaultLayoutWithVerticalNav.vue'
 </script>
 
@@ -6,6 +7,7 @@ import DefaultLayoutWithVerticalNav from './components/DefaultLayoutWithVertical
   <DefaultLayoutWithVerticalNav>
     <RouterView />
   </DefaultLayoutWithVerticalNav>
+  <AgentChat />
 </template>
 
 <style lang="scss">

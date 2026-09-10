@@ -19,7 +19,9 @@ from apps.api.exceptions import api_exception_handler
 from apps.agente.errores import CapacidadError
 from apps.agente.models import ConversacionAgente, PropuestaAccion
 from apps.agente.orquestador import Orquestador, aplicar_propuesta, rechazar_propuesta
-from apps.agente.principal import PrincipalNoResoluble, principal_desde_usuario
+from apps.agente.principal import (
+    PrincipalNoResoluble, agente_habilitado_para, principal_desde_usuario,
+)
 
 
 class _AgentThrottle(ScopedRateThrottle):
@@ -33,12 +35,15 @@ class _Base(APIView):
     def get_exception_handler(self):
         return api_exception_handler
 
-    def _principal(self, request):
+    def _principal(self, request, *, exigir_habilitado=True):
+        from rest_framework.exceptions import PermissionDenied
         try:
-            return principal_desde_usuario(request.user)
+            principal = principal_desde_usuario(request.user)
         except PrincipalNoResoluble as e:
-            from rest_framework.exceptions import PermissionDenied
             raise PermissionDenied(str(e))
+        if exigir_habilitado and not agente_habilitado_para(principal.tipo):
+            raise PermissionDenied("El asistente no está habilitado para tu perfil.")
+        return principal
 
 
 def _d(dt):
@@ -58,6 +63,20 @@ def _prop_item(p):
         "resueltaPor": p.resuelta_por.username if p.resuelta_por_id else None,
         "motivoRechazo": p.motivo_rechazo or None,
     }
+
+
+class StatusView(_Base):
+    """Le dice al frontend si mostrar el widget del agente."""
+
+    def get(self, request):
+        try:
+            principal = self._principal(request, exigir_habilitado=False)
+        except Exception:
+            return Response({"enabled": False, "profile": None})
+        return Response({
+            "enabled": agente_habilitado_para(principal.tipo),
+            "profile": principal.tipo,
+        })
 
 
 class AskView(_Base):

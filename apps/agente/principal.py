@@ -60,6 +60,15 @@ def principal_sistema() -> Principal:
     return Principal(tipo=TIPO_SISTEMA)
 
 
+def agente_habilitado_para(principal_tipo: str) -> bool:
+    """El chat del agente está habilitado para ese perfil (settings). `sistema`
+    (endpoint interno / comando) siempre puede."""
+    from django.conf import settings
+    if principal_tipo == TIPO_SISTEMA:
+        return True
+    return principal_tipo in getattr(settings, "AGENTE_PERFILES_HABILITADOS", set())
+
+
 def principal_desde_usuario(user) -> Principal:
     """Deriva el perfil del usuario autenticado.
 

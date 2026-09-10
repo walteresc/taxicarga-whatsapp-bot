@@ -178,6 +178,14 @@ AI_PROVIDER = config("AI_PROVIDER", default="openai").strip().lower()
 AI_EXTRACTION_PROVIDER = config("AI_EXTRACTION_PROVIDER", default="").strip().lower() or AI_PROVIDER
 AI_CONVERSATION_PROVIDER = config("AI_CONVERSATION_PROVIDER", default="").strip().lower() or AI_PROVIDER
 AI_COPILOT_PROVIDER = config("AI_COPILOT_PROVIDER", default="").strip().lower() or AI_PROVIDER
+
+# Perfiles del agente con el chat habilitado. Vacío = todos deshabilitados.
+# Ej: AGENTE_PERFILES_HABILITADOS="asesor" o "asesor,cliente,transportista".
+AGENTE_PERFILES_HABILITADOS = {
+    p.strip().lower()
+    for p in config("AGENTE_PERFILES_HABILITADOS", default="").split(",")
+    if p.strip()
+}
 AI_DELTA_EXTRACTION_ENABLED = env_bool("AI_DELTA_EXTRACTION_ENABLED", default=False)
 AI_DELTA_SHADOW_MODE = env_bool("AI_DELTA_SHADOW_MODE", default=True)
 OPENAI_EXTRACTION_MODEL = config("OPENAI_EXTRACTION_MODEL", default="").strip() or OPENAI_MODEL

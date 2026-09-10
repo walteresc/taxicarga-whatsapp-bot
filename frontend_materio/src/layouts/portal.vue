@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 
+import AgentChat from '@/components/AgentChat.vue'
 import { authService } from '@/services/authService'
 import { useAuthStore } from '@/stores/authStore'
 
@@ -64,5 +65,7 @@ const logout = async () => {
         <RouterView />
       </VContainer>
     </VMain>
+
+    <AgentChat />
   </VApp>
 </template>

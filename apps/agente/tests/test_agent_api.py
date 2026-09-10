@@ -8,10 +8,13 @@ from ._fixtures import Mundo
 
 User = get_user_model()
 
-_NO_THROTTLE = override_settings(REST_FRAMEWORK={
-    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
-    "DEFAULT_THROTTLE_RATES": {"agent_ask": "1000/hour"},
-})
+_NO_THROTTLE = override_settings(
+    REST_FRAMEWORK={
+        "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
+        "DEFAULT_THROTTLE_RATES": {"agent_ask": "1000/hour"},
+    },
+    AGENTE_PERFILES_HABILITADOS={"asesor", "cliente", "transportista"},
+)
 
 
 @_NO_THROTTLE
@@ -47,6 +50,25 @@ class AgentApiTests(TestCase):
         self.client.force_login(u)
         r = self.client.post("/api/v2/agent/ask", {"message": "hola"}, format="json")
         self.assertEqual(r.status_code, 403)
+
+    @override_settings(AGENTE_PERFILES_HABILITADOS=set())
+    def test_ask_403_si_deshabilitado_para_el_perfil(self):
+        self.client.force_login(self.m.u_asesor)
+        r = self.client.post("/api/v2/agent/ask", {"message": "hola"}, format="json")
+        self.assertEqual(r.status_code, 403)
+
+    def test_status(self):
+        self.client.force_login(self.m.u_asesor)
+        r = self.client.get("/api/v2/agent/status")
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.data["enabled"])
+        self.assertEqual(r.data["profile"], "asesor")
+
+    @override_settings(AGENTE_PERFILES_HABILITADOS={"cliente"})
+    def test_status_deshabilitado(self):
+        self.client.force_login(self.m.u_asesor)
+        r = self.client.get("/api/v2/agent/status")
+        self.assertFalse(r.data["enabled"])
 
     def test_ask_401_sin_sesion(self):
         r = self.client.post("/api/v2/agent/ask", {"message": "hola"}, format="json")
