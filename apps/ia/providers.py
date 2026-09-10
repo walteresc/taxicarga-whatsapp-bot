@@ -66,6 +66,19 @@ class AIProvider(ABC):
             output_tokens=getattr(usage, "output_tokens", None),
         )
 
+    def generar_con_tools(self, messages, tools, *, max_output_tokens=1400):
+        """Un turno con function-calling. Devuelve el `Response` crudo — el
+        orquestador (`apps/agente`) maneja el loop de tool calls."""
+        return self._client().responses.create(
+            model=self.model,
+            input=messages,
+            tools=tools,
+            max_output_tokens=max_output_tokens,
+            store=False,
+            parallel_tool_calls=False,
+            **self._request_options(),
+        )
+
     def generate_structured(self, messages, *, schema_model, purpose="unknown"):
         started = perf_counter()
         retries = 0
@@ -128,6 +141,8 @@ def provider_name_for(responsibility):
         return settings.AI_EXTRACTION_PROVIDER
     if responsibility == "conversation":
         return settings.AI_CONVERSATION_PROVIDER
+    if responsibility == "copilot":
+        return settings.AI_COPILOT_PROVIDER
     raise AIProviderError(f"Responsabilidad IA desconocida: {responsibility}.")
 
 

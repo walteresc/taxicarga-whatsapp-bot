@@ -14,6 +14,7 @@ El cuerpo de una capacidad:
 """
 from __future__ import annotations
 
+import inspect
 import json
 from dataclasses import dataclass, field
 
@@ -37,6 +38,47 @@ class Capacidad:
     perfiles: frozenset
     efecto: str
     descripcion: str
+    params: dict  # {arg: {type, description, required?, enum?}}
+
+    def esquema_openai(self) -> dict:
+        props, requeridos = {}, []
+        for arg, spec in self.params.items():
+            campo = {"type": spec.get("type", "string")}
+            if spec.get("description"):
+                campo["description"] = spec["description"]
+            if spec.get("enum"):
+                campo["enum"] = list(spec["enum"])
+            props[arg] = campo
+            if spec.get("required"):
+                requeridos.append(arg)
+        return {
+            "type": "function",
+            "name": self.nombre,
+            "description": self.descripcion,
+            "parameters": {
+                "type": "object",
+                "properties": props,
+                "required": requeridos,
+                "additionalProperties": False,
+            },
+            "strict": False,
+        }
+
+
+def _derivar_params(fn):
+    """Esquema mínimo a partir de la firma: nombres, required = sin default,
+    tipo string salvo default int/bool."""
+    out = {}
+    for nombre, p in inspect.signature(fn).parameters.items():
+        if nombre == "principal" or p.kind in (p.VAR_POSITIONAL, p.VAR_KEYWORD):
+            continue
+        tipo = "string"
+        if isinstance(p.default, bool):
+            tipo = "boolean"
+        elif isinstance(p.default, int):
+            tipo = "integer"
+        out[nombre] = {"type": tipo, "required": p.default is inspect.Parameter.empty}
+    return out
 
 
 @dataclass
@@ -58,7 +100,7 @@ class ResultadoCapacidad:
 _REGISTRO: dict[str, Capacidad] = {}
 
 
-def capacidad(nombre: str, *, perfiles, efecto: str):
+def capacidad(nombre: str, *, perfiles, efecto: str, params: dict | None = None):
     perfiles = frozenset(perfiles)
     if not perfiles or (perfiles - _PERFILES_VALIDOS):
         raise ValueError(f"Perfiles inválidos para '{nombre}': {perfiles}")
@@ -69,9 +111,14 @@ def capacidad(nombre: str, *, perfiles, efecto: str):
         if nombre in _REGISTRO:
             raise ValueError(f"Capacidad duplicada: '{nombre}'")
         doc = (fn.__doc__ or "").strip().splitlines()
+        descripcion = " ".join(l.strip() for l in doc[:3]).strip() if doc else nombre
+        esquema = dict(_derivar_params(fn))
+        for arg, spec in (params or {}).items():
+            esquema.setdefault(arg, {})
+            esquema[arg] = {**esquema[arg], **spec}
         _REGISTRO[nombre] = Capacidad(
             nombre=nombre, fn=fn, perfiles=perfiles, efecto=efecto,
-            descripcion=(doc[0].strip() if doc else ""),
+            descripcion=descripcion, params=esquema,
         )
         return fn
 
@@ -80,6 +127,14 @@ def capacidad(nombre: str, *, perfiles, efecto: str):
 
 def catalogo() -> list[Capacidad]:
     return sorted(_REGISTRO.values(), key=lambda c: (c.efecto, c.nombre))
+
+
+def herramientas_para(principal_tipo: str) -> list[dict]:
+    """Specs OpenAI de las capacidades que ese perfil puede usar."""
+    return [
+        c.esquema_openai() for c in catalogo()
+        if principal_tipo in c.perfiles
+    ]
 
 
 def _recortar(valor, _prof=0):

@@ -156,6 +156,7 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {
         "guest_quote": config("GUEST_QUOTE_RATE", default="20/hour"),
         "guest_signup": config("GUEST_SIGNUP_RATE", default="15/hour"),
+        "agent_ask": config("AGENT_ASK_RATE", default="30/hour"),
     },
 }
 
@@ -176,14 +177,17 @@ OPENAI_MODEL = config("OPENAI_MODEL", default="gpt-4.1-mini")
 AI_PROVIDER = config("AI_PROVIDER", default="openai").strip().lower()
 AI_EXTRACTION_PROVIDER = config("AI_EXTRACTION_PROVIDER", default="").strip().lower() or AI_PROVIDER
 AI_CONVERSATION_PROVIDER = config("AI_CONVERSATION_PROVIDER", default="").strip().lower() or AI_PROVIDER
+AI_COPILOT_PROVIDER = config("AI_COPILOT_PROVIDER", default="").strip().lower() or AI_PROVIDER
 AI_DELTA_EXTRACTION_ENABLED = env_bool("AI_DELTA_EXTRACTION_ENABLED", default=False)
 AI_DELTA_SHADOW_MODE = env_bool("AI_DELTA_SHADOW_MODE", default=True)
 OPENAI_EXTRACTION_MODEL = config("OPENAI_EXTRACTION_MODEL", default="").strip() or OPENAI_MODEL
 OPENAI_CONVERSATION_MODEL = config("OPENAI_CONVERSATION_MODEL", default="").strip() or OPENAI_MODEL
+OPENAI_COPILOT_MODEL = config("OPENAI_COPILOT_MODEL", default="").strip() or OPENAI_MODEL
 DEEPSEEK_API_KEY = env_value("DEEPSEEK_API_KEY")
 DEEPSEEK_MODEL = config("DEEPSEEK_MODEL", default="deepseek-v4-flash")
 DEEPSEEK_EXTRACTION_MODEL = config("DEEPSEEK_EXTRACTION_MODEL", default="").strip() or DEEPSEEK_MODEL
 DEEPSEEK_CONVERSATION_MODEL = config("DEEPSEEK_CONVERSATION_MODEL", default="").strip() or DEEPSEEK_MODEL
+DEEPSEEK_COPILOT_MODEL = config("DEEPSEEK_COPILOT_MODEL", default="").strip() or DEEPSEEK_MODEL
 DEEPSEEK_BASE_URL = config("DEEPSEEK_BASE_URL", default="https://api.deepseek.com").rstrip("/")
 AI_REQUEST_TIMEOUT_SECONDS = config("AI_REQUEST_TIMEOUT_SECONDS", default=30, cast=float)
 OPENAI_INPUT_USD_PER_MILLION = config("OPENAI_INPUT_USD_PER_MILLION", default=0, cast=float)

@@ -21,7 +21,11 @@ def _emisor_canal(principal):
     return MensajeNegociacion.EMISOR_TAXICARGA, MensajeNegociacion.CANAL_CRM
 
 
-@capacidad("abrir_negociacion", perfiles=["asesor", "sistema"], efecto=EFECTO_REVERSIBLE)
+@capacidad("abrir_negociacion", perfiles=["asesor", "sistema"], efecto=EFECTO_REVERSIBLE, params={
+    "codigo": {"description": "Código de la carga."},
+    "con": {"enum": ["cliente", "transportista"], "description": "Con quién se negocia."},
+    "transportista_id": {"type": "integer", "description": "ID del transportista (si con=transportista)."},
+})
 def abrir_negociacion(principal, codigo, con="cliente", transportista_id=None):
     """Abre una mesa de negociación de una carga. `con`: 'cliente' (venta) o
     'transportista' (compra, requiere `transportista_id`)."""
@@ -50,7 +54,11 @@ def abrir_negociacion(principal, codigo, con="cliente", transportista_id=None):
 
 
 @capacidad("enviar_mensaje_negociacion",
-           perfiles=["asesor", "transportista", "cliente", "sistema"], efecto=EFECTO_REVERSIBLE)
+           perfiles=["asesor", "transportista", "cliente", "sistema"], efecto=EFECTO_REVERSIBLE, params={
+               "hilo_id": {"type": "integer", "description": "ID del hilo de negociación."},
+               "texto": {"description": "Texto del mensaje."},
+               "monto": {"type": "number", "description": "Si va, es una propuesta de precio."},
+           })
 def enviar_mensaje_negociacion(principal, hilo_id, texto="", monto=None):
     """Manda un mensaje (o una propuesta si va `monto`) a una mesa de
     negociación. El emisor se deriva del perfil de quien llama."""
@@ -71,7 +79,11 @@ def enviar_mensaje_negociacion(principal, hilo_id, texto="", monto=None):
 
 
 @capacidad("responder_propuesta",
-           perfiles=["asesor", "transportista", "cliente", "sistema"], efecto=EFECTO_REVERSIBLE)
+           perfiles=["asesor", "transportista", "cliente", "sistema"], efecto=EFECTO_REVERSIBLE, params={
+               "mensaje_id": {"type": "integer", "description": "ID del mensaje de propuesta."},
+               "accion": {"enum": ["aceptar", "contraofertar", "rechazar"]},
+               "monto": {"type": "number", "description": "Monto de la contraoferta (si accion=contraofertar)."},
+           })
 def responder_propuesta(principal, mensaje_id, accion, monto=None, texto=""):
     """Responde una propuesta de la otra parte. `accion`: aceptar | contraofertar | rechazar."""
     from apps.tercerizacion.models import MensajeNegociacion

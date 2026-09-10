@@ -5,7 +5,10 @@ from apps.agente.registro import EFECTO_CRITICO, EFECTO_LECTURA, EFECTO_REVERSIB
 from . import _alcance
 
 
-@capacidad("dejar_nota", perfiles=["asesor", "sistema"], efecto=EFECTO_REVERSIBLE)
+@capacidad("dejar_nota", perfiles=["asesor", "sistema"], efecto=EFECTO_REVERSIBLE, params={
+    "codigo": {"description": "Código de la carga."},
+    "texto": {"description": "Contenido de la nota."},
+})
 def dejar_nota(principal, codigo, texto):
     """Agrega una nota interna a la carga (queda en el historial del lead)."""
     from apps.cotizador.pipeline import _auditar
@@ -19,7 +22,8 @@ def dejar_nota(principal, codigo, texto):
     return {"ok": True, "_lead": lead}
 
 
-@capacidad("marcar_datos_faltantes", perfiles=["asesor", "transportista", "cliente", "sistema"], efecto=EFECTO_LECTURA)
+@capacidad("marcar_datos_faltantes", perfiles=["asesor", "transportista", "cliente", "sistema"],
+           efecto=EFECTO_LECTURA, params={"codigo": {"description": "Código de la carga."}})
 def marcar_datos_faltantes(principal, codigo):
     """Qué le falta a una carga para poder reservarla."""
     from apps.ia.conversation_policy import booking_missing_fields
@@ -41,7 +45,8 @@ def marcar_datos_faltantes(principal, codigo):
     return {"completa": not faltan, "faltan": faltan, "faltan_legible": legibles, "_lead": lead}
 
 
-@capacidad("crear_reserva", perfiles=["asesor", "sistema"], efecto=EFECTO_CRITICO)
+@capacidad("crear_reserva", perfiles=["asesor", "sistema"], efecto=EFECTO_CRITICO,
+           params={"codigo": {"description": "Código de la carga."}})
 def crear_reserva(principal, codigo):
     """Crea la reserva (servicio) de una carga. Falla si faltan datos obligatorios."""
     from apps.servicios.services import crear_servicio_desde_lead
@@ -51,7 +56,11 @@ def crear_reserva(principal, codigo):
     return {"reserva": servicio.codigo, "creada": creado, "_lead": lead, "_servicio": servicio}
 
 
-@capacidad("cerrar_precio", perfiles=["asesor", "sistema"], efecto=EFECTO_CRITICO)
+@capacidad("cerrar_precio", perfiles=["asesor", "sistema"], efecto=EFECTO_CRITICO, params={
+    "codigo": {"description": "Código de la carga."},
+    "monto": {"type": "number", "description": "Precio de venta acordado (S/)."},
+    "nota": {"description": "Condiciones / nota opcional."},
+})
 def cerrar_precio(principal, codigo, monto, nota=""):
     """Cierra el precio de venta con el cliente y crea la reserva. Si el monto
     difiere de la última oferta, manda una revisión a ese precio."""
@@ -66,7 +75,11 @@ def cerrar_precio(principal, codigo, monto, nota=""):
     return {"reserva": servicio.codigo, "creada": creada, "_lead": lead, "_servicio": servicio}
 
 
-@capacidad("derivar_a_tercerizacion", perfiles=["asesor", "sistema"], efecto=EFECTO_CRITICO)
+@capacidad("derivar_a_tercerizacion", perfiles=["asesor", "sistema"], efecto=EFECTO_CRITICO, params={
+    "codigo": {"description": "Código de la carga."},
+    "modo_precio": {"enum": ["fijo", "referencial", "abierto"]},
+    "precio_ref": {"type": "number", "description": "Costo objetivo hacia el transportista (si fijo/referencial)."},
+})
 def derivar_a_tercerizacion(principal, codigo, modo_precio="abierto", precio_ref=None):
     """Marca la carga como tercerizada y crea la publicación en borrador (la
     publica el Despacho). `modo_precio`: fijo | referencial | abierto."""

@@ -10,7 +10,10 @@ from apps.agente.registro import EFECTO_CRITICO, capacidad
 from . import _alcance
 
 
-@capacidad("enviar_whatsapp", perfiles=["asesor", "sistema"], efecto=EFECTO_CRITICO)
+@capacidad("enviar_whatsapp", perfiles=["asesor", "sistema"], efecto=EFECTO_CRITICO, params={
+    "carga_codigo": {"description": "Código de la carga (se manda al contacto del cliente)."},
+    "texto": {"description": "Texto del mensaje de WhatsApp."},
+})
 def enviar_whatsapp(principal, carga_codigo, texto):
     """Envía un mensaje de WhatsApp al contacto de una carga."""
     from apps.whatsapp_bot_v4.services.ycloud_webhook_service import send_via_ycloud
@@ -26,7 +29,8 @@ def enviar_whatsapp(principal, carga_codigo, texto):
     return {"enviado_a": telefono, "_lead": lead}
 
 
-@capacidad("encolar_revision_whatsapp", perfiles=["asesor", "sistema"], efecto=EFECTO_CRITICO)
+@capacidad("encolar_revision_whatsapp", perfiles=["asesor", "sistema"], efecto=EFECTO_CRITICO,
+           params={"cotizacion_codigo": {"description": "Código de la cotización comercial."}})
 def encolar_revision_whatsapp(principal, cotizacion_codigo):
     """Encola el envío por WhatsApp de la última revisión de una cotización."""
     from apps.cotizador.delivery import queue_revision_whatsapp

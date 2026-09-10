@@ -9,8 +9,12 @@ from . import _alcance
 
 _TODOS = ["asesor", "transportista", "cliente", "sistema"]
 
+_P_CODIGO = {"codigo": {"description": "Código de la carga (CRG-NNNN)."}}
+_P_HILO = {"hilo_id": {"type": "integer", "description": "ID del hilo de negociación."}}
 
-@capacidad("ver_carga", perfiles=["asesor", "cliente", "transportista", "sistema"], efecto=EFECTO_LECTURA)
+
+@capacidad("ver_carga", perfiles=["asesor", "cliente", "transportista", "sistema"],
+           efecto=EFECTO_LECTURA, params=_P_CODIGO)
 def ver_carga(principal, codigo):
     """Datos de una carga. El cliente ve la suya completa; el transportista ve la
     versión con privacidad (sin datos del cliente ni precio de venta)."""
@@ -24,7 +28,8 @@ def ver_carga(principal, codigo):
     return {**load_detail(lead), "_lead": lead}
 
 
-@capacidad("ver_cotizacion", perfiles=["asesor", "cliente", "sistema"], efecto=EFECTO_LECTURA)
+@capacidad("ver_cotizacion", perfiles=["asesor", "cliente", "sistema"], efecto=EFECTO_LECTURA,
+           params={"codigo": {"description": "Código de la cotización comercial."}})
 def ver_cotizacion(principal, codigo):
     """La cotización comercial de una carga: precio actual, revisiones, estado."""
     from apps.cotizador.api.shapes import quote_detail
@@ -32,7 +37,8 @@ def ver_cotizacion(principal, codigo):
     return {**quote_detail(cot), "_lead": cot.lead}
 
 
-@capacidad("ver_reserva", perfiles=["asesor", "cliente", "transportista", "sistema"], efecto=EFECTO_LECTURA)
+@capacidad("ver_reserva", perfiles=["asesor", "cliente", "transportista", "sistema"],
+           efecto=EFECTO_LECTURA, params={"codigo": {"description": "Código de la reserva/servicio."}})
 def ver_reserva(principal, codigo):
     """Una reserva (servicio confirmado): fecha, estado, asignación."""
     from apps.cotizador.api.shapes import booking_item
@@ -40,7 +46,8 @@ def ver_reserva(principal, codigo):
     return {**booking_item(svc), "_servicio": svc, "_lead": svc.lead_origen}
 
 
-@capacidad("ver_publicacion", perfiles=["asesor", "sistema"], efecto=EFECTO_LECTURA)
+@capacidad("ver_publicacion", perfiles=["asesor", "sistema"], efecto=EFECTO_LECTURA,
+           params={"codigo": {"description": "Código de la publicación a transportistas."}})
 def ver_publicacion(principal, codigo):
     """Una publicación a transportistas: ofertas, estado, costo objetivo."""
     from apps.tercerizacion.api.publicaciones_views import publication_detail
@@ -48,7 +55,7 @@ def ver_publicacion(principal, codigo):
     return {**publication_detail(pub), "_servicio": pub.servicio}
 
 
-@capacidad("ver_negociacion", perfiles=_TODOS, efecto=EFECTO_LECTURA)
+@capacidad("ver_negociacion", perfiles=_TODOS, efecto=EFECTO_LECTURA, params=_P_HILO)
 def ver_negociacion(principal, hilo_id):
     """Una mesa de negociación con sus mensajes. El externo solo ve su lado; sin margen."""
     hilo = _alcance.negociacion_para(principal, hilo_id)
@@ -72,7 +79,8 @@ def ver_negociacion(principal, hilo_id):
     return {**hilo_detail(hilo, ver_margen=principal.ve_margen()), "_lead": hilo.lead}
 
 
-@capacidad("cargas_del_cliente", perfiles=["cliente", "asesor", "sistema"], efecto=EFECTO_LECTURA)
+@capacidad("cargas_del_cliente", perfiles=["cliente", "asesor", "sistema"], efecto=EFECTO_LECTURA,
+           params={"cliente_id": {"type": "integer", "description": "ID del cliente (solo asesor/sistema)."}})
 def cargas_del_cliente(principal, cliente_id=None):
     """Lista de cargas de un cliente. El cliente ve solo las suyas; el asesor pasa `cliente_id`."""
     from apps.clientes.api.portal_cliente_views import load_item
@@ -118,7 +126,7 @@ def cargas_disponibles(principal):
     return {"resultados": out}
 
 
-@capacidad("estado_y_seguimiento", perfiles=_TODOS, efecto=EFECTO_LECTURA)
+@capacidad("estado_y_seguimiento", perfiles=_TODOS, efecto=EFECTO_LECTURA, params=_P_CODIGO)
 def estado_y_seguimiento(principal, codigo):
     """Estado de alto nivel de una carga + seguimiento del servicio (transportista/placa)."""
     from apps.clientes.api.portal_cliente_views import _load_status, _tracking
@@ -136,7 +144,7 @@ def estado_y_seguimiento(principal, codigo):
     }
 
 
-@capacidad("margen", perfiles=["asesor", "sistema"], efecto=EFECTO_LECTURA)
+@capacidad("margen", perfiles=["asesor", "sistema"], efecto=EFECTO_LECTURA, params=_P_CODIGO)
 def margen(principal, codigo):
     """Margen en vivo de una carga (venta − costo de tercerización). Solo roles de margen."""
     from apps.tercerizacion.negociacion import margen_en_vivo

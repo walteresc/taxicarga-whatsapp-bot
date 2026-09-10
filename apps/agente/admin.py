@@ -1,6 +1,30 @@
 from django.contrib import admin
 
-from .models import AccionAgente
+from .models import AccionAgente, ConversacionAgente, PropuestaAccion, TurnoAgente
+
+
+class TurnoInline(admin.TabularInline):
+    model = TurnoAgente
+    extra = 0
+    fields = ["rol", "contenido", "tool_calls", "iteraciones", "tokens_in", "tokens_out", "creado_en"]
+    readonly_fields = fields
+    can_delete = False
+
+
+@admin.register(ConversacionAgente)
+class ConversacionAgenteAdmin(admin.ModelAdmin):
+    list_display = ["id", "titulo", "principal_tipo", "usuario", "cerrada", "actualizado_en"]
+    list_filter = ["principal_tipo", "cerrada"]
+    search_fields = ["titulo", "usuario__username"]
+    inlines = [TurnoInline]
+
+
+@admin.register(PropuestaAccion)
+class PropuestaAccionAdmin(admin.ModelAdmin):
+    list_display = ["creado_en", "capacidad", "estado", "usuario", "resuelta_por", "resuelta_en"]
+    list_filter = ["estado", "efecto", "capacidad"]
+    search_fields = ["capacidad", "resumen", "usuario__username"]
+    readonly_fields = [f.name for f in PropuestaAccion._meta.fields]
 
 
 @admin.register(AccionAgente)

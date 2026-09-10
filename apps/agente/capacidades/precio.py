@@ -4,7 +4,8 @@ from apps.agente.registro import EFECTO_LECTURA, capacidad
 from . import _alcance
 
 
-@capacidad("calcular_precio", perfiles=["asesor", "cliente", "sistema"], efecto=EFECTO_LECTURA)
+@capacidad("calcular_precio", perfiles=["asesor", "cliente", "sistema"], efecto=EFECTO_LECTURA,
+           params={"codigo": {"description": "Código de la carga (CRG-NNNN)."}})
 def calcular_precio(principal, codigo):
     """Precio estimado de una carga con el motor determinista. Devuelve un número
     o `{modo: 'manual'}` cuando el motor no cubre (interprovincial, no-mudanza)."""
@@ -30,7 +31,8 @@ def calcular_precio(principal, codigo):
     }
 
 
-@capacidad("sugerir_precio_cierre", perfiles=["asesor", "sistema"], efecto=EFECTO_LECTURA)
+@capacidad("sugerir_precio_cierre", perfiles=["asesor", "sistema"], efecto=EFECTO_LECTURA,
+           params={"codigo": {"description": "Código de la carga en negociación."}})
 def sugerir_precio_cierre(principal, codigo):
     """Para una negociación de venta en curso: rango técnico + contraoferta del
     cliente + nuestra oferta + monto sobre la mesa → precio de cierre sugerido."""

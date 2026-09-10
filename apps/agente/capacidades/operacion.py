@@ -16,7 +16,14 @@ def _hora(v):
         raise ArgInvalido(f"Hora inválida: {v!r} (formato HH:MM).")
 
 
-@capacidad("asignar", perfiles=["asesor", "sistema"], efecto=EFECTO_CRITICO)
+@capacidad("asignar", perfiles=["asesor", "sistema"], efecto=EFECTO_CRITICO, params={
+    "reserva_codigo": {"description": "Código de la reserva/servicio."},
+    "recurso": {"description": "'v<id>' para vehículo propio o 't<id>' para vehículo de transportista."},
+    "hora_inicio": {"description": "HH:MM (opcional; por defecto el horario del servicio)."},
+    "hora_fin": {"description": "HH:MM (opcional)."},
+    "conductor_id": {"type": "integer", "description": "ID del conductor propio (opcional)."},
+    "conductor_externo": {"description": "Nombre del chofer del transportista (opcional)."},
+})
 def asignar(principal, reserva_codigo, recurso, hora_inicio=None, hora_fin=None,
            conductor_id=None, conductor_externo=""):
     """Asigna una reserva a un recurso de la Pizarra. `recurso`: 'v<id>' (vehículo
@@ -39,7 +46,8 @@ def asignar(principal, reserva_codigo, recurso, hora_inicio=None, hora_fin=None,
             "_lead": svc.lead_origen}
 
 
-@capacidad("desasignar", perfiles=["asesor", "sistema"], efecto=EFECTO_REVERSIBLE)
+@capacidad("desasignar", perfiles=["asesor", "sistema"], efecto=EFECTO_REVERSIBLE,
+           params={"programacion_id": {"type": "integer", "description": "ID de la programación a quitar."}})
 def desasignar(principal, programacion_id):
     """Quita una asignación de la Pizarra."""
     from apps.campo.models import ProgramacionServicio
@@ -54,7 +62,12 @@ def desasignar(principal, programacion_id):
     return {"ok": True, "_servicio": svc}
 
 
-@capacidad("registrar_pago", perfiles=["asesor", "sistema"], efecto=EFECTO_CRITICO)
+@capacidad("registrar_pago", perfiles=["asesor", "sistema"], efecto=EFECTO_CRITICO, params={
+    "reserva_codigo": {"description": "Código de la reserva."},
+    "concepto": {"enum": ["adelanto", "parcial", "final", "descuento", "ajuste"]},
+    "metodo_pago": {"enum": ["yape", "plin", "bcp_personal", "bcp_sos", "otro"]},
+    "monto": {"type": "number", "description": "Monto del pago (S/)."},
+})
 def registrar_pago(principal, reserva_codigo, concepto, metodo_pago, monto):
     """Registra un pago de una reserva."""
     from apps.servicios.services import registrar_pago as _pago

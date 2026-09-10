@@ -6,7 +6,10 @@ from apps.agente.registro import EFECTO_CRITICO, EFECTO_REVERSIBLE, capacidad
 from . import _alcance
 
 
-@capacidad("publicar_a_transportistas", perfiles=["asesor", "sistema"], efecto=EFECTO_CRITICO)
+@capacidad("publicar_a_transportistas", perfiles=["asesor", "sistema"], efecto=EFECTO_CRITICO, params={
+    "publicacion_codigo": {"description": "Código de la publicación (en borrador)."},
+    "grupos": {"type": "array", "description": "Nombres de grupos donde se pegó (opcional)."},
+})
 def publicar_a_transportistas(principal, publicacion_codigo, grupos=None):
     """Pasa una publicación de borrador a abierta (los transportistas la ven).
     Requiere rol con acceso a costos."""
@@ -19,7 +22,13 @@ def publicar_a_transportistas(principal, publicacion_codigo, grupos=None):
 
 
 @capacidad("registrar_oferta",
-           perfiles=["asesor", "transportista", "sistema"], efecto=EFECTO_REVERSIBLE)
+           perfiles=["asesor", "transportista", "sistema"], efecto=EFECTO_REVERSIBLE, params={
+               "publicacion_codigo": {"description": "Código de la publicación."},
+               "monto": {"type": "number", "description": "Monto ofertado (S/)."},
+               "transportista_id": {"type": "integer", "description": "ID del transportista (asesor/sistema)."},
+               "vehiculo_id": {"type": "integer", "description": "ID del vehículo del transportista (opcional)."},
+               "nota": {"description": "Nota opcional."},
+           })
 def registrar_oferta(principal, publicacion_codigo, monto, transportista_id=None,
                      vehiculo_id=None, nota=""):
     """Registra la oferta de un transportista sobre una publicación. El
@@ -57,7 +66,11 @@ def registrar_oferta(principal, publicacion_codigo, monto, transportista_id=None
             "_servicio": pub.servicio}
 
 
-@capacidad("adjudicar", perfiles=["asesor", "sistema"], efecto=EFECTO_CRITICO)
+@capacidad("adjudicar", perfiles=["asesor", "sistema"], efecto=EFECTO_CRITICO, params={
+    "publicacion_codigo": {"description": "Código de la publicación."},
+    "oferta_id": {"type": "integer", "description": "ID de la oferta ganadora."},
+    "vehiculo_id": {"type": "integer", "description": "ID del vehículo del transportista (si tiene varios)."},
+})
 def adjudicar(principal, publicacion_codigo, oferta_id, vehiculo_id=None):
     """Adjudica una publicación a una oferta → crea la programación tercerizada,
     rechaza las demás ofertas y cierra los hilos de compra."""
