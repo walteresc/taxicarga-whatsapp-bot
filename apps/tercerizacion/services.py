@@ -111,20 +111,83 @@ def _dec(v):
     return v if isinstance(v, Decimal) else Decimal(str(v))
 
 
-def precio_cliente_sugerido(costo, *, markup_pct=None):
-    """Precio de venta al cliente = costo del transportista × (1 + markup%).
+def _categoria_de(servicio):
+    """Categoría de carga del servicio (viene del lead que lo originó)."""
+    lead = getattr(servicio, "lead_origen", None)
+    return (getattr(lead, "categoria_carga", "") or "") if lead else ""
 
-    El markup sale de `ConfiguracionOperaciones.markup_tercerizacion_porcentaje`
-    salvo que se pase uno explícito. Redondeado a soles enteros. None si no hay costo.
+
+def comision_pct(monto, categoria=""):
+    """% de comisión de la plataforma para un servicio de `monto` soles y (opc.)
+    esa categoría de carga. Busca en `TramoComision`: primero un tramo activo de
+    la categoría; si no hay, el tramo general (categoria=""). Si no hay tabla
+    cargada, cae al markup plano de Configuración expresado como comisión.
+    """
+    from apps.tercerizacion.models import TramoComision
+
+    monto = _dec(monto) or Decimal(0)
+    activos = list(TramoComision.objects.filter(activo=True))
+    for cat in (categoria, TramoComision.CATEGORIA_GENERAL) if categoria else (TramoComision.CATEGORIA_GENERAL,):
+        tramos = sorted((t for t in activos if t.categoria == cat), key=lambda t: t.monto_desde)
+        for t in tramos:
+            if monto >= t.monto_desde and (t.monto_hasta is None or monto < t.monto_hasta):
+                return _dec(t.porcentaje)
+        if tramos:  # hay tabla para esta categoría pero el monto no cayó en ningún tramo → el último
+            return _dec(tramos[-1].porcentaje)
+
+    from apps.servicios.models import ConfiguracionOperaciones
+    markup = _dec(ConfiguracionOperaciones.get_solo().markup_tercerizacion_porcentaje)
+    # markup m sobre el costo ≡ comisión c sobre la venta con c = m / (1 + m)
+    return (markup / (Decimal(100) + markup) * Decimal(100)).quantize(Decimal("0.01"))
+
+
+def precio_cliente_sugerido(costo, categoria="", *, markup_pct=None):
+    """Precio de venta al cliente a partir del costo del transportista y la
+    tabla de comisiones: `precio = costo / (1 - comision%)`, donde la comisión
+    depende del propio precio (tabla por tramos), así que se itera hasta que
+    estabiliza. Redondeado a soles. None si no hay costo.
+
+    `markup_pct` fuerza un markup plano sobre el costo (evita la tabla) — se usa
+    para retrocompatibilidad de tests.
     """
     costo = _dec(costo)
     if costo is None or costo <= 0:
         return None
-    if markup_pct is None:
-        from apps.servicios.models import ConfiguracionOperaciones
-        markup_pct = ConfiguracionOperaciones.get_solo().markup_tercerizacion_porcentaje
-    factor = Decimal(1) + _dec(markup_pct) / Decimal(100)
-    return (costo * factor).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    if markup_pct is not None:
+        factor = Decimal(1) + _dec(markup_pct) / Decimal(100)
+        return (costo * factor).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+
+    precio = costo
+    for _ in range(6):
+        pct = comision_pct(precio, categoria)
+        if pct >= Decimal(100):
+            pct = Decimal("90")
+        nuevo = (costo / (Decimal(1) - pct / Decimal(100))).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        if nuevo == precio:
+            break
+        precio = nuevo
+    return precio
+
+
+def desglose_comision(precio_servicio, costo=None, categoria=""):
+    """{'servicePrice','commissionPct','commission','carrierPayout','cost'} —
+    cómo se reparte el precio del servicio: comisión de la plataforma y lo que
+    cobra el transportista. `cost` (si se pasa) es lo pactado con el transportista.
+    """
+    precio = _dec(precio_servicio)
+    out = {
+        "servicePrice": float(precio) if precio is not None else None,
+        "commissionPct": None, "commission": None,
+        "carrierPayout": None, "cost": float(_dec(costo)) if costo not in (None, "") else None,
+    }
+    if precio is None or precio <= 0:
+        return out
+    pct = comision_pct(precio, categoria)
+    comision = (precio * pct / Decimal(100)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    out["commissionPct"] = float(pct)
+    out["commission"] = float(comision)
+    out["carrierPayout"] = float(precio - comision)
+    return out
 
 
 def _piso_margen_pct():

@@ -2,8 +2,16 @@ from django.contrib import admin
 
 from .models import (
     HiloNegociacion, MensajeNegociacion, OfertaTransportista, PublicacionCarga,
-    TransportistaBotState,
+    TramoComision, TransportistaBotState,
 )
+
+
+@admin.register(TramoComision)
+class TramoComisionAdmin(admin.ModelAdmin):
+    list_display = ["categoria", "monto_desde", "monto_hasta", "porcentaje", "activo", "actualizado_en"]
+    list_filter = ["categoria", "activo"]
+    list_editable = ["porcentaje", "activo"]
+    ordering = ["categoria", "monto_desde"]
 
 
 class OfertaTransportistaInline(admin.TabularInline):

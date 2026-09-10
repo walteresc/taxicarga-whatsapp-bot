@@ -112,14 +112,14 @@ def adjudicar_publicacion(pub, oferta, usuario, *, transportista_vehiculo=None,
     tercerizada, rechaza las demás ofertas y cierra sus mesas de compra.
 
     Además fija el precio de venta al cliente: si se pasa `precio_cliente` se
-    usa ese; si el servicio todavía no tiene precio, se calcula como
-    costo × (1 + markup de Configuración). Si el precio resultante no cubre el
-    piso de margen del negocio, aborta salvo `autoriza_bajo_margen=True`.
+    usa ese; si el servicio todavía no tiene precio, se deriva del costo y la
+    tabla de comisiones (`precio = costo / (1 - comision%)`). Si el precio
+    resultante no cubre el piso de margen, aborta salvo `autoriza_bajo_margen=True`.
     """
     from apps.campo.models import ProgramacionServicio
     from apps.servicios.models import Servicio
     from apps.tercerizacion.services import (
-        evaluar_margen_tercerizacion, precio_cliente_sugerido,
+        _categoria_de, evaluar_margen_tercerizacion, precio_cliente_sugerido,
     )
 
     if pub.estado == PublicacionCarga.ESTADO_ADJUDICADA:
@@ -163,7 +163,7 @@ def adjudicar_publicacion(pub, oferta, usuario, *, transportista_vehiculo=None,
     if precio_cliente not in (None, ""):
         nuevo_precio = Decimal(str(precio_cliente))
     elif not servicio.precio:
-        nuevo_precio = precio_cliente_sugerido(monto)
+        nuevo_precio = precio_cliente_sugerido(monto, _categoria_de(servicio))
     precio_efectivo = nuevo_precio if nuevo_precio is not None else servicio.precio
     if precio_efectivo and monto:
         ev = evaluar_margen_tercerizacion(precio_efectivo, monto)

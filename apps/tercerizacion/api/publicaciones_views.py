@@ -115,21 +115,27 @@ def publication_detail(pub):
     ).order_by("monto_actual", "creado_en")]
     out["winningOfferId"] = pub.oferta_ganadora_id
 
-    # Rentabilidad: costo (mejor oferta viva o la adjudicada) → precio al cliente.
+    # Rentabilidad: costo (mejor oferta viva o la adjudicada) → precio al cliente
+    # → comisión de la plataforma (tabla por tramos y categoría de la carga).
     from apps.tercerizacion.services import (
-        evaluar_margen_tercerizacion, precio_cliente_sugerido,
+        _categoria_de, desglose_comision, evaluar_margen_tercerizacion,
+        precio_cliente_sugerido,
     )
+    cat = _categoria_de(s)
     vivas = [o for o in pub.ofertas.all() if o.estado != "rechazada"]
     if pub.oferta_ganadora_id:
         best = pub.oferta_ganadora
     else:
         best = min(vivas, key=lambda o: o.monto_actual or o.precio_ofertado or 1e12, default=None)
     best_cost = (best.monto_actual or best.precio_ofertado) if best else None
+    suggested = precio_cliente_sugerido(best_cost, cat)
     out["economics"] = {
+        "category": cat,
         "bestOfferCost": _num(best_cost),
-        "suggestedClientPrice": _num(precio_cliente_sugerido(best_cost)),
+        "suggestedClientPrice": _num(suggested),
         "currentClientPrice": _num(s.precio),
         "margin": evaluar_margen_tercerizacion(s.precio, best_cost),
+        "commission": desglose_comision(s.precio or suggested, best_cost, cat),
     }
     return out
 
@@ -186,6 +192,99 @@ class OutsourcingSettingsView(_Base):
         if campos:
             cfg.save(update_fields=campos + ["actualizado_en"])
         return Response(self._payload(cfg))
+
+
+# Las tasas de comisión son una decisión de tarifa/finanzas.
+_ROLES_COMISION = ("Administrador", "Gerencia", "Finanzas")
+
+
+def _tier_item(t):
+    return {
+        "id": t.id,
+        "category": t.categoria,
+        "from": float(t.monto_desde),
+        "to": float(t.monto_hasta) if t.monto_hasta is not None else None,
+        "percent": float(t.porcentaje),
+        "active": t.activo,
+    }
+
+
+def _tier_from_body(data, t):
+    from apps.leads.models import Lead
+    cats = {c for c, _ in Lead.CATEGORIAS_CARGA} | {""}
+    if "category" in data:
+        cat = (data["category"] or "").strip()
+        if cat not in cats:
+            raise ValidationError({"category": "Categoría de carga no válida."})
+        t.categoria = cat
+    if "from" in data:
+        try:
+            t.monto_desde = Decimal(str(data["from"]))
+        except (InvalidOperation, TypeError):
+            raise ValidationError({"from": "Monto no válido."})
+        if t.monto_desde < 0:
+            raise ValidationError({"from": "No puede ser negativo."})
+    if "to" in data:
+        if data["to"] in (None, ""):
+            t.monto_hasta = None
+        else:
+            try:
+                t.monto_hasta = Decimal(str(data["to"]))
+            except (InvalidOperation, TypeError):
+                raise ValidationError({"to": "Monto no válido."})
+    if "percent" in data:
+        try:
+            t.porcentaje = Decimal(str(data["percent"]))
+        except (InvalidOperation, TypeError):
+            raise ValidationError({"percent": "Porcentaje no válido."})
+        if not (Decimal(0) <= t.porcentaje < Decimal(100)):
+            raise ValidationError({"percent": "Debe estar entre 0 y 100."})
+    if "active" in data:
+        t.activo = bool(data["active"])
+    if t.monto_hasta is not None and t.monto_hasta <= t.monto_desde:
+        raise ValidationError({"to": "El 'hasta' debe ser mayor que el 'desde'."})
+    return t
+
+
+class CommissionTiersView(_Base):
+    """GET todos los tramos de comisión + las categorías disponibles; POST crea uno.
+
+    Modelo: la comisión de la plataforma sobre un servicio tercerizado baja por
+    tramos de monto y puede ser más alta por categoría (p. ej. mudanzas).
+    """
+    permission_classes = [HasAnyRole(*_ROLES_COMISION)]
+
+    def get(self, request):
+        from apps.leads.models import Lead
+        from apps.tercerizacion.models import TramoComision
+        return Response({
+            "tiers": [_tier_item(t) for t in TramoComision.objects.all()],
+            "categories": [{"value": c, "label": l} for c, l in Lead.CATEGORIAS_CARGA],
+        })
+
+    def post(self, request):
+        from apps.tercerizacion.models import TramoComision
+        t = _tier_from_body(request.data, TramoComision())
+        if "percent" not in request.data:
+            raise ValidationError({"percent": "Requerido."})
+        t.save()
+        return Response(_tier_item(t), status=201)
+
+
+class CommissionTierDetailView(_Base):
+    permission_classes = [HasAnyRole(*_ROLES_COMISION)]
+
+    def patch(self, request, pk):
+        from apps.tercerizacion.models import TramoComision
+        t = get_object_or_404(TramoComision, pk=pk)
+        _tier_from_body(request.data, t)
+        t.save()
+        return Response(_tier_item(t))
+
+    def delete(self, request, pk):
+        from apps.tercerizacion.models import TramoComision
+        get_object_or_404(TramoComision, pk=pk).delete()
+        return Response(status=204)
 
 
 class PublicationListView(_Base):

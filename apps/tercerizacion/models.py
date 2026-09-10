@@ -578,3 +578,48 @@ class TransportistaConductor(models.Model):
 
     def __str__(self):
         return f"{self.nombre} ({self.dni})"
+
+
+class TramoComision(models.Model):
+    """Un escalón de la tabla de comisiones de la plataforma sobre un servicio
+    tercerizado. La comisión baja a medida que sube el monto (10 % de S/ 100 no
+    es lo mismo que 10 % de S/ 10 000) y puede ser más alta para ciertas
+    categorías de carga (p. ej. mudanzas).
+
+    Resolución: se busca el tramo *activo* de la categoría del servicio cuyo
+    rango [monto_desde, monto_hasta) contiene el precio; si no hay ninguno para
+    esa categoría, se usa el tramo general (categoria = "").
+    """
+
+    CATEGORIA_GENERAL = ""
+
+    categoria = models.CharField(
+        max_length=20, blank=True, default="",
+        help_text="Categoría de carga a la que aplica este tramo. "
+                  "Vacío = tabla general (aplica a cualquier categoría sin tabla propia).",
+    )
+    monto_desde = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0,
+        help_text="Precio del servicio desde el cual aplica este porcentaje (inclusive).",
+    )
+    monto_hasta = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+        help_text="Hasta (exclusivo). Vacío = sin tope (de este monto para arriba).",
+    )
+    porcentaje = models.DecimalField(
+        max_digits=5, decimal_places=2,
+        help_text="Comisión de la plataforma sobre el precio del servicio, en %.",
+    )
+    activo = models.BooleanField(default=True)
+    creado_en = models.DateTimeField(auto_now_add=True)
+    actualizado_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Tramo de comisión"
+        verbose_name_plural = "Tabla de comisiones"
+        ordering = ["categoria", "monto_desde"]
+
+    def __str__(self):
+        cat = self.categoria or "general"
+        tope = f"{self.monto_hasta:g}" if self.monto_hasta is not None else "∞"
+        return f"[{cat}] S/ {self.monto_desde:g}–{tope}: {self.porcentaje:g}%"

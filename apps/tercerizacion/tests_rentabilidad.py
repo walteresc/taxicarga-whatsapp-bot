@@ -12,9 +12,11 @@ from apps.clientes.models import Cliente
 from apps.leads.models import Lead
 from apps.servicios.models import ConfiguracionOperaciones, Servicio
 from apps.tercerizacion import adjudicacion as adj
-from apps.tercerizacion.models import PublicacionCarga, Transportista, TransportistaVehiculo
+from apps.tercerizacion.models import (
+    PublicacionCarga, TramoComision, Transportista, TransportistaVehiculo,
+)
 from apps.tercerizacion.services import (
-    evaluar_margen_tercerizacion, precio_cliente_sugerido,
+    comision_pct, desglose_comision, evaluar_margen_tercerizacion, precio_cliente_sugerido,
 )
 
 User = get_user_model()
@@ -130,4 +132,97 @@ class OutsourcingSettingsMarkupAPITests(APITestCase):
 
     def test_patch_markup_fuera_de_rango(self):
         r = self.client.patch("/api/v2/outsourcing/settings", {"markupPercent": 500}, format="json")
+        self.assertEqual(r.status_code, 400)
+
+
+def _tramos_base():
+    TramoComision.objects.bulk_create([
+        TramoComision(categoria="", monto_desde=0, monto_hasta=1000, porcentaje=25),
+        TramoComision(categoria="", monto_desde=1000, monto_hasta=5000, porcentaje=18),
+        TramoComision(categoria="", monto_desde=5000, monto_hasta=None, porcentaje=10),
+        TramoComision(categoria="mudanza", monto_desde=0, monto_hasta=None, porcentaje=30),
+    ])
+
+
+class TablaComisionTests(APITestCase):
+    def setUp(self):
+        ConfiguracionOperaciones.objects.filter(pk=1).delete()
+        TramoComision.objects.all().delete()
+
+    def test_sin_tabla_cae_al_markup(self):
+        # markup 25 → comisión equivalente 25/125 = 20 %
+        self.assertEqual(comision_pct(500), Decimal("20.00"))
+
+    def test_tramo_por_monto(self):
+        _tramos_base()
+        self.assertEqual(comision_pct(500), Decimal("25"))
+        self.assertEqual(comision_pct(2000), Decimal("18"))
+        self.assertEqual(comision_pct(9000), Decimal("10"))
+
+    def test_categoria_pisa_a_general(self):
+        _tramos_base()
+        self.assertEqual(comision_pct(2000, "mudanza"), Decimal("30"))
+        self.assertEqual(comision_pct(2000, "cajas"), Decimal("18"))  # sin tabla propia → general
+
+    def test_precio_sugerido_usa_la_tabla(self):
+        _tramos_base()
+        # costo 800 → tramo 25 % → 800 / 0.75 = 1067 → re-cae en tramo 18 % (>1000)
+        # → 800 / 0.82 = 976 → vuelve a 25 %... converge cerca del borde
+        p = precio_cliente_sugerido(800)
+        self.assertGreater(p, Decimal("900"))
+        self.assertLess(p, Decimal("1100"))
+
+    def test_desglose(self):
+        _tramos_base()
+        d = desglose_comision(2000, 1600, "")
+        self.assertEqual(d["commissionPct"], 18.0)
+        self.assertEqual(d["commission"], 360.0)
+        self.assertEqual(d["carrierPayout"], 1640.0)
+
+    def test_seed_idempotente(self):
+        from django.core.management import call_command
+        call_command("seed_comisiones")
+        n = TramoComision.objects.count()
+        self.assertGreater(n, 0)
+        call_command("seed_comisiones")
+        self.assertEqual(TramoComision.objects.count(), n)
+
+
+class CommissionTiersAPITests(APITestCase):
+    def setUp(self):
+        TramoComision.objects.all().delete()
+        for g in ("Gerencia", "Despacho"):
+            Group.objects.get_or_create(name=g)
+        self.gerente = User.objects.create_user("c_ger", password="x")
+        self.gerente.groups.add(Group.objects.get(name="Gerencia"))
+        self.despacho = User.objects.create_user("c_desp", password="x")
+        self.despacho.groups.add(Group.objects.get(name="Despacho"))
+
+    def test_despacho_no_puede(self):
+        self.client.force_authenticate(self.despacho)
+        self.assertEqual(self.client.get("/api/v2/outsourcing/commission-tiers").status_code, 403)
+
+    def test_crud(self):
+        self.client.force_authenticate(self.gerente)
+        r = self.client.post("/api/v2/outsourcing/commission-tiers",
+                             {"category": "mudanza", "from": 0, "to": 2000, "percent": 28}, format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+        tid = r.data["id"]
+        r = self.client.patch(f"/api/v2/outsourcing/commission-tiers/{tid}", {"percent": 26}, format="json")
+        self.assertEqual(r.data["percent"], 26.0)
+        r = self.client.get("/api/v2/outsourcing/commission-tiers")
+        self.assertEqual(len(r.data["tiers"]), 1)
+        self.assertTrue(any(c["value"] == "mudanza" for c in r.data["categories"]))
+        self.assertEqual(self.client.delete(f"/api/v2/outsourcing/commission-tiers/{tid}").status_code, 204)
+
+    def test_rechaza_rango_invalido(self):
+        self.client.force_authenticate(self.gerente)
+        r = self.client.post("/api/v2/outsourcing/commission-tiers",
+                             {"category": "", "from": 5000, "to": 1000, "percent": 10}, format="json")
+        self.assertEqual(r.status_code, 400)
+
+    def test_rechaza_categoria_invalida(self):
+        self.client.force_authenticate(self.gerente)
+        r = self.client.post("/api/v2/outsourcing/commission-tiers",
+                             {"category": "inexistente", "from": 0, "percent": 10}, format="json")
         self.assertEqual(r.status_code, 400)

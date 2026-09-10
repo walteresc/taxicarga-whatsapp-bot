@@ -104,6 +104,11 @@ export const routes = [
         component: () => import('@/pages/configuracion/usuarios/index.vue'),
         meta: { roles: ['Administrador', 'Admin de sistema'] },
       },
+      {
+        path: 'configuracion/comisiones',
+        component: () => import('@/pages/configuracion/comisiones/index.vue'),
+        meta: { roles: ['Administrador', 'Gerencia', 'Finanzas'] },
+      },
 
       // COMERCIAL
       {

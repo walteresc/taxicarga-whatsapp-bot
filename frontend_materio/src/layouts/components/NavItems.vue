@@ -73,14 +73,14 @@ const MENU = [
   { title: 'Histórico', icon: 'ri-bar-chart-box-line', to: '/analitica/benchmark', roles: ADMIN_SUP },
   { title: 'Propio vs Tercerizado', icon: 'ri-scales-3-line', to: '/analitica/tercerizacion', roles: DESPACHO_MARGEN },
 
-  { heading: 'Configuración', roles: [...ADMIN_SUP, 'Admin de sistema'] },
+  { heading: 'Configuración', roles: [...ADMIN_SUP, 'Admin de sistema', 'Gerencia', 'Finanzas'] },
   { title: 'BOT', icon: 'ri-robot-line', to: '/configuracion/bot', roles: ADMIN_SUP },
   {
     title: 'Operaciones', icon: 'ri-settings-3-line', roles: ADMIN_SUP, children: [
       { title: 'Catálogo de vehículos', icon: 'ri-list-settings-line', to: '/configuracion/catalogo-vehiculos', roles: ADMIN_SUP },
-      { title: 'Precios y comisiones', icon: 'ri-percent-line', to: '/configuracion/precios-comisiones', roles: ADMIN_SUP, soon: true },
     ],
   },
+  { title: 'Comisiones de tercerización', icon: 'ri-percent-line', to: '/configuracion/comisiones', roles: ['Administrador', 'Gerencia', 'Finanzas'] },
   { title: 'Usuarios y permisos', icon: 'ri-shield-user-line', to: '/configuracion/usuarios', roles: SISTEMA },
 ]
 

@@ -13,3 +13,10 @@ export const publicationAward = (id, body) => apiClient.post(`${P}/${id}/award`,
 // Política de derivación de interprovinciales (G3).
 export const outsourcingSettings = () => apiClient.get('/api/v2/outsourcing/settings')
 export const outsourcingSettingsUpdate = body => apiClient.patch('/api/v2/outsourcing/settings', body)
+
+// Tabla de comisiones de la plataforma sobre servicios tercerizados.
+const CT = '/api/v2/outsourcing/commission-tiers'
+export const commissionTiers = () => apiClient.get(CT)
+export const commissionTierCreate = body => apiClient.post(CT, body)
+export const commissionTierUpdate = (id, body) => apiClient.patch(`${CT}/${id}`, body)
+export const commissionTierDelete = id => apiClient.delete(`${CT}/${id}`)
