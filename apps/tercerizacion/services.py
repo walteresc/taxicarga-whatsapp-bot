@@ -1,4 +1,5 @@
 import re
+from decimal import ROUND_HALF_UP, Decimal
 
 from django.db import transaction
 from django.utils import timezone
@@ -95,6 +96,71 @@ _ESTADOS_PUBLICACION_ACTIVA = (
     PublicacionCarga.ESTADO_PUBLICADA,
     PublicacionCarga.ESTADO_CON_OFERTAS,
 )
+
+
+# ---------------------------------------------------------------------------
+# Rentabilidad de la tercerización: cómo la plataforma gana en una carga que
+# ejecuta un transportista. El modelo es el spread venta − costo; estas
+# funciones fijan ese precio de venta cuando no hay una cotización propia y
+# vigilan que no caiga por debajo del piso de margen del negocio.
+# ---------------------------------------------------------------------------
+
+def _dec(v):
+    if v is None or v == "":
+        return None
+    return v if isinstance(v, Decimal) else Decimal(str(v))
+
+
+def precio_cliente_sugerido(costo, *, markup_pct=None):
+    """Precio de venta al cliente = costo del transportista × (1 + markup%).
+
+    El markup sale de `ConfiguracionOperaciones.markup_tercerizacion_porcentaje`
+    salvo que se pase uno explícito. Redondeado a soles enteros. None si no hay costo.
+    """
+    costo = _dec(costo)
+    if costo is None or costo <= 0:
+        return None
+    if markup_pct is None:
+        from apps.servicios.models import ConfiguracionOperaciones
+        markup_pct = ConfiguracionOperaciones.get_solo().markup_tercerizacion_porcentaje
+    factor = Decimal(1) + _dec(markup_pct) / Decimal(100)
+    return (costo * factor).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+
+
+def _piso_margen_pct():
+    """Piso de margen del negocio (%). Reusa el que ya configura el bot."""
+    try:
+        from apps.whatsapp.models import ConfiguracionBot
+        cfg = ConfiguracionBot.objects.first()
+        if cfg and cfg.margen_minimo_porcentaje is not None:
+            return _dec(cfg.margen_minimo_porcentaje)
+    except Exception:
+        pass
+    return Decimal(20)
+
+
+def evaluar_margen_tercerizacion(venta, costo):
+    """{'sale','cost','margin','pct','floorPct','meetsFloor'} — pct sobre la venta.
+
+    `meetsFloor` compara contra costo × (1 + piso%): es el mismo criterio que el
+    gate de margen de las cotizaciones manuales.
+    """
+    venta, costo = _dec(venta), _dec(costo)
+    piso = _piso_margen_pct()
+    out = {
+        "sale": float(venta) if venta is not None else None,
+        "cost": float(costo) if costo is not None else None,
+        "margin": None, "pct": None,
+        "floorPct": float(piso), "meetsFloor": None,
+    }
+    if venta is None or costo is None:
+        return out
+    margin = venta - costo
+    out["margin"] = float(margin)
+    out["pct"] = round(float(margin) / float(venta) * 100, 1) if venta else None
+    minimo = costo * (Decimal(1) + piso / Decimal(100))
+    out["meetsFloor"] = venta >= minimo
+    return out
 
 
 def tercerizar_carga(servicio, usuario, *, modo_precio=None, precio_publicado=None,

@@ -350,6 +350,13 @@ class ConfiguracionOperaciones(models.Model):
                    "a los transportistas (modo de precio abierto) en cuanto tienen "
                    "los datos completos, sin que el asesor las cotice.",
     )
+    markup_tercerizacion_porcentaje = models.DecimalField(
+        max_digits=5, decimal_places=2, default=25,
+        help_text="Recargo sobre el costo del transportista para fijar el precio "
+                  "al cliente cuando una carga tercerizada no tiene cotización "
+                  "propia (p.ej. 25 = costo + 25 %). Es la rentabilidad objetivo "
+                  "de la plataforma en tercerización.",
+    )
     actualizado_en = models.DateTimeField(auto_now=True)
 
     class Meta:

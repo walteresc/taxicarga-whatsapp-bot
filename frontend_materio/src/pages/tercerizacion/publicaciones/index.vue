@@ -58,25 +58,36 @@ const loadList = async () => {
 }
 const onSearch = () => { clearTimeout(searchTimer); searchTimer = setTimeout(loadList, 350) }
 
-const autoDerive = ref(false)
-const autoDeriveBusy = ref(false)
-const loadAutoDerive = async () => {
-  try { autoDerive.value = (await outsourcingSettings()).autoDeriveInterprovincial } catch { /* sin permiso: se oculta */ }
+const settings = reactive({ autoDerive: false, markup: 25 })
+const settingsBusy = ref(false)
+const loadSettings = async () => {
+  try {
+    const s = await outsourcingSettings()
+    settings.autoDerive = s.autoDeriveInterprovincial
+    settings.markup = s.markupPercent
+  } catch { /* sin permiso: se oculta */ }
 }
 const toggleAutoDerive = async val => {
-  autoDeriveBusy.value = true
+  settingsBusy.value = true
   try {
-    autoDerive.value = (await outsourcingSettingsUpdate({ autoDeriveInterprovincial: val })).autoDeriveInterprovincial
-    notify(autoDerive.value
+    settings.autoDerive = (await outsourcingSettingsUpdate({ autoDeriveInterprovincial: val })).autoDeriveInterprovincial
+    notify(settings.autoDerive
       ? 'Las cargas interprovinciales completas se publicarán solas a los transportistas.'
       : 'Derivación automática desactivada. El asesor cotiza o deriva a mano.')
   } catch (e) {
-    autoDerive.value = !val
+    settings.autoDerive = !val
     notify(e.message || 'No se pudo cambiar.', 'error')
-  } finally { autoDeriveBusy.value = false }
+  } finally { settingsBusy.value = false }
+}
+const saveMarkup = async () => {
+  settingsBusy.value = true
+  try {
+    settings.markup = (await outsourcingSettingsUpdate({ markupPercent: settings.markup })).markupPercent
+    notify(`Markup de tercerización: ${settings.markup} %.`)
+  } catch (e) { notify(e.message || 'No se pudo guardar.', 'error') } finally { settingsBusy.value = false }
 }
 
-onMounted(() => { loadList(); if (canManageSettings.value) loadAutoDerive() })
+onMounted(() => { loadList(); if (canManageSettings.value) loadSettings() })
 
 const detail = ref(null)
 const selectedId = ref(null)
@@ -134,22 +145,37 @@ const submitOffer = async () => {
 }
 
 // --- adjudicar ---
-const awardForm = reactive({ open: false, offer: null, vehicleId: null })
+const awardForm = reactive({ open: false, offer: null, vehicleId: null, clientPrice: '', authorizeLowMargin: false })
 const awardVehicles = ref([])
 const openAward = async offer => {
-  Object.assign(awardForm, { open: true, offer, vehicleId: offer.vehicleId })
+  const eco = detail.value?.economics
+  const suggested = eco?.suggestedClientPrice ?? eco?.currentClientPrice ?? ''
+  Object.assign(awardForm, {
+    open: true, offer, vehicleId: offer.vehicleId,
+    clientPrice: detail.value?.service?.salePrice || suggested || '',
+    authorizeLowMargin: false,
+  })
   awardVehicles.value = []
   if (offer.carrierId) {
     awardVehicles.value = (await carrierVehiclesService.list({ carrierId: offer.carrierId, status: 'active', pageSize: 50 })).results
     if (!awardForm.vehicleId && awardVehicles.value.length === 1) awardForm.vehicleId = awardVehicles.value[0].id
   }
 }
+const awardMargin = computed(() => {
+  const cost = awardForm.offer?.currentAmount
+  const price = Number(awardForm.clientPrice)
+  if (!cost || !price) return null
+  const m = price - cost
+  return { amount: m, pct: Math.round((m / price) * 1000) / 10 }
+})
 const submitAward = async () => {
   busy.value = true
   try {
     const res = await publicationAward(selectedId.value, {
       offerId: awardForm.offer.id,
       vehicleId: awardForm.vehicleId || undefined,
+      clientPrice: awardForm.clientPrice || undefined,
+      authorizeLowMargin: awardForm.authorizeLowMargin || undefined,
     })
     detail.value = res.publication
     awardForm.open = false
@@ -172,17 +198,30 @@ const awarded = computed(() => detail.value?.state === 'awarded')
     </p>
 
     <VCard v-if="canManageSettings" variant="tonal" class="mb-4">
-      <VCardText class="d-flex align-center flex-wrap ga-2 py-2">
-        <VSwitch
-          v-model="autoDerive" :loading="autoDeriveBusy" color="primary" density="compact" hide-details
-          label="Derivar interprovinciales automáticamente"
-          @update:model-value="toggleAutoDerive"
-        />
-        <span class="text-caption text-medium-emphasis">
-          Con esto activo, una carga interprovincial con datos completos se publica sola a los transportistas
-          (precio abierto: ellos proponen), sin que el asesor la cotice. Si está apagado, el asesor la cotiza
-          o la deriva a mano.
-        </span>
+      <VCardText class="d-flex flex-column ga-3 py-3">
+        <div class="d-flex align-center flex-wrap ga-2">
+          <VSwitch
+            v-model="settings.autoDerive" :loading="settingsBusy" color="primary" density="compact" hide-details
+            label="Derivar interprovinciales automáticamente"
+            @update:model-value="toggleAutoDerive"
+          />
+          <span class="text-caption text-medium-emphasis">
+            Con esto activo, una carga interprovincial con datos completos se publica sola a los transportistas
+            (precio abierto: ellos proponen), sin que el asesor la cotice. Si está apagado, el asesor la cotiza
+            o la deriva a mano.
+          </span>
+        </div>
+        <div class="d-flex align-center flex-wrap ga-2">
+          <VTextField
+            v-model.number="settings.markup" type="number" density="compact" hide-details
+            label="Markup de tercerización (%)" style="max-width: 200px;"
+            suffix="%" @blur="saveMarkup"
+          />
+          <span class="text-caption text-medium-emphasis">
+            Recargo sobre el costo del transportista para fijar el precio al cliente cuando la carga no tiene
+            cotización propia. Es la rentabilidad objetivo de la plataforma.
+          </span>
+        </div>
       </VCardText>
     </VCard>
 
@@ -245,6 +284,29 @@ const awarded = computed(() => detail.value?.state === 'awarded')
                 <tr v-if="detail.service.cargo"><td>Carga</td><td>{{ detail.service.cargo }}</td></tr>
                 <tr><td>Precio de venta</td><td>{{ soles(detail.service.salePrice) }}</td></tr>
                 <tr><td>Costo objetivo (publicado)</td><td>{{ soles(detail.publishedPrice) }}</td></tr>
+                <template v-if="detail.economics?.bestOfferCost">
+                  <tr>
+                    <td>Mejor oferta (costo)</td>
+                    <td>{{ soles(detail.economics.bestOfferCost) }}</td>
+                  </tr>
+                  <tr>
+                    <td>Precio al cliente sugerido</td>
+                    <td>
+                      {{ soles(detail.economics.suggestedClientPrice) }}
+                      <span class="text-caption text-medium-emphasis">(costo + markup)</span>
+                    </td>
+                  </tr>
+                  <tr v-if="detail.economics.margin?.margin != null">
+                    <td>Margen</td>
+                    <td :class="detail.economics.margin.meetsFloor === false ? 'text-error' : 'text-success'">
+                      {{ soles(detail.economics.margin.margin) }}
+                      <span v-if="detail.economics.margin.pct != null">({{ detail.economics.margin.pct }} %)</span>
+                      <span v-if="detail.economics.margin.meetsFloor === false" class="text-caption">
+                        · bajo el piso ({{ detail.economics.margin.floorPct }} %)
+                      </span>
+                    </td>
+                  </tr>
+                </template>
               </tbody>
             </VTable>
           </VCardText>
@@ -326,11 +388,22 @@ const awarded = computed(() => detail.value?.state === 'awarded')
         <VCardText>
           <p class="text-body-2 text-medium-emphasis mb-3">
             Se crea la programación con <strong>{{ awardForm.offer?.carrierName }}</strong> por
-            <strong>{{ soles(awardForm.offer?.currentAmount) }}</strong> y el servicio queda tercerizado.
+            <strong>{{ soles(awardForm.offer?.currentAmount) }}</strong> (costo) y el servicio queda tercerizado.
           </p>
           <VSelect
-            v-if="awardVehicles.length" v-model="awardForm.vehicleId" label="Vehículo"
+            v-if="awardVehicles.length" v-model="awardForm.vehicleId" label="Vehículo" class="mb-3"
             :items="awardVehicles.map(v => ({ title: v.plate, value: v.id }))"
+          />
+          <VTextField
+            v-model="awardForm.clientPrice" label="Precio al cliente (S/)" type="number" density="compact"
+            hint="Es lo que factura la plataforma. En blanco = costo + markup de Configuración." persistent-hint
+          />
+          <p v-if="awardMargin" class="text-body-2 mt-2" :class="awardMargin.pct < 0 ? 'text-error' : 'text-success'">
+            Margen: {{ soles(awardMargin.amount) }} ({{ awardMargin.pct }} %)
+          </p>
+          <VCheckbox
+            v-model="awardForm.authorizeLowMargin" density="compact" hide-details
+            label="Autorizar aunque el margen esté bajo el piso"
           />
         </VCardText>
         <VCardActions>

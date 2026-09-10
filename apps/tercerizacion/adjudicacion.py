@@ -106,11 +106,21 @@ def registrar_oferta_desde_whatsapp(pub, cliente, monto, *, mensaje_whatsapp=Non
 
 
 @transaction.atomic
-def adjudicar_publicacion(pub, oferta, usuario, *, transportista_vehiculo=None):
+def adjudicar_publicacion(pub, oferta, usuario, *, transportista_vehiculo=None,
+                          precio_cliente=None, autoriza_bajo_margen=False):
     """Cierra la publicación a favor de una oferta: crea la ProgramacionServicio
-    tercerizada, rechaza las demás ofertas y cierra sus mesas de compra."""
+    tercerizada, rechaza las demás ofertas y cierra sus mesas de compra.
+
+    Además fija el precio de venta al cliente: si se pasa `precio_cliente` se
+    usa ese; si el servicio todavía no tiene precio, se calcula como
+    costo × (1 + markup de Configuración). Si el precio resultante no cubre el
+    piso de margen del negocio, aborta salvo `autoriza_bajo_margen=True`.
+    """
     from apps.campo.models import ProgramacionServicio
     from apps.servicios.models import Servicio
+    from apps.tercerizacion.services import (
+        evaluar_margen_tercerizacion, precio_cliente_sugerido,
+    )
 
     if pub.estado == PublicacionCarga.ESTADO_ADJUDICADA:
         raise AdjudicacionError("La publicación ya fue adjudicada.")
@@ -145,6 +155,28 @@ def adjudicar_publicacion(pub, oferta, usuario, *, transportista_vehiculo=None):
         raise AdjudicacionError(f"El servicio ya tiene una programación ({activa}).")
 
     monto = oferta.monto_actual or oferta.precio_ofertado or pub.precio_publicado or servicio.precio or 0
+
+    # Precio de venta al cliente = el que se pasa, o el que ya tenía el servicio,
+    # o costo + markup. Vigila el piso de margen del negocio.
+    from decimal import Decimal
+    nuevo_precio = None
+    if precio_cliente not in (None, ""):
+        nuevo_precio = Decimal(str(precio_cliente))
+    elif not servicio.precio:
+        nuevo_precio = precio_cliente_sugerido(monto)
+    precio_efectivo = nuevo_precio if nuevo_precio is not None else servicio.precio
+    if precio_efectivo and monto:
+        ev = evaluar_margen_tercerizacion(precio_efectivo, monto)
+        if ev["meetsFloor"] is False and not autoriza_bajo_margen:
+            raise AdjudicacionError(
+                f"El precio al cliente (S/ {precio_efectivo:g}) no cubre el margen "
+                f"mínimo sobre el costo del transportista (S/ {monto:g}). "
+                f"Ajustá el precio o autorizá el margen bajo."
+            )
+    if nuevo_precio is not None and nuevo_precio != servicio.precio:
+        servicio.precio = nuevo_precio
+        servicio.save(update_fields=["precio"])
+
     prog = ProgramacionServicio.objects.create(
         servicio=servicio, vehiculo=None,
         transportista=oferta.transportista, transportista_vehiculo=tv,

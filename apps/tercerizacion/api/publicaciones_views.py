@@ -114,6 +114,23 @@ def publication_detail(pub):
         "transportista", "transportista_vehiculo", "cliente",
     ).order_by("monto_actual", "creado_en")]
     out["winningOfferId"] = pub.oferta_ganadora_id
+
+    # Rentabilidad: costo (mejor oferta viva o la adjudicada) → precio al cliente.
+    from apps.tercerizacion.services import (
+        evaluar_margen_tercerizacion, precio_cliente_sugerido,
+    )
+    vivas = [o for o in pub.ofertas.all() if o.estado != "rechazada"]
+    if pub.oferta_ganadora_id:
+        best = pub.oferta_ganadora
+    else:
+        best = min(vivas, key=lambda o: o.monto_actual or o.precio_ofertado or 1e12, default=None)
+    best_cost = (best.monto_actual or best.precio_ofertado) if best else None
+    out["economics"] = {
+        "bestOfferCost": _num(best_cost),
+        "suggestedClientPrice": _num(precio_cliente_sugerido(best_cost)),
+        "currentClientPrice": _num(s.precio),
+        "margin": evaluar_margen_tercerizacion(s.precio, best_cost),
+    }
     return out
 
 
@@ -130,16 +147,21 @@ _PUB_QS = PublicacionCarga.objects.select_related(
 
 
 class OutsourcingSettingsView(_Base):
-    """GET/PATCH /api/v2/outsourcing/settings — política de derivación.
+    """GET/PATCH /api/v2/outsourcing/settings — política y rentabilidad de tercerización.
 
-        {"autoDeriveInterprovincial": bool}
+        {"autoDeriveInterprovincial": bool, "markupPercent": number}
 
-    Con el flag activo, una carga interprovincial con datos completos se publica
-    sola a los transportistas (precio abierto) sin pasar por el asesor.
+    `autoDeriveInterprovincial`: con el flag activo una carga interprovincial con
+    datos completos se publica sola a los transportistas (precio abierto).
+    `markupPercent`: recargo sobre el costo del transportista para fijar el
+    precio al cliente cuando la carga no tiene cotización propia.
     """
 
     def _payload(self, cfg):
-        return {"autoDeriveInterprovincial": cfg.derivar_interprovincial_auto}
+        return {
+            "autoDeriveInterprovincial": cfg.derivar_interprovincial_auto,
+            "markupPercent": float(cfg.markup_tercerizacion_porcentaje),
+        }
 
     def get(self, request):
         from apps.servicios.models import ConfiguracionOperaciones
@@ -148,9 +170,21 @@ class OutsourcingSettingsView(_Base):
     def patch(self, request):
         from apps.servicios.models import ConfiguracionOperaciones
         cfg = ConfiguracionOperaciones.get_solo()
+        campos = []
         if "autoDeriveInterprovincial" in request.data:
             cfg.derivar_interprovincial_auto = bool(request.data["autoDeriveInterprovincial"])
-            cfg.save(update_fields=["derivar_interprovincial_auto", "actualizado_en"])
+            campos.append("derivar_interprovincial_auto")
+        if "markupPercent" in request.data:
+            try:
+                pct = Decimal(str(request.data["markupPercent"]))
+            except (InvalidOperation, TypeError):
+                raise ValidationError({"markupPercent": "Porcentaje no válido."})
+            if not (Decimal(0) <= pct <= Decimal(200)):
+                raise ValidationError({"markupPercent": "Debe estar entre 0 y 200."})
+            cfg.markup_tercerizacion_porcentaje = pct
+            campos.append("markup_tercerizacion_porcentaje")
+        if campos:
+            cfg.save(update_fields=campos + ["actualizado_en"])
         return Response(self._payload(cfg))
 
 
@@ -224,8 +258,15 @@ class PublicationAwardView(_Base):
             vehiculo = get_object_or_404(
                 TransportistaVehiculo, pk=request.data["vehicleId"],
             )
+        client_price = request.data.get("clientPrice")
+        if client_price not in (None, ""):
+            client_price = _amount(client_price, "clientPrice")
         try:
-            prog = adj.adjudicar_publicacion(pub, oferta, request.user, transportista_vehiculo=vehiculo)
+            prog = adj.adjudicar_publicacion(
+                pub, oferta, request.user, transportista_vehiculo=vehiculo,
+                precio_cliente=client_price or None,
+                autoriza_bajo_margen=bool(request.data.get("authorizeLowMargin")),
+            )
         except adj.AdjudicacionError as e:
             raise ValidationError(str(e))
         return Response({
