@@ -2,4 +2,6 @@
 
 `AgenteConfig.ready()` importa este paquete al arrancar.
 """
-from . import carga, lectura, mensajeria, negociacion, operacion, precio, tercerizacion  # noqa: F401
+from . import (  # noqa: F401
+    carga, conocimiento, lectura, mensajeria, negociacion, operacion, precio, tercerizacion,
+)

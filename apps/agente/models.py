@@ -135,3 +135,50 @@ class PropuestaAccion(models.Model):
 
     def __str__(self):
         return f"{self.capacidad} · {self.estado}"
+
+
+class DocumentoConocimiento(models.Model):
+    """Conocimiento de la empresa y del rubro que el agente consulta con la
+    capacidad `consultar_conocimiento`. Lo mantiene el negocio (admin de Django
+    hoy, pantalla del CRM después), no requiere deploy."""
+
+    CAT_EMPRESA = "empresa"
+    CAT_SERVICIOS = "servicios"
+    CAT_LOGISTICA = "logistica"
+    CAT_PRECIOS = "precios"
+    CAT_POLITICAS = "politicas"
+    CAT_PROCEDIMIENTOS = "procedimientos"
+    CAT_GLOSARIO = "glosario"
+    CATEGORIAS = [
+        (CAT_EMPRESA, "Empresa"),
+        (CAT_SERVICIOS, "Servicios"),
+        (CAT_LOGISTICA, "Logística / operación"),
+        (CAT_PRECIOS, "Precios / cotización"),
+        (CAT_POLITICAS, "Políticas"),
+        (CAT_PROCEDIMIENTOS, "Procedimientos"),
+        (CAT_GLOSARIO, "Glosario del rubro"),
+    ]
+
+    VIS_PUBLICO = "publico"      # lo puede ver un cliente o transportista
+    VIS_INTERNO = "interno"      # solo asesor / sistema
+    VISIBILIDADES = [(VIS_PUBLICO, "Público"), (VIS_INTERNO, "Interno")]
+
+    titulo = models.CharField(max_length=160)
+    slug = models.SlugField(max_length=80, unique=True)
+    categoria = models.CharField(max_length=20, choices=CATEGORIAS, db_index=True)
+    contenido = models.TextField(help_text="Markdown.")
+    visibilidad = models.CharField(max_length=8, choices=VISIBILIDADES, default=VIS_INTERNO)
+    activo = models.BooleanField(default=True)
+    actualizado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+",
+    )
+    creado_en = models.DateTimeField(auto_now_add=True)
+    actualizado_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["categoria", "titulo"]
+        verbose_name = "Documento de conocimiento"
+        verbose_name_plural = "Conocimiento del agente"
+
+    def __str__(self):
+        return f"[{self.categoria}] {self.titulo}"

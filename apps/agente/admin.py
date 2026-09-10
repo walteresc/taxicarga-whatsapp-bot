@@ -1,6 +1,20 @@
 from django.contrib import admin
 
-from .models import AccionAgente, ConversacionAgente, PropuestaAccion, TurnoAgente
+from .models import (
+    AccionAgente, ConversacionAgente, DocumentoConocimiento, PropuestaAccion, TurnoAgente,
+)
+
+
+@admin.register(DocumentoConocimiento)
+class DocumentoConocimientoAdmin(admin.ModelAdmin):
+    list_display = ["titulo", "categoria", "visibilidad", "activo", "actualizado_en"]
+    list_filter = ["categoria", "visibilidad", "activo"]
+    search_fields = ["titulo", "contenido"]
+    prepopulated_fields = {"slug": ["titulo"]}
+
+    def save_model(self, request, obj, form, change):
+        obj.actualizado_por = request.user
+        super().save_model(request, obj, form, change)
 
 
 class TurnoInline(admin.TabularInline):
