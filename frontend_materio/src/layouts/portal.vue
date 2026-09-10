@@ -16,6 +16,7 @@ const CARRIER_NAV = [
   { title: 'Cargas disponibles', icon: 'ri-inbox-line', to: '/portal/cargas' },
   { title: 'Mis ofertas', icon: 'ri-price-tag-3-line', to: '/portal/ofertas' },
   { title: 'Mis asignaciones', icon: 'ri-calendar-check-line', to: '/portal/asignaciones' },
+  { title: 'Mis entregas', icon: 'ri-e-bike-2-line', to: '/portal/entregas' },
   { title: 'Mis cobros', icon: 'ri-wallet-3-line', to: '/portal/cobros' },
   { title: 'Negociaciones', icon: 'ri-discuss-line', to: '/portal/negociaciones' },
 ]

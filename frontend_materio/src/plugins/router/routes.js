@@ -193,6 +193,11 @@ export const routes = [
         component: () => import('@/pages/finanzas/liquidaciones/index.vue'),
         meta: { roles: ['Administrador', 'Gerencia', 'Finanzas', 'Despacho'] },
       },
+      {
+        path: 'encomiendas',
+        component: () => import('@/pages/encomiendas/index.vue'),
+        meta: { roles: ['Administrador', 'Gerencia', 'Supervisor', 'Despacho', 'Asesor de Ventas'] },
+      },
 
       {
         path: 'forbidden',
@@ -209,6 +214,7 @@ export const routes = [
       { path: 'ofertas', component: () => import('@/pages/portal/ofertas/index.vue'), meta: { portal: 'carrier' } },
       { path: 'asignaciones', component: () => import('@/pages/portal/asignaciones/index.vue'), meta: { portal: 'carrier' } },
       { path: 'cobros', component: () => import('@/pages/portal/cobros/index.vue'), meta: { portal: 'carrier' } },
+      { path: 'entregas', component: () => import('@/pages/portal/entregas/index.vue'), meta: { portal: 'carrier' } },
       { path: 'negociaciones', component: () => import('@/pages/portal/negociaciones/index.vue'), meta: { portal: 'carrier' } },
 
       { path: 'cliente', redirect: '/portal/cliente/mis-cargas' },
@@ -239,6 +245,11 @@ export const routes = [
       {
         path: 'pagar/:token',
         component: () => import('@/pages/pagar.vue'),
+        meta: { public: true },
+      },
+      {
+        path: 'seguimiento/:token',
+        component: () => import('@/pages/seguimiento.vue'),
         meta: { public: true },
       },
       {

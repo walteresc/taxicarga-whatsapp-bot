@@ -77,6 +77,7 @@ INSTALLED_APPS = [
     "apps.planilla",
     "apps.agente",
     "apps.pagos",
+    "apps.encomiendas",
 ]
 
 LOGIN_URL = "/dashboard/login/"
