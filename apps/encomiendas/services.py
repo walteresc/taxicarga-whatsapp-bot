@@ -15,6 +15,28 @@ from .models import (
 
 _Q = Decimal("0.01")
 
+_EVENTO_WEBHOOK = {
+    Envio.ESTADO_REGISTRADO: "shipment.created",
+    Envio.ESTADO_ASIGNADO: "shipment.assigned",
+    Envio.ESTADO_RECOGIDO: "shipment.picked_up",
+    Envio.ESTADO_EN_RUTA: "shipment.in_transit",
+    Envio.ESTADO_ENTREGADO: "shipment.delivered",
+    Envio.ESTADO_FALLIDO: "shipment.failed",
+    Envio.ESTADO_DEVUELTO: "shipment.returned",
+    Envio.ESTADO_CANCELADO: "shipment.cancelled",
+}
+
+
+def _webhook(envio, estado):
+    """Best-effort: nunca debe romper el flujo del envío."""
+    if not envio.socio_id:
+        return
+    try:
+        from apps.partners.services import notificar_envio
+        notificar_envio(envio, _EVENTO_WEBHOOK.get(estado, estado))
+    except Exception:  # noqa: BLE001
+        pass
+
 
 def _dec(v):
     if v in (None, ""):
@@ -83,6 +105,7 @@ def crear_envio(data, *, usuario=None):
 
     envio = Envio.objects.create(creado_por=usuario, **campos)
     _evento(envio, Envio.ESTADO_REGISTRADO, "Envío registrado.", usuario=usuario)
+    _webhook(envio, Envio.ESTADO_REGISTRADO)
     return envio
 
 
@@ -120,6 +143,7 @@ def asignar_envio(envio, transportista, *, vehiculo=None, usuario=None):
     envio.estado = Envio.ESTADO_ASIGNADO
     envio.save(update_fields=["transportista", "transportista_vehiculo", "estado", "actualizado_en"])
     _evento(envio, Envio.ESTADO_ASIGNADO, f"Asignado a {transportista.nombre}.", usuario=usuario)
+    _webhook(envio, Envio.ESTADO_ASIGNADO)
     return envio
 
 
@@ -184,6 +208,7 @@ def registrar_evento(envio, estado, *, descripcion="", ubicacion="", recibido_po
 
     _evento(envio, estado, descripcion or dict(Envio.ESTADOS)[estado],
             ubicacion=ubicacion, usuario=usuario)
+    _webhook(envio, estado)
 
     if estado in (Envio.ESTADO_ENTREGADO, Envio.ESTADO_FALLIDO) and envio.ruta_id:
         _cerrar_ruta_si_termino(envio.ruta)
@@ -197,6 +222,7 @@ def cancelar_envio(envio, *, motivo="", usuario=None):
     envio.estado = Envio.ESTADO_CANCELADO
     envio.save(update_fields=["estado", "actualizado_en"])
     _evento(envio, Envio.ESTADO_CANCELADO, motivo or "Cancelado.", usuario=usuario)
+    _webhook(envio, Envio.ESTADO_CANCELADO)
     return envio
 
 

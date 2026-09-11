@@ -169,6 +169,14 @@ class Envio(models.Model):
     nivel = models.CharField(max_length=10, choices=TarifaZona.NIVELES, default=NIVEL_EXPRESS)
     estado = models.CharField(max_length=12, choices=ESTADOS, default=ESTADO_REGISTRADO, db_index=True)
 
+    # -- Origen del pedido, si vino de la API de socios (P4) --
+    socio = models.ForeignKey(
+        "partners.SocioComercial", on_delete=models.SET_NULL, null=True, blank=True, related_name="envios",
+    )
+    external_ref = models.CharField(
+        max_length=120, blank=True, default="", help_text="ID del pedido en el sistema del socio.",
+    )
+
     # -- Remitente --
     remitente_nombre = models.CharField(max_length=160)
     remitente_telefono = models.CharField(max_length=30, blank=True, default="")

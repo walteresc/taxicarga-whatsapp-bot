@@ -78,6 +78,7 @@ INSTALLED_APPS = [
     "apps.agente",
     "apps.pagos",
     "apps.encomiendas",
+    "apps.partners",
 ]
 
 LOGIN_URL = "/dashboard/login/"

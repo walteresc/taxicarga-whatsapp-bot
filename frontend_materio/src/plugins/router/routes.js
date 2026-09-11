@@ -208,6 +208,11 @@ export const routes = [
         component: () => import('@/pages/encomiendas/rutas/index.vue'),
         meta: { roles: ['Administrador', 'Gerencia', 'Supervisor', 'Despacho'] },
       },
+      {
+        path: 'configuracion/socios',
+        component: () => import('@/pages/configuracion/socios/index.vue'),
+        meta: { roles: ['Administrador', 'Gerencia'] },
+      },
 
       {
         path: 'forbidden',
