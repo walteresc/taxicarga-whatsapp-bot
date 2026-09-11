@@ -29,7 +29,7 @@ from apps.api.exceptions import api_exception_handler
 from apps.api.pagination import StandardPagination
 from apps.api.permissions import HasAnyRole, IsCarrier, carrier_for
 from apps.encomiendas import services
-from apps.encomiendas.models import Envio, RendicionCaja, RutaReparto, TarifaZona, ZonaReparto
+from apps.encomiendas.models import Envio, RendicionCaja, RutaReparto, ZonaReparto
 from apps.tercerizacion.models import Transportista, TransportistaVehiculo
 
 _ROLES = ("Administrador", "Gerencia", "Supervisor", "Despacho", "Asesor de Ventas")
@@ -69,7 +69,8 @@ def detail(e):
         "sender": {"name": e.remitente_nombre, "phone": e.remitente_telefono,
                    "district": e.origen_distrito, "address": e.origen_direccion, "reference": e.origen_referencia},
         "recipientFull": {"name": e.destinatario_nombre, "phone": e.destinatario_telefono,
-                          "district": e.destino_distrito, "address": e.destino_direccion, "reference": e.destino_referencia},
+                          "district": e.destino_distrito, "address": e.destino_direccion, "reference": e.destino_referencia,
+                          "pickupPoint": e.punto_entrega_destino or None},
         "package": {"content": e.contenido, "weightKg": _num(e.peso_kg),
                     "lengthCm": e.largo_cm, "widthCm": e.ancho_cm, "heightCm": e.alto_cm,
                     "declaredValue": _num(e.valor_declarado)},
@@ -98,6 +99,7 @@ _FIELD_MAP = {
     "originDistrict": "origen_distrito", "originAddress": "origen_direccion", "originReference": "origen_referencia",
     "recipientName": "destinatario_nombre", "recipientPhone": "destinatario_telefono",
     "destDistrict": "destino_distrito", "destAddress": "destino_direccion", "destReference": "destino_referencia",
+    "destPickupPoint": "punto_entrega_destino",
     "content": "contenido", "weightKg": "peso_kg", "lengthCm": "largo_cm", "widthCm": "ancho_cm", "heightCm": "alto_cm",
     "declaredValue": "valor_declarado", "cod": "es_contraentrega", "codAmount": "monto_contraentrega",
     "notes": "notas", "price": "precio",
@@ -161,7 +163,7 @@ class ShipmentZonesView(_Base):
         return Response({
             "zones": [{"name": z.nombre, "districts": z.distritos}
                       for z in ZonaReparto.objects.filter(activo=True)],
-            "levels": [{"value": v, "label": lbl} for v, lbl in TarifaZona.NIVELES],
+            "levels": [{"value": v, "label": lbl} for v, lbl in Envio.NIVELES],
         })
 
 

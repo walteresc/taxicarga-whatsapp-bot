@@ -143,11 +143,20 @@ class RutaReparto(models.Model):
 class Envio(models.Model):
     NIVEL_EXPRESS = TarifaZona.NIVEL_EXPRESS
     NIVEL_STANDARD = TarifaZona.NIVEL_STANDARD
+    # Encomienda a otra ciudad (Fase 3, 2026-09): no usa ZonaReparto/TarifaZona
+    # (son solo Lima) — el precio sale de la misma tabla que la carga nacional
+    # parcial (`apps.tercerizacion.TarifaCargaParcial`, destino × peso), porque
+    # es el mismo tramo troncal consolidado. Ver `services.cotizar`.
+    NIVEL_INTERPROVINCIAL = "interprovincial"
+    NIVELES = TarifaZona.NIVELES + [(NIVEL_INTERPROVINCIAL, "Interprovincial (a otra ciudad)")]
 
     ESTADO_REGISTRADO = "registrado"
     ESTADO_ASIGNADO = "asignado"
     ESTADO_RECOGIDO = "recogido"
     ESTADO_EN_RUTA = "en_ruta"
+    # Solo interprovincial: el paquete llegó a la ciudad destino y espera en el
+    # punto de entrega (agencia/afiliado) — todavía no lo recibió el destinatario.
+    ESTADO_EN_DESTINO = "en_destino"
     ESTADO_ENTREGADO = "entregado"
     ESTADO_FALLIDO = "fallido"
     ESTADO_DEVUELTO = "devuelto"
@@ -157,16 +166,17 @@ class Envio(models.Model):
         (ESTADO_ASIGNADO, "Asignado"),
         (ESTADO_RECOGIDO, "Recogido"),
         (ESTADO_EN_RUTA, "En ruta"),
+        (ESTADO_EN_DESTINO, "Llegó a destino (punto de entrega)"),
         (ESTADO_ENTREGADO, "Entregado"),
         (ESTADO_FALLIDO, "No entregado"),
         (ESTADO_DEVUELTO, "Devuelto al remitente"),
         (ESTADO_CANCELADO, "Cancelado"),
     ]
-    ABIERTOS = (ESTADO_REGISTRADO, ESTADO_ASIGNADO, ESTADO_RECOGIDO, ESTADO_EN_RUTA)
+    ABIERTOS = (ESTADO_REGISTRADO, ESTADO_ASIGNADO, ESTADO_RECOGIDO, ESTADO_EN_RUTA, ESTADO_EN_DESTINO)
 
     codigo = models.CharField(max_length=16, unique=True, blank=True)
     token = models.CharField(max_length=32, unique=True, default=_token, editable=False)
-    nivel = models.CharField(max_length=10, choices=TarifaZona.NIVELES, default=NIVEL_EXPRESS)
+    nivel = models.CharField(max_length=16, choices=NIVELES, default=NIVEL_EXPRESS)
     estado = models.CharField(max_length=12, choices=ESTADOS, default=ESTADO_REGISTRADO, db_index=True)
 
     # -- Origen del pedido, si vino de la API de socios (P4) --
@@ -187,9 +197,16 @@ class Envio(models.Model):
     # -- Destinatario --
     destinatario_nombre = models.CharField(max_length=160)
     destinatario_telefono = models.CharField(max_length=30, blank=True, default="")
+    # Si nivel=interprovincial, este campo es la CIUDAD destino (p. ej.
+    # "Arequipa"), no un distrito de Lima — mismo campo, distinto significado
+    # según el nivel (así no duplicamos columnas para algo mutuamente excluyente).
     destino_distrito = models.CharField(max_length=120)
     destino_direccion = models.CharField(max_length=255)
     destino_referencia = models.CharField(max_length=255, blank=True, default="")
+    # Solo interprovincial, Fase A (asset-light): nombre/dirección del punto
+    # aliado en la ciudad destino donde el destinatario recoge el paquete —
+    # todavía no hacemos reparto a domicilio fuera de Lima.
+    punto_entrega_destino = models.CharField(max_length=255, blank=True, default="")
 
     # -- Paquete --
     contenido = models.CharField(max_length=255, blank=True, default="")

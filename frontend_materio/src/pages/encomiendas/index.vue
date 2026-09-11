@@ -12,6 +12,7 @@ const STATE = {
   asignado: { label: 'Asignado', color: 'info' },
   recogido: { label: 'Recogido', color: 'info' },
   en_ruta: { label: 'En ruta', color: 'warning' },
+  en_destino: { label: 'En destino (punto de entrega)', color: 'warning' },
   entregado: { label: 'Entregado', color: 'success' },
   fallido: { label: 'No entregado', color: 'error' },
   devuelto: { label: 'Devuelto', color: 'default' },
@@ -19,7 +20,10 @@ const STATE = {
 }
 const NEXT = {
   asignado: ['recogido'], recogido: ['en_ruta', 'entregado', 'fallido'],
-  en_ruta: ['entregado', 'fallido'], fallido: ['en_ruta', 'devuelto'],
+  // en_destino solo lo usan los envíos interprovinciales (llegó a la ciudad
+  // destino, espera en el punto de entrega antes de que el destinatario lo recoja).
+  en_ruta: ['en_destino', 'entregado', 'fallido'], en_destino: ['entregado', 'fallido'],
+  fallido: ['en_ruta', 'en_destino', 'devuelto'],
 }
 const soles = n => (n == null ? '—' : `S/ ${Number(n).toLocaleString('es-PE', { minimumFractionDigits: 2 })}`)
 const snackbar = reactive({ show: false, text: '', color: 'success' })
@@ -49,8 +53,9 @@ onMounted(async () => {
 const blank = () => ({
   senderName: '', senderPhone: '', originDistrict: '', originAddress: '', originReference: '',
   recipientName: '', recipientPhone: '', destDistrict: '', destAddress: '', destReference: '',
-  content: '', weightKg: 1, level: 'express', cod: false, codAmount: '',
+  destPickupPoint: '', content: '', weightKg: 1, level: 'express', cod: false, codAmount: '',
 })
+const etaLabel = q => (q.level === 'interprovincial' ? `${Math.round(q.etaHours / 24)} días` : `${q.etaHours} h`)
 const form = reactive({ open: false, ...blank(), quote: null })
 const openNew = () => { Object.assign(form, blank(), { open: true, quote: null }) }
 const doQuote = async () => {
@@ -175,6 +180,7 @@ const copyTrack = () => { try { navigator.clipboard?.writeText(trackUrl.value); 
               <tbody>
                 <tr><td>Recojo</td><td>{{ detail.sender.district }} · {{ detail.sender.address }}<br><span class="text-caption">{{ detail.sender.name }} {{ detail.sender.phone }}</span></td></tr>
                 <tr><td>Entrega</td><td>{{ detail.recipientFull.district }} · {{ detail.recipientFull.address }}<br><span class="text-caption">{{ detail.recipientFull.name }} {{ detail.recipientFull.phone }}</span></td></tr>
+                <tr v-if="detail.recipientFull.pickupPoint"><td>Punto de entrega</td><td>{{ detail.recipientFull.pickupPoint }}</td></tr>
                 <tr><td>Paquete</td><td>{{ detail.package.content || '—' }} · {{ detail.package.weightKg }} kg</td></tr>
                 <tr><td>Precio</td><td>{{ soles(detail.price) }}</td></tr>
                 <tr v-if="detail.cod">
@@ -250,10 +256,18 @@ const copyTrack = () => { try { navigator.clipboard?.writeText(trackUrl.value); 
           <VRow dense>
             <VCol cols="12" sm="6"><VTextField v-model="form.recipientName" label="Nombre *" density="compact" /></VCol>
             <VCol cols="12" sm="6"><VTextField v-model="form.recipientPhone" label="Teléfono" density="compact" /></VCol>
-            <VCol cols="12" sm="5"><VCombobox v-model="form.destDistrict" label="Distrito *" density="compact"
-              :items="zones.flatMap(z => z.districts)" @update:model-value="doQuote" /></VCol>
+            <VCol cols="12" sm="5"><VCombobox
+              v-model="form.destDistrict" :label="form.level === 'interprovincial' ? 'Ciudad *' : 'Distrito *'" density="compact"
+              :items="form.level === 'interprovincial' ? [] : zones.flatMap(z => z.districts)" @update:model-value="doQuote"
+            /></VCol>
             <VCol cols="12" sm="7"><VTextField v-model="form.destAddress" label="Dirección *" density="compact" /></VCol>
             <VCol cols="12"><VTextField v-model="form.destReference" label="Referencia" density="compact" /></VCol>
+            <VCol v-if="form.level === 'interprovincial'" cols="12">
+              <VTextField
+                v-model="form.destPickupPoint" label="Punto de entrega en destino (agencia/afiliado)"
+                density="compact" hint="Todavía no hacemos reparto a domicilio fuera de Lima." persistent-hint
+              />
+            </VCol>
           </VRow>
           <div class="text-overline mb-1 mt-2">Paquete</div>
           <VRow dense>
@@ -266,7 +280,7 @@ const copyTrack = () => { try { navigator.clipboard?.writeText(trackUrl.value); 
           </VRow>
           <VAlert v-if="form.quote" type="info" variant="tonal" density="compact" class="mt-3">
             {{ form.quote.zoneFrom }} → {{ form.quote.zoneTo }} · <strong>{{ soles(form.quote.price) }}</strong>
-            · llega en ~{{ form.quote.etaHours }} h
+            · llega en ~{{ etaLabel(form.quote) }}
           </VAlert>
         </VCardText>
         <VCardActions>

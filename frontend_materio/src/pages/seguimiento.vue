@@ -11,7 +11,7 @@ const error = ref('')
 
 const STATE = {
   registrado: 'default', asignado: 'info', recogido: 'info', en_ruta: 'warning',
-  entregado: 'success', fallido: 'error', devuelto: 'default', cancelado: 'default',
+  en_destino: 'warning', entregado: 'success', fallido: 'error', devuelto: 'default', cancelado: 'default',
 }
 
 onMounted(async () => {
@@ -36,6 +36,10 @@ onMounted(async () => {
             <VChip size="small" :color="STATE[data.state]">{{ data.stateLabel }}</VChip>
           </div>
           <div class="text-body-2 text-medium-emphasis mb-4">{{ data.route }} · para {{ data.recipient }}</div>
+
+          <VAlert v-if="data.state === 'en_destino' && data.pickupPoint" type="warning" variant="tonal" class="mb-4">
+            Tu paquete está en <strong>{{ data.pickupPoint }}</strong>, esperando que lo recojas.
+          </VAlert>
 
           <VAlert v-if="data.deliveredAt" type="success" variant="tonal" class="mb-4">
             Entregado{{ data.deliveredTo ? ` a ${data.deliveredTo}` : '' }} el

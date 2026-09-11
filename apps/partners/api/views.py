@@ -17,15 +17,15 @@ from rest_framework.views import APIView
 
 from apps.api.exceptions import api_exception_handler
 from apps.encomiendas import services
-from apps.encomiendas.models import Envio, TarifaZona, ZonaReparto
+from apps.encomiendas.models import Envio, ZonaReparto
 from apps.partners import services as partner_services
 
 from .authentication import ApiKeyAuthentication, HasApiKey
 
 _STATE_EN = {
     "registrado": "registered", "asignado": "assigned", "recogido": "picked_up",
-    "en_ruta": "in_transit", "entregado": "delivered", "fallido": "failed",
-    "devuelto": "returned", "cancelado": "cancelled",
+    "en_ruta": "in_transit", "en_destino": "arrived_at_destination", "entregado": "delivered",
+    "fallido": "failed", "devuelto": "returned", "cancelado": "cancelled",
 }
 
 
@@ -65,7 +65,7 @@ class CoverageView(_Base):
     def get(self, request):
         return Response({
             "zones": [{"name": z.nombre, "districts": z.distritos} for z in ZonaReparto.objects.filter(activo=True)],
-            "levels": [{"value": v, "label": lbl} for v, lbl in TarifaZona.NIVELES],
+            "levels": [{"value": v, "label": lbl} for v, lbl in Envio.NIVELES],
         })
 
 
@@ -89,6 +89,7 @@ _SHIPMENT_FIELDS = {
     "originDistrict": "origen_distrito", "originAddress": "origen_direccion", "originReference": "origen_referencia",
     "recipientName": "destinatario_nombre", "recipientPhone": "destinatario_telefono",
     "destDistrict": "destino_distrito", "destAddress": "destino_direccion", "destReference": "destino_referencia",
+    "destPickupPoint": "punto_entrega_destino",
     "content": "contenido", "weightKg": "peso_kg", "lengthCm": "largo_cm", "widthCm": "ancho_cm", "heightCm": "alto_cm",
     "declaredValue": "valor_declarado", "cod": "es_contraentrega", "codAmount": "monto_contraentrega",
     "level": "nivel", "externalRef": "external_ref",

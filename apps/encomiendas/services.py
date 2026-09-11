@@ -20,6 +20,7 @@ _EVENTO_WEBHOOK = {
     Envio.ESTADO_ASIGNADO: "shipment.assigned",
     Envio.ESTADO_RECOGIDO: "shipment.picked_up",
     Envio.ESTADO_EN_RUTA: "shipment.in_transit",
+    Envio.ESTADO_EN_DESTINO: "shipment.arrived_at_destination",
     Envio.ESTADO_ENTREGADO: "shipment.delivered",
     Envio.ESTADO_FALLIDO: "shipment.failed",
     Envio.ESTADO_DEVUELTO: "shipment.returned",
@@ -51,6 +52,9 @@ def _dec(v):
 def cotizar(*, origen_distrito, destino_distrito, nivel=Envio.NIVEL_EXPRESS, peso_kg=1):
     """Devuelve {'price', 'level', 'etaHours', 'zoneFrom', 'zoneTo'} o lanza
     ValidationError si no hay cobertura / tarifa."""
+    if nivel == Envio.NIVEL_INTERPROVINCIAL:
+        return _cotizar_interprovincial(destino_distrito, peso_kg)
+
     zo = ZonaReparto.para_distrito(origen_distrito)
     zd = ZonaReparto.para_distrito(destino_distrito)
     if not zo:
@@ -73,6 +77,24 @@ def cotizar(*, origen_distrito, destino_distrito, nivel=Envio.NIVEL_EXPRESS, pes
         "etaHours": tarifa.eta_horas,
         "zoneFrom": zo.nombre,
         "zoneTo": zd.nombre,
+    }
+
+
+def _cotizar_interprovincial(ciudad_destino, peso_kg):
+    """Reusa la tabla de carga nacional parcial/consolidada (Fase 2): el
+    paquete viaja consolidado en el mismo camión que esa carga, así que es el
+    mismo precio por destino × peso."""
+    from apps.tercerizacion.services import resolver_tarifa_parcial
+
+    tarifa = resolver_tarifa_parcial(ciudad_destino, peso_kg)
+    if not tarifa:
+        raise ValidationError({"destino": f"No hay tarifa configurada para envíos a {ciudad_destino}."})
+    return {
+        "price": float(tarifa["precio"]),
+        "level": Envio.NIVEL_INTERPROVINCIAL,
+        "etaHours": tarifa["dias_estimados"] * 24,
+        "zoneFrom": "Lima",
+        "zoneTo": ciudad_destino,
     }
 
 
@@ -117,8 +139,12 @@ _TRANSICIONES = {
     Envio.ESTADO_REGISTRADO: {Envio.ESTADO_ASIGNADO, Envio.ESTADO_CANCELADO},
     Envio.ESTADO_ASIGNADO: {Envio.ESTADO_RECOGIDO, Envio.ESTADO_EN_RUTA, Envio.ESTADO_REGISTRADO, Envio.ESTADO_CANCELADO},
     Envio.ESTADO_RECOGIDO: {Envio.ESTADO_EN_RUTA, Envio.ESTADO_ENTREGADO, Envio.ESTADO_FALLIDO},
-    Envio.ESTADO_EN_RUTA: {Envio.ESTADO_ENTREGADO, Envio.ESTADO_FALLIDO, Envio.ESTADO_DEVUELTO},
-    Envio.ESTADO_FALLIDO: {Envio.ESTADO_EN_RUTA, Envio.ESTADO_DEVUELTO},
+    # EN_DESTINO solo lo usan los envíos interprovinciales (Fase 3): llegó a la
+    # ciudad destino y espera en el punto de entrega. Los envíos locales pasan
+    # de EN_RUTA directo a ENTREGADO/FALLIDO/DEVUELTO como siempre.
+    Envio.ESTADO_EN_RUTA: {Envio.ESTADO_EN_DESTINO, Envio.ESTADO_ENTREGADO, Envio.ESTADO_FALLIDO, Envio.ESTADO_DEVUELTO},
+    Envio.ESTADO_EN_DESTINO: {Envio.ESTADO_ENTREGADO, Envio.ESTADO_FALLIDO, Envio.ESTADO_DEVUELTO},
+    Envio.ESTADO_FALLIDO: {Envio.ESTADO_EN_RUTA, Envio.ESTADO_EN_DESTINO, Envio.ESTADO_DEVUELTO},
     Envio.ESTADO_ENTREGADO: set(),
     Envio.ESTADO_DEVUELTO: set(),
     Envio.ESTADO_CANCELADO: set(),
@@ -401,6 +427,7 @@ def tracking_publico(envio):
         "level": envio.nivel,
         "route": f"{envio.origen_distrito} → {envio.destino_distrito}",
         "recipient": envio.destinatario_nombre,
+        "pickupPoint": envio.punto_entrega_destino or None,
         "deliveredTo": envio.recibido_por or None,
         "deliveredAt": envio.entregado_en.isoformat() if envio.entregado_en else None,
         "events": [
