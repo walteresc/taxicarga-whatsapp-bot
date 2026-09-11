@@ -115,6 +115,10 @@ const handleLogin = async () => {
             ¿Sos cliente nuevo?
             <RouterLink to="/cotizar">Cotizá tu carga sin registrarte</RouterLink>
           </div>
+          <div class="text-center text-body-2 mt-1">
+            ¿Ya tenés una carga o envío?
+            <RouterLink to="/rastrear">Rastrealo con tu código</RouterLink>
+          </div>
         </VCardText>
       </VCard>
     </div>

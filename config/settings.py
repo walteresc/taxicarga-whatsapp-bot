@@ -160,6 +160,9 @@ REST_FRAMEWORK = {
         "guest_quote": config("GUEST_QUOTE_RATE", default="20/hour"),
         "guest_signup": config("GUEST_SIGNUP_RATE", default="15/hour"),
         "agent_ask": config("AGENT_ASK_RATE", default="30/hour"),
+        # Público, código (secuencial, adivinable) + teléfono — limitar fuerte
+        # por IP para que no sirva de vector de enumeración.
+        "tracking_lookup": config("TRACKING_LOOKUP_RATE", default="20/hour"),
     },
 }
 

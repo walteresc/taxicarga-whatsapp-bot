@@ -28,7 +28,10 @@ onMounted(async () => {
         <div class="text-body-2 text-medium-emphasis mb-4">Seguimiento de envío</div>
 
         <VProgressLinear v-if="loading" indeterminate />
-        <VAlert v-else-if="error" type="error" variant="tonal">{{ error }}</VAlert>
+        <template v-else-if="error">
+          <VAlert type="error" variant="tonal" class="mb-3">{{ error }}</VAlert>
+          <VBtn variant="text" block to="/rastrear">Rastrear con código y teléfono</VBtn>
+        </template>
 
         <template v-else-if="data">
           <div class="d-flex align-center ga-2 mb-1">

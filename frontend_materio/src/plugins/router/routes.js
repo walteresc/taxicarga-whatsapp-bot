@@ -268,6 +268,11 @@ export const routes = [
         meta: { public: true },
       },
       {
+        path: 'rastrear',
+        component: () => import('@/pages/rastrear.vue'),
+        meta: { public: true },
+      },
+      {
         path: '/:pathMatch(.*)*',
         component: () => import('@/pages/[...error].vue'),
       },

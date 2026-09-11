@@ -186,6 +186,46 @@ def cancelar_servicio(servicio, actor, motivo):
     return servicio
 
 
+def tracking_publico(servicio):
+    """Seguimiento de una carga (mudanza/carga general) para el formulario
+    público de rastreo (código + teléfono) — sin datos sensibles del cliente
+    ni de la otra parte, mismo criterio que `apps.encomiendas.services.tracking_publico`.
+    """
+    from apps.campo.models import ProgramacionServicio
+
+    prog = (
+        servicio.programaciones.exclude(estado_operativo=ProgramacionServicio.ESTADO_CANCELADO)
+        .select_related("conductor", "transportista", "transportista_vehiculo", "vehiculo").first()
+    )
+    carrier = None
+    if prog:
+        if prog.transportista_vehiculo_id:
+            carrier = {
+                "kind": "carrier",
+                "name": prog.transportista.nombre if prog.transportista_id else "Transportista",
+                "plate": prog.transportista_vehiculo.placa,
+                "driver": prog.conductor_externo or None,
+            }
+        elif prog.vehiculo_id:
+            carrier = {
+                "kind": "own",
+                "name": "Equipo Lima Express",
+                "plate": prog.vehiculo.placa,
+                "driver": prog.conductor.nombre if prog.conductor_id else None,
+            }
+    state = prog.estado_operativo if prog else "pendiente"
+    labels = dict(ProgramacionServicio.ESTADOS_OPERATIVOS)
+    return {
+        "code": servicio.codigo,
+        "route": f"{servicio.distrito_origen or '?'} → {servicio.distrito_destino or '?'}",
+        "state": state,
+        "stateLabel": labels.get(state, "Pendiente de asignación"),
+        "date": servicio.fecha_servicio.isoformat() if servicio.fecha_servicio else None,
+        "schedule": servicio.horario_servicio or None,
+        "assignee": carrier,
+    }
+
+
 def bookings_queryset(params):
     from apps.api.filters import apply_ordering, apply_search
 

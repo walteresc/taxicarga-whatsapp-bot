@@ -13,7 +13,7 @@ INDEX_HTML = STATIC_BUILD_PATH / 'index.html'
 
 # Rutas del SPA que se sirven SIN sesión: acceso, alta de invitado, cotización
 # rápida y el checkout de pago por link. Todo lo demás exige usuario autenticado.
-SPA_PUBLIC_PATHS = {'/login', '/register', '/forgot-password', '/cotizar'}
+SPA_PUBLIC_PATHS = {'/login', '/register', '/forgot-password', '/cotizar', '/rastrear'}
 SPA_PUBLIC_PREFIXES = ('/pagar/', '/seguimiento/')
 
 # Rutas que NO deben ser manejadas por SPA fallback
