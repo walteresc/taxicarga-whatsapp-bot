@@ -24,24 +24,31 @@ onMounted(async () => {
 <template>
   <div>
     <h1 class="text-h5 font-weight-bold mb-4">Mis ofertas</h1>
-    <VCard>
-      <VTable>
-        <thead>
-          <tr><th>Carga</th><th>Ruta</th><th>Fecha</th><th class="text-right">Primera</th><th class="text-right">Actual</th><th>Estado</th></tr>
-        </thead>
-        <tbody>
-          <tr v-if="loading"><td colspan="6" class="text-center py-8"><VProgressCircular indeterminate /></td></tr>
-          <tr v-else-if="!rows.length"><td colspan="6" class="text-center text-medium-emphasis py-10">Todavía no ofertaste nada.</td></tr>
-          <tr v-for="o in rows" v-else :key="o.id">
-            <td class="font-weight-medium">{{ o.publicationCode }}</td>
-            <td>{{ o.origin }} → {{ o.destination }}</td>
-            <td>{{ o.date ? new Date(o.date).toLocaleDateString('es-PE') : '—' }}</td>
-            <td class="text-right">{{ soles(o.firstAmount) }}</td>
-            <td class="text-right font-weight-medium">{{ soles(o.currentAmount) }}</td>
-            <td><VChip size="small" :color="STATE[o.state]?.color">{{ STATE[o.state]?.label || o.state }}</VChip></td>
-          </tr>
-        </tbody>
-      </VTable>
-    </VCard>
+
+    <VProgressLinear v-if="loading" indeterminate />
+    <div v-else-if="!rows.length" class="text-center text-medium-emphasis py-10 text-body-2">
+      Todavía no ofertaste nada.
+    </div>
+
+    <VRow v-else>
+      <VCol v-for="o in rows" :key="o.id" cols="12" md="6">
+        <VCard>
+          <VCardText>
+            <div class="d-flex align-center ga-2 mb-2">
+              <span class="text-subtitle-1 font-weight-bold">{{ o.publicationCode }}</span>
+              <VChip size="x-small" :color="STATE[o.state]?.color">{{ STATE[o.state]?.label || o.state }}</VChip>
+            </div>
+            <div class="text-body-2 mb-1">
+              <VIcon icon="ri-map-pin-line" size="14" /> {{ o.origin }} → {{ o.destination }}
+              <span v-if="o.date"> · {{ new Date(o.date).toLocaleDateString('es-PE') }}</span>
+            </div>
+            <div class="d-flex align-center ga-4 mt-2">
+              <span class="text-body-2 text-medium-emphasis">Primera oferta: {{ soles(o.firstAmount) }}</span>
+              <span class="text-body-1 font-weight-bold">{{ soles(o.currentAmount) }}</span>
+            </div>
+          </VCardText>
+        </VCard>
+      </VCol>
+    </VRow>
   </div>
 </template>

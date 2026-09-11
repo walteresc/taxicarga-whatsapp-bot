@@ -144,12 +144,12 @@ const submitFail = async () => {
         <!-- PARADA ACTUAL -->
         <VCard v-if="current" class="mb-4" elevation="4">
           <VCardText>
-            <div class="d-flex align-center ga-2 mb-2">
+            <div class="d-flex align-center ga-2 mb-2 flex-wrap">
               <VChip color="primary" size="small">Parada {{ current.order }} de {{ route.total }}</VChip>
               <VChip v-if="current.cod" color="warning" size="small">Cobrar {{ soles(current.codAmount) }}</VChip>
               <VChip v-if="current.attempts" color="error" size="small" variant="tonal">Intento {{ current.attempts + 1 }}</VChip>
             </div>
-            <div class="text-h6 font-weight-bold">{{ current.dropoff.address }}</div>
+            <div class="text-h6 font-weight-bold" style="overflow-wrap: break-word;">{{ current.dropoff.address }}</div>
             <div class="text-body-1">{{ current.dropoff.district }}</div>
             <div v-if="current.dropoff.reference" class="text-body-2 text-medium-emphasis mt-1">
               Ref: {{ current.dropoff.reference }}
@@ -158,7 +158,7 @@ const submitFail = async () => {
               {{ current.dropoff.contact }} · {{ current.package }}<span v-if="current.weightKg"> · {{ current.weightKg }} kg</span>
             </div>
 
-            <div class="d-flex ga-2 mt-3">
+            <div class="d-flex ga-2 mt-3 flex-wrap">
               <VBtn :href="mapUrl(current)" target="_blank" variant="tonal" size="small" prepend-icon="ri-map-pin-line">Mapa</VBtn>
               <VBtn :href="tel(current.dropoff.phone)" variant="tonal" size="small" prepend-icon="ri-phone-line">Llamar</VBtn>
               <VBtn :href="wa(current.dropoff.phone)" target="_blank" variant="tonal" size="small" prepend-icon="ri-whatsapp-line">WhatsApp</VBtn>

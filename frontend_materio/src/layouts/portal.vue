@@ -1,16 +1,19 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
+import { useDisplay } from 'vuetify'
 import { useRouter } from 'vue-router'
 
 import AgentChat from '@/components/AgentChat.vue'
 import { authService } from '@/services/authService'
 import { useAuthStore } from '@/stores/authStore'
 
-import { computed } from 'vue'
-
 const auth = useAuthStore()
 const router = useRouter()
-const drawer = ref(true)
+const { mdAndUp } = useDisplay()
+// Abierto por defecto en desktop; en el celular (la mayoría de transportistas)
+// arranca cerrado para no tapar la pantalla — el ícono del AppBar lo abre.
+const drawer = ref(mdAndUp.value)
+const closeOnMobileNav = () => { if (!mdAndUp.value) drawer.value = false }
 
 const CARRIER_NAV = [
   { title: 'Cargas disponibles', icon: 'ri-inbox-line', to: '/portal/cargas' },
@@ -36,7 +39,7 @@ const logout = async () => {
 
 <template>
   <VApp>
-    <VNavigationDrawer v-model="drawer" :width="248">
+    <VNavigationDrawer v-model="drawer" :width="248" :temporary="!mdAndUp">
       <div class="pa-4">
         <div class="text-h6 font-weight-bold">{{ heading }}</div>
         <div class="text-caption text-medium-emphasis">
@@ -47,7 +50,7 @@ const logout = async () => {
       <VList nav density="comfortable">
         <VListItem
           v-for="item in NAV" :key="item.to" :to="item.to"
-          :prepend-icon="item.icon" :title="item.title"
+          :prepend-icon="item.icon" :title="item.title" @click="closeOnMobileNav"
         />
       </VList>
       <template #append>
@@ -59,11 +62,11 @@ const logout = async () => {
 
     <VAppBar flat border density="comfortable">
       <VAppBarNavIcon @click="drawer = !drawer" />
-      <VAppBarTitle>Lima Express · Transportistas</VAppBarTitle>
+      <VAppBarTitle>Lima Express · {{ auth.isCustomer ? 'Clientes' : 'Transportistas' }}</VAppBarTitle>
     </VAppBar>
 
     <VMain>
-      <VContainer fluid class="pa-4 pa-md-6" style="max-width: 1200px;">
+      <VContainer fluid class="pa-3 pa-md-6" style="max-width: 1200px;">
         <RouterView />
       </VContainer>
     </VMain>

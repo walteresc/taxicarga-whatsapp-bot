@@ -67,29 +67,24 @@ onMounted(async () => {
         </VCardText></VCard></VCol>
       </VRow>
 
-      <VCard>
-        <div v-if="!rows.length" class="text-center text-medium-emphasis py-10 text-body-2">
-          Todavía no tenés cobros registrados.
-        </div>
-        <VTable v-else density="comfortable">
-          <thead>
-            <tr><th>Servicio</th><th>Fecha</th><th class="text-right">Monto</th><th>Estado</th><th>Referencia</th></tr>
-          </thead>
-          <tbody>
-            <tr v-for="r in rows" :key="r.id">
-              <td>
-                <div class="font-weight-medium">{{ r.serviceCode }}</div>
-                <div class="text-caption text-medium-emphasis">{{ r.route }}</div>
-              </td>
-              <td>{{ r.date ? new Date(r.date).toLocaleDateString('es-PE') : '—' }}</td>
-              <td class="text-right font-weight-medium" :class="r.youOwe ? 'text-error' : 'text-success'">
-                {{ r.youOwe ? '-' : '' }}{{ soles(r.amount) }}
-              </td>
-              <td><VChip size="small" :color="STATE[r.state]?.color">{{ STATE[r.state]?.label }}</VChip></td>
-              <td class="text-caption">{{ r.paymentRef || '—' }}</td>
-            </tr>
-          </tbody>
-        </VTable>
+      <div v-if="!rows.length" class="text-center text-medium-emphasis py-10 text-body-2">
+        Todavía no tenés cobros registrados.
+      </div>
+      <VCard v-for="r in rows" v-else :key="r.id" class="mb-2">
+        <VCardText class="d-flex align-center flex-wrap ga-2">
+          <div class="flex-grow-1" style="min-width: 0;">
+            <div class="font-weight-medium">{{ r.serviceCode }}</div>
+            <div class="text-caption text-medium-emphasis">
+              {{ r.route }}
+              <span v-if="r.date"> · {{ new Date(r.date).toLocaleDateString('es-PE') }}</span>
+              <span v-if="r.paymentRef"> · {{ r.paymentRef }}</span>
+            </div>
+          </div>
+          <VChip size="small" :color="STATE[r.state]?.color">{{ STATE[r.state]?.label }}</VChip>
+          <span class="text-body-1 font-weight-bold" :class="r.youOwe ? 'text-error' : 'text-success'">
+            {{ r.youOwe ? '-' : '' }}{{ soles(r.amount) }}
+          </span>
+        </VCardText>
       </VCard>
 
       <VCard class="mt-4">
