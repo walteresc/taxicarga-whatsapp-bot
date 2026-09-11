@@ -31,6 +31,7 @@ const form = reactive({
   date: '',
   schedule: '',
   quoteMode: 'por_carga',
+  loadMode: 'completa',   // completa|parcial — solo importa si la ruta es nacional
 })
 
 const submitting = ref(false)
@@ -87,6 +88,16 @@ const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE
               <VTextarea v-model="form.cargo.detail" label="Detalle (opcional)" rows="2" auto-grow />
             </template>
 
+            <template v-if="form.origin.district && form.destination.district">
+              <div class="text-caption text-medium-emphasis mb-1 mt-2">
+                Si tu carga es a otra ciudad, elegí cómo la enviamos (si es dentro de Lima, no aplica):
+              </div>
+              <VBtnToggle v-model="form.loadMode" mandatory density="comfortable" class="mb-2" divided>
+                <VBtn value="completa" size="small">Completa (camión dedicado, más rápido)</VBtn>
+                <VBtn value="parcial" size="small">Parcial (comparte camión, más económico)</VBtn>
+              </VBtnToggle>
+            </template>
+
             <VDivider class="my-3" />
             <div class="d-flex ga-2">
               <VTextField v-model="form.date" label="Fecha" type="date" />
@@ -109,6 +120,9 @@ const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE
               <div class="text-h6">Carga {{ result.code }} publicada</div>
               <div v-if="soles(result.price?.amount)" class="text-h5 font-weight-bold my-2">{{ soles(result.price.amount) }}</div>
               <div v-else class="text-body-2 text-medium-emphasis my-2">Un asesor te confirmará el precio pronto.</div>
+              <div v-if="result.price?.daysEstimated" class="text-caption text-medium-emphasis">
+                Llega en {{ result.price.daysEstimated }} días hábiles aprox.
+              </div>
               <VBtn color="primary" class="mt-2" @click="router.push(`/portal/cliente/carga/${result.code}`)">Ver carga</VBtn>
             </div>
           </template>

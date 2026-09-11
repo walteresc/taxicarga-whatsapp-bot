@@ -81,6 +81,12 @@ class Cotizacion(models.Model):
     )
     modo = models.CharField(max_length=12, choices=MODOS, default=MODO_AUTOMATICO)
     explicacion = models.TextField(blank=True)
+    dias_estimados = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+        help_text="Tiempo de entrega estimado (días hábiles). Lo usa la carga nacional "
+                  "parcial/consolidada, donde el plazo depende de cuándo el transportista "
+                  "completa su camión. Vacío = no aplica (carga local o completa).",
+    )
     fecha_creacion = models.DateTimeField(auto_now_add=True)
 
     class Meta:

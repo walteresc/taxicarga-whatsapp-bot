@@ -641,6 +641,66 @@ class TramoComision(models.Model):
         return f"[{cat}] S/ {self.monto_desde:g}–{tope}: {self.porcentaje:g}%"
 
 
+class TarifaCargaParcial(models.Model):
+    """Tarifa de carga nacional **parcial/consolidada** (LTL): el transportista
+    completa su camión con la carga de nuestro cliente + la suya propia u otros
+    clientes, así que cobramos solo por lo que el cliente manda (peso) y no por
+    el camión entero — más económico, pero el plazo de entrega es mayor porque
+    depende de cuándo el transportista termina de llenar el camión.
+
+    No modelamos la consolidación en sí (es negocio del transportista); solo
+    cotizamos: dado un destino y un peso, ¿cuánto cobramos y en cuántos días
+    estimamos que llega?
+
+    Resolución (`resolver_tarifa_parcial`): tramo *activo* cuyo `destino` matchea
+    (o el general, destino="") y cuyo rango de peso [peso_desde, peso_hasta)
+    contiene el peso de la carga. Si no hay ninguno → cotización manual
+    (requiere_asesor), igual que cualquier otro hueco de la tabla.
+    """
+
+    DESTINO_GENERAL = ""
+
+    destino = models.CharField(
+        max_length=120, blank=True, default="",
+        help_text="Ciudad o región de destino (p. ej. 'Arequipa'). Vacío = tarifa "
+                  "general (aplica a cualquier destino sin tabla propia).",
+    )
+    peso_desde_kg = models.DecimalField(
+        max_digits=8, decimal_places=2, default=0,
+        help_text="Peso de la carga desde el cual aplica este tramo (inclusive), en kg.",
+    )
+    peso_hasta_kg = models.DecimalField(
+        max_digits=8, decimal_places=2, null=True, blank=True,
+        help_text="Hasta (exclusivo), en kg. Vacío = sin tope (de este peso para arriba).",
+    )
+    precio_por_kg = models.DecimalField(
+        max_digits=8, decimal_places=2,
+        help_text="Precio al cliente por kg dentro de este tramo (soles).",
+    )
+    monto_minimo = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0,
+        help_text="Precio mínimo a cobrar en este tramo, aunque el peso × precio_por_kg "
+                  "sea menor (piso para cargas chicas).",
+    )
+    dias_estimados = models.PositiveSmallIntegerField(
+        default=5,
+        help_text="Plazo de entrega estimado (días hábiles) para este tramo.",
+    )
+    activo = models.BooleanField(default=True)
+    creado_en = models.DateTimeField(auto_now_add=True)
+    actualizado_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Tarifa de carga parcial"
+        verbose_name_plural = "Tabla de tarifas de carga parcial"
+        ordering = ["destino", "peso_desde_kg"]
+
+    def __str__(self):
+        dest = self.destino or "general"
+        tope = f"{self.peso_hasta_kg:g}" if self.peso_hasta_kg is not None else "∞"
+        return f"[{dest}] {self.peso_desde_kg:g}–{tope} kg: S/ {self.precio_por_kg:g}/kg"
+
+
 class Liquidacion(models.Model):
     """Cuenta de un servicio tercerizado: qué cobró (o cobrará) el cliente, qué
     se pactó con el transportista, y el **neto** entre la plataforma y el

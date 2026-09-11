@@ -169,6 +169,37 @@ def precio_cliente_sugerido(costo, categoria="", *, markup_pct=None):
     return precio
 
 
+def resolver_tarifa_parcial(destino, peso_kg):
+    """Busca en `TarifaCargaParcial` el tramo activo para `destino` (o el
+    general) cuyo rango de peso contiene `peso_kg`. Devuelve
+    `{precio, dias_estimados}` o None si no hay tramo que cubra ese
+    destino/peso (→ el llamador debe derivar a un asesor, misma salvaguarda
+    de siempre)."""
+    from apps.tercerizacion.models import TarifaCargaParcial
+
+    peso = _dec(peso_kg)
+    if peso is None or peso <= 0:
+        return None
+    destino_norm = (destino or "").strip().lower()
+    activos = list(TarifaCargaParcial.objects.filter(activo=True))
+
+    for candidato in (destino_norm, TarifaCargaParcial.DESTINO_GENERAL) if destino_norm else (TarifaCargaParcial.DESTINO_GENERAL,):
+        tramos = sorted(
+            (t for t in activos if t.destino.strip().lower() == candidato),
+            key=lambda t: t.peso_desde_kg,
+        )
+        for t in tramos:
+            if peso >= t.peso_desde_kg and (t.peso_hasta_kg is None or peso < t.peso_hasta_kg):
+                precio = max(_dec(t.monto_minimo), (_dec(t.precio_por_kg) * peso).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+                return {"precio": precio, "dias_estimados": t.dias_estimados}
+        if tramos:  # hay tabla para este destino pero el peso excede todos los tramos → el último (sin tope)
+            ultimo = tramos[-1]
+            if ultimo.peso_hasta_kg is None:
+                precio = max(_dec(ultimo.monto_minimo), (_dec(ultimo.precio_por_kg) * peso).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+                return {"precio": precio, "dias_estimados": ultimo.dias_estimados}
+    return None
+
+
 def desglose_comision(precio_servicio, costo=None, categoria=""):
     """{'servicePrice','commissionPct','commission','carrierPayout','cost'} —
     cómo se reparte el precio del servicio: comisión de la plataforma y lo que

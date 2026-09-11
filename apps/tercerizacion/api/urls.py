@@ -24,6 +24,8 @@ urlpatterns = router.urls + [
     path("outsourcing/settings", pubv.OutsourcingSettingsView.as_view(), name="v2-outsourcing-settings"),
     path("outsourcing/commission-tiers", pubv.CommissionTiersView.as_view(), name="v2-commission-tiers"),
     path("outsourcing/commission-tiers/<int:pk>", pubv.CommissionTierDetailView.as_view(), name="v2-commission-tier-detail"),
+    path("outsourcing/partial-tariffs", pubv.PartialCargoTariffsView.as_view(), name="v2-partial-tariffs"),
+    path("outsourcing/partial-tariffs/<int:pk>", pubv.PartialCargoTariffDetailView.as_view(), name="v2-partial-tariff-detail"),
 
     path("settlements/", liqv.SettlementListView.as_view(), name="v2-settlement-list"),
     path("settlements/summary", liqv.SettlementSummaryView.as_view(), name="v2-settlement-summary"),

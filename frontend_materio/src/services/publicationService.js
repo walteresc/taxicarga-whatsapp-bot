@@ -20,3 +20,10 @@ export const commissionTiers = () => apiClient.get(CT)
 export const commissionTierCreate = body => apiClient.post(CT, body)
 export const commissionTierUpdate = (id, body) => apiClient.patch(`${CT}/${id}`, body)
 export const commissionTierDelete = id => apiClient.delete(`${CT}/${id}`)
+
+// Tabla de tarifas de carga nacional parcial/consolidada (peso × destino).
+const PT = '/api/v2/outsourcing/partial-tariffs'
+export const partialTariffs = () => apiClient.get(PT)
+export const partialTariffCreate = body => apiClient.post(PT, body)
+export const partialTariffUpdate = (id, body) => apiClient.patch(`${PT}/${id}`, body)
+export const partialTariffDelete = id => apiClient.delete(`${PT}/${id}`)

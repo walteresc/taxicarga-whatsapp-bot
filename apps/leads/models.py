@@ -38,6 +38,16 @@ class Lead(models.Model):
         (MODO_COT_POR_VEHICULO, "Por vehículo"),
     ]
 
+    # Solo aplica a carga nacional (es_interprovincial=True). "Completa" = un
+    # camión dedicado (lo que ya existía). "Parcial" = el transportista comparte
+    # el camión con otra carga suya — más económico, más lento (consolidada/LTL).
+    MODO_CARGA_COMPLETA = "completa"
+    MODO_CARGA_PARCIAL = "parcial"
+    MODOS_CARGA = [
+        (MODO_CARGA_COMPLETA, "Completa (camión dedicado)"),
+        (MODO_CARGA_PARCIAL, "Parcial (consolidada con otra carga del transportista)"),
+    ]
+
     CATEGORIAS_CARGA = [
         ("mudanza", "Mudanza, muebles y electrodomésticos"),
         ("cajas", "Cajas, paquetes y bultos"),
@@ -203,6 +213,11 @@ class Lead(models.Model):
         default=False,
         help_text="Ruta fuera de Lima Metropolitana (interprovincial o de provincia). "
                   "La marca la extracción NLU; el cotizador automático no cubre estas rutas.",
+    )
+    modo_carga = models.CharField(
+        max_length=10, choices=MODOS_CARGA, default=MODO_CARGA_COMPLETA,
+        help_text="Solo relevante si es_interprovincial=True. 'parcial' cotiza por "
+                  "la tabla TarifaCargaParcial (peso × ruta) en vez del camión dedicado.",
     )
     motivo_derivacion = models.TextField(blank=True, null=True)
     bot_pausado = models.BooleanField(default=False)

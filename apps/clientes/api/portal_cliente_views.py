@@ -117,6 +117,7 @@ def _price_view(lead):
             "mode": "auto",
             "confidence": tecnica.confianza,
             "range": [_num(tecnica.precio_min), _num(tecnica.precio_max)],
+            "daysEstimated": tecnica.dias_estimados,
         }
     return {"amount": None, "mode": "pending", "confidence": None}
 
@@ -258,11 +259,15 @@ class CustomerLoadsView(_Portal):
         modo = d.get("quoteMode") or Lead.MODO_COT_POR_CARGA
         if modo not in dict(Lead.MODOS_COTIZACION):
             modo = Lead.MODO_COT_POR_CARGA
+        modo_carga = d.get("loadMode") or Lead.MODO_CARGA_COMPLETA
+        if modo_carga not in dict(Lead.MODOS_CARGA):
+            modo_carga = Lead.MODO_CARGA_COMPLETA
 
         lead = Lead.objects.create(
             cliente=self.cu.cliente,
             origen_carga="portal_cliente",
             modo_cotizacion=modo,
+            modo_carga=modo_carga,
             categoria_carga=(cargo.get("category") or ""),
             tipo_servicio=(cargo.get("category") or "carga"),
             distrito_origen=origin.get("district") or "",

@@ -118,9 +118,12 @@ const price = computed(() => load.value?.price || {})
                 </VBtn>
               </template>
               <template v-else>
-                <div class="text-h4 font-weight-bold">{{ soles(price.amount) }}</div>
-                <div v-if="price.range" class="text-caption text-medium-emphasis mb-3">
+                <div class="text-h4 font-weight-bold mb-1">{{ soles(price.amount) }}</div>
+                <div v-if="price.range" class="text-caption text-medium-emphasis mb-1">
                   Rango estimado {{ soles(price.range[0]) }} – {{ soles(price.range[1]) }}
+                </div>
+                <div v-if="price.daysEstimated" class="text-caption text-medium-emphasis mb-3">
+                  Llega en {{ price.daysEstimated }} días hábiles aprox.
                 </div>
                 <div v-if="canDecide" class="d-flex flex-wrap ga-2 mt-3">
                   <VBtn color="success" :loading="busy" @click="doAccept">Aceptar este precio</VBtn>

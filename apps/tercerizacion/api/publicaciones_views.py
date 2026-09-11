@@ -326,6 +326,101 @@ class CommissionTierDetailView(_Base):
         return Response(status=204)
 
 
+def _partial_tariff_item(t):
+    return {
+        "id": t.id,
+        "destination": t.destino,
+        "weightFrom": float(t.peso_desde_kg),
+        "weightTo": float(t.peso_hasta_kg) if t.peso_hasta_kg is not None else None,
+        "pricePerKg": float(t.precio_por_kg),
+        "minAmount": float(t.monto_minimo),
+        "daysEstimated": t.dias_estimados,
+        "active": t.activo,
+    }
+
+
+def _partial_tariff_from_body(data, t):
+    if "destination" in data:
+        t.destino = (data["destination"] or "").strip()
+    if "weightFrom" in data:
+        try:
+            t.peso_desde_kg = Decimal(str(data["weightFrom"]))
+        except (InvalidOperation, TypeError):
+            raise ValidationError({"weightFrom": "Peso no válido."})
+        if t.peso_desde_kg < 0:
+            raise ValidationError({"weightFrom": "No puede ser negativo."})
+    if "weightTo" in data:
+        if data["weightTo"] in (None, ""):
+            t.peso_hasta_kg = None
+        else:
+            try:
+                t.peso_hasta_kg = Decimal(str(data["weightTo"]))
+            except (InvalidOperation, TypeError):
+                raise ValidationError({"weightTo": "Peso no válido."})
+    if "pricePerKg" in data:
+        try:
+            t.precio_por_kg = Decimal(str(data["pricePerKg"]))
+        except (InvalidOperation, TypeError):
+            raise ValidationError({"pricePerKg": "Precio no válido."})
+        if t.precio_por_kg <= 0:
+            raise ValidationError({"pricePerKg": "Debe ser mayor que cero."})
+    if "minAmount" in data:
+        try:
+            t.monto_minimo = Decimal(str(data["minAmount"]))
+        except (InvalidOperation, TypeError):
+            raise ValidationError({"minAmount": "Monto no válido."})
+        if t.monto_minimo < 0:
+            raise ValidationError({"minAmount": "No puede ser negativo."})
+    if "daysEstimated" in data:
+        try:
+            t.dias_estimados = int(data["daysEstimated"])
+        except (TypeError, ValueError):
+            raise ValidationError({"daysEstimated": "Debe ser un número de días."})
+        if t.dias_estimados <= 0:
+            raise ValidationError({"daysEstimated": "Debe ser mayor que cero."})
+    if "active" in data:
+        t.activo = bool(data["active"])
+    if t.peso_hasta_kg is not None and t.peso_hasta_kg <= t.peso_desde_kg:
+        raise ValidationError({"weightTo": "El 'hasta' debe ser mayor que el 'desde'."})
+    return t
+
+
+class PartialCargoTariffsView(_Base):
+    """GET/POST de la tabla de tarifas de carga nacional PARCIAL/consolidada
+    (peso × destino → precio + días estimados). Ver `TarifaCargaParcial`."""
+    permission_classes = [HasAnyRole(*_ROLES_COMISION)]
+
+    def get(self, request):
+        from apps.tercerizacion.models import TarifaCargaParcial
+        return Response({
+            "tariffs": [_partial_tariff_item(t) for t in TarifaCargaParcial.objects.all()],
+        })
+
+    def post(self, request):
+        from apps.tercerizacion.models import TarifaCargaParcial
+        t = _partial_tariff_from_body(request.data, TarifaCargaParcial())
+        if "pricePerKg" not in request.data:
+            raise ValidationError({"pricePerKg": "Requerido."})
+        t.save()
+        return Response(_partial_tariff_item(t), status=201)
+
+
+class PartialCargoTariffDetailView(_Base):
+    permission_classes = [HasAnyRole(*_ROLES_COMISION)]
+
+    def patch(self, request, pk):
+        from apps.tercerizacion.models import TarifaCargaParcial
+        t = get_object_or_404(TarifaCargaParcial, pk=pk)
+        _partial_tariff_from_body(request.data, t)
+        t.save()
+        return Response(_partial_tariff_item(t))
+
+    def delete(self, request, pk):
+        from apps.tercerizacion.models import TarifaCargaParcial
+        get_object_or_404(TarifaCargaParcial, pk=pk).delete()
+        return Response(status=204)
+
+
 class PublicationListView(_Base):
     def get(self, request):
         p = request.query_params

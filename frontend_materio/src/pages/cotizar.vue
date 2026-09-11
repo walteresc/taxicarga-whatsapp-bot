@@ -25,7 +25,8 @@ const error = ref('')
 const quote = reactive({
   origin: { district: '', address: '', province: '', region: '', lat: null, lng: null },
   destination: { district: '', address: '', province: '', region: '', lat: null, lng: null },
-  cargo: { category: 'mudanza', detail: '' },
+  cargo: { category: 'mudanza', detail: '', weightKg: '' },
+  loadMode: 'completa',   // completa|parcial — solo importa si la ruta es nacional
   date: '',
   contact: { name: '', phone: '', email: '' },
   website: '',   // honeypot
@@ -87,7 +88,18 @@ const submitSignup = async () => {
           <div class="text-subtitle-2 mb-2">¿Qué vas a mover?</div>
           <VSelect v-model="quote.cargo.category" :items="CATEGORIES" label="Tipo de carga" density="comfortable" class="mb-2" />
           <VTextarea v-model="quote.cargo.detail" label="Detalle (opcional)" rows="2" auto-grow density="comfortable" class="mb-2" />
-          <VTextField v-model="quote.date" label="Fecha (opcional)" type="date" density="comfortable" class="mb-4" />
+          <VTextField v-model="quote.cargo.weightKg" label="Peso aprox. (kg, opcional)" type="number" density="comfortable" class="mb-2" />
+          <VTextField v-model="quote.date" label="Fecha (opcional)" type="date" density="comfortable" class="mb-2" />
+
+          <template v-if="quote.origin.district && quote.destination.district">
+            <div class="text-caption text-medium-emphasis mb-1">
+              Si tu carga es a otra ciudad, elegí cómo la enviamos (si es dentro de Lima, no aplica):
+            </div>
+            <VBtnToggle v-model="quote.loadMode" mandatory density="comfortable" class="mb-4" divided>
+              <VBtn value="completa" size="small">Completa (camión dedicado, más rápido)</VBtn>
+              <VBtn value="parcial" size="small">Parcial (comparte camión, más económico)</VBtn>
+            </VBtnToggle>
+          </template>
 
           <div class="text-subtitle-2 mb-2">¿Cómo te contactamos?</div>
           <VTextField v-model="quote.contact.name" label="Tu nombre" density="comfortable" class="mb-2" />
@@ -111,6 +123,9 @@ const submitSignup = async () => {
             <div class="text-h3 font-weight-bold my-3">{{ soles(result.price.amount) }}</div>
             <div v-if="result.price.range" class="text-caption text-medium-emphasis">
               Rango estimado {{ soles(result.price.range[0]) }} – {{ soles(result.price.range[1]) }}
+            </div>
+            <div v-if="result.price.daysEstimated" class="text-caption text-medium-emphasis">
+              Llega en {{ result.price.daysEstimated }} días hábiles aprox.
             </div>
           </template>
           <template v-else>

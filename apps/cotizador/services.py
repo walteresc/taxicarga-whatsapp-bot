@@ -17,7 +17,37 @@ logger = logging.getLogger(__name__)
 _CATEGORIAS_MOTOR = {"", "mudanza"}
 
 
+def _cotizar_carga_parcial(lead):
+    """Carga nacional PARCIAL/consolidada: el transportista comparte el camión
+    con otra carga suya, así que cotizamos por peso × tabla de tarifas (no por
+    camión dedicado) — ver `apps.tercerizacion.services.resolver_tarifa_parcial`.
+    Sin tabla de tarifas para ese destino/peso → cotización manual (asesor)."""
+    from apps.tercerizacion.services import resolver_tarifa_parcial
+
+    tarifa = resolver_tarifa_parcial(lead.distrito_destino, lead.peso_carga_kg)
+    if tarifa is None:
+        return Cotizacion.objects.create(
+            lead=lead,
+            precio_min=Decimal(0), precio_max=Decimal(0), precio_recomendado=Decimal(0),
+            servicios_similares_encontrados=0, confianza=20, modo=Cotizacion.MODO_MANUAL,
+            explicacion="Carga nacional parcial sin tarifa cargada para ese destino/peso: "
+                        "requiere confirmación de un asesor.",
+        )
+    precio = tarifa["precio"]
+    return Cotizacion.objects.create(
+        lead=lead,
+        precio_min=precio, precio_max=precio, precio_recomendado=precio,
+        servicios_similares_encontrados=0, confianza=70, modo=Cotizacion.MODO_AUTOMATICO,
+        dias_estimados=tarifa["dias_estimados"],
+        explicacion=f"Carga parcial/consolidada por tabla de tarifas: S/ {precio} · "
+                    f"llega en {tarifa['dias_estimados']} días hábiles aprox. "
+                    "(comparte camión con otra carga del transportista).",
+    )
+
+
 def cotizar_lead(lead):
+    if lead.es_interprovincial and lead.modo_carga == Lead.MODO_CARGA_PARCIAL:
+        return _cotizar_carga_parcial(lead)
     similar_services = _find_similar_services(lead)
     n = len(similar_services)
     if n >= 3:

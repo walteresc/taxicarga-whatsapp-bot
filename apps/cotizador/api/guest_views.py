@@ -70,6 +70,7 @@ def _quote_view(lead):
         "mode": "auto",
         "confidence": tecnica.confianza,
         "range": [float(tecnica.precio_min), float(tecnica.precio_max)],
+        "daysEstimated": tecnica.dias_estimados,
     }
 
 
@@ -120,11 +121,15 @@ class GuestQuoteView(_Public):
         modo = d.get("quoteMode") or Lead.MODO_COT_POR_CARGA
         if modo not in dict(Lead.MODOS_COTIZACION):
             modo = Lead.MODO_COT_POR_CARGA
+        modo_carga = d.get("loadMode") or Lead.MODO_CARGA_COMPLETA
+        if modo_carga not in dict(Lead.MODOS_CARGA):
+            modo_carga = Lead.MODO_CARGA_COMPLETA
 
         lead = Lead.objects.create(
             cliente=cliente,
             origen_carga="invitado",
             modo_cotizacion=modo,
+            modo_carga=modo_carga,
             categoria_carga=(cargo.get("category") or ""),
             tipo_servicio=(cargo.get("category") or "carga"),
             distrito_origen=origin.get("district") or "",
