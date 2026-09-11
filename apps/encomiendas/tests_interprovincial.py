@@ -11,7 +11,7 @@ from django.core.exceptions import ValidationError
 from rest_framework.test import APITestCase
 
 from apps.encomiendas import services
-from apps.encomiendas.models import Envio, EventoTracking
+from apps.encomiendas.models import Envio, EventoTracking, PuntoEntregaDestino
 from apps.tercerizacion.models import TarifaCargaParcial
 
 User = get_user_model()
@@ -134,3 +134,58 @@ class ShipmentApiInterprovincialTests(APITestCase):
         self.assertEqual(r.status_code, 201, r.data)
         self.assertEqual(r.data["recipientFull"]["pickupPoint"], "Agencia Arequipa Centro")
         self.assertEqual(r.data["price"], 50.0)
+
+    def test_crea_envio_con_coordenadas(self):
+        r = self.client.post("/api/v2/shipments/", {
+            "senderName": "Tienda X", "originDistrict": "Miraflores", "originAddress": "Av. Larco 100",
+            "originLat": -12.12, "originLng": -77.03,
+            "recipientName": "Ana P", "recipientPhone": "+51900111222",
+            "destDistrict": "Arequipa", "destAddress": "Recojo en agencia",
+            "destLat": -16.4, "destLng": -71.53,
+            "level": Envio.NIVEL_INTERPROVINCIAL, "weightKg": 10,
+        }, format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual(r.data["sender"]["lat"], -12.12)
+        self.assertEqual(r.data["recipientFull"]["lat"], -16.4)
+
+
+class PuntoEntregaDestinoTests(APITestCase):
+    def test_para_ciudad_case_insensitive(self):
+        PuntoEntregaDestino.objects.create(ciudad="Arequipa", nombre="Agencia Centro")
+        PuntoEntregaDestino.objects.create(ciudad="arequipa", nombre="Agencia Norte", activo=False)
+        PuntoEntregaDestino.objects.create(ciudad="Cusco", nombre="Agencia Cusco")
+        self.assertEqual(PuntoEntregaDestino.para_ciudad("AREQUIPA").count(), 1)  # la inactiva no cuenta
+        self.assertEqual(PuntoEntregaDestino.para_ciudad("").count(), 0)
+
+
+class PickupPointsApiTests(APITestCase):
+    def setUp(self):
+        for g in ("Despacho",):
+            Group.objects.get_or_create(name=g)
+        self.user = User.objects.create_user("enc_pep", password="x")
+        self.user.groups.add(Group.objects.get(name="Despacho"))
+        self.client.force_authenticate(self.user)
+
+    def test_crud(self):
+        r = self.client.post("/api/v2/shipments/pickup-points", {
+            "city": "Arequipa", "name": "Agencia Centro", "address": "Calle Mercaderes 100",
+            "phone": "+51999888777", "schedule": "Lun-Sáb 9am-7pm",
+        }, format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+        pid = r.data["id"]
+
+        r = self.client.get("/api/v2/shipments/pickup-points", {"city": "arequipa"})
+        self.assertEqual(len(r.data["points"]), 1)
+        self.assertEqual(r.data["points"][0]["name"], "Agencia Centro")
+
+        r = self.client.patch(f"/api/v2/shipments/pickup-points/{pid}", {"active": False}, format="json")
+        self.assertFalse(r.data["active"])
+
+        r = self.client.get("/api/v2/shipments/pickup-points", {"city": "arequipa"})
+        self.assertEqual(len(r.data["points"]), 0)  # inactivo, no aparece filtrado por ciudad
+
+        self.assertEqual(self.client.delete(f"/api/v2/shipments/pickup-points/{pid}").status_code, 204)
+
+    def test_requiere_ciudad_y_nombre(self):
+        r = self.client.post("/api/v2/shipments/pickup-points", {"city": "", "name": "X"}, format="json")
+        self.assertEqual(r.status_code, 400)

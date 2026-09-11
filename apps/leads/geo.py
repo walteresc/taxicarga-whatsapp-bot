@@ -2,12 +2,34 @@
 
 Complementa —no reemplaza— la detección por texto que ya hace el bot de
 WhatsApp (`apps.whatsapp.services_extraccion._menciona_ciudad_no_lima`, que
-sigue intacta). Esta clasificación solo entra en juego cuando el lead tiene
-coordenadas (lat/lng) capturadas por el autocompletado de direcciones en los
-flujos web (invitado, portal cliente) — si no hay coordenadas, no hace nada.
-"""
+sigue intacta y a la que este módulo NO se conecta a propósito — es zona
+frágil). La clasificación por distancia solo entra en juego cuando el lead
+tiene coordenadas (autocompletado de direcciones en invitado/portal cliente).
+
+Cuando NO hay coordenadas (dirección tipeada a mano, sin elegir sugerencia),
+se usa un respaldo mucho más simple: una lista propia y acotada de ciudades
+fuera de Lima (independiente de la del bot, para no acoplarse a esa zona
+frágil). Es best-effort y **solo puede marcar `es_interprovincial=True`**,
+nunca lo revierte a False — así no pisa una clasificación ya hecha por el
+bot o por un asesor."""
 import math
 from decimal import Decimal
+
+# Ciudades/regiones grandes del Perú fuera de Lima Metropolitana + Callao.
+# Deliberadamente chica: es un respaldo cuando no hay geolocalización, no el
+# mecanismo principal (ese es la distancia real, arriba).
+_CIUDADES_NO_LIMA = {
+    "arequipa", "cusco", "cuzco", "trujillo", "chiclayo", "piura", "iquitos",
+    "tacna", "puno", "juliaca", "huancayo", "ica", "tumbes", "chimbote",
+    "cajamarca", "pucallpa", "ayacucho", "huaraz", "moquegua", "abancay",
+    "huanuco", "huánuco", "tarapoto", "moyobamba", "chachapoyas", "pasco",
+    "cerro de pasco", "chincha", "cañete", "canete", "huaral", "barranca",
+}
+
+
+def _parece_fuera_de_lima(texto):
+    palabras = {w.strip(".,") for w in (texto or "").lower().split()}
+    return bool(palabras & _CIUDADES_NO_LIMA)
 
 
 def haversine_km(lat1, lng1, lat2, lng2):
@@ -34,6 +56,12 @@ def clasificar_y_marcar_ambito(lead):
     ]
     puntos = [(lat, lng) for lat, lng in puntos if lat is not None and lng is not None]
     if not puntos:
+        if not lead.es_interprovincial and _parece_fuera_de_lima(
+            f"{lead.distrito_origen or ''} {lead.distrito_destino or ''}"
+        ):
+            lead.es_interprovincial = True
+            lead.save(update_fields=["es_interprovincial"])
+            return True
         return False
 
     config = ConfiguracionOperaciones.get_solo()

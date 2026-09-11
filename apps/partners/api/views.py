@@ -90,6 +90,7 @@ _SHIPMENT_FIELDS = {
     "recipientName": "destinatario_nombre", "recipientPhone": "destinatario_telefono",
     "destDistrict": "destino_distrito", "destAddress": "destino_direccion", "destReference": "destino_referencia",
     "destPickupPoint": "punto_entrega_destino",
+    "originLat": "origen_lat", "originLng": "origen_lng", "destLat": "destino_lat", "destLng": "destino_lng",
     "content": "contenido", "weightKg": "peso_kg", "lengthCm": "largo_cm", "widthCm": "ancho_cm", "heightCm": "alto_cm",
     "declaredValue": "valor_declarado", "cod": "es_contraentrega", "codAmount": "monto_contraentrega",
     "level": "nivel", "externalRef": "external_ref",

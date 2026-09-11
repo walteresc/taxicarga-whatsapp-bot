@@ -1,9 +1,10 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 
+import AddressAutocomplete from '@/components/AddressAutocomplete.vue'
 import { carriersService } from '@/services/carriersService'
 import {
-  shipmentAssign, shipmentCancel, shipmentCreate, shipmentDetail, shipmentEvent,
+  pickupPoints, shipmentAssign, shipmentCancel, shipmentCreate, shipmentDetail, shipmentEvent,
   shipmentList, shipmentQuote, shipmentZones,
 } from '@/services/shipmentsService'
 
@@ -33,7 +34,6 @@ const rows = ref([])
 const loading = ref(true)
 const busy = ref(false)
 const filters = reactive({ state: '', search: '' })
-const zones = ref([])
 const levels = ref([])
 let searchTimer
 
@@ -46,18 +46,45 @@ const load = async () => {
 const onSearch = () => { clearTimeout(searchTimer); searchTimer = setTimeout(load, 350) }
 onMounted(async () => {
   load()
-  try { const z = await shipmentZones(); zones.value = z.zones; levels.value = z.levels } catch { /* noop */ }
+  try { levels.value = (await shipmentZones()).levels } catch { /* noop */ }
 })
 
 // --- alta ---
 const blank = () => ({
   senderName: '', senderPhone: '', originDistrict: '', originAddress: '', originReference: '',
+  originLat: null, originLng: null,
   recipientName: '', recipientPhone: '', destDistrict: '', destAddress: '', destReference: '',
+  destLat: null, destLng: null,
   destPickupPoint: '', content: '', weightKg: 1, level: 'express', cod: false, codAmount: '',
 })
 const etaLabel = q => (q.level === 'interprovincial' ? `${Math.round(q.etaHours / 24)} días` : `${q.etaHours} h`)
 const form = reactive({ open: false, ...blank(), quote: null })
 const openNew = () => { Object.assign(form, blank(), { open: true, quote: null }) }
+
+// Puentes para AddressAutocomplete (v-model = objeto {address,district,lat,lng,...},
+// pero el form guarda campos planos originX/destX — mismo patrón que Lead).
+const originLoc = computed({
+  get: () => ({ address: form.originAddress, district: form.originDistrict, lat: form.originLat, lng: form.originLng }),
+  set: v => {
+    Object.assign(form, { originAddress: v.address, originDistrict: v.district, originLat: v.lat, originLng: v.lng })
+    doQuote()
+  },
+})
+const destLoc = computed({
+  get: () => ({ address: form.destAddress, district: form.destDistrict, lat: form.destLat, lng: form.destLng }),
+  set: v => {
+    Object.assign(form, { destAddress: v.address, destDistrict: v.district, destLat: v.lat, destLng: v.lng })
+    doQuote()
+  },
+})
+
+// Puntos de entrega del catálogo para la ciudad destino (interprovincial). Si
+// no hay ninguno cargado, el campo sigue siendo texto libre.
+const pickupOpts = ref([])
+watch(() => [form.level, form.destDistrict], async ([level, city]) => {
+  if (level !== 'interprovincial' || !city) { pickupOpts.value = []; return }
+  try { pickupOpts.value = (await pickupPoints(city)).points.map(p => p.name) } catch { pickupOpts.value = [] }
+})
 const doQuote = async () => {
   if (!form.originDistrict || !form.destDistrict) return
   try {
@@ -247,25 +274,26 @@ const copyTrack = () => { try { navigator.clipboard?.writeText(trackUrl.value); 
           <VRow dense>
             <VCol cols="12" sm="6"><VTextField v-model="form.senderName" label="Nombre *" density="compact" /></VCol>
             <VCol cols="12" sm="6"><VTextField v-model="form.senderPhone" label="Teléfono" density="compact" /></VCol>
-            <VCol cols="12" sm="5"><VCombobox v-model="form.originDistrict" label="Distrito *" density="compact"
-              :items="zones.flatMap(z => z.districts)" @update:model-value="doQuote" /></VCol>
-            <VCol cols="12" sm="7"><VTextField v-model="form.originAddress" label="Dirección *" density="compact" /></VCol>
+            <VCol cols="12"><AddressAutocomplete v-model="originLoc" label="Dirección de recojo *" /></VCol>
             <VCol cols="12"><VTextField v-model="form.originReference" label="Referencia" density="compact" /></VCol>
           </VRow>
           <div class="text-overline mb-1 mt-2">Destinatario / entrega</div>
           <VRow dense>
             <VCol cols="12" sm="6"><VTextField v-model="form.recipientName" label="Nombre *" density="compact" /></VCol>
             <VCol cols="12" sm="6"><VTextField v-model="form.recipientPhone" label="Teléfono" density="compact" /></VCol>
-            <VCol cols="12" sm="5"><VCombobox
-              v-model="form.destDistrict" :label="form.level === 'interprovincial' ? 'Ciudad *' : 'Distrito *'" density="compact"
-              :items="form.level === 'interprovincial' ? [] : zones.flatMap(z => z.districts)" @update:model-value="doQuote"
-            /></VCol>
-            <VCol cols="12" sm="7"><VTextField v-model="form.destAddress" label="Dirección *" density="compact" /></VCol>
+            <VCol cols="12">
+              <AddressAutocomplete
+                v-model="destLoc" label="Dirección de entrega *"
+                :district-label="form.level === 'interprovincial' ? 'Ciudad *' : 'Distrito *'"
+              />
+            </VCol>
             <VCol cols="12"><VTextField v-model="form.destReference" label="Referencia" density="compact" /></VCol>
             <VCol v-if="form.level === 'interprovincial'" cols="12">
-              <VTextField
+              <VCombobox
                 v-model="form.destPickupPoint" label="Punto de entrega en destino (agencia/afiliado)"
-                density="compact" hint="Todavía no hacemos reparto a domicilio fuera de Lima." persistent-hint
+                density="compact" :items="pickupOpts"
+                :hint="pickupOpts.length ? 'Elegí uno del catálogo o escribí otro.' : 'Sin puntos cargados para esa ciudad — escribí uno.'"
+                persistent-hint
               />
             </VCol>
           </VRow>

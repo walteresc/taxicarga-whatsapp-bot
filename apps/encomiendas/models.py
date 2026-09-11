@@ -94,6 +94,40 @@ class TarifaZona(models.Model):
         return f"{self.origen} → {self.destino} [{self.nivel}] S/ {self.precio_base:g}"
 
 
+class PuntoEntregaDestino(models.Model):
+    """Catálogo de agencias/afiliados en ciudades de provincia donde el
+    destinatario de una encomienda interprovincial recoge su paquete (Fase A,
+    asset-light — todavía no hay reparto a domicilio fuera de Lima).
+
+    El formulario de alta busca puntos activos de la ciudad elegida; si no hay
+    ninguno, el campo sigue siendo texto libre (`Envio.punto_entrega_destino`).
+    """
+
+    ciudad = models.CharField(max_length=120, db_index=True, help_text="Ej. 'Arequipa'. Case-insensitive al buscar.")
+    nombre = models.CharField(max_length=160, help_text="Ej. 'Agencia Arequipa Centro'.")
+    direccion = models.CharField(max_length=255, blank=True, default="")
+    telefono = models.CharField(max_length=30, blank=True, default="")
+    horario = models.CharField(max_length=120, blank=True, default="", help_text="Ej. 'Lun-Sáb 9am-7pm'.")
+    activo = models.BooleanField(default=True)
+    creado_en = models.DateTimeField(auto_now_add=True)
+    actualizado_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Punto de entrega en destino"
+        verbose_name_plural = "Puntos de entrega en destino"
+        ordering = ["ciudad", "nombre"]
+
+    def __str__(self):
+        return f"{self.nombre} ({self.ciudad})"
+
+    @classmethod
+    def para_ciudad(cls, ciudad):
+        c = (ciudad or "").strip().lower()
+        if not c:
+            return cls.objects.none()
+        return cls.objects.filter(activo=True, ciudad__iexact=c)
+
+
 class RutaReparto(models.Model):
     """Un conjunto ordenado de envíos que un motorizado reparte en un día."""
 
@@ -193,6 +227,10 @@ class Envio(models.Model):
     origen_distrito = models.CharField(max_length=120)
     origen_direccion = models.CharField(max_length=255)
     origen_referencia = models.CharField(max_length=255, blank=True, default="")
+    # Geolocalización opcional (autocompletado de direcciones, Mapbox) — igual
+    # que en apps.leads. Sirve para mapas/rutas; no cambia cómo se cotiza.
+    origen_lat = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    origen_lng = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
 
     # -- Destinatario --
     destinatario_nombre = models.CharField(max_length=160)
@@ -203,9 +241,12 @@ class Envio(models.Model):
     destino_distrito = models.CharField(max_length=120)
     destino_direccion = models.CharField(max_length=255)
     destino_referencia = models.CharField(max_length=255, blank=True, default="")
+    destino_lat = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    destino_lng = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
     # Solo interprovincial, Fase A (asset-light): nombre/dirección del punto
     # aliado en la ciudad destino donde el destinatario recoge el paquete —
-    # todavía no hacemos reparto a domicilio fuera de Lima.
+    # todavía no hacemos reparto a domicilio fuera de Lima. Texto libre, pero
+    # normalmente elegido del catálogo `PuntoEntregaDestino` de esa ciudad.
     punto_entrega_destino = models.CharField(max_length=255, blank=True, default="")
 
     # -- Paquete --

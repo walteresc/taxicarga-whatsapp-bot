@@ -1,8 +1,8 @@
 from django.contrib import admin
 
 from .models import (
-    ConfiguracionEncomiendas, Envio, EventoTracking, RendicionCaja, RutaReparto,
-    TarifaZona, ZonaReparto,
+    ConfiguracionEncomiendas, Envio, EventoTracking, PuntoEntregaDestino, RendicionCaja,
+    RutaReparto, TarifaZona, ZonaReparto,
 )
 
 admin.site.register(ConfiguracionEncomiendas)
@@ -33,7 +33,14 @@ class ZonaRepartoAdmin(admin.ModelAdmin):
 class TarifaZonaAdmin(admin.ModelAdmin):
     list_display = ["origen", "destino", "nivel", "precio_base", "incluye_kg", "precio_kg_extra", "eta_horas", "activo"]
     list_filter = ["nivel", "activo", "origen", "destino"]
-    list_editable = ["precio_base", "precio_kg_extra", "activo"]
+
+
+@admin.register(PuntoEntregaDestino)
+class PuntoEntregaDestinoAdmin(admin.ModelAdmin):
+    list_display = ["nombre", "ciudad", "telefono", "activo"]
+    list_filter = ["activo", "ciudad"]
+    search_fields = ["nombre", "ciudad"]
+    list_editable = ["activo"]
 
 
 class EventoInline(admin.TabularInline):

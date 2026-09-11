@@ -15,6 +15,7 @@ import { onBeforeUnmount, reactive, ref, watch } from 'vue'
 const props = defineProps({
   modelValue: { type: Object, required: true },
   label: { type: String, default: 'Dirección' },
+  districtLabel: { type: String, default: 'Distrito' },
 })
 const emit = defineEmits(['update:modelValue'])
 
@@ -114,7 +115,7 @@ onBeforeUnmount(() => { clearTimeout(debounceTimer); abortCtrl?.abort() })
       </VList>
     </VMenu>
     <VTextField
-      :model-value="district" label="Distrito" density="comfortable"
+      :model-value="district" :label="districtLabel" density="comfortable"
       hint="Se completa solo al elegir una sugerencia — corregilo si no coincide." persistent-hint
       @update:model-value="onDistrictEdit"
     />

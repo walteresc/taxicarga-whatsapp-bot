@@ -29,7 +29,7 @@ from apps.api.exceptions import api_exception_handler
 from apps.api.pagination import StandardPagination
 from apps.api.permissions import HasAnyRole, IsCarrier, carrier_for
 from apps.encomiendas import services
-from apps.encomiendas.models import Envio, RendicionCaja, RutaReparto, ZonaReparto
+from apps.encomiendas.models import Envio, PuntoEntregaDestino, RendicionCaja, RutaReparto, ZonaReparto
 from apps.tercerizacion.models import Transportista, TransportistaVehiculo
 
 _ROLES = ("Administrador", "Gerencia", "Supervisor", "Despacho", "Asesor de Ventas")
@@ -67,10 +67,12 @@ def detail(e):
     out = item(e)
     out.update({
         "sender": {"name": e.remitente_nombre, "phone": e.remitente_telefono,
-                   "district": e.origen_distrito, "address": e.origen_direccion, "reference": e.origen_referencia},
+                   "district": e.origen_distrito, "address": e.origen_direccion, "reference": e.origen_referencia,
+                   "lat": _num(e.origen_lat), "lng": _num(e.origen_lng)},
         "recipientFull": {"name": e.destinatario_nombre, "phone": e.destinatario_telefono,
                           "district": e.destino_distrito, "address": e.destino_direccion, "reference": e.destino_referencia,
-                          "pickupPoint": e.punto_entrega_destino or None},
+                          "pickupPoint": e.punto_entrega_destino or None,
+                          "lat": _num(e.destino_lat), "lng": _num(e.destino_lng)},
         "package": {"content": e.contenido, "weightKg": _num(e.peso_kg),
                     "lengthCm": e.largo_cm, "widthCm": e.ancho_cm, "heightCm": e.alto_cm,
                     "declaredValue": _num(e.valor_declarado)},
@@ -100,6 +102,7 @@ _FIELD_MAP = {
     "recipientName": "destinatario_nombre", "recipientPhone": "destinatario_telefono",
     "destDistrict": "destino_distrito", "destAddress": "destino_direccion", "destReference": "destino_referencia",
     "destPickupPoint": "punto_entrega_destino",
+    "originLat": "origen_lat", "originLng": "origen_lng", "destLat": "destino_lat", "destLng": "destino_lng",
     "content": "contenido", "weightKg": "peso_kg", "lengthCm": "largo_cm", "widthCm": "ancho_cm", "heightCm": "alto_cm",
     "declaredValue": "valor_declarado", "cod": "es_contraentrega", "codAmount": "monto_contraentrega",
     "notes": "notas", "price": "precio",
@@ -165,6 +168,54 @@ class ShipmentZonesView(_Base):
                       for z in ZonaReparto.objects.filter(activo=True)],
             "levels": [{"value": v, "label": lbl} for v, lbl in Envio.NIVELES],
         })
+
+
+def _pickup_point_item(p):
+    return {
+        "id": p.id, "city": p.ciudad, "name": p.nombre, "address": p.direccion,
+        "phone": p.telefono, "schedule": p.horario, "active": p.activo,
+    }
+
+
+class PickupPointsView(_Base):
+    """Catálogo de puntos de entrega (agencias/afiliados) en ciudades de
+    provincia, para encomiendas interprovinciales (Fase A)."""
+
+    def get(self, request):
+        qs = PuntoEntregaDestino.objects.all()
+        city = (request.query_params.get("city") or "").strip()
+        if city:
+            qs = qs.filter(ciudad__iexact=city, activo=True)
+        return Response({"points": [_pickup_point_item(p) for p in qs]})
+
+    def post(self, request):
+        d = request.data
+        if not (d.get("city") or "").strip() or not (d.get("name") or "").strip():
+            raise ValidationError({"city": "Ciudad y nombre son obligatorios."})
+        p = PuntoEntregaDestino.objects.create(
+            ciudad=d["city"].strip(), nombre=d["name"].strip(),
+            direccion=d.get("address") or "", telefono=d.get("phone") or "",
+            horario=d.get("schedule") or "", activo=d.get("active", True),
+        )
+        return Response(_pickup_point_item(p), status=201)
+
+
+class PickupPointDetailView(_Base):
+    def patch(self, request, pk):
+        p = get_object_or_404(PuntoEntregaDestino, pk=pk)
+        d = request.data
+        for api_f, model_f in (("city", "ciudad"), ("name", "nombre"), ("address", "direccion"),
+                                ("phone", "telefono"), ("schedule", "horario")):
+            if api_f in d:
+                setattr(p, model_f, (d[api_f] or "").strip())
+        if "active" in d:
+            p.activo = bool(d["active"])
+        p.save()
+        return Response(_pickup_point_item(p))
+
+    def delete(self, request, pk):
+        get_object_or_404(PuntoEntregaDestino, pk=pk).delete()
+        return Response(status=204)
 
 
 class ShipmentDetailView(_Base):

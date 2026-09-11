@@ -70,3 +70,35 @@ class ClasificarAmbitoTests(TestCase):
         )
         cambiado = clasificar_y_marcar_ambito(lead)
         self.assertFalse(cambiado)
+
+
+class FallbackSinCoordenadasTests(TestCase):
+    """Respaldo por texto cuando no hay lat/lng (dirección tipeada a mano)."""
+
+    def setUp(self):
+        self.cliente = Cliente.objects.create(telefono="+51900000222", nombre="Test")
+
+    def _lead(self, **kwargs):
+        return Lead.objects.create(cliente=self.cliente, **kwargs)
+
+    def test_distrito_destino_fuera_de_lima_marca_interprovincial(self):
+        lead = self._lead(distrito_origen="Miraflores", distrito_destino="Arequipa")
+        cambiado = clasificar_y_marcar_ambito(lead)
+        self.assertTrue(cambiado)
+        lead.refresh_from_db()
+        self.assertTrue(lead.es_interprovincial)
+
+    def test_ambos_distritos_de_lima_no_marca(self):
+        lead = self._lead(distrito_origen="Miraflores", distrito_destino="San Isidro")
+        cambiado = clasificar_y_marcar_ambito(lead)
+        self.assertFalse(cambiado)
+        self.assertFalse(lead.es_interprovincial)
+
+    def test_no_revierte_una_marca_existente(self):
+        # Si ya estaba marcado (p. ej. por el bot) y el texto no matchea nada,
+        # el respaldo nunca lo pone en False.
+        lead = self._lead(distrito_origen="Miraflores", distrito_destino="San Isidro",
+                           es_interprovincial=True)
+        cambiado = clasificar_y_marcar_ambito(lead)
+        self.assertFalse(cambiado)
+        self.assertTrue(lead.es_interprovincial)
