@@ -332,6 +332,14 @@ class CustomerLoadRequestAdvisorView(_Portal):
 class CustomerLoadNegotiateView(_Portal):
     def post(self, request, code):
         lead = self._lead(code)
+
+        # Carga nacional + config "derivar al rechazar" → va directo a transportistas
+        # para que oferten, en vez de abrir una negociación con el asesor.
+        from apps.tercerizacion.services import derivar_por_rechazo_de_precio
+        pub = derivar_por_rechazo_de_precio(lead, usuario=request.user)
+        if pub is not None:
+            return Response(load_detail(self._lead(code)))
+
         tecnica = lead.cotizaciones.order_by("-fecha_creacion").first()
         base = (tecnica.precio_recomendado if tecnica else None)
         cotizacion = crear_cotizacion_portal(lead, base or Decimal("1"), en_negociacion=True)

@@ -58,15 +58,26 @@ const loadList = async () => {
 }
 const onSearch = () => { clearTimeout(searchTimer); searchTimer = setTimeout(loadList, 350) }
 
-const settings = reactive({ autoDerive: false, markup: 25, minCommissionable: 0 })
+const settings = reactive({ autoDerive: false, onReject: false, offHours: false, markup: 25, minCommissionable: 0 })
 const settingsBusy = ref(false)
 const loadSettings = async () => {
   try {
     const s = await outsourcingSettings()
     settings.autoDerive = s.autoDeriveInterprovincial
+    settings.onReject = s.deriveOnReject
+    settings.offHours = s.deriveOffHours
     settings.markup = s.markupPercent
     settings.minCommissionable = s.minCommissionableAmount
   } catch { /* sin permiso: se oculta */ }
+}
+const toggleDerive = async (key, apiKey, val) => {
+  settingsBusy.value = true
+  try {
+    const r = await outsourcingSettingsUpdate({ [apiKey]: val })
+    settings[key] = r[apiKey]
+    notify('Guardado.')
+  } catch (e) { settings[key] = !val; notify(e.message || 'No se pudo cambiar.', 'error') }
+  finally { settingsBusy.value = false }
 }
 const toggleAutoDerive = async val => {
   settingsBusy.value = true
@@ -211,12 +222,33 @@ const awarded = computed(() => detail.value?.state === 'awarded')
           <VSwitch
             v-model="settings.autoDerive" :loading="settingsBusy" color="primary" density="compact" hide-details
             label="Derivar interprovinciales automáticamente"
-            @update:model-value="toggleAutoDerive"
+            @update:model-value="v => toggleDerive('autoDerive', 'autoDeriveInterprovincial', v)"
           />
           <span class="text-caption text-medium-emphasis">
-            Con esto activo, una carga interprovincial con datos completos se publica sola a los transportistas
-            (precio abierto: ellos proponen), sin que el asesor la cotice. Si está apagado, el asesor la cotiza
-            o la deriva a mano.
+            Carga nacional con datos completos → se publica sola a los transportistas (precio abierto), sin que
+            el asesor la cotice.
+          </span>
+        </div>
+        <div class="d-flex align-center flex-wrap ga-2">
+          <VSwitch
+            v-model="settings.onReject" :loading="settingsBusy" color="primary" density="compact" hide-details
+            label="Al rechazar el precio → a transportistas"
+            @update:model-value="v => toggleDerive('onReject', 'deriveOnReject', v)"
+          />
+          <span class="text-caption text-medium-emphasis">
+            Si el cliente rechaza el precio de una carga nacional y pide "buscar mejor oferta", se publica a los
+            transportistas para que oferten, en vez de abrir una negociación con el asesor.
+          </span>
+        </div>
+        <div class="d-flex align-center flex-wrap ga-2">
+          <VSwitch
+            v-model="settings.offHours" :loading="settingsBusy" color="primary" density="compact" hide-details
+            label="Fuera de horario → a transportistas"
+            @update:model-value="v => toggleDerive('offHours', 'deriveOffHours', v)"
+          />
+          <span class="text-caption text-medium-emphasis">
+            Cuando no hay asesor (fuera del horario de atención del bot), la carga nacional con datos completos
+            se publica sola a los transportistas.
           </span>
         </div>
         <div class="d-flex align-center flex-wrap ga-2">

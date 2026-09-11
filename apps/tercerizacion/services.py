@@ -262,35 +262,43 @@ def tercerizar_carga(servicio, usuario, *, modo_precio=None, precio_publicado=No
     return publicacion, True
 
 
-def derivar_interprovincial_si_corresponde(lead, usuario=None):
-    """Si la carga es interprovincial y el flag de Configuración está activo,
-    la publica sola a los transportistas (precio abierto: ellos proponen) en
-    cuanto tiene los datos completos, sin que el asesor la cotice. Idempotente
-    y sin efectos si falta algún dato. Devuelve la `PublicacionCarga` o None.
+def _en_horario_atencion():
+    """True si ahora estamos dentro del horario de atención configurado en el bot."""
+    try:
+        from django.utils import timezone
 
-    Se llama desde `pipeline.sync_review_request` (que corre en cada save de un
-    lead con `requiere_asesor`), así se dispara sola al completarse los datos.
-    """
-    if not getattr(lead, "es_interprovincial", False):
-        return None
+        from apps.whatsapp.models import ConfiguracionBot
+        from apps.whatsapp.utils import _check_legacy_schedule
+        conf = ConfiguracionBot.objects.first()
+        if not conf:
+            return True
+        dentro, _ = _check_legacy_schedule(conf, timezone.localtime())
+        return dentro
+    except Exception:
+        return True
 
-    from apps.servicios.models import ConfiguracionOperaciones, Servicio
-    if not ConfiguracionOperaciones.get_solo().derivar_interprovincial_auto:
-        return None
 
+def _publicacion_activa_de(lead):
+    from apps.servicios.models import Servicio
     servicio = Servicio.objects.filter(lead_origen=lead).first()
-    if servicio:
-        existente = servicio.publicaciones_tercerizacion.filter(
-            estado__in=_ESTADOS_PUBLICACION_ACTIVA,
-        ).first()
-        if existente:
-            return existente
+    if not servicio:
+        return None
+    return servicio.publicaciones_tercerizacion.filter(estado__in=_ESTADOS_PUBLICACION_ACTIVA).first()
 
+
+def _publicar_a_transportistas(lead, usuario, motivo):
+    """Crea la reserva tercerizada + publicación abierta + hilo de compra.
+    Devuelve la `PublicacionCarga` o None si faltan datos."""
     from apps.ia.conversation_policy import booking_missing_fields
     if booking_missing_fields(lead):
         return None
 
+    ya = _publicacion_activa_de(lead)
+    if ya:
+        return ya
+
     from apps.cotizador.pipeline import _auditar
+    from apps.servicios.models import Servicio
     from apps.servicios.services import crear_servicio_desde_lead
     from apps.tercerizacion import negociacion as neg
 
@@ -304,12 +312,42 @@ def derivar_interprovincial_si_corresponde(lead, usuario=None):
             modo_precio=PublicacionCarga.PRECIO_ABIERTO,
             estado=PublicacionCarga.ESTADO_ABIERTA,
         )
-        neg.abrir_hilo(
-            lead, neg.HiloNegociacion.TIPO_COMPRA, usuario=usuario, publicacion=pub,
-        )
-        _auditar(lead, usuario, "derivada_interprovincial_auto",
-                 {"publicacion": pub.codigo})
+        neg.abrir_hilo(lead, neg.HiloNegociacion.TIPO_COMPRA, usuario=usuario, publicacion=pub)
+        _auditar(lead, usuario, motivo, {"publicacion": pub.codigo})
     return pub
+
+
+def derivar_interprovincial_si_corresponde(lead, usuario=None):
+    """La carga nacional se publica sola a los transportistas cuando:
+      - `derivar_interprovincial_auto` está activo, o
+      - `derivar_fuera_horario` está activo y ahora no hay asesor (fuera de horario).
+    Idempotente. Se llama desde `pipeline.sync_review_request`.
+    """
+    if not getattr(lead, "es_interprovincial", False):
+        return None
+
+    from apps.servicios.models import ConfiguracionOperaciones
+    cfg = ConfiguracionOperaciones.get_solo()
+    ya = _publicacion_activa_de(lead)
+    if ya:
+        return ya
+    if cfg.derivar_interprovincial_auto:
+        return _publicar_a_transportistas(lead, usuario, "derivada_interprovincial_auto")
+    if cfg.derivar_fuera_horario and not _en_horario_atencion():
+        return _publicar_a_transportistas(lead, usuario, "derivada_fuera_horario")
+    return None
+
+
+def derivar_por_rechazo_de_precio(lead, usuario=None):
+    """El cliente rechazó el precio de una carga nacional y `derivar_al_rechazar_precio`
+    está activo → se publica a transportistas para que oferten. Devuelve la
+    `PublicacionCarga`, o None (y el caller abre la negociación con el asesor)."""
+    if not getattr(lead, "es_interprovincial", False):
+        return None
+    from apps.servicios.models import ConfiguracionOperaciones
+    if not ConfiguracionOperaciones.get_solo().derivar_al_rechazar_precio:
+        return None
+    return _publicar_a_transportistas(lead, usuario, "derivada_por_rechazo_cliente")
 
 
 # ---------------------------------------------------------------------------

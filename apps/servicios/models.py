@@ -414,6 +414,17 @@ class ConfiguracionOperaciones(models.Model):
                    "a los transportistas (modo de precio abierto) en cuanto tienen "
                    "los datos completos, sin que el asesor las cotice.",
     )
+    derivar_al_rechazar_precio = models.BooleanField(
+        default=False,
+        help_text="Si el cliente rechaza el precio de una carga nacional, se publica "
+                  "sola a los transportistas para que oferten (en vez de abrir una "
+                  "negociación con el asesor).",
+    )
+    derivar_fuera_horario = models.BooleanField(
+        default=False,
+        help_text="Fuera del horario de atención, las cargas nacionales con datos "
+                  "completos se publican solas a los transportistas (el asesor no está).",
+    )
     markup_tercerizacion_porcentaje = models.DecimalField(
         max_digits=5, decimal_places=2, default=25,
         help_text="Recargo sobre el costo del transportista para fijar el precio "

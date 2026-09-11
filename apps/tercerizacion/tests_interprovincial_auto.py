@@ -129,3 +129,59 @@ class OutsourcingSettingsAPITests(APITestCase):
         r = self.client.patch("/api/v2/outsourcing/settings",
                               {"autoDeriveInterprovincial": True}, format="json")
         self.assertEqual(r.status_code, 403)
+
+    def test_patch_nuevos_toggles(self):
+        self.client.force_authenticate(self.despacho)
+        r = self.client.patch("/api/v2/outsourcing/settings",
+                              {"deriveOnReject": True, "deriveOffHours": True}, format="json")
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.data["deriveOnReject"])
+        self.assertTrue(r.data["deriveOffHours"])
+        cfg = ConfiguracionOperaciones.get_solo()
+        self.assertTrue(cfg.derivar_al_rechazar_precio)
+        self.assertTrue(cfg.derivar_fuera_horario)
+
+
+class DerivarPorRechazoTests(APITestCase):
+    def setUp(self):
+        ConfiguracionOperaciones.objects.filter(pk=1).delete()
+
+    def test_rechazo_sin_flag_no_deriva(self):
+        from apps.tercerizacion.services import derivar_por_rechazo_de_precio
+        lead = _lead_interprovincial_completo()
+        self.assertIsNone(derivar_por_rechazo_de_precio(lead))
+
+    def test_rechazo_con_flag_publica(self):
+        from apps.tercerizacion.services import derivar_por_rechazo_de_precio
+        cfg = ConfiguracionOperaciones.get_solo()
+        cfg.derivar_al_rechazar_precio = True
+        cfg.save()
+        lead = _lead_interprovincial_completo()
+        pub = derivar_por_rechazo_de_precio(lead)
+        self.assertIsNotNone(pub)
+        self.assertEqual(pub.modo_precio, PublicacionCarga.PRECIO_ABIERTO)
+
+    def test_rechazo_carga_local_no_deriva(self):
+        from apps.tercerizacion.services import derivar_por_rechazo_de_precio
+        cfg = ConfiguracionOperaciones.get_solo()
+        cfg.derivar_al_rechazar_precio = True
+        cfg.save()
+        lead = _lead_interprovincial_completo(es_interprovincial=False)
+        self.assertIsNone(derivar_por_rechazo_de_precio(lead))
+
+    def test_portal_negotiate_deriva_a_transportistas(self):
+        from apps.clientes.models import Cliente, ClienteUsuario
+        cfg = ConfiguracionOperaciones.get_solo()
+        cfg.derivar_al_rechazar_precio = True
+        cfg.save()
+        Group.objects.get_or_create(name="Cliente Portal")
+        lead = _lead_interprovincial_completo()
+        lead.codigo = "CRG-REJ1"
+        lead.save()
+        u = User.objects.create_user("rej_cust", password="x")
+        u.groups.add(Group.objects.get(name="Cliente Portal"))
+        ClienteUsuario.objects.create(usuario=u, cliente=lead.cliente)
+        self.client.force_authenticate(u)
+        r = self.client.post("/api/v2/portal/customer/loads/CRG-REJ1/negotiate", {}, format="json")
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertTrue(PublicacionCarga.objects.filter(servicio__lead_origen=lead).exists())

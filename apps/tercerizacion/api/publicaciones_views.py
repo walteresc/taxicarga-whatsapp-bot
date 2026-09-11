@@ -166,6 +166,8 @@ class OutsourcingSettingsView(_Base):
     def _payload(self, cfg):
         return {
             "autoDeriveInterprovincial": cfg.derivar_interprovincial_auto,
+            "deriveOnReject": cfg.derivar_al_rechazar_precio,
+            "deriveOffHours": cfg.derivar_fuera_horario,
             "markupPercent": float(cfg.markup_tercerizacion_porcentaje),
             "minCommissionableAmount": float(cfg.monto_minimo_comisionable),
         }
@@ -181,6 +183,12 @@ class OutsourcingSettingsView(_Base):
         if "autoDeriveInterprovincial" in request.data:
             cfg.derivar_interprovincial_auto = bool(request.data["autoDeriveInterprovincial"])
             campos.append("derivar_interprovincial_auto")
+        if "deriveOnReject" in request.data:
+            cfg.derivar_al_rechazar_precio = bool(request.data["deriveOnReject"])
+            campos.append("derivar_al_rechazar_precio")
+        if "deriveOffHours" in request.data:
+            cfg.derivar_fuera_horario = bool(request.data["deriveOffHours"])
+            campos.append("derivar_fuera_horario")
         if "markupPercent" in request.data:
             try:
                 pct = Decimal(str(request.data["markupPercent"]))
