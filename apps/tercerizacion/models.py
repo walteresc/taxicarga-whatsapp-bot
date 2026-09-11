@@ -293,6 +293,22 @@ class Transportista(models.Model):
     activo = models.BooleanField(default=True)
     notas = models.TextField(blank=True)
 
+    # -- Dirección / ubicación (2026-09): al registrarse, el transportista
+    # indica su dirección y su ciudad/distrito habitual. Sirve hoy para saber
+    # qué afiliados hay en cada ciudad (encomienda interprovincial, Fase B:
+    # reparto a domicilio en destino). Más adelante, una app propia del
+    # transportista la detectará sola (GPS) — por eso ya se deja lat/lng,
+    # aunque hoy se llenen a mano o queden vacíos.
+    direccion = models.CharField(max_length=255, blank=True, default="")
+    ubicacion_frecuente = models.CharField(
+        max_length=120, blank=True, default="", db_index=True,
+        help_text="Distrito (Lima) o ciudad donde opera habitualmente. "
+                  "Se usa para encontrar afiliados en la ciudad destino de "
+                  "una encomienda interprovincial.",
+    )
+    lat_frecuente = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    lng_frecuente = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+
     # -- Datos de cobro (para liquidarle lo que la plataforma le debe) --
     BANCOS = [
         ("bcp", "BCP"), ("bbva", "BBVA"), ("interbank", "Interbank"),
@@ -321,6 +337,16 @@ class Transportista(models.Model):
 
     def __str__(self):
         return self.nombre
+
+    @classmethod
+    def para_ubicacion(cls, ciudad):
+        """Afiliados activos cuya ubicación frecuente coincide con `ciudad`
+        (distrito o ciudad) — para encontrar quién puede hacer el reparto a
+        domicilio en la ciudad destino de una encomienda interprovincial."""
+        c = (ciudad or "").strip()
+        if not c:
+            return cls.objects.none()
+        return cls.objects.filter(activo=True, ubicacion_frecuente__icontains=c)
 
 
 class TransportistaVehiculo(models.Model):

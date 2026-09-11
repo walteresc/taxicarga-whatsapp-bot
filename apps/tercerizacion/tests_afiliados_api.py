@@ -40,6 +40,18 @@ class CarrierFlowTests(_Base):
         r = self.client.get("/api/v2/carriers/")
         self.assertEqual(r.data["results"][0]["vehicleCount"], 1)
 
+    def test_alta_con_direccion_y_ubicacion_frecuente(self):
+        r = self.client.post("/api/v2/carriers/", {
+            "name": "Transportes Provincia", "address": "Jr. Los Andes 200",
+            "homeCity": "Arequipa",
+        }, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.data["address"], "Jr. Los Andes 200")
+        self.assertEqual(r.data["homeCity"], "Arequipa")
+        carrier = Transportista.objects.get(pk=r.data["id"])
+        self.assertEqual(carrier.direccion, "Jr. Los Andes 200")
+        self.assertEqual(carrier.ubicacion_frecuente, "Arequipa")
+
     def test_placa_duplicada_rechazada(self):
         c = Transportista.objects.create(nombre="T1")
         camion = TipoVehiculo.objects.get(codigo="camion")
@@ -49,3 +61,17 @@ class CarrierFlowTests(_Base):
         }, format="json")
         self.assertEqual(r.status_code, 400)
         self.assertIn("plate", r.data.get("fields", r.data))
+
+
+class ParaUbicacionTests(APITestCase):
+    def test_case_insensitive_y_solo_activos(self):
+        Transportista.objects.create(nombre="T1", ubicacion_frecuente="Arequipa")
+        Transportista.objects.create(nombre="T2", ubicacion_frecuente="arequipa", activo=False)
+        Transportista.objects.create(nombre="T3", ubicacion_frecuente="Cusco")
+        self.assertEqual(Transportista.para_ubicacion("AREQUIPA").count(), 1)
+        self.assertEqual(Transportista.para_ubicacion("cusco").count(), 1)
+
+    def test_vacio_no_devuelve_todos(self):
+        Transportista.objects.create(nombre="T1", ubicacion_frecuente="Arequipa")
+        self.assertEqual(Transportista.para_ubicacion("").count(), 0)
+        self.assertEqual(Transportista.para_ubicacion(None).count(), 0)

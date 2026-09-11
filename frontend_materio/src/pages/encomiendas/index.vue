@@ -4,8 +4,8 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import AddressAutocomplete from '@/components/AddressAutocomplete.vue'
 import { carriersService } from '@/services/carriersService'
 import {
-  pickupPoints, shipmentAssign, shipmentCancel, shipmentCreate, shipmentDetail, shipmentEvent,
-  shipmentList, shipmentQuote, shipmentZones,
+  pickupPoints, shipmentAssign, shipmentAssignDestination, shipmentCancel, shipmentCreate,
+  shipmentDestinationCarriers, shipmentDetail, shipmentEvent, shipmentList, shipmentQuote, shipmentZones,
 } from '@/services/shipmentsService'
 
 const STATE = {
@@ -14,6 +14,7 @@ const STATE = {
   recogido: { label: 'Recogido', color: 'info' },
   en_ruta: { label: 'En ruta', color: 'warning' },
   en_destino: { label: 'En destino (punto de entrega)', color: 'warning' },
+  en_reparto_destino: { label: 'En reparto a domicilio (destino)', color: 'warning' },
   entregado: { label: 'Entregado', color: 'success' },
   fallido: { label: 'No entregado', color: 'error' },
   devuelto: { label: 'Devuelto', color: 'default' },
@@ -21,10 +22,12 @@ const STATE = {
 }
 const NEXT = {
   asignado: ['recogido'], recogido: ['en_ruta', 'entregado', 'fallido'],
-  // en_destino solo lo usan los envíos interprovinciales (llegó a la ciudad
-  // destino, espera en el punto de entrega antes de que el destinatario lo recoja).
+  // en_destino/en_reparto_destino solo los usan los envíos interprovinciales:
+  // llegó a la ciudad destino y espera en el punto de entrega, o se asignó un
+  // afiliado local (Fase B, ver el bloque "Reparto a domicilio en destino").
   en_ruta: ['en_destino', 'entregado', 'fallido'], en_destino: ['entregado', 'fallido'],
-  fallido: ['en_ruta', 'en_destino', 'devuelto'],
+  en_reparto_destino: ['entregado', 'fallido'],
+  fallido: ['en_ruta', 'en_destino', 'en_reparto_destino', 'devuelto'],
 }
 const soles = n => (n == null ? '—' : `S/ ${Number(n).toLocaleString('es-PE', { minimumFractionDigits: 2 })}`)
 const snackbar = reactive({ show: false, text: '', color: 'success' })
@@ -107,7 +110,27 @@ const submitNew = async () => {
 
 // --- detalle ---
 const detail = ref(null)
-const openDetail = async code => { detail.value = null; try { detail.value = await shipmentDetail(code) } catch (e) { notify(e.message, 'error') } }
+const destCarrierOpts = ref([])
+const destAssignForm = reactive({ carrierId: null })
+const loadDestCarriers = async code => {
+  destCarrierOpts.value = []
+  try { destCarrierOpts.value = (await shipmentDestinationCarriers(code)).carriers } catch { /* noop */ }
+}
+const openDetail = async code => {
+  detail.value = null
+  destAssignForm.carrierId = null
+  try {
+    detail.value = await shipmentDetail(code)
+    if (detail.value.state === 'en_destino') await loadDestCarriers(code)
+  } catch (e) { notify(e.message, 'error') }
+}
+const doAssignDestination = async () => {
+  busy.value = true
+  try {
+    detail.value = await shipmentAssignDestination(detail.value.code, { carrierId: destAssignForm.carrierId })
+    notify('Reparto a domicilio asignado.'); await load()
+  } catch (e) { notify(e.message, 'error') } finally { busy.value = false }
+}
 
 const carrierOpts = ref([])
 const assignForm = reactive({ carrier: null })
@@ -223,6 +246,7 @@ const copyTrack = () => { try { navigator.clipboard?.writeText(trackUrl.value); 
                   </td>
                 </tr>
                 <tr><td>Motorizado</td><td>{{ detail.carrierName || '— sin asignar' }}<span v-if="detail.routeCode" class="text-caption text-medium-emphasis"> · {{ detail.routeCode }}</span></td></tr>
+                <tr v-if="detail.destinationCarrierName"><td>Reparto en destino</td><td>{{ detail.destinationCarrierName }}</td></tr>
                 <tr v-if="detail.receivedBy"><td>Recibió</td><td>{{ detail.receivedBy }}</td></tr>
                 <tr v-if="detail.podPhoto"><td>Prueba de entrega</td><td><a :href="detail.podPhoto" target="_blank">ver foto</a></td></tr>
                 <tr v-if="detail.failReason"><td>No entregado</td><td class="text-error">{{ detail.failReason }} <span v-if="detail.attempts">({{ detail.attempts }} intento/s)</span></td></tr>
@@ -239,6 +263,23 @@ const copyTrack = () => { try { navigator.clipboard?.writeText(trackUrl.value); 
             <VBtn size="small" color="primary" :disabled="!assignForm.carrier" :loading="busy" @click="doAssign">
               {{ detail.carrierName ? 'Reasignar' : 'Asignar' }}
             </VBtn>
+          </VCardText>
+
+          <VCardText v-if="detail.state === 'en_destino' && detail.level === 'interprovincial'">
+            <div class="text-overline mb-1">Reparto a domicilio en destino (opcional)</div>
+            <div v-if="!destCarrierOpts.length" class="text-body-2 text-medium-emphasis mb-2">
+              Sin afiliados con ubicación frecuente en {{ detail.recipientFull.district }} — el destinatario recoge
+              en el punto de entrega.
+            </div>
+            <template v-else>
+              <VSelect
+                v-model="destAssignForm.carrierId" label="Afiliado local" density="compact" class="mb-2"
+                :items="destCarrierOpts.map(c => ({ title: `${c.name}${c.phone ? ' · ' + c.phone : ''}`, value: c.id }))"
+              />
+              <VBtn size="small" color="primary" :disabled="!destAssignForm.carrierId" :loading="busy" @click="doAssignDestination">
+                Asignar reparto a domicilio
+              </VBtn>
+            </template>
           </VCardText>
 
           <VCardText v-if="NEXT[detail.state]" class="d-flex flex-wrap ga-2">

@@ -191,6 +191,10 @@ class Envio(models.Model):
     # Solo interprovincial: el paquete llegó a la ciudad destino y espera en el
     # punto de entrega (agencia/afiliado) — todavía no lo recibió el destinatario.
     ESTADO_EN_DESTINO = "en_destino"
+    # Fase B: en vez de esperar a que el destinatario recoja, se asignó un
+    # afiliado local (por su `ubicacion_frecuente`) para el reparto a domicilio
+    # en la ciudad destino.
+    ESTADO_EN_REPARTO_DESTINO = "en_reparto_destino"
     ESTADO_ENTREGADO = "entregado"
     ESTADO_FALLIDO = "fallido"
     ESTADO_DEVUELTO = "devuelto"
@@ -201,17 +205,21 @@ class Envio(models.Model):
         (ESTADO_RECOGIDO, "Recogido"),
         (ESTADO_EN_RUTA, "En ruta"),
         (ESTADO_EN_DESTINO, "Llegó a destino (punto de entrega)"),
+        (ESTADO_EN_REPARTO_DESTINO, "En reparto a domicilio (destino)"),
         (ESTADO_ENTREGADO, "Entregado"),
         (ESTADO_FALLIDO, "No entregado"),
         (ESTADO_DEVUELTO, "Devuelto al remitente"),
         (ESTADO_CANCELADO, "Cancelado"),
     ]
-    ABIERTOS = (ESTADO_REGISTRADO, ESTADO_ASIGNADO, ESTADO_RECOGIDO, ESTADO_EN_RUTA, ESTADO_EN_DESTINO)
+    ABIERTOS = (
+        ESTADO_REGISTRADO, ESTADO_ASIGNADO, ESTADO_RECOGIDO, ESTADO_EN_RUTA,
+        ESTADO_EN_DESTINO, ESTADO_EN_REPARTO_DESTINO,
+    )
 
     codigo = models.CharField(max_length=16, unique=True, blank=True)
     token = models.CharField(max_length=32, unique=True, default=_token, editable=False)
     nivel = models.CharField(max_length=16, choices=NIVELES, default=NIVEL_EXPRESS)
-    estado = models.CharField(max_length=12, choices=ESTADOS, default=ESTADO_REGISTRADO, db_index=True)
+    estado = models.CharField(max_length=20, choices=ESTADOS, default=ESTADO_REGISTRADO, db_index=True)
 
     # -- Origen del pedido, si vino de la API de socios (P4) --
     socio = models.ForeignKey(
@@ -285,6 +293,14 @@ class Envio(models.Model):
     transportista_vehiculo = models.ForeignKey(
         "tercerizacion.TransportistaVehiculo", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="envios",
+    )
+    # Fase B (2026-09): reparto a domicilio en la ciudad destino de una
+    # encomienda interprovincial — un afiliado distinto al que hizo el tramo
+    # troncal (`transportista`), elegido por su `ubicacion_frecuente`. Null =
+    # el destinatario recoge en el punto de entrega (Fase A, como antes).
+    transportista_destino = models.ForeignKey(
+        "tercerizacion.Transportista", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="envios_reparto_destino",
     )
     ruta = models.ForeignKey(
         RutaReparto, on_delete=models.SET_NULL, null=True, blank=True, related_name="paradas",
@@ -366,7 +382,7 @@ class RendicionCaja(models.Model):
 
 class EventoTracking(models.Model):
     envio = models.ForeignKey(Envio, on_delete=models.CASCADE, related_name="eventos")
-    estado = models.CharField(max_length=12, choices=Envio.ESTADOS)
+    estado = models.CharField(max_length=20, choices=Envio.ESTADOS)
     descripcion = models.CharField(max_length=255, blank=True, default="")
     ubicacion = models.CharField(max_length=120, blank=True, default="")
     creado_por = models.ForeignKey(

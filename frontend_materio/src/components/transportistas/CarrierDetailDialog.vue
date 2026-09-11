@@ -66,8 +66,10 @@ const dash = v => v || '—'
           </VChip>
           <VChip v-if="info.phone" size="small" variant="tonal" prepend-icon="ri-phone-line">{{ info.phone }}</VChip>
           <VChip v-if="info.email" size="small" variant="tonal" prepend-icon="ri-mail-line">{{ info.email }}</VChip>
+          <VChip v-if="info.homeCity" size="small" variant="tonal" prepend-icon="ri-map-pin-line">{{ info.homeCity }}</VChip>
           <VChip v-if="info.isDriver" size="small" variant="tonal" prepend-icon="ri-steering-line">Titular conduce</VChip>
         </div>
+        <p v-if="info?.address" class="text-body-2 text-medium-emphasis mb-1">{{ info.address }}</p>
         <p v-if="info?.notes" class="text-body-2 text-medium-emphasis mb-4">{{ info.notes }}</p>
 
         <VAlert v-if="error" type="error" variant="tonal" density="compact" class="mb-3">{{ error }}</VAlert>

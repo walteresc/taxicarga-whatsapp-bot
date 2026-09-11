@@ -77,6 +77,8 @@ def detail(e):
                     "lengthCm": e.largo_cm, "widthCm": e.ancho_cm, "heightCm": e.alto_cm,
                     "declaredValue": _num(e.valor_declarado)},
         "carrierVehicleId": e.transportista_vehiculo_id,
+        "destinationCarrierId": e.transportista_destino_id,
+        "destinationCarrierName": e.transportista_destino.nombre if e.transportista_destino_id else None,
         "routeCode": e.ruta.codigo if e.ruta_id else None,
         "receivedBy": e.recibido_por or None,
         "podPhoto": f"/api/v2/shipments/{e.codigo}/pod-photo" if e.prueba_foto else None,
@@ -116,7 +118,7 @@ class _Base(APIView):
         return api_exception_handler
 
 
-_QS = Envio.objects.select_related("transportista").prefetch_related("eventos")
+_QS = Envio.objects.select_related("transportista", "transportista_destino").prefetch_related("eventos")
 
 
 class ShipmentListView(_Base):
@@ -231,6 +233,27 @@ class ShipmentAssignView(_Base):
         if request.data.get("vehicleId"):
             vehiculo = get_object_or_404(TransportistaVehiculo, pk=request.data["vehicleId"])
         services.asignar_envio(envio, carrier, vehiculo=vehiculo, usuario=request.user)
+        return Response(detail(get_object_or_404(_QS, codigo=code)))
+
+
+class ShipmentDestinationCarriersView(_Base):
+    """Afiliados activos en la ciudad destino de una encomienda interprovincial
+    (por `Transportista.ubicacion_frecuente`) — candidatos para el reparto a
+    domicilio en destino (Fase B)."""
+
+    def get(self, request, code):
+        envio = get_object_or_404(_QS, codigo=code)
+        candidatos = Transportista.para_ubicacion(envio.destino_distrito)
+        return Response({
+            "carriers": [{"id": c.id, "name": c.nombre, "phone": c.telefono} for c in candidatos],
+        })
+
+
+class ShipmentAssignDestinationView(_Base):
+    def post(self, request, code):
+        envio = get_object_or_404(_QS, codigo=code)
+        carrier = get_object_or_404(Transportista, pk=request.data.get("carrierId"))
+        services.asignar_reparto_destino(envio, carrier, usuario=request.user)
         return Response(detail(get_object_or_404(_QS, codigo=code)))
 
 

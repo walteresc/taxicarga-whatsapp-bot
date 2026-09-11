@@ -15,6 +15,9 @@ export const pickupPointUpdate = (id, body) => apiClient.patch(`${S}/pickup-poin
 export const pickupPointDelete = id => apiClient.delete(`${S}/pickup-points/${id}`)
 export const shipmentDetail = code => apiClient.get(`${S}/${code}/`)
 export const shipmentAssign = (code, body) => apiClient.post(`${S}/${code}/assign`, body)
+// Fase B — reparto a domicilio en la ciudad destino (encomienda interprovincial)
+export const shipmentDestinationCarriers = code => apiClient.get(`${S}/${code}/destination-carriers`)
+export const shipmentAssignDestination = (code, body) => apiClient.post(`${S}/${code}/assign-destination`, body)
 export const shipmentEvent = (code, body) => apiClient.post(`${S}/${code}/events`, body)
 export const shipmentCancel = (code, reason) => apiClient.post(`${S}/${code}/cancel`, { reason })
 

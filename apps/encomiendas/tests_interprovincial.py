@@ -12,7 +12,7 @@ from rest_framework.test import APITestCase
 
 from apps.encomiendas import services
 from apps.encomiendas.models import Envio, EventoTracking, PuntoEntregaDestino
-from apps.tercerizacion.models import TarifaCargaParcial
+from apps.tercerizacion.models import TarifaCargaParcial, Transportista
 
 User = get_user_model()
 
@@ -99,6 +99,85 @@ class CrearEnvioInterprovincialTests(APITestCase):
         services.registrar_evento(envio, Envio.ESTADO_FALLIDO, descripcion="Destinatario no llegó a recoger.")
         envio.refresh_from_db()
         self.assertEqual(envio.estado, Envio.ESTADO_FALLIDO)
+
+
+class RepartoDestinoTests(APITestCase):
+    """Fase B: reparto a domicilio en la ciudad destino, por un afiliado con
+    `ubicacion_frecuente` en esa ciudad."""
+
+    def setUp(self):
+        TarifaCargaParcial.objects.all().delete()
+        _tarifa_arequipa()
+        self.afiliado = Transportista.objects.create(nombre="Local Arequipa", ubicacion_frecuente="Arequipa")
+
+    def _envio_en_destino(self):
+        envio = services.crear_envio(dict(
+            remitente_nombre="Tienda X", origen_distrito="Miraflores", origen_direccion="Av. Larco 100",
+            destinatario_nombre="Ana P", destinatario_telefono="+51900111222",
+            destino_distrito="Arequipa", destino_direccion="Av. Independencia 200",
+            nivel=Envio.NIVEL_INTERPROVINCIAL, peso_kg=Decimal("10"),
+        ))
+        for estado in (Envio.ESTADO_ASIGNADO, Envio.ESTADO_RECOGIDO, Envio.ESTADO_EN_RUTA, Envio.ESTADO_EN_DESTINO):
+            services.registrar_evento(envio, estado)
+        return envio
+
+    def test_asigna_y_pasa_a_en_reparto_destino(self):
+        envio = self._envio_en_destino()
+        services.asignar_reparto_destino(envio, self.afiliado)
+        envio.refresh_from_db()
+        self.assertEqual(envio.estado, Envio.ESTADO_EN_REPARTO_DESTINO)
+        self.assertEqual(envio.transportista_destino_id, self.afiliado.id)
+
+    def test_solo_se_puede_asignar_en_destino(self):
+        envio = services.crear_envio(dict(
+            remitente_nombre="Tienda X", origen_distrito="Miraflores", origen_direccion="Av. Larco 100",
+            destinatario_nombre="Ana P", destino_distrito="Arequipa", destino_direccion="Av. Independencia 200",
+            nivel=Envio.NIVEL_INTERPROVINCIAL, peso_kg=Decimal("10"),
+        ))
+        with self.assertRaises(ValidationError):
+            services.asignar_reparto_destino(envio, self.afiliado)
+
+    def test_despues_de_en_reparto_destino_puede_entregarse(self):
+        envio = self._envio_en_destino()
+        services.asignar_reparto_destino(envio, self.afiliado)
+        services.registrar_evento(envio, Envio.ESTADO_ENTREGADO, recibido_por="Ana P")
+        envio.refresh_from_db()
+        self.assertEqual(envio.estado, Envio.ESTADO_ENTREGADO)
+
+
+class RepartoDestinoApiTests(APITestCase):
+    def setUp(self):
+        TarifaCargaParcial.objects.all().delete()
+        _tarifa_arequipa()
+        Transportista.objects.create(nombre="Local Arequipa", ubicacion_frecuente="Arequipa")
+        Transportista.objects.create(nombre="Local Cusco", ubicacion_frecuente="Cusco")
+        for g in ("Despacho",):
+            Group.objects.get_or_create(name=g)
+        self.user = User.objects.create_user("enc_destb", password="x")
+        self.user.groups.add(Group.objects.get(name="Despacho"))
+        self.client.force_authenticate(self.user)
+        self.envio = services.crear_envio(dict(
+            remitente_nombre="Tienda X", origen_distrito="Miraflores", origen_direccion="Av. Larco 100",
+            destinatario_nombre="Ana P", destino_distrito="Arequipa", destino_direccion="Av. Independencia 200",
+            nivel=Envio.NIVEL_INTERPROVINCIAL, peso_kg=Decimal("10"),
+        ))
+        for estado in (Envio.ESTADO_ASIGNADO, Envio.ESTADO_RECOGIDO, Envio.ESTADO_EN_RUTA, Envio.ESTADO_EN_DESTINO):
+            services.registrar_evento(self.envio, estado)
+
+    def test_lista_solo_los_de_esa_ciudad(self):
+        r = self.client.get(f"/api/v2/shipments/{self.envio.codigo}/destination-carriers")
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual(len(r.data["carriers"]), 1)
+        self.assertEqual(r.data["carriers"][0]["name"], "Local Arequipa")
+
+    def test_asigna_por_api(self):
+        carrier = Transportista.objects.get(nombre="Local Arequipa")
+        r = self.client.post(
+            f"/api/v2/shipments/{self.envio.codigo}/assign-destination", {"carrierId": carrier.id}, format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual(r.data["state"], Envio.ESTADO_EN_REPARTO_DESTINO)
+        self.assertEqual(r.data["destinationCarrierName"], "Local Arequipa")
 
 
 class ShipmentApiInterprovincialTests(APITestCase):

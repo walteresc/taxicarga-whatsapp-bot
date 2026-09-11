@@ -66,9 +66,9 @@ from .models import Transportista
 
 @admin.register(Transportista)
 class TransportistaAdmin(admin.ModelAdmin):
-    list_display = ["nombre", "documento", "telefono", "usuario", "activo", "es_conductor"]
-    list_filter = ["activo", "es_conductor"]
-    search_fields = ["nombre", "documento", "telefono", "usuario__username"]
+    list_display = ["nombre", "documento", "telefono", "ubicacion_frecuente", "usuario", "activo", "es_conductor"]
+    list_filter = ["activo", "es_conductor", "ubicacion_frecuente"]
+    search_fields = ["nombre", "documento", "telefono", "usuario__username", "ubicacion_frecuente"]
     raw_id_fields = ["cliente", "usuario"]
 
 

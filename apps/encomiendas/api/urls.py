@@ -10,6 +10,14 @@ urlpatterns = [
     path("shipments/pickup-points/<int:pk>", views.PickupPointDetailView.as_view(), name="v2-pickup-point-detail"),
     path("shipments/<str:code>/", views.ShipmentDetailView.as_view(), name="v2-shipment-detail"),
     path("shipments/<str:code>/assign", views.ShipmentAssignView.as_view(), name="v2-shipment-assign"),
+    path(
+        "shipments/<str:code>/destination-carriers",
+        views.ShipmentDestinationCarriersView.as_view(), name="v2-shipment-destination-carriers",
+    ),
+    path(
+        "shipments/<str:code>/assign-destination",
+        views.ShipmentAssignDestinationView.as_view(), name="v2-shipment-assign-destination",
+    ),
     path("shipments/<str:code>/events", views.ShipmentEventsView.as_view(), name="v2-shipment-events"),
     path("shipments/<str:code>/cancel", views.ShipmentCancelView.as_view(), name="v2-shipment-cancel"),
     path("shipments/<str:code>/pod-photo", views.ShipmentPodPhotoView.as_view(), name="v2-shipment-pod-photo"),

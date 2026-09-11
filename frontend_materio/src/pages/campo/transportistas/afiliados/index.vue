@@ -27,6 +27,7 @@ const carrierColumns = [
   { key: 'name', label: 'Nombre / Razón social' },
   { key: 'documentId', label: 'RUC / DNI', format: r => r.documentId || '—' },
   { key: 'phone', label: 'Teléfono', format: r => r.phone || '—' },
+  { key: 'homeCity', label: 'Ubicación', format: r => r.homeCity || '—' },
   { key: 'vehicleCount', label: 'Vehículos', align: 'end', format: r => r.vehicleCount ?? 0 },
 ]
 const carrierFields = [
@@ -34,6 +35,12 @@ const carrierFields = [
   { key: 'documentId', label: 'RUC / DNI', type: 'text', cols: 6 },
   { key: 'phone', label: 'Teléfono', type: 'text', cols: 6 },
   { key: 'email', label: 'Email', type: 'text', cols: 12 },
+  { key: 'address', label: 'Dirección', type: 'text', cols: 6 },
+  {
+    key: 'homeCity', label: 'Ubicación frecuente (distrito o ciudad)', type: 'text', cols: 6,
+    hint: 'Dónde opera habitualmente. Sirve para asignarle repartos en su zona (más adelante, la app del '
+      + 'transportista la va a detectar sola).',
+  },
   { key: 'isDriver', label: 'También es conductor de sus vehículos', type: 'switch', cols: 12 },
   { key: 'active', label: 'Activo', type: 'switch', cols: 6 },
   { key: 'notes', label: 'Notas', type: 'textarea', cols: 12 },

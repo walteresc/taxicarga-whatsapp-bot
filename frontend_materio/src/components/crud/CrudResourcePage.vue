@@ -353,6 +353,7 @@ defineExpose({ load })
                 :label="fld.label"
                 :error-messages="fieldError(fld.key)"
                 :required="fld.required"
+                :hint="fld.hint" :persistent-hint="!!fld.hint"
               />
               <VTextarea
                 v-else-if="fld.type === 'textarea'"

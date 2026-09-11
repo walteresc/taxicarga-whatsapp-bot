@@ -21,6 +21,7 @@ _EVENTO_WEBHOOK = {
     Envio.ESTADO_RECOGIDO: "shipment.picked_up",
     Envio.ESTADO_EN_RUTA: "shipment.in_transit",
     Envio.ESTADO_EN_DESTINO: "shipment.arrived_at_destination",
+    Envio.ESTADO_EN_REPARTO_DESTINO: "shipment.out_for_delivery_destination",
     Envio.ESTADO_ENTREGADO: "shipment.delivered",
     Envio.ESTADO_FALLIDO: "shipment.failed",
     Envio.ESTADO_DEVUELTO: "shipment.returned",
@@ -143,8 +144,17 @@ _TRANSICIONES = {
     # ciudad destino y espera en el punto de entrega. Los envíos locales pasan
     # de EN_RUTA directo a ENTREGADO/FALLIDO/DEVUELTO como siempre.
     Envio.ESTADO_EN_RUTA: {Envio.ESTADO_EN_DESTINO, Envio.ESTADO_ENTREGADO, Envio.ESTADO_FALLIDO, Envio.ESTADO_DEVUELTO},
-    Envio.ESTADO_EN_DESTINO: {Envio.ESTADO_ENTREGADO, Envio.ESTADO_FALLIDO, Envio.ESTADO_DEVUELTO},
-    Envio.ESTADO_FALLIDO: {Envio.ESTADO_EN_RUTA, Envio.ESTADO_EN_DESTINO, Envio.ESTADO_DEVUELTO},
+    # EN_REPARTO_DESTINO (Fase B) es opcional: desde EN_DESTINO se puede ir
+    # directo a ENTREGADO (el destinatario recoge en el punto) o pasar por
+    # EN_REPARTO_DESTINO si se asignó un afiliado local para llevarlo a
+    # domicilio (ver `asignar_reparto_destino`).
+    Envio.ESTADO_EN_DESTINO: {
+        Envio.ESTADO_EN_REPARTO_DESTINO, Envio.ESTADO_ENTREGADO, Envio.ESTADO_FALLIDO, Envio.ESTADO_DEVUELTO,
+    },
+    Envio.ESTADO_EN_REPARTO_DESTINO: {Envio.ESTADO_ENTREGADO, Envio.ESTADO_FALLIDO},
+    Envio.ESTADO_FALLIDO: {
+        Envio.ESTADO_EN_RUTA, Envio.ESTADO_EN_DESTINO, Envio.ESTADO_EN_REPARTO_DESTINO, Envio.ESTADO_DEVUELTO,
+    },
     Envio.ESTADO_ENTREGADO: set(),
     Envio.ESTADO_DEVUELTO: set(),
     Envio.ESTADO_CANCELADO: set(),
@@ -170,6 +180,26 @@ def asignar_envio(envio, transportista, *, vehiculo=None, usuario=None):
     envio.save(update_fields=["transportista", "transportista_vehiculo", "estado", "actualizado_en"])
     _evento(envio, Envio.ESTADO_ASIGNADO, f"Asignado a {transportista.nombre}.", usuario=usuario)
     _webhook(envio, Envio.ESTADO_ASIGNADO)
+    return envio
+
+
+@transaction.atomic
+def asignar_reparto_destino(envio, transportista, *, usuario=None):
+    """Fase B: en vez de esperar a que el destinatario recoja en el punto de
+    entrega, un afiliado de la ciudad destino (por su `ubicacion_frecuente`)
+    hace el reparto a domicilio. Solo aplica con el envío en EN_DESTINO."""
+    if envio.estado != Envio.ESTADO_EN_DESTINO:
+        raise ValidationError(
+            "Solo se puede asignar reparto a domicilio cuando el envío llegó a destino."
+        )
+    envio.transportista_destino = transportista
+    envio.estado = Envio.ESTADO_EN_REPARTO_DESTINO
+    envio.save(update_fields=["transportista_destino", "estado", "actualizado_en"])
+    _evento(
+        envio, Envio.ESTADO_EN_REPARTO_DESTINO,
+        f"Asignado a {transportista.nombre} para reparto a domicilio en destino.", usuario=usuario,
+    )
+    _webhook(envio, Envio.ESTADO_EN_REPARTO_DESTINO)
     return envio
 
 

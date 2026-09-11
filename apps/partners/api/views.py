@@ -24,7 +24,8 @@ from .authentication import ApiKeyAuthentication, HasApiKey
 
 _STATE_EN = {
     "registrado": "registered", "asignado": "assigned", "recogido": "picked_up",
-    "en_ruta": "in_transit", "en_destino": "arrived_at_destination", "entregado": "delivered",
+    "en_ruta": "in_transit", "en_destino": "arrived_at_destination",
+    "en_reparto_destino": "out_for_delivery_destination", "entregado": "delivered",
     "fallido": "failed", "devuelto": "returned", "cancelado": "cancelled",
 }
 
