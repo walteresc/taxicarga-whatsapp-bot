@@ -16,6 +16,11 @@ class LocationData:
     acceso_camion: bool | None = None
     distancia_acarreo: int | None = None
     observaciones_acceso: str = ""
+    # Estructurados/geo (autocompletado de direcciones, Mapbox) — opcionales.
+    provincia: str = ""
+    region: str = ""
+    lat: float | None = None
+    lng: float | None = None
 
 
 def route_for_lead(lead, ensure_legacy=True):
@@ -71,6 +76,8 @@ def sync_legacy_endpoints(lead, changed_fields=()):
             "acceso_camion": "camion_llega_origen",
             "distancia_acarreo": "distancia_carga_origen_m",
             "observaciones_acceso": "acceso_origen",
+            "provincia": "provincia_origen", "region": "region_origen",
+            "lat": "lat_origen", "lng": "lng_origen",
         },
         LeadUbicacion.DESTINO: {
             "distrito": "distrito_destino", "direccion": "direccion_destino",
@@ -78,6 +85,8 @@ def sync_legacy_endpoints(lead, changed_fields=()):
             "acceso_camion": "camion_llega_destino",
             "distancia_acarreo": "distancia_carga_destino_m",
             "observaciones_acceso": "acceso_destino",
+            "provincia": "provincia_destino", "region": "region_destino",
+            "lat": "lat_destino", "lng": "lng_destino",
         },
     }
     for location_type, mapping in endpoint_fields.items():
@@ -186,6 +195,10 @@ def _legacy_route(lead):
                 acceso_camion=lead.camion_llega_origen,
                 distancia_acarreo=lead.distancia_carga_origen_m,
                 observaciones_acceso=lead.acceso_origen,
+                provincia=lead.provincia_origen,
+                region=lead.region_origen,
+                lat=lead.lat_origen,
+                lng=lead.lng_origen,
             )
         )
     if any(
@@ -202,6 +215,10 @@ def _legacy_route(lead):
                 acceso_camion=lead.camion_llega_destino,
                 distancia_acarreo=lead.distancia_carga_destino_m,
                 observaciones_acceso=lead.acceso_destino,
+                provincia=lead.provincia_destino,
+                region=lead.region_destino,
+                lat=lead.lat_destino,
+                lng=lead.lng_destino,
             )
         )
     return rows
@@ -218,6 +235,10 @@ def _sync_legacy_route(lead, locations):
         "camion_llega_origen": origin.acceso_camion,
         "distancia_carga_origen_m": origin.distancia_acarreo,
         "acceso_origen": origin.observaciones_acceso,
+        "provincia_origen": origin.provincia,
+        "region_origen": origin.region,
+        "lat_origen": origin.lat,
+        "lng_origen": origin.lng,
         "distrito_destino": destination.distrito,
         "direccion_destino": destination.direccion,
         "piso_destino": destination.piso,
@@ -225,6 +246,10 @@ def _sync_legacy_route(lead, locations):
         "camion_llega_destino": destination.acceso_camion,
         "distancia_carga_destino_m": destination.distancia_acarreo,
         "acceso_destino": destination.observaciones_acceso,
+        "provincia_destino": destination.provincia,
+        "region_destino": destination.region,
+        "lat_destino": destination.lat,
+        "lng_destino": destination.lng,
     }
     type(lead).objects.filter(pk=lead.pk).update(**mapping)
     for field_name, value in mapping.items():

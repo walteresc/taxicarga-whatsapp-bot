@@ -30,6 +30,7 @@ from apps.api.exceptions import api_exception_handler
 from apps.api.permissions import IsPortalCustomer, customer_portal_for
 from apps.cotizador.commercial import crear_cotizacion_portal
 from apps.cotizador.services import cotizar_lead
+from apps.leads.geo import clasificar_y_marcar_ambito
 from apps.leads.models import Lead
 from apps.leads.route import replace_lead_route
 from apps.tercerizacion import negociacion as neg
@@ -63,6 +64,16 @@ def _amount(raw, *, required=False, field="amount"):
     if v <= 0:
         raise ValidationError({field: "El monto debe ser mayor que cero."})
     return v
+
+
+def _coord(raw):
+    """Como `_amount` pero para lat/lng: pueden ser negativas (Perú) o cero."""
+    if raw in (None, ""):
+        return None
+    try:
+        return Decimal(str(raw))
+    except (InvalidOperation, TypeError):
+        return None
 
 
 # --------------------------------------------------------------------------- #
@@ -260,6 +271,14 @@ class CustomerLoadsView(_Portal):
             direccion_destino=destination.get("address") or "",
             piso_origen=origin.get("floor") or None,
             piso_destino=destination.get("floor") or None,
+            provincia_origen=origin.get("province") or "",
+            provincia_destino=destination.get("province") or "",
+            region_origen=origin.get("region") or "",
+            region_destino=destination.get("region") or "",
+            lat_origen=_coord(origin.get("lat")),
+            lng_origen=_coord(origin.get("lng")),
+            lat_destino=_coord(destination.get("lat")),
+            lng_destino=_coord(destination.get("lng")),
             lista_objetos=cargo.get("detail") or "",
             peso_carga_kg=_amount(cargo.get("weightKg")),
             volumen_carga_m3=_amount(cargo.get("volumeM3")),
@@ -271,10 +290,15 @@ class CustomerLoadsView(_Portal):
         )
         replace_lead_route(lead, [
             {"tipo": "origen", "distrito": origin.get("district") or "",
-             "direccion": origin.get("address") or "", "piso": origin.get("floor") or None},
+             "direccion": origin.get("address") or "", "piso": origin.get("floor") or None,
+             "provincia": origin.get("province") or "", "region": origin.get("region") or "",
+             "lat": _coord(origin.get("lat")), "lng": _coord(origin.get("lng"))},
             {"tipo": "destino", "distrito": destination.get("district") or "",
-             "direccion": destination.get("address") or "", "piso": destination.get("floor") or None},
+             "direccion": destination.get("address") or "", "piso": destination.get("floor") or None,
+             "provincia": destination.get("province") or "", "region": destination.get("region") or "",
+             "lat": _coord(destination.get("lat")), "lng": _coord(destination.get("lng"))},
         ])
+        clasificar_y_marcar_ambito(lead)
         cotizar_lead(lead)
         lead.refresh_from_db()
         return Response(load_detail(lead), status=201)

@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.conf import settings
 from django.db import models
 from django.utils import timezone
@@ -445,6 +447,23 @@ class ConfiguracionOperaciones(models.Model):
     adelanto_pct_default = models.DecimalField(
         max_digits=5, decimal_places=2, default=30,
         help_text="% de adelanto del esquema 'adelanto + saldo'.",
+    )
+    lat_referencia_local = models.DecimalField(
+        max_digits=9, decimal_places=6, default=Decimal("-12.046374"),
+        help_text="Latitud del punto de referencia para medir si una carga es "
+                  "'local' (Lima Cercado por defecto).",
+    )
+    lng_referencia_local = models.DecimalField(
+        max_digits=9, decimal_places=6, default=Decimal("-77.042793"),
+        help_text="Longitud del punto de referencia para medir si una carga es 'local'.",
+    )
+    radio_local_km = models.DecimalField(
+        max_digits=6, decimal_places=1, default=Decimal("60"),
+        help_text="Si el origen o el destino de la carga están a más de esta "
+                  "distancia (km, línea recta) del punto de referencia, la carga "
+                  "se clasifica como nacional/interprovincial. Solo aplica cuando "
+                  "hay coordenadas capturadas (autocompletado de dirección); si no "
+                  "hay coordenadas, se mantiene la detección por distrito/texto.",
     )
     actualizado_en = models.DateTimeField(auto_now=True)
 

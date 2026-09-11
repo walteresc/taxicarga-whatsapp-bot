@@ -2,6 +2,7 @@
 import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
+import AddressAutocomplete from '@/components/AddressAutocomplete.vue'
 import { guestQuote, guestSignup } from '@/services/guestService'
 import { useAuthStore } from '@/stores/authStore'
 
@@ -22,8 +23,8 @@ const busy = ref(false)
 const error = ref('')
 
 const quote = reactive({
-  origin: { district: '', address: '' },
-  destination: { district: '', address: '' },
+  origin: { district: '', address: '', province: '', region: '', lat: null, lng: null },
+  destination: { district: '', address: '', province: '', region: '', lat: null, lng: null },
   cargo: { category: 'mudanza', detail: '' },
   date: '',
   contact: { name: '', phone: '', email: '' },
@@ -80,12 +81,8 @@ const submitSignup = async () => {
         <!-- Paso 1: formulario -->
         <VCardText v-if="phase === 'form'">
           <div class="text-subtitle-2 mb-2">¿De dónde a dónde?</div>
-          <div class="d-flex ga-2 mb-2">
-            <VTextField v-model="quote.origin.district" label="Distrito origen" density="comfortable" />
-            <VTextField v-model="quote.destination.district" label="Distrito destino" density="comfortable" />
-          </div>
-          <VTextField v-model="quote.origin.address" label="Dirección de origen (opcional)" density="comfortable" class="mb-2" />
-          <VTextField v-model="quote.destination.address" label="Dirección de destino (opcional)" density="comfortable" class="mb-4" />
+          <AddressAutocomplete v-model="quote.origin" label="Dirección de origen" />
+          <AddressAutocomplete v-model="quote.destination" label="Dirección de destino" />
 
           <div class="text-subtitle-2 mb-2">¿Qué vas a mover?</div>
           <VSelect v-model="quote.cargo.category" :items="CATEGORIES" label="Tipo de carga" density="comfortable" class="mb-2" />

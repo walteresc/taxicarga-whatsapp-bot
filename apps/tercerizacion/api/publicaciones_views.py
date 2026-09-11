@@ -170,6 +170,9 @@ class OutsourcingSettingsView(_Base):
             "deriveOffHours": cfg.derivar_fuera_horario,
             "markupPercent": float(cfg.markup_tercerizacion_porcentaje),
             "minCommissionableAmount": float(cfg.monto_minimo_comisionable),
+            "radiusLocalKm": float(cfg.radio_local_km),
+            "refLat": float(cfg.lat_referencia_local),
+            "refLng": float(cfg.lng_referencia_local),
         }
 
     def get(self, request):
@@ -207,6 +210,24 @@ class OutsourcingSettingsView(_Base):
                 raise ValidationError({"minCommissionableAmount": "No puede ser negativo."})
             cfg.monto_minimo_comisionable = monto
             campos.append("monto_minimo_comisionable")
+        if "radiusLocalKm" in request.data:
+            try:
+                radio = Decimal(str(request.data["radiusLocalKm"]))
+            except (InvalidOperation, TypeError):
+                raise ValidationError({"radiusLocalKm": "Radio no válido."})
+            if not (Decimal(0) < radio <= Decimal(2000)):
+                raise ValidationError({"radiusLocalKm": "Debe estar entre 0 y 2000 km."})
+            cfg.radio_local_km = radio
+            campos.append("radio_local_km")
+        if "refLat" in request.data and "refLng" in request.data:
+            try:
+                lat = Decimal(str(request.data["refLat"]))
+                lng = Decimal(str(request.data["refLng"]))
+            except (InvalidOperation, TypeError):
+                raise ValidationError({"refLat": "Coordenadas no válidas."})
+            cfg.lat_referencia_local = lat
+            cfg.lng_referencia_local = lng
+            campos += ["lat_referencia_local", "lng_referencia_local"]
         if campos:
             cfg.save(update_fields=campos + ["actualizado_en"])
         return Response(self._payload(cfg))

@@ -39,6 +39,30 @@ class GuestQuoteTests(APITestCase):
         self.assertEqual(lead.cliente.telefono, "+51900111222")
         self.assertEqual(lead.ubicaciones.count(), 2)
 
+    def test_coordenadas_lejanas_marcan_interprovincial(self):
+        # Piura está a ~900 km de Lima Cercado (radio local default 60 km).
+        payload = {
+            **_QUOTE,
+            "origin": {"district": "Lima", "address": "Jr Union 100", "lat": -12.0464, "lng": -77.0428},
+            "destination": {"district": "Piura", "address": "Av Grau 200", "lat": -5.1945, "lng": -80.6328},
+        }
+        r = self.client.post("/api/v2/guest/quote", payload, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        lead = Lead.objects.get(codigo=r.data["quoteCode"])
+        self.assertTrue(lead.es_interprovincial)
+        self.assertEqual(float(lead.lat_destino), -5.1945)
+
+    def test_coordenadas_cercanas_no_marcan_interprovincial(self):
+        payload = {
+            **_QUOTE,
+            "origin": {"district": "Miraflores", "address": "Av Larco 100", "lat": -12.1211, "lng": -77.0297},
+            "destination": {"district": "Surco", "address": "Av Primavera 500", "lat": -12.1350, "lng": -76.9900},
+        }
+        r = self.client.post("/api/v2/guest/quote", payload, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        lead = Lead.objects.get(codigo=r.data["quoteCode"])
+        self.assertFalse(lead.es_interprovincial)
+
     def test_honeypot_no_crea_nada(self):
         n = Lead.objects.count()
         r = self.client.post("/api/v2/guest/quote", {**_QUOTE, "website": "http://spam"}, format="json")

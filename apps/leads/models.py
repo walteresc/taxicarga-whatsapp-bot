@@ -135,6 +135,18 @@ class Lead(models.Model):
     distrito_destino = models.CharField(max_length=120, blank=True)
     direccion_origen = models.CharField(max_length=255, blank=True)
     direccion_destino = models.CharField(max_length=255, blank=True)
+    # Estructurados + geolocalización, capturados por el autocompletado de
+    # direcciones (Mapbox) en los flujos web (invitado/portal). Quedan en
+    # blanco/null cuando la carga viene del bot de WhatsApp (texto libre) o de
+    # captura manual del asesor sin autocompletado.
+    provincia_origen = models.CharField(max_length=120, blank=True)
+    provincia_destino = models.CharField(max_length=120, blank=True)
+    region_origen = models.CharField(max_length=120, blank=True)
+    region_destino = models.CharField(max_length=120, blank=True)
+    lat_origen = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    lng_origen = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    lat_destino = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    lng_destino = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
     piso_origen = models.SmallIntegerField(null=True, blank=True)
     piso_destino = models.SmallIntegerField(null=True, blank=True)
     ascensor_origen = models.BooleanField(null=True, blank=True)
@@ -247,6 +259,10 @@ class LeadUbicacion(models.Model):
     tipo = models.CharField(max_length=12, choices=TIPOS)
     distrito = models.CharField(max_length=120, blank=True)
     direccion = models.CharField(max_length=255, blank=True)
+    provincia = models.CharField(max_length=120, blank=True)
+    region = models.CharField(max_length=120, blank=True)
+    lat = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    lng = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
     piso = models.PositiveSmallIntegerField(null=True, blank=True)
     ascensor = models.BooleanField(null=True, blank=True)
     acceso_camion = models.BooleanField(null=True, blank=True)

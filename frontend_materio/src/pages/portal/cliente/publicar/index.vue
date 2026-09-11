@@ -2,6 +2,7 @@
 import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
+import AddressAutocomplete from '@/components/AddressAutocomplete.vue'
 import { customerPublish } from '@/services/customerPortalService'
 
 const router = useRouter()
@@ -24,8 +25,8 @@ const TRUCKS = [
 
 const step = ref(1)
 const form = reactive({
-  origin: { district: '', address: '', floor: null },
-  destination: { district: '', address: '', floor: null },
+  origin: { district: '', address: '', floor: null, province: '', region: '', lat: null, lng: null },
+  destination: { district: '', address: '', floor: null, province: '', region: '', lat: null, lng: null },
   cargo: { category: 'mudanza', detail: '', weightKg: '', volumeM3: '', operators: null, truckType: 'camion_2t' },
   date: '',
   schedule: '',
@@ -59,12 +60,10 @@ const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE
         <VStepper v-model="step" flat :items="['Direcciones', 'Carga', 'Confirmar', 'Precio']" hide-actions>
           <template #item.1>
             <div class="text-subtitle-2 mb-2">Origen</div>
-            <VTextField v-model="form.origin.district" label="Distrito de origen" class="mb-2" />
-            <VTextField v-model="form.origin.address" label="Dirección de origen" class="mb-2" />
+            <AddressAutocomplete v-model="form.origin" label="Dirección de origen" />
             <VTextField v-model.number="form.origin.floor" label="Piso (opcional)" type="number" class="mb-4" />
             <div class="text-subtitle-2 mb-2">Destino</div>
-            <VTextField v-model="form.destination.district" label="Distrito de destino" class="mb-2" />
-            <VTextField v-model="form.destination.address" label="Dirección de destino" class="mb-2" />
+            <AddressAutocomplete v-model="form.destination" label="Dirección de destino" />
             <VTextField v-model.number="form.destination.floor" label="Piso (opcional)" type="number" />
           </template>
 

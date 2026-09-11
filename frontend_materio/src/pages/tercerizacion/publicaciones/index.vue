@@ -58,7 +58,10 @@ const loadList = async () => {
 }
 const onSearch = () => { clearTimeout(searchTimer); searchTimer = setTimeout(loadList, 350) }
 
-const settings = reactive({ autoDerive: false, onReject: false, offHours: false, markup: 25, minCommissionable: 0 })
+const settings = reactive({
+  autoDerive: false, onReject: false, offHours: false, markup: 25, minCommissionable: 0,
+  radiusLocalKm: 60,
+})
 const settingsBusy = ref(false)
 const loadSettings = async () => {
   try {
@@ -68,6 +71,7 @@ const loadSettings = async () => {
     settings.offHours = s.deriveOffHours
     settings.markup = s.markupPercent
     settings.minCommissionable = s.minCommissionableAmount
+    settings.radiusLocalKm = s.radiusLocalKm
   } catch { /* sin permiso: se oculta */ }
 }
 const toggleDerive = async (key, apiKey, val) => {
@@ -103,6 +107,13 @@ const saveMinCommissionable = async () => {
   try {
     settings.minCommissionable = (await outsourcingSettingsUpdate({ minCommissionableAmount: settings.minCommissionable })).minCommissionableAmount
     notify('Guardado.')
+  } catch (e) { notify(e.message || 'No se pudo guardar.', 'error') } finally { settingsBusy.value = false }
+}
+const saveRadiusLocalKm = async () => {
+  settingsBusy.value = true
+  try {
+    settings.radiusLocalKm = (await outsourcingSettingsUpdate({ radiusLocalKm: settings.radiusLocalKm })).radiusLocalKm
+    notify(`Radio local: ${settings.radiusLocalKm} km. Solo aplica a cargas con dirección geolocalizada.`)
   } catch (e) { notify(e.message || 'No se pudo guardar.', 'error') } finally { settingsBusy.value = false }
 }
 
@@ -270,6 +281,18 @@ const awarded = computed(() => detail.value?.state === 'awarded')
           />
           <span class="text-caption text-medium-emphasis">
             Los servicios tercerizados por debajo de este monto no pagan comisión. 0 = todos comisionan.
+          </span>
+        </div>
+        <div class="d-flex align-center flex-wrap ga-2">
+          <VTextField
+            v-model.number="settings.radiusLocalKm" type="number" density="compact" hide-details
+            label="Radio local (km)" style="max-width: 200px;"
+            suffix="km" @blur="saveRadiusLocalKm"
+          />
+          <span class="text-caption text-medium-emphasis">
+            Si el origen o el destino está a más de esta distancia (línea recta) de Lima Cercado, la carga se
+            clasifica como nacional. Solo aplica cuando la dirección se capturó con el autocompletado (tiene
+            coordenadas); si no, sigue la detección por distrito/texto.
           </span>
         </div>
       </VCardText>
