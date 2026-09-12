@@ -54,6 +54,10 @@ Al probar con `test_despacho`/`test_gerencia` se notó que faltaban/sobraban opc
 - `test_finanzas` / `test_sistema`: **no** deberían ver "Bandeja de entrada" en "Atención" (antes la veían todos los roles sin excepción).
 - `test_gerencia`: en Analítica ahora debería ver "Ventas vivas" e "Histórico" además de "Propio vs Tercerizado".
 
+## Actualización 2026-09-12 (2): Gerencia superadmin, Supervisor sin Finanzas/Analítica/Configuración
+- `test_gerencia`: ahora debería ver **todo** el menú, incluida "Configuración" y todo "Finanzas"/"Analítica".
+- `test_supervisor`: ya **no** debería ver "Finanzas", "Analítica" ni "Configuración" — el resto del menú sigue igual.
+
 ## Flujos sugeridos por área
 
 ### 1. Rastreo público (sin login) — la Fase 0 de hoy
