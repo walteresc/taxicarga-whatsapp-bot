@@ -58,6 +58,10 @@ Al probar con `test_despacho`/`test_gerencia` se notó que faltaban/sobraban opc
 - `test_gerencia`: ahora debería ver **todo** el menú, incluida "Configuración" y todo "Finanzas"/"Analítica".
 - `test_supervisor`: ya **no** debería ver "Finanzas", "Analítica" ni "Configuración" — el resto del menú sigue igual.
 
+## Actualización 2026-09-12 (3): fotos del vehículo
+- `test_transportista` → menú "Mi vehículo" (nuevo) → subir hasta 3 fotos del camión "DEM-001" (tocá cada casillero).
+- `test_despacho` o `test_gerencia` → Campo → Transportistas → Afiliados → abrir el detalle de "Transportes Demo" → deberían verse las miniaturas en la columna "Fotos" de la tabla de vehículos.
+
 ## Flujos sugeridos por área
 
 ### 1. Rastreo público (sin login) — la Fase 0 de hoy
