@@ -48,6 +48,12 @@ Probar también:
 - Código correcto + teléfono incorrecto → debe rechazar con mensaje genérico.
 - Código en minúsculas (`crg-0042`) → debe funcionar igual (case-insensitive).
 
+## Actualización 2026-09-12: menú por rol corregido
+Al probar con `test_despacho`/`test_gerencia` se notó que faltaban/sobraban opciones en el menú lateral. Corregido (commit `c81ac3d`): revisar con cada usuario de rol que el menú lateral muestre solo lo que le corresponde:
+- `test_despacho` / `test_gerencia`: ahora **sí** deberían ver "Operaciones" (Pizarra, Programación, Reservas), "Mi equipo" y toda la sección "Tercerización" (antes solo veían una parte, o nada).
+- `test_finanzas` / `test_sistema`: **no** deberían ver "Bandeja de entrada" en "Atención" (antes la veían todos los roles sin excepción).
+- `test_gerencia`: en Analítica ahora debería ver "Ventas vivas" e "Histórico" además de "Propio vs Tercerizado".
+
 ## Flujos sugeridos por área
 
 ### 1. Rastreo público (sin login) — la Fase 0 de hoy
