@@ -13,15 +13,19 @@ from apps.servicios.models import Servicio, SERVICIO_FINALIZADO
 User = get_user_model()
 
 
-class _Sup(APITestCase):
+class _ConAcceso(APITestCase):
+    """Analítica es Gerencia/Despacho/Finanzas — a propósito SIN Supervisor
+    (decisión del usuario, 2026-09-12). Se usa Despacho para las pruebas de
+    la lógica del reporte en sí; el acceso de cada rol se prueba en RbacTests."""
+
     def setUp(self):
         self.user = User.objects.create_user("rep_user", password="x")
-        g, _ = Group.objects.get_or_create(name="Supervisor")
+        g, _ = Group.objects.get_or_create(name="Despacho")
         self.user.groups.add(g)
         self.client.force_login(self.user)
 
 
-class BenchmarkApiTests(_Sup):
+class BenchmarkApiTests(_ConAcceso):
     def test_claves_en_ingles_y_sin_reventar_vacio(self):
         r = self.client.get("/api/v2/reports/benchmark")
         self.assertEqual(r.status_code, 200)
@@ -44,7 +48,7 @@ class BenchmarkApiTests(_Sup):
         self.assertIn("typicalPrice", route)
 
 
-class SalesApiTests(_Sup):
+class SalesApiTests(_ConAcceso):
     def test_estructura_ingles_vacia(self):
         r = self.client.get("/api/v2/reports/sales?period=month")
         self.assertEqual(r.status_code, 200)
@@ -86,5 +90,28 @@ class RbacTests(APITestCase):
 
     def test_superusuario_entra(self):
         u = User.objects.create_superuser("su", "s@x.com", "x")
+        self.client.force_login(u)
+        self.assertEqual(self.client.get("/api/v2/reports/benchmark").status_code, 200)
+
+    def test_supervisor_ya_no_entra(self):
+        # Decisión del usuario (2026-09-12): Supervisor ve todo el flujo
+        # operativo pero no Finanzas/Analítica/Configuración.
+        u = User.objects.create_user("sup_sin_acceso", password="x")
+        g, _ = Group.objects.get_or_create(name="Supervisor")
+        u.groups.add(g)
+        self.client.force_login(u)
+        self.assertEqual(self.client.get("/api/v2/reports/benchmark").status_code, 403)
+
+    def test_gerencia_entra_por_el_bypass(self):
+        u = User.objects.create_user("ger_sin_lista", password="x")
+        g, _ = Group.objects.get_or_create(name="Gerencia")
+        u.groups.add(g)
+        self.client.force_login(u)
+        self.assertEqual(self.client.get("/api/v2/reports/benchmark").status_code, 200)
+
+    def test_finanzas_entra(self):
+        u = User.objects.create_user("fin_test", password="x")
+        g, _ = Group.objects.get_or_create(name="Finanzas")
+        u.groups.add(g)
         self.client.force_login(u)
         self.assertEqual(self.client.get("/api/v2/reports/benchmark").status_code, 200)

@@ -4,19 +4,21 @@ cual); solo traduce las claves al inglés. Solo lectura, sin paginación.
     GET /api/v2/reports/benchmark
     GET /api/v2/reports/sales?period=day|week|fortnight|month|range&from=&to=&on=&advisor=&channel=&type=
 
-Acceso: Administrador / Supervisor.
+Acceso: Analítica es un módulo de Gerencia/Despacho/Finanzas — a propósito
+SIN Supervisor (decisión del usuario, 2026-09-12: Supervisor ve todo el
+flujo operativo pero no Finanzas/Analítica/Configuración).
 """
 import datetime as dt
 
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.api.permissions import HasAnyRole, ROLES_MARGEN
+from apps.api.permissions import HasAnyRole
 from apps.dashboard import services_reportes as R
 
 from .reports_mappers import rename
 
-_ROLES = ("Administrador", "Supervisor")
+_ROLES = ("Administrador", "Gerencia", "Despacho", "Finanzas")
 
 _PERIOD_ES = {
     "day": "dia", "week": "semana", "fortnight": "quincena",
@@ -66,10 +68,11 @@ class SalesReportView(APIView):
 
 
 class OutsourcingReportView(APIView):
-    """Propio vs Tercerizado + margen (F8). Expone el costo de compra → mismo
-    criterio de acceso que el margen en Negociaciones (Gerencia/Supervisor/
-    Despacho/Finanzas)."""
-    permission_classes = [HasAnyRole(*ROLES_MARGEN)]
+    """Propio vs Tercerizado + margen (F8). Expone el costo de compra. Usa
+    `_ROLES` (Analítica, sin Supervisor) y no el `ROLES_MARGEN` compartido con
+    Negociaciones — ahí Supervisor sí sigue viendo el margen porque es parte
+    del flujo operativo que conserva, no de este módulo de reportes."""
+    permission_classes = [HasAnyRole(*_ROLES)]
 
     def get(self, request):
         qp = request.query_params

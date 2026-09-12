@@ -16,15 +16,17 @@ onMounted(() => pipeline.start())
 onUnmounted(() => pipeline.stop())
 
 const OPS = ['Administrador', 'Supervisor', 'Asesor de Ventas']
-const ADMIN_SUP = ['Administrador', 'Supervisor']
 const ADMIN = ['Administrador']
 const DESPACHO = ['Administrador', 'Gerencia', 'Supervisor', 'Despacho']
-const DESPACHO_MARGEN = ['Administrador', 'Gerencia', 'Supervisor', 'Despacho', 'Finanzas']
 const SISTEMA = ['Administrador', 'Admin de sistema']
 // Herramientas de despacho/operación del día a día que el asesor también
-// consulta (reservas que él cerró, negociaciones, rutas). No es lo mismo que
-// DESPACHO_MARGEN (que además ve plata/margen).
+// consulta (reservas que él cerró, negociaciones, rutas).
 const DESPACHO_ASESOR = [...DESPACHO, 'Asesor de Ventas']
+// Plata y reportes de negocio (Finanzas/Analítica) — a propósito SIN
+// Supervisor (decisión del usuario: Supervisor ve todo el flujo operativo
+// pero no Finanzas/Analítica/Configuración). Gerencia entra siempre porque
+// además tiene acceso total (ver role_names() en el backend).
+const GESTION = ['Administrador', 'Gerencia', 'Despacho', 'Finanzas']
 
 // Menú declarativo.
 //  - `to`        : ruta (VerticalNavLink)
@@ -83,20 +85,20 @@ const MENU = [
   { title: 'Negociaciones', icon: 'ri-discuss-line', to: '/tercerizacion/negociaciones', roles: DESPACHO_ASESOR },
   { title: 'Asignaciones', icon: 'ri-user-shared-line', to: '/tercerizacion/asignaciones', roles: DESPACHO_ASESOR, soon: true },
 
-  { heading: 'Finanzas', roles: DESPACHO_MARGEN },
-  { title: 'Liquidaciones', icon: 'ri-wallet-3-line', to: '/finanzas/liquidaciones', roles: DESPACHO_MARGEN },
-  { title: 'Contra-entrega (COD)', icon: 'ri-hand-coin-line', to: '/finanzas/cod', roles: DESPACHO_MARGEN },
+  { heading: 'Finanzas', roles: GESTION },
+  { title: 'Liquidaciones', icon: 'ri-wallet-3-line', to: '/finanzas/liquidaciones', roles: GESTION },
+  { title: 'Contra-entrega (COD)', icon: 'ri-hand-coin-line', to: '/finanzas/cod', roles: GESTION },
 
-  { heading: 'Analítica', roles: DESPACHO_MARGEN },
-  { title: 'Ventas vivas', icon: 'ri-line-chart-line', to: '/analitica/ventas', roles: DESPACHO_MARGEN },
-  { title: 'Histórico', icon: 'ri-bar-chart-box-line', to: '/analitica/benchmark', roles: DESPACHO_MARGEN },
-  { title: 'Propio vs Tercerizado', icon: 'ri-scales-3-line', to: '/analitica/tercerizacion', roles: DESPACHO_MARGEN },
+  { heading: 'Analítica', roles: GESTION },
+  { title: 'Ventas vivas', icon: 'ri-line-chart-line', to: '/analitica/ventas', roles: GESTION },
+  { title: 'Histórico', icon: 'ri-bar-chart-box-line', to: '/analitica/benchmark', roles: GESTION },
+  { title: 'Propio vs Tercerizado', icon: 'ri-scales-3-line', to: '/analitica/tercerizacion', roles: GESTION },
 
-  { heading: 'Configuración', roles: [...ADMIN_SUP, 'Admin de sistema', 'Gerencia', 'Finanzas'] },
-  { title: 'BOT', icon: 'ri-robot-line', to: '/configuracion/bot', roles: [...ADMIN_SUP, 'Admin de sistema'] },
+  { heading: 'Configuración', roles: SISTEMA },
+  { title: 'BOT', icon: 'ri-robot-line', to: '/configuracion/bot', roles: SISTEMA },
   {
-    title: 'Operaciones', icon: 'ri-settings-3-line', roles: ADMIN_SUP, children: [
-      { title: 'Catálogo de vehículos', icon: 'ri-list-settings-line', to: '/configuracion/catalogo-vehiculos', roles: ADMIN_SUP },
+    title: 'Operaciones', icon: 'ri-settings-3-line', roles: ADMIN, children: [
+      { title: 'Catálogo de vehículos', icon: 'ri-list-settings-line', to: '/configuracion/catalogo-vehiculos', roles: ADMIN },
     ],
   },
   { title: 'Comisiones de tercerización', icon: 'ri-percent-line', to: '/configuracion/comisiones', roles: ['Administrador', 'Gerencia', 'Finanzas'] },

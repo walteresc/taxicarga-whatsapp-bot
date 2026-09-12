@@ -25,6 +25,12 @@ def HasAnyRole(*roles):
                 return False
             if user.is_superuser:
                 return True
+            # Gerencia es superadministrador (decisión del usuario, 2026-09-12):
+            # pasa cualquier HasAnyRole del proyecto, no solo los que la listan
+            # explícitamente — así no hay que auditar cada _ROLES del backend
+            # cada vez que se agrega una pantalla nueva.
+            if user.groups.filter(name="Gerencia").exists():
+                return True
             return user.groups.filter(name__in=lookup).exists()
 
     _HasAnyRole.__name__ = f"HasAnyRole_{'_'.join(sorted(lookup))}"
@@ -80,10 +86,17 @@ class IsPortalCustomer(BasePermission):
 def role_names(user):
     """Lista de roles (grupos) del usuario, en inglés canónico interno del
     proyecto (que ya está en español). El superusuario obtiene 'Administrador'
-    de forma implícita para que el front no tenga que tratarlo aparte."""
+    de forma implícita para que el front no tenga que tratarlo aparte.
+
+    Gerencia (decisión del usuario, 2026-09-12) es un "superadministrador":
+    tiene acceso a todo lo que tiene Administrador, en el menú y en cada
+    `HasAnyRole`/`role_required` del backend — no hay que listar 'Gerencia'
+    en cada permiso del proyecto, alcanza con este alias acá."""
     if not user or not user.is_authenticated:
         return []
     names = list(user.groups.values_list("name", flat=True))
     if user.is_superuser and "Administrador" not in names:
+        names.append("Administrador")
+    if "Gerencia" in names and "Administrador" not in names:
         names.append("Administrador")
     return names
