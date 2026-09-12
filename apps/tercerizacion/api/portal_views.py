@@ -112,6 +112,57 @@ class CarrierMeView(_Portal):
         })
 
 
+def _vehicle_item(v):
+    return {
+        "id": v.id, "plate": v.placa, "brand": v.marca, "model": v.modelo, "year": v.anio,
+        # 3 cupos fijos: null = todavía sin foto en ese cupo.
+        "photos": [
+            f"/api/v2/portal/carrier/vehicles/{v.id}/photo/{n}" if getattr(v, f"foto_{n}") else None
+            for n in (1, 2, 3)
+        ],
+    }
+
+
+class CarrierVehiclesView(_Portal):
+    """Mis vehículos — para elegir a cuál subirle fotos."""
+
+    def get(self, request):
+        vehicles = self.carrier.vehiculos.filter(activo=True).order_by("placa")
+        return Response({"results": [_vehicle_item(v) for v in vehicles]})
+
+
+class CarrierVehiclePhotosView(_Portal):
+    """Subir/reemplazar hasta 3 fotos del propio vehículo. Multipart con
+    cualquier subconjunto de `photo1`/`photo2`/`photo3` — los cupos no
+    incluidos quedan como estaban."""
+
+    def post(self, request, pk):
+        vehiculo = get_object_or_404(self.carrier.vehiculos, pk=pk)
+        campos = []
+        for n in (1, 2, 3):
+            archivo = request.FILES.get(f"photo{n}")
+            if archivo:
+                setattr(vehiculo, f"foto_{n}", archivo)
+                campos.append(f"foto_{n}")
+        if not campos:
+            raise ValidationError("Mandá al menos una foto (photo1, photo2 o photo3).")
+        vehiculo.save(update_fields=campos)
+        return Response(_vehicle_item(vehiculo))
+
+
+class CarrierVehiclePhotoView(_Portal):
+    def get(self, request, pk, slot):
+        from django.http import FileResponse, Http404
+
+        vehiculo = get_object_or_404(self.carrier.vehiculos, pk=pk)
+        campo = getattr(vehiculo, f"foto_{slot}", None) if slot in (1, 2, 3) else None
+        if not campo:
+            raise Http404("Sin foto en ese cupo.")
+        resp = FileResponse(campo.open("rb"))
+        resp["Cache-Control"] = "private, max-age=86400"
+        return resp
+
+
 class CarrierLoadsView(_Portal):
     def get(self, request):
         mis_ofertas = {

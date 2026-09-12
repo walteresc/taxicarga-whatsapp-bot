@@ -22,6 +22,7 @@ const CARRIER_NAV = [
   { title: 'Mis entregas', icon: 'ri-e-bike-2-line', to: '/portal/entregas' },
   { title: 'Mis cobros', icon: 'ri-wallet-3-line', to: '/portal/cobros' },
   { title: 'Negociaciones', icon: 'ri-discuss-line', to: '/portal/negociaciones' },
+  { title: 'Mi vehículo', icon: 'ri-truck-line', to: '/portal/vehiculo' },
 ]
 const CUSTOMER_NAV = [
   { title: 'Mis cargas', icon: 'ri-archive-line', to: '/portal/cliente/mis-cargas' },

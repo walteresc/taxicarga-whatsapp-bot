@@ -386,6 +386,14 @@ class TransportistaVehiculo(models.Model):
     notas = models.TextField(blank=True)
     creado_en = models.DateTimeField(auto_now_add=True)
 
+    # Fotos del vehículo (2026-09): el transportista las sube desde su portal
+    # para que el asesor/despacho vea con qué unidad está tratando. 3 cupos
+    # fijos (no una galería) — alcanza para exterior/interior/carrocería y es
+    # simple de subir desde el celular.
+    foto_1 = models.FileField(upload_to="transportistas/vehiculos/%Y/%m/", null=True, blank=True)
+    foto_2 = models.FileField(upload_to="transportistas/vehiculos/%Y/%m/", null=True, blank=True)
+    foto_3 = models.FileField(upload_to="transportistas/vehiculos/%Y/%m/", null=True, blank=True)
+
     class Meta:
         verbose_name = "Vehículo de transportista"
         verbose_name_plural = "Vehículos de transportistas"

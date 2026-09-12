@@ -71,6 +71,7 @@ class CarrierVehicleSerializer(serializers.ModelSerializer):
     categoryName = serializers.SerializerMethodField()
     active = serializers.BooleanField(source="activo", required=False, default=True)
     notes = serializers.CharField(source="notas", required=False, allow_blank=True, default="")
+    photos = serializers.SerializerMethodField()
 
     def get_bodyTypeName(self, obj):
         return obj.tipo_carroceria.nombre if obj.tipo_carroceria_id else None
@@ -78,13 +79,21 @@ class CarrierVehicleSerializer(serializers.ModelSerializer):
     def get_categoryName(self, obj):
         return obj.categoria.nombre if obj.categoria_id else None
 
+    def get_photos(self, obj):
+        # 3 cupos fijos, subidos por el transportista desde su portal — acá
+        # solo se expone la URL (gateada por rol) para que el asesor las vea.
+        return [
+            f"/api/v2/carrier-vehicles/{obj.id}/photo/{n}" if getattr(obj, f"foto_{n}") else None
+            for n in (1, 2, 3)
+        ]
+
     class Meta:
         model = TransportistaVehiculo
         fields = (
             "id", "carrierId", "carrierName", "plate", "vehicleTypeId", "vehicleTypeName",
             "bodyTypeId", "bodyTypeName", "brand", "model", "year",
             "capacityUsefulTons", "lengthUsefulM", "widthUsefulM", "heightUsefulM",
-            "categoryName", "active", "notes",
+            "categoryName", "active", "notes", "photos",
         )
 
     def validate_plate(self, value):

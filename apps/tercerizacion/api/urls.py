@@ -5,7 +5,7 @@ from . import liquidaciones_views as liqv
 from . import negociacion_views as neg
 from . import portal_views as portal
 from . import publicaciones_views as pubv
-from .views import CarrierDriverViewSet, CarrierVehicleViewSet, CarrierViewSet
+from .views import CarrierDriverViewSet, CarrierVehiclePhotoView, CarrierVehicleViewSet, CarrierViewSet
 
 router = DefaultRouter()
 router.register("carriers", CarrierViewSet, basename="v2-carrier")
@@ -13,6 +13,8 @@ router.register("carrier-vehicles", CarrierVehicleViewSet, basename="v2-carrier-
 router.register("carrier-drivers", CarrierDriverViewSet, basename="v2-carrier-driver")
 
 urlpatterns = router.urls + [
+    path("carrier-vehicles/<int:pk>/photo/<int:slot>", CarrierVehiclePhotoView.as_view(), name="v2-carrier-vehicle-photo"),
+
     path("negotiations/", neg.NegotiationListView.as_view(), name="v2-negotiation-list"),
     path("negotiations/<int:pk>/", neg.NegotiationDetailView.as_view(), name="v2-negotiation-detail"),
     path("negotiations/<int:pk>/messages", neg.NegotiationMessagesView.as_view(), name="v2-negotiation-messages"),
@@ -45,6 +47,9 @@ urlpatterns = router.urls + [
 
     # Portal del Transportista
     path("portal/carrier/me", portal.CarrierMeView.as_view(), name="v2-portal-carrier-me"),
+    path("portal/carrier/vehicles", portal.CarrierVehiclesView.as_view(), name="v2-portal-carrier-vehicles"),
+    path("portal/carrier/vehicles/<int:pk>/photos", portal.CarrierVehiclePhotosView.as_view(), name="v2-portal-carrier-vehicle-photos"),
+    path("portal/carrier/vehicles/<int:pk>/photo/<int:slot>", portal.CarrierVehiclePhotoView.as_view(), name="v2-portal-carrier-vehicle-photo"),
     path("portal/carrier/loads", portal.CarrierLoadsView.as_view(), name="v2-portal-carrier-loads"),
     path("portal/carrier/loads/<str:code>/offer", portal.CarrierOfferView.as_view(), name="v2-portal-carrier-offer"),
     path("portal/carrier/offers", portal.CarrierOffersView.as_view(), name="v2-portal-carrier-offers"),

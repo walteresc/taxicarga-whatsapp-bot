@@ -231,6 +231,7 @@ export const routes = [
       { path: 'cobros', component: () => import('@/pages/portal/cobros/index.vue'), meta: { portal: 'carrier' } },
       { path: 'entregas', component: () => import('@/pages/portal/entregas/index.vue'), meta: { portal: 'carrier' } },
       { path: 'negociaciones', component: () => import('@/pages/portal/negociaciones/index.vue'), meta: { portal: 'carrier' } },
+      { path: 'vehiculo', component: () => import('@/pages/portal/vehiculo/index.vue'), meta: { portal: 'carrier' } },
 
       { path: 'cliente', redirect: '/portal/cliente/mis-cargas' },
       { path: 'cliente/mis-cargas', component: () => import('@/pages/portal/cliente/mis-cargas/index.vue'), meta: { portal: 'customer' } },

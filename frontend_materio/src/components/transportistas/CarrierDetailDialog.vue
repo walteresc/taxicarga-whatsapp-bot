@@ -81,13 +81,21 @@ const dash = v => v || '—'
             <VBtn size="small" variant="tonal" prepend-icon="ri-add-line" @click="vehDialog = true">Agregar vehículo</VBtn>
           </div>
           <VTable v-if="vehicles.length" density="compact" class="mb-4">
-            <thead><tr><th>Placa</th><th>Tipo / carrocería</th><th>Marca modelo</th><th>Cap. útil (t)</th><th>Estado</th></tr></thead>
+            <thead><tr><th>Placa</th><th>Tipo / carrocería</th><th>Marca modelo</th><th>Cap. útil (t)</th><th>Fotos</th><th>Estado</th></tr></thead>
             <tbody>
               <tr v-for="v in vehicles" :key="v.id">
                 <td class="font-weight-medium">{{ v.plate }}</td>
                 <td>{{ dash(v.vehicleTypeName) }}<span v-if="v.bodyTypeName"> · {{ v.bodyTypeName }}</span></td>
                 <td>{{ dash([v.brand, v.model].filter(Boolean).join(' ')) }}</td>
                 <td>{{ dash(v.capacityUsefulTons) }}</td>
+                <td>
+                  <div v-if="v.photos?.some(Boolean)" class="d-flex ga-1">
+                    <a v-for="(url, i) in v.photos.filter(Boolean)" :key="i" :href="url" target="_blank">
+                      <img :src="url" style="width: 32px; height: 32px; object-fit: cover; border-radius: 4px;" alt="Foto del vehículo">
+                    </a>
+                  </div>
+                  <span v-else class="text-medium-emphasis">—</span>
+                </td>
                 <td><VChip size="x-small" :color="v.active ? 'success' : 'secondary'">{{ v.active ? 'Activo' : 'Inactivo' }}</VChip></td>
               </tr>
             </tbody>

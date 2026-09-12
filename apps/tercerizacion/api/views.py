@@ -5,9 +5,12 @@
     POST             /api/v2/carriers/{id}/toggle-active/
     carrier-vehicles acepta ?carrierId= para filtrar.
 """
+from django.shortcuts import get_object_or_404
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
+from apps.api.exceptions import api_exception_handler
 from apps.api.filters import apply_active_filter, apply_ordering, apply_search
 from apps.api.permissions import HasAnyRole
 from apps.api.views import V2ModelViewSet
@@ -17,7 +20,9 @@ from apps.tercerizacion.models import (
 
 from .serializers import CarrierDriverSerializer, CarrierSerializer, CarrierVehicleSerializer
 
-_ROLES = ("Administrador", "Supervisor", "Asesor de Ventas")
+# Coincide con el menú "Tercerización" (DESPACHO_ASESOR en NavItems.vue) —
+# Despacho gestiona afiliados/vehículos día a día, no solo Asesor/Supervisor.
+_ROLES = ("Administrador", "Supervisor", "Asesor de Ventas", "Despacho")
 
 _CARRIER_ORDER = {"name": "nombre", "createdAt": "creado_en"}
 _VEHICLE_ORDER = {"plate": "placa", "createdAt": "creado_en", "carrier": "transportista__nombre"}
@@ -81,6 +86,26 @@ class CarrierVehicleViewSet(V2ModelViewSet):
         obj.activo = not obj.activo
         obj.save()
         return Response(self.get_serializer(obj).data)
+
+
+class CarrierVehiclePhotoView(APIView):
+    """Sirve una de las 3 fotos que el transportista subió desde su portal
+    (ver `apps.tercerizacion.api.portal_views.CarrierVehiclePhotosView`)."""
+    permission_classes = [HasAnyRole(*_ROLES)]
+
+    def get_exception_handler(self):
+        return api_exception_handler
+
+    def get(self, request, pk, slot):
+        from django.http import FileResponse, Http404
+
+        vehiculo = get_object_or_404(TransportistaVehiculo, pk=pk)
+        campo = getattr(vehiculo, f"foto_{slot}", None) if slot in (1, 2, 3) else None
+        if not campo:
+            raise Http404("Sin foto en ese cupo.")
+        resp = FileResponse(campo.open("rb"))
+        resp["Cache-Control"] = "private, max-age=86400"
+        return resp
 
 
 _DRIVER_ORDER = {"name": "nombre", "documentId": "dni", "carrier": "transportista__nombre"}
