@@ -68,6 +68,10 @@ Reportado con captura de pantalla: `test_despacho` veía "Mi equipo" y "Mi flota
 - `test_sistema` (Admin de sistema): "Configuración → BOT" ya **debería** entrar.
 - `test_supervisor`: "Configuración → BOT" ahora **correctamente** da `/forbidden` (a propósito, junto con Finanzas/Analítica/Configuración en general).
 
+## Actualización 2026-09-14 (2): menú mostraba "Mi equipo" a roles que no debían verlo
+Bug adicional encontrado al revisar `test_sistema` (Admin de sistema): el sidebar mostraba "Planilla" y "Mi flota" (dentro de "Mi equipo") aunque ese rol no tiene acceso — el bloqueo real (backend/router) sí funcionaba, pero el ítem aparecía igual en el menú, generando ruido. Causa: los roles del grupo padre nunca se evaluaban, solo los de sus hijos (que no tienen roles propios). Corregido (commit `6ee2a2f`). Revisar:
+- `test_sistema`: el menú ahora debería mostrar **solo** "Configuración" (BOT, Usuarios y permisos) — nada de "Mi equipo", "Mi flota" ni ninguna otra sección.
+
 ## Flujos sugeridos por área
 
 ### 1. Rastreo público (sin login) — la Fase 0 de hoy
