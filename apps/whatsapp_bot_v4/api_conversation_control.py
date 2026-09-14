@@ -14,9 +14,9 @@ from .models import ConversationOwnership, BotGlobalConfig
 
 logger = logging.getLogger(__name__)
 
-# Pausar/activar el bot afecta a TODAS las conversaciones a la vez — mismo
-# criterio de rol que el resto del pipeline comercial (ver apps/api/permissions.py).
-_BOT_CONTROL_ROLES = ("Administrador", "Supervisor", "Asesor de Ventas")
+# Coincide con quién ve "Bandeja de entrada" en el menú (NavItems.vue) —
+# Despacho también trabaja la bandeja, no solo Asesor/Supervisor.
+_BOT_CONTROL_ROLES = ("Administrador", "Supervisor", "Despacho", "Asesor de Ventas")
 
 
 @api_view(['POST'])

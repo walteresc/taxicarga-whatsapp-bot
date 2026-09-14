@@ -14,7 +14,7 @@ User = get_user_model()
 class _Authed(APITestCase):
     def setUp(self):
         self.user = User.objects.create_user("bot_config_user", password="x")
-        g, _ = Group.objects.get_or_create(name="Supervisor")
+        g, _ = Group.objects.get_or_create(name="Admin de sistema")
         self.user.groups.add(g)
         self.client.force_login(self.user)
 
@@ -78,3 +78,22 @@ class BotConfigRbacTests(APITestCase):
     def test_sin_autenticar_no_puede_ver_estado(self):
         r = self.client.get("/api/v2/bot/status")
         self.assertEqual(r.status_code, 403)
+
+    def test_supervisor_ya_no_entra(self):
+        """Configuración → BOT es SISTEMA_ROLES (routes.js): a propósito sin
+        Supervisor, decisión del usuario de que Supervisor no entra a
+        Configuración."""
+        user = User.objects.create_user("sup_bot", password="x")
+        g, _ = Group.objects.get_or_create(name="Supervisor")
+        user.groups.add(g)
+        self.client.force_login(user)
+        r = self.client.get("/api/v2/bot/status")
+        self.assertEqual(r.status_code, 403)
+
+    def test_gerencia_entra_por_el_bypass(self):
+        user = User.objects.create_user("ger_bot", password="x")
+        g, _ = Group.objects.get_or_create(name="Gerencia")
+        user.groups.add(g)
+        self.client.force_login(user)
+        r = self.client.get("/api/v2/bot/status")
+        self.assertEqual(r.status_code, 200, r.data)

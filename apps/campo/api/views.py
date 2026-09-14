@@ -17,7 +17,10 @@ from apps.campo.services import assistants_queryset, drivers_queryset
 
 from .serializers import AssistantSerializer, DriverSerializer
 
-_ROLES = ("Administrador", "Supervisor", "Asesor de Ventas")
+# Cubre también Pizarra/Programación (ScheduleViewSet, PizarraView) más abajo
+# en este archivo — coincide con DESPACHO_ASESOR_ROLES del router (routes.js):
+# Despacho la usa todos los días, no solo Administrador/Supervisor/Asesor.
+_ROLES = ("Administrador", "Gerencia", "Supervisor", "Despacho", "Asesor de Ventas")
 
 
 class _PersonnelViewSet(V2ModelViewSet):

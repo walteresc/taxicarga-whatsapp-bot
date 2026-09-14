@@ -5,9 +5,19 @@
 //                 Los nombres coinciden con los grupos del backend.
 // El guard vive en plugins/router/index.js.
 
-const OPERATIONS_ROLES = ['Administrador', 'Supervisor', 'Asesor de Ventas']
-const PERSONAL_ROLES = OPERATIONS_ROLES
-const ANALYTICS_ROLES = ['Administrador', 'Supervisor']
+// Mismos grupos que `layouts/components/NavItems.vue` (el menú) y que los
+// `_ROLES`/`HasAnyRole` del backend — las 3 capas de permiso (menú, esta
+// guardia de ruta, y la API) tienen que decir lo mismo o un rol ve un ítem
+// en el menú y le sale "Sin acceso" al entrar (o al revés).
+const COMERCIAL_ROLES = ['Administrador', 'Supervisor', 'Asesor de Ventas']
+const DESPACHO_ROLES = ['Administrador', 'Gerencia', 'Supervisor', 'Despacho']
+const DESPACHO_ASESOR_ROLES = [...DESPACHO_ROLES, 'Asesor de Ventas']
+// Finanzas/Analítica/Configuración: a propósito SIN Supervisor (decisión del
+// usuario, 2026-09-12) — Gerencia entra igual porque el backend le da
+// 'Administrador' implícito (role_names()).
+const GESTION_ROLES = ['Administrador', 'Gerencia', 'Despacho', 'Finanzas']
+const SISTEMA_ROLES = ['Administrador', 'Admin de sistema']
+const ADMIN_ROLES = ['Administrador']
 
 export const routes = [
   { path: '/', redirect: '/atencion/bandeja-entrada' },
@@ -35,74 +45,74 @@ export const routes = [
       {
         path: 'mi-equipo/personal',
         component: () => import('@/pages/mi-equipo/personal/index.vue'),
-        meta: { roles: PERSONAL_ROLES },
+        meta: { roles: DESPACHO_ASESOR_ROLES },
       },
       {
         path: 'mi-equipo/horas-extras',
         component: () => import('@/pages/mi-equipo/horas-extras/index.vue'),
-        meta: { roles: PERSONAL_ROLES },
+        meta: { roles: DESPACHO_ASESOR_ROLES },
       },
       {
         path: 'mi-equipo/compensaciones',
         component: () => import('@/pages/mi-equipo/compensaciones/index.vue'),
-        meta: { roles: PERSONAL_ROLES },
+        meta: { roles: DESPACHO_ASESOR_ROLES },
       },
       {
         path: 'mi-equipo/pagos',
         component: () => import('@/pages/mi-equipo/pagos/index.vue'),
-        meta: { roles: PERSONAL_ROLES },
+        meta: { roles: DESPACHO_ASESOR_ROLES },
       },
       {
         path: 'personal-campo/conductores',
         component: () => import('@/pages/personal-campo/conductores.vue'),
-        meta: { roles: PERSONAL_ROLES },
+        meta: { roles: DESPACHO_ASESOR_ROLES },
       },
       {
         path: 'personal-campo/ayudantes',
         component: () => import('@/pages/personal-campo/ayudantes.vue'),
-        meta: { roles: PERSONAL_ROLES },
+        meta: { roles: DESPACHO_ASESOR_ROLES },
       },
 
       // TRANSPORTISTAS
       {
         path: 'transportistas/afiliados',
         component: () => import('@/pages/campo/transportistas/afiliados/index.vue'),
-        meta: { roles: PERSONAL_ROLES },
+        meta: { roles: DESPACHO_ASESOR_ROLES },
       },
       {
         path: 'transportistas/vehiculos',
         component: () => import('@/pages/campo/transportistas/vehiculos/index.vue'),
-        meta: { roles: PERSONAL_ROLES },
+        meta: { roles: DESPACHO_ASESOR_ROLES },
       },
       { path: 'campo/transportistas/afiliados', redirect: '/transportistas/afiliados' },
       { path: 'campo/transportistas/vehiculos', redirect: '/transportistas/vehiculos' },
       {
         path: 'tercerizacion/negociaciones',
         component: () => import('@/pages/tercerizacion/negociaciones/index.vue'),
-        meta: { roles: OPERATIONS_ROLES },
+        meta: { roles: DESPACHO_ASESOR_ROLES },
       },
       {
         path: 'tercerizacion/publicaciones',
         component: () => import('@/pages/tercerizacion/publicaciones/index.vue'),
-        meta: { roles: OPERATIONS_ROLES },
+        meta: { roles: DESPACHO_ROLES },
       },
 
       // CONFIGURACIÓN
       {
         path: 'configuracion/catalogo-vehiculos',
         component: () => import('@/pages/configuracion/catalogo-vehiculos/index.vue'),
-        meta: { roles: ['Administrador', 'Supervisor'] },
+        meta: { roles: ADMIN_ROLES },
       },
       {
         path: 'configuracion/bot',
         component: () => import('@/pages/sistema/bot.vue'),
-        meta: { roles: ['Administrador', 'Supervisor'] },
+        meta: { roles: SISTEMA_ROLES },
       },
       { path: 'sistema/bot', redirect: '/configuracion/bot' },
       {
         path: 'configuracion/usuarios',
         component: () => import('@/pages/configuracion/usuarios/index.vue'),
-        meta: { roles: ['Administrador', 'Admin de sistema'] },
+        meta: { roles: SISTEMA_ROLES },
       },
       {
         path: 'configuracion/comisiones',
@@ -114,99 +124,99 @@ export const routes = [
       {
         path: 'comercial/potenciales',
         component: () => import('@/pages/comercial/potenciales/index.vue'),
-        meta: { roles: OPERATIONS_ROLES },
+        meta: { roles: COMERCIAL_ROLES },
       },
       {
         path: 'comercial/para-revision',
         component: () => import('@/pages/comercial/para-revision/index.vue'),
-        meta: { roles: OPERATIONS_ROLES },
+        meta: { roles: COMERCIAL_ROLES },
       },
       {
         path: 'comercial/por-cotizar',
         component: () => import('@/pages/comercial/por-cotizar/index.vue'),
-        meta: { roles: OPERATIONS_ROLES },
+        meta: { roles: COMERCIAL_ROLES },
       },
       {
         path: 'comercial/cotizaciones',
         component: () => import('@/pages/comercial/cotizaciones/index.vue'),
-        meta: { roles: OPERATIONS_ROLES },
+        meta: { roles: COMERCIAL_ROLES },
       },
       { path: 'comercial/reservas', redirect: '/operaciones/reservas' },
       {
         path: 'comercial/perdidos',
         component: () => import('@/pages/comercial/perdidos/index.vue'),
-        meta: { roles: OPERATIONS_ROLES },
+        meta: { roles: COMERCIAL_ROLES },
       },
       {
         path: 'comercial/clientes',
         component: () => import('@/pages/comercial/clientes/index.vue'),
-        meta: { roles: OPERATIONS_ROLES },
+        meta: { roles: COMERCIAL_ROLES },
       },
 
       // OPERACIONES
       {
         path: 'operaciones/reservas',
         component: () => import('@/pages/comercial/reservas/index.vue'),
-        meta: { roles: OPERATIONS_ROLES },
+        meta: { roles: DESPACHO_ASESOR_ROLES },
       },
       {
         path: 'operaciones/programacion',
         component: () => import('@/pages/operaciones/programacion/index.vue'),
-        meta: { roles: OPERATIONS_ROLES },
+        meta: { roles: DESPACHO_ASESOR_ROLES },
       },
       {
         path: 'operaciones/pizarra',
         component: () => import('@/pages/operaciones/pizarra/index.vue'),
-        meta: { roles: OPERATIONS_ROLES },
+        meta: { roles: DESPACHO_ASESOR_ROLES },
       },
 
       // FLOTA (Mi flota)
       {
         path: 'flota/vehiculos',
         component: () => import('@/pages/flota/vehiculos.vue'),
-        meta: { roles: OPERATIONS_ROLES },
+        meta: { roles: DESPACHO_ASESOR_ROLES },
       },
       {
         path: 'flota/mantenimientos',
         component: () => import('@/pages/flota/mantenimientos.vue'),
-        meta: { roles: OPERATIONS_ROLES },
+        meta: { roles: DESPACHO_ASESOR_ROLES },
       },
 
       // ANALÍTICA
       {
         path: 'analitica/ventas',
         component: () => import('@/pages/analitica/ventas.vue'),
-        meta: { roles: ANALYTICS_ROLES },
+        meta: { roles: GESTION_ROLES },
       },
       {
         path: 'analitica/benchmark',
         component: () => import('@/pages/analitica/benchmark.vue'),
-        meta: { roles: ANALYTICS_ROLES },
+        meta: { roles: GESTION_ROLES },
       },
       {
         path: 'analitica/tercerizacion',
         component: () => import('@/pages/analitica/tercerizacion.vue'),
-        meta: { roles: ['Administrador', 'Gerencia', 'Supervisor', 'Despacho', 'Finanzas'] },
+        meta: { roles: GESTION_ROLES },
       },
       {
         path: 'finanzas/liquidaciones',
         component: () => import('@/pages/finanzas/liquidaciones/index.vue'),
-        meta: { roles: ['Administrador', 'Gerencia', 'Finanzas', 'Despacho'] },
+        meta: { roles: GESTION_ROLES },
       },
       {
         path: 'finanzas/cod',
         component: () => import('@/pages/finanzas/cod/index.vue'),
-        meta: { roles: ['Administrador', 'Gerencia', 'Finanzas', 'Despacho'] },
+        meta: { roles: GESTION_ROLES },
       },
       {
         path: 'encomiendas',
         component: () => import('@/pages/encomiendas/index.vue'),
-        meta: { roles: ['Administrador', 'Gerencia', 'Supervisor', 'Despacho', 'Asesor de Ventas'] },
+        meta: { roles: DESPACHO_ASESOR_ROLES },
       },
       {
         path: 'encomiendas/rutas',
         component: () => import('@/pages/encomiendas/rutas/index.vue'),
-        meta: { roles: ['Administrador', 'Gerencia', 'Supervisor', 'Despacho'] },
+        meta: { roles: DESPACHO_ROLES },
       },
       {
         path: 'configuracion/socios',

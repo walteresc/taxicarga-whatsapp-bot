@@ -16,7 +16,10 @@ from apps.api.permissions import HasAnyRole
 
 from ..models import BotGlobalConfig
 
-_ROLES = ("Administrador", "Supervisor", "Asesor de Ventas")
+# Coincide con SISTEMA_ROLES del router (routes.js, "Configuración → BOT") —
+# a propósito sin Supervisor (decisión del usuario: Supervisor no entra a
+# Configuración).
+_ROLES = ("Administrador", "Admin de sistema")
 
 
 def _config():

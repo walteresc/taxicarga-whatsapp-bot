@@ -18,7 +18,8 @@ from apps.flota.services import (
 
 from .serializers import MaintenanceSerializer, VehicleSerializer
 
-_ROLES = ("Administrador", "Supervisor", "Asesor de Ventas")
+# Coincide con DESPACHO_ASESOR_ROLES del router (routes.js, sección "Mi flota").
+_ROLES = ("Administrador", "Gerencia", "Supervisor", "Despacho", "Asesor de Ventas")
 
 
 class VehicleViewSet(V2ModelViewSet):

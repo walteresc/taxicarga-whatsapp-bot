@@ -24,7 +24,8 @@ from .serializers import (
     PaymentSerializer, PayrollConfigSerializer,
 )
 
-_ROLES = ("Administrador", "Supervisor", "Asesor de Ventas")
+# Coincide con DESPACHO_ASESOR_ROLES del router (routes.js, sección "Mi equipo").
+_ROLES = ("Administrador", "Gerencia", "Supervisor", "Despacho", "Asesor de Ventas")
 
 
 class PayrollConfigViewSet(V2ModelViewSet):
