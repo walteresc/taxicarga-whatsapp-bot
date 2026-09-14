@@ -72,6 +72,11 @@ Reportado con captura de pantalla: `test_despacho` veía "Mi equipo" y "Mi flota
 Bug adicional encontrado al revisar `test_sistema` (Admin de sistema): el sidebar mostraba "Planilla" y "Mi flota" (dentro de "Mi equipo") aunque ese rol no tiene acceso — el bloqueo real (backend/router) sí funcionaba, pero el ítem aparecía igual en el menú, generando ruido. Causa: los roles del grupo padre nunca se evaluaban, solo los de sus hijos (que no tienen roles propios). Corregido (commit `6ee2a2f`). Revisar:
 - `test_sistema`: el menú ahora debería mostrar **solo** "Configuración" (BOT, Usuarios y permisos) — nada de "Mi equipo", "Mi flota" ni ninguna otra sección.
 
+## Actualización 2026-09-14 (3): "Mi perfil" — antes el menú de usuario no llevaba a ningún lado
+El dropdown del avatar (arriba a la derecha) tenía "Profile/Settings/Pricing/FAQ" de la plantilla original, sin conectar, y mostraba "John Doe / Admin" fijo. Ahora:
+- Cualquier usuario logueado: clic en el avatar → debería ver tu nombre y rol real (no "John Doe").
+- "Mi perfil" → lleva a `/perfil`: ver tus datos, editar nombre/email, y cambiar tu contraseña (pide la actual). "Settings/Pricing/FAQ" se quitaron (no llevaban a nada).
+
 ## Flujos sugeridos por área
 
 ### 1. Rastreo público (sin login) — la Fase 0 de hoy
