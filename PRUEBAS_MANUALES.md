@@ -62,6 +62,12 @@ Al probar con `test_despacho`/`test_gerencia` se notó que faltaban/sobraban opc
 - `test_transportista` → menú "Mi vehículo" (nuevo) → subir hasta 3 fotos del camión "DEM-001" (tocá cada casillero).
 - `test_despacho` o `test_gerencia` → Campo → Transportistas → Afiliados → abrir el detalle de "Transportes Demo" → deberían verse las miniaturas en la columna "Fotos" de la tabla de vehículos.
 
+## Actualización 2026-09-14: /forbidden al entrar a una opción visible en el menú (corregido)
+Reportado con captura de pantalla: `test_despacho` veía "Mi equipo" y "Mi flota" en el sidebar, pero al entrar salía "Sin acceso" (`/forbidden`). Causa: hay **3 capas de permisos independientes** que deben coincidir — el menú (NavItems.vue, solo visual), el router de Vue (`routes.js` + el guard que redirige a `/forbidden`, control real) y el backend (`HasAnyRole`, el límite real de datos). `routes.js` estaba desactualizado; algunas vistas del backend (Pizarra/Programación, Drivers, Vehicles, Planilla) tampoco tenían a Despacho/Gerencia. Corregido (commit `f94fbb4`) y verificado en vivo contra el servidor. Volver a revisar:
+- `test_despacho`: "Mi equipo" (Personal/Asistencia/Compensaciones/Pagos), "Mi flota", "Operaciones" (Pizarra/Programación/Reservas), Campo (Transportistas/Vehículos) — ya **no** debería salir `/forbidden` en ninguna.
+- `test_sistema` (Admin de sistema): "Configuración → BOT" ya **debería** entrar.
+- `test_supervisor`: "Configuración → BOT" ahora **correctamente** da `/forbidden` (a propósito, junto con Finanzas/Analítica/Configuración en general).
+
 ## Flujos sugeridos por área
 
 ### 1. Rastreo público (sin login) — la Fase 0 de hoy
