@@ -140,6 +140,8 @@ const items = computed(() => {
     if (!last?._links) return
 
     if (entry.children) {
+      if (!visibleFor(entry)) return
+
       const kids = entry.children.filter(visibleFor)
       if (kids.length) {
         last._links.push({
