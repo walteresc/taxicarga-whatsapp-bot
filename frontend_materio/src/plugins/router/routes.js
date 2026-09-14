@@ -29,6 +29,10 @@ export const routes = [
         path: 'dashboard',
         component: () => import('@/pages/dashboard/index.vue'),
       },
+      {
+        path: 'perfil',
+        component: () => import('@/pages/perfil/index.vue'),
+      },
 
       // ATENCIÓN
       {

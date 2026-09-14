@@ -1,5 +1,6 @@
 from django.urls import path
 
+from .profile_views import ChangePasswordView, MeView
 from .reports_views import BenchmarkReportView, OutsourcingReportView, SalesReportView
 from .users_views import RoleListView, UserDetailView, UserListView
 
@@ -7,6 +8,9 @@ urlpatterns = [
     path("reports/benchmark", BenchmarkReportView.as_view(), name="v2-report-benchmark"),
     path("reports/sales", SalesReportView.as_view(), name="v2-report-sales"),
     path("reports/outsourcing", OutsourcingReportView.as_view(), name="v2-report-outsourcing"),
+
+    path("me", MeView.as_view(), name="v2-me"),
+    path("me/change-password", ChangePasswordView.as_view(), name="v2-me-change-password"),
 
     path("roles/", RoleListView.as_view(), name="v2-role-list"),
     path("users/", UserListView.as_view(), name="v2-user-list"),
