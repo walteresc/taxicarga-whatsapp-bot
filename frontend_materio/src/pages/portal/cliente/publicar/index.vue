@@ -60,6 +60,13 @@ const selectService = value => {
 const pickTruck = value => { form.cargo.truckType = value; form.quoteMode = 'por_vehiculo' }
 const clearTruck = () => { form.cargo.truckType = null; form.quoteMode = 'por_carga' }
 
+// Paradas intermedias (multipunto) — solo Carga. Ver cotizar.vue: el motor de
+// precios no las contempla, así que una solicitud con paradas siempre pasa a
+// modo asesor, a propósito.
+const stops = reactive([])
+const addStop = () => stops.push({ district: '', province: '', region: '', lat: null, lng: null })
+const removeStop = index => stops.splice(index, 1)
+
 const submitting = ref(false)
 const result = ref(null)
 const error = ref('')
@@ -80,7 +87,8 @@ const submit = async () => {
     const cargo = serviceType.value === 'reparto'
       ? { ...form.cargo, detail: `[REPARTO] ${form.cargo.detail}`.trim() }
       : form.cargo
-    result.value = await customerPublish({ ...form, cargo })
+    const validStops = serviceType.value === 'carga' ? stops.filter(s => s.district) : []
+    result.value = await customerPublish({ ...form, cargo, stops: validStops })
     step.value = 4
   } catch (e) { error.value = e.message || 'No se pudo publicar.' } finally { submitting.value = false }
 }
@@ -157,18 +165,47 @@ const categoryLabel = computed(() => {
 
           <template #item.2>
             <template v-if="serviceType === 'reparto'">
-              <div class="text-subtitle-2 mb-2">Origen</div>
-              <AddressAutocomplete v-model="form.origin" label="Punto de recojo / almacén" />
-              <div class="text-subtitle-2 mb-2">Destino</div>
-              <AddressAutocomplete v-model="form.destination" label="Zona de reparto (referencia)" />
+              <VRow dense>
+                <VCol cols="12" sm="6">
+                  <div class="text-subtitle-2 mb-2">Origen</div>
+                  <AddressAutocomplete v-model="form.origin" label="Punto de recojo / almacén" />
+                </VCol>
+                <VCol cols="12" sm="6">
+                  <div class="text-subtitle-2 mb-2">Destino</div>
+                  <AddressAutocomplete v-model="form.destination" label="Zona de reparto (referencia)" />
+                </VCol>
+              </VRow>
             </template>
             <template v-else>
-              <div class="text-subtitle-2 mb-2">Origen</div>
-              <DistrictAutocomplete v-model="form.origin" label="Distrito de origen" />
-              <VTextField v-model.number="form.origin.floor" label="Piso (opcional)" type="number" class="mb-4" />
-              <div class="text-subtitle-2 mb-2">Destino</div>
-              <DistrictAutocomplete v-model="form.destination" label="Distrito de destino" />
-              <VTextField v-model.number="form.destination.floor" label="Piso (opcional)" type="number" class="mb-2" />
+              <VRow dense>
+                <VCol cols="12" sm="6">
+                  <div class="text-subtitle-2 mb-2">Origen</div>
+                  <DistrictAutocomplete v-model="form.origin" label="Distrito de origen" />
+                  <VTextField v-model.number="form.origin.floor" label="Piso (opcional)" type="number" />
+                </VCol>
+                <VCol cols="12" sm="6">
+                  <div class="text-subtitle-2 mb-2">Destino</div>
+                  <DistrictAutocomplete v-model="form.destination" label="Distrito de destino" />
+                  <VTextField v-model.number="form.destination.floor" label="Piso (opcional)" type="number" />
+                </VCol>
+              </VRow>
+
+              <template v-if="serviceType === 'carga'">
+                <VRow v-for="(stop, i) in stops" :key="i" dense>
+                  <VCol cols="10" sm="11">
+                    <DistrictAutocomplete v-model="stops[i]" :label="`Parada ${i + 1}`" />
+                  </VCol>
+                  <VCol cols="2" sm="1" class="d-flex align-center">
+                    <VBtn icon variant="text" size="small" @click="removeStop(i)">
+                      <VIcon icon="ri-close-line" />
+                    </VBtn>
+                  </VCol>
+                </VRow>
+                <VBtn variant="text" size="small" prepend-icon="ri-add-line" class="mb-2" @click="addStop">
+                  Agregar parada (opcional)
+                </VBtn>
+              </template>
+
               <p class="text-caption text-medium-emphasis">
                 La dirección exacta te la pedimos recién al reservar — para cotizar alcanza con el distrito.
               </p>
@@ -233,7 +270,7 @@ const categoryLabel = computed(() => {
     <VCol cols="12" md="5">
       <QuoteSummaryPanel
         :service-label="SERVICE_TYPES.find(s => s.value === serviceType)?.title"
-        :origin="form.origin" :destination="form.destination"
+        :origin="form.origin" :destination="form.destination" :stops="stops"
         :detail="form.cargo.detail" :date="form.date"
         :truck-label="chosenTruckLabel"
       />

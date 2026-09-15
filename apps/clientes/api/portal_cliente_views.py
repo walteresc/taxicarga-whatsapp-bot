@@ -246,6 +246,7 @@ class CustomerLoadsView(_Portal):
         d = request.data
         origin, destination = d.get("origin") or {}, d.get("destination") or {}
         cargo = d.get("cargo") or {}
+        stops = [s for s in (d.get("stops") or []) if s.get("district")]
         if not origin.get("district") or not destination.get("district"):
             raise ValidationError("Falta el distrito de origen o destino.")
 
@@ -298,6 +299,12 @@ class CustomerLoadsView(_Portal):
              "direccion": origin.get("address") or "", "piso": origin.get("floor") or None,
              "provincia": origin.get("province") or "", "region": origin.get("region") or "",
              "lat": _coord(origin.get("lat")), "lng": _coord(origin.get("lng"))},
+            *[
+                {"tipo": "parada", "distrito": s.get("district") or "",
+                 "provincia": s.get("province") or "", "region": s.get("region") or "",
+                 "lat": _coord(s.get("lat")), "lng": _coord(s.get("lng"))}
+                for s in stops
+            ],
             {"tipo": "destino", "distrito": destination.get("district") or "",
              "direccion": destination.get("address") or "", "piso": destination.get("floor") or None,
              "provincia": destination.get("province") or "", "region": destination.get("region") or "",
