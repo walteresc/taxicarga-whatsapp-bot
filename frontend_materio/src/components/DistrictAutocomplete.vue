@@ -19,6 +19,16 @@ const emit = defineEmits(['update:modelValue'])
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || ''
 
+// Apodos de distritos conocidos que en el geocoder de Mapbox pierden contra
+// un lugar homónimo mucho menos conocido (p.ej. escribir solo "Surco" trae
+// primero un caserío de la provincia de Yauyos, y "Santiago de Surco" — el
+// distrito de Lima — no aparece ni escribiendo el nombre completo del
+// apodo). Acá se busca también por el nombre real y esos resultados van
+// primero, sin ocultar lo que Mapbox hubiera devuelto igual.
+const DISTRICT_ALIASES = {
+  surco: 'Santiago de Surco',
+}
+
 const displayText = v => [v?.district, v?.province].filter(Boolean).join(', ')
 
 const query = ref(displayText(props.modelValue))
@@ -30,21 +40,37 @@ const located = ref(!!(props.modelValue?.lat && props.modelValue?.lng))
 let debounceTimer = null
 let abortCtrl = null
 
+const geocode = async (text, signal) => {
+  // proximity sesgado a Lima Metropolitana: la mayoría de las cotizaciones
+  // arrancan ahí, y sin esto un distrito común (p.ej. "San Isidro") puede
+  // salir primero de otra región homónima.
+  const url = `https://api.mapbox.com/search/geocode/v6/forward?q=${encodeURIComponent(text)}` +
+    `&autocomplete=true&country=pe&language=es&limit=6&proximity=-77.0428,-12.0464` +
+    `&types=place,locality,district,region&access_token=${MAPBOX_TOKEN}`
+  const res = await fetch(url, { signal })
+  const data = await res.json()
+
+  return data.features || []
+}
+
 const search = async text => {
   if (!MAPBOX_TOKEN || text.trim().length < 2) { suggestions.value = []; return }
   abortCtrl?.abort()
   abortCtrl = new AbortController()
   loading.value = true
   try {
-    // proximity sesgado a Lima Metropolitana: la mayoría de las cotizaciones
-    // arrancan ahí, y sin esto un distrito común (p.ej. "San Isidro") puede
-    // salir primero de otra región homónima.
-    const url = `https://api.mapbox.com/search/geocode/v6/forward?q=${encodeURIComponent(text)}` +
-      `&autocomplete=true&country=pe&language=es&limit=6&proximity=-77.0428,-12.0464` +
-      `&types=place,locality,district,region&access_token=${MAPBOX_TOKEN}`
-    const res = await fetch(url, { signal: abortCtrl.signal })
-    const data = await res.json()
-    suggestions.value = data.features || []
+    const alias = DISTRICT_ALIASES[text.trim().toLowerCase()]
+    const results = alias
+      ? await Promise.all([geocode(alias, abortCtrl.signal), geocode(text, abortCtrl.signal)])
+      : [await geocode(text, abortCtrl.signal)]
+    const seen = new Set()
+    suggestions.value = results.flat().filter(f => {
+      const id = f.properties?.mapbox_id
+      if (seen.has(id)) return false
+      seen.add(id)
+
+      return true
+    })
   } catch (e) {
     if (e.name !== 'AbortError') suggestions.value = []
   } finally { loading.value = false }
