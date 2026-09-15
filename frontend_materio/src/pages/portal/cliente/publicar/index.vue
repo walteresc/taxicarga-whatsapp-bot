@@ -7,8 +7,17 @@ import { customerPublish } from '@/services/customerPortalService'
 
 const router = useRouter()
 
+// "¿Qué necesitas?" — mismo criterio que /cotizar (invitado): de cara al
+// cliente el negocio se presenta en 3 líneas (Carga/Mudanzas/Reparto), por
+// dentro las 3 siguen siendo una "carga" con distinta categoría/detalle.
+const SERVICE_TYPES = [
+  { value: 'carga', icon: 'ri-truck-line', title: 'Carga', subtitle: 'Paquetes, mercadería, pallets, maquinaria o carga nacional.' },
+  { value: 'mudanza', icon: 'ri-home-4-line', title: 'Mudanzas', subtitle: 'Casa, departamento, oficina o empresa.' },
+  { value: 'reparto', icon: 'ri-e-bike-2-line', title: 'Reparto', subtitle: 'Entregas a clientes, tiendas o múltiples destinos.' },
+]
+const serviceType = ref('carga')
+
 const CATEGORIES = [
-  { title: 'Mudanza, muebles y electrodomésticos', value: 'mudanza' },
   { title: 'Cajas, paquetes y bultos', value: 'cajas' },
   { title: 'Mercadería comercial', value: 'mercaderia' },
   { title: 'Maquinaria y equipos', value: 'maquinaria' },
@@ -27,38 +36,62 @@ const step = ref(1)
 const form = reactive({
   origin: { district: '', address: '', floor: null, province: '', region: '', lat: null, lng: null },
   destination: { district: '', address: '', floor: null, province: '', region: '', lat: null, lng: null },
-  cargo: { category: 'mudanza', detail: '', weightKg: '', volumeM3: '', operators: null, truckType: 'camion_2t' },
+  cargo: { category: 'cajas', detail: '', weightKg: '', volumeM3: '', operators: null, truckType: 'camion_2t' },
   date: '',
   schedule: '',
   quoteMode: 'por_carga',
   loadMode: 'completa',   // completa|parcial — solo importa si la ruta es nacional
 })
 
+const selectService = value => {
+  serviceType.value = value
+  form.quoteMode = 'por_carga'   // "elegir vehículo" solo aplica a Carga
+  if (value === 'mudanza') form.cargo.category = 'mudanza'
+  else if (value === 'reparto') form.cargo.category = 'otros'
+  else if (form.cargo.category === 'mudanza') form.cargo.category = 'cajas'
+}
+
 const submitting = ref(false)
 const result = ref(null)
 const error = ref('')
 
 const step1ok = computed(() => form.origin.district && form.origin.address && form.destination.district && form.destination.address)
-const step2ok = computed(() => form.quoteMode === 'por_vehiculo' ? !!form.cargo.truckType : !!form.cargo.category)
+const step2ok = computed(() => {
+  if (!serviceType.value) return false
+
+  return form.quoteMode === 'por_vehiculo' ? !!form.cargo.truckType : !!form.cargo.category
+})
 
 const submit = async () => {
   submitting.value = true
   error.value = ''
   try {
-    result.value = await customerPublish({ ...form })
+    // El cotizador solo conoce categorías de carga — Reparto se manda como
+    // 'otros' marcado en el detalle (ver mismo criterio en /cotizar).
+    const cargo = serviceType.value === 'reparto'
+      ? { ...form.cargo, detail: `[REPARTO] ${form.cargo.detail}`.trim() }
+      : form.cargo
+    result.value = await customerPublish({ ...form, cargo })
     step.value = 4
   } catch (e) { error.value = e.message || 'No se pudo publicar.' } finally { submitting.value = false }
 }
 const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE')}`)
+const categoryLabel = computed(() => {
+  if (form.quoteMode === 'por_vehiculo') return TRUCKS.find(t => t.value === form.cargo.truckType)?.title
+  if (serviceType.value === 'mudanza') return 'Mudanza'
+  if (serviceType.value === 'reparto') return 'Reparto'
+
+  return CATEGORIES.find(c => c.value === form.cargo.category)?.title
+})
 </script>
 
 <template>
   <div>
-    <h1 class="text-h5 font-weight-bold mb-4">Publicar carga</h1>
+    <h1 class="text-h5 font-weight-bold mb-4">Publicar solicitud</h1>
 
     <VCard>
       <VCardText>
-        <VStepper v-model="step" flat :items="['Direcciones', 'Carga', 'Confirmar', 'Precio']" hide-actions>
+        <VStepper v-model="step" flat :items="['Direcciones', 'Servicio', 'Confirmar', 'Precio']" hide-actions>
           <template #item.1>
             <div class="text-subtitle-2 mb-2">Origen</div>
             <AddressAutocomplete v-model="form.origin" label="Dirección de origen" />
@@ -69,23 +102,54 @@ const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE
           </template>
 
           <template #item.2>
-            <VBtnToggle v-model="form.quoteMode" mandatory density="comfortable" class="mb-4">
-              <VBtn value="por_carga">Describir la carga</VBtn>
-              <VBtn value="por_vehiculo">Elegir vehículo</VBtn>
-            </VBtnToggle>
+            <div class="text-subtitle-2 mb-2">¿Qué necesitas?</div>
+            <VRow class="mb-2" dense>
+              <VCol v-for="s in SERVICE_TYPES" :key="s.value" cols="12" sm="4">
+                <VCard
+                  :variant="serviceType === s.value ? 'tonal' : 'outlined'"
+                  :color="serviceType === s.value ? 'primary' : undefined"
+                  class="pa-3 text-center h-100" style="cursor: pointer;"
+                  @click="selectService(s.value)"
+                >
+                  <VIcon :icon="s.icon" size="24" class="mb-1" />
+                  <div class="text-body-2 font-weight-bold">{{ s.title }}</div>
+                  <div class="text-caption text-medium-emphasis">{{ s.subtitle }}</div>
+                </VCard>
+              </VCol>
+            </VRow>
 
-            <template v-if="form.quoteMode === 'por_carga'">
-              <VSelect v-model="form.cargo.category" :items="CATEGORIES" label="Tipo de carga" class="mb-2" />
-              <VTextarea v-model="form.cargo.detail" label="¿Qué vas a mover? (detalle)" rows="2" auto-grow class="mb-2" />
-              <div class="d-flex ga-2">
-                <VTextField v-model="form.cargo.weightKg" label="Peso aprox. (kg)" type="number" />
-                <VTextField v-model="form.cargo.volumeM3" label="Volumen aprox. (m³)" type="number" />
-              </div>
-              <VTextField v-model.number="form.cargo.operators" label="¿Necesitás operarios de carga? ¿Cuántos?" type="number" />
+            <template v-if="serviceType === 'carga'">
+              <VBtnToggle v-model="form.quoteMode" mandatory density="comfortable" class="mb-4">
+                <VBtn value="por_carga">Describir la carga</VBtn>
+                <VBtn value="por_vehiculo">Elegir vehículo</VBtn>
+              </VBtnToggle>
+
+              <template v-if="form.quoteMode === 'por_carga'">
+                <VSelect v-model="form.cargo.category" :items="CATEGORIES" label="Tipo de carga" class="mb-2" />
+                <VTextarea v-model="form.cargo.detail" label="¿Qué vas a mover? (detalle)" rows="2" auto-grow class="mb-2" />
+                <div class="d-flex ga-2">
+                  <VTextField v-model="form.cargo.weightKg" label="Peso aprox. (kg)" type="number" />
+                  <VTextField v-model="form.cargo.volumeM3" label="Volumen aprox. (m³)" type="number" />
+                </div>
+                <VTextField v-model.number="form.cargo.operators" label="¿Necesitás operarios de carga? ¿Cuántos?" type="number" />
+              </template>
+              <template v-else>
+                <VSelect v-model="form.cargo.truckType" :items="TRUCKS" label="Tipo de vehículo" class="mb-2" />
+                <VTextarea v-model="form.cargo.detail" label="Detalle (opcional)" rows="2" auto-grow />
+              </template>
             </template>
-            <template v-else>
-              <VSelect v-model="form.cargo.truckType" :items="TRUCKS" label="Tipo de vehículo" class="mb-2" />
-              <VTextarea v-model="form.cargo.detail" label="Detalle (opcional)" rows="2" auto-grow />
+            <template v-else-if="serviceType === 'mudanza'">
+              <VTextarea
+                v-model="form.cargo.detail" rows="2" auto-grow class="mb-2"
+                label="Ambientes, pisos, ascensor, muebles grandes (opcional)"
+              />
+              <VTextField v-model.number="form.cargo.operators" label="¿Necesitás operarios para la mudanza? ¿Cuántos?" type="number" />
+            </template>
+            <template v-else-if="serviceType === 'reparto'">
+              <VTextarea
+                v-model="form.cargo.detail" rows="2" auto-grow class="mb-2"
+                label="Cuántos pedidos, frecuencia, si es ecommerce o contra-entrega (opcional)"
+              />
             </template>
 
             <template v-if="form.origin.district && form.destination.district">
@@ -108,7 +172,7 @@ const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE
           <template #item.3>
             <VList density="compact">
               <VListItem prepend-icon="ri-map-pin-line" :title="`${form.origin.district} → ${form.destination.district}`" :subtitle="`${form.origin.address} → ${form.destination.address}`" />
-              <VListItem prepend-icon="ri-archive-line" :title="form.quoteMode === 'por_vehiculo' ? TRUCKS.find(t => t.value === form.cargo.truckType)?.title : CATEGORIES.find(c => c.value === form.cargo.category)?.title" :subtitle="form.cargo.detail || '—'" />
+              <VListItem prepend-icon="ri-archive-line" :title="categoryLabel" :subtitle="form.cargo.detail || '—'" />
               <VListItem prepend-icon="ri-calendar-line" :title="form.date || 'Fecha por confirmar'" :subtitle="form.schedule || 'Horario por confirmar'" />
             </VList>
             <VAlert v-if="error" type="error" variant="tonal" class="mt-3">{{ error }}</VAlert>
@@ -117,7 +181,7 @@ const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE
           <template #item.4>
             <div v-if="result" class="text-center py-4">
               <VIcon icon="ri-checkbox-circle-line" color="success" size="48" class="mb-2" />
-              <div class="text-h6">Carga {{ result.code }} publicada</div>
+              <div class="text-h6">Solicitud {{ result.code }} publicada</div>
               <div v-if="soles(result.price?.amount)" class="text-h5 font-weight-bold my-2">{{ soles(result.price.amount) }}</div>
               <div v-else class="text-body-2 text-medium-emphasis my-2">Un asesor te confirmará el precio pronto.</div>
               <div v-if="result.price?.daysEstimated" class="text-caption text-medium-emphasis">

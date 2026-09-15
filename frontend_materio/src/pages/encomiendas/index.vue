@@ -175,12 +175,12 @@ const copyTrack = () => { try { navigator.clipboard?.writeText(trackUrl.value); 
 <template>
   <section>
     <div class="d-flex align-center flex-wrap ga-2 mb-1">
-      <h1 class="text-h4 font-weight-bold">Encomiendas</h1>
+      <h1 class="text-h4 font-weight-bold">Reparto</h1>
       <VSpacer />
-      <VBtn color="primary" prepend-icon="ri-add-line" @click="openNew">Nuevo envío</VBtn>
+      <VBtn color="primary" prepend-icon="ri-add-line" @click="openNew">Nuevo pedido</VBtn>
     </div>
     <p class="text-body-2 text-medium-emphasis mb-4">
-      Envíos door-to-door. Cotización por zona, asignación a un motorizado, seguimiento hasta la entrega.
+      Entregas puerta a puerta: delivery, última milla y distribución. Cotización por zona, asignación a un motorizado, seguimiento hasta la entrega.
     </p>
 
     <VRow>

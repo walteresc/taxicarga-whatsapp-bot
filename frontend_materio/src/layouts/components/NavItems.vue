@@ -74,8 +74,11 @@ const MENU = [
     ],
   },
 
-  { heading: 'Encomiendas', roles: DESPACHO_ASESOR },
-  { title: 'Envíos', icon: 'ri-e-bike-2-line', to: '/encomiendas', roles: DESPACHO_ASESOR },
+  // "Reparto" = delivery/última milla/distribución/ecommerce/COD/devoluciones.
+  // Por dentro sigue siendo el módulo apps/encomiendas (envío puerta a puerta) —
+  // solo cambia la etiqueta de cara al usuario, no las rutas ni la API.
+  { heading: 'Reparto', roles: DESPACHO_ASESOR },
+  { title: 'Pedidos', icon: 'ri-e-bike-2-line', to: '/encomiendas', roles: DESPACHO_ASESOR },
   { title: 'Rutas de reparto', icon: 'ri-route-line', to: '/encomiendas/rutas', roles: DESPACHO },
 
   { heading: 'Tercerización', roles: DESPACHO_ASESOR },
