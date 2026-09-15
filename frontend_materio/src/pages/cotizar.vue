@@ -57,6 +57,13 @@ const quote = reactive({
 })
 const result = ref(null)
 
+// Paradas intermedias (multipunto) — solo Carga. El motor de precios no las
+// contempla en el cálculo (ver apps/cotizador/services.py::cotizar_lead), así
+// que una solicitud con paradas siempre pasa a modo asesor, a propósito.
+const stops = reactive([])
+const addStop = () => stops.push({ district: '', province: '', region: '', lat: null, lng: null })
+const removeStop = index => stops.splice(index, 1)
+
 const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE')}`)
 const formOk = computed(() =>
   serviceType.value && quote.origin.district && quote.destination.district && quote.contact.phone && quote.contact.name)
@@ -75,7 +82,8 @@ const submitQuote = async () => {
         ? { ...quote.cargo, category: 'otros', detail: `[REPARTO] ${quote.cargo.detail}`.trim() }
         : { ...quote.cargo, truckType: chosenTruck.value || undefined }
     const quoteMode = serviceType.value === 'carga' && chosenTruck.value ? 'por_vehiculo' : 'por_carga'
-    result.value = await guestQuote({ ...quote, cargo, quoteMode })
+    const validStops = serviceType.value === 'carga' ? stops.filter(s => s.district) : []
+    result.value = await guestQuote({ ...quote, cargo, quoteMode, stops: validStops })
     phase.value = 'result'
   } catch (e) { error.value = e.message } finally { busy.value = false }
 }
@@ -136,12 +144,41 @@ const submitSignup = async () => {
           <template v-if="serviceType">
             <div class="text-subtitle-2 mb-2">¿De dónde a dónde?</div>
             <template v-if="serviceType === 'reparto'">
-              <AddressAutocomplete v-model="quote.origin" label="Punto de recojo / almacén" />
-              <AddressAutocomplete v-model="quote.destination" label="Zona de reparto (referencia)" />
+              <VRow dense>
+                <VCol cols="12" sm="6">
+                  <AddressAutocomplete v-model="quote.origin" label="Punto de recojo / almacén" />
+                </VCol>
+                <VCol cols="12" sm="6">
+                  <AddressAutocomplete v-model="quote.destination" label="Zona de reparto (referencia)" />
+                </VCol>
+              </VRow>
             </template>
             <template v-else>
-              <DistrictAutocomplete v-model="quote.origin" label="Distrito de origen" />
-              <DistrictAutocomplete v-model="quote.destination" label="Distrito de destino" />
+              <VRow dense>
+                <VCol cols="12" sm="6">
+                  <DistrictAutocomplete v-model="quote.origin" label="Origen" />
+                </VCol>
+                <VCol cols="12" sm="6">
+                  <DistrictAutocomplete v-model="quote.destination" label="Destino" />
+                </VCol>
+              </VRow>
+
+              <template v-if="serviceType === 'carga'">
+                <VRow v-for="(stop, i) in stops" :key="i" dense>
+                  <VCol cols="10" sm="11">
+                    <DistrictAutocomplete v-model="stops[i]" :label="`Parada ${i + 1}`" />
+                  </VCol>
+                  <VCol cols="2" sm="1" class="d-flex align-center">
+                    <VBtn icon variant="text" size="small" @click="removeStop(i)">
+                      <VIcon icon="ri-close-line" />
+                    </VBtn>
+                  </VCol>
+                </VRow>
+                <VBtn variant="text" size="small" prepend-icon="ri-add-line" class="mb-2" @click="addStop">
+                  Agregar parada (opcional)
+                </VBtn>
+              </template>
+
               <p class="text-caption text-medium-emphasis mb-2">
                 La dirección exacta te la pedimos recién al reservar — para cotizar alcanza con el distrito.
               </p>
@@ -268,7 +305,7 @@ const submitSignup = async () => {
       <VCol cols="12" md="5">
         <QuoteSummaryPanel
           :service-label="SERVICE_TYPES.find(s => s.value === serviceType)?.title"
-          :origin="quote.origin" :destination="quote.destination"
+          :origin="quote.origin" :destination="quote.destination" :stops="stops"
           :detail="quote.cargo.detail" :date="quote.date"
           :truck-label="chosenTruckLabel"
         />

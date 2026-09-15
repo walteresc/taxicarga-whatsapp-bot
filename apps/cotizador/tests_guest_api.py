@@ -75,6 +75,19 @@ class GuestQuoteTests(APITestCase):
         r = self.client.post("/api/v2/guest/quote", payload, format="json")
         self.assertEqual(r.status_code, 400)
 
+    def test_con_paradas_guarda_la_ruta_completa_y_pasa_a_asesor(self):
+        payload = {
+            **_QUOTE,
+            "stops": [{"district": "San Borja"}, {"district": ""}],   # el vacío se descarta
+        }
+        r = self.client.post("/api/v2/guest/quote", payload, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        lead = Lead.objects.get(codigo=r.data["quoteCode"])
+        self.assertEqual(list(lead.ubicaciones.order_by("orden").values_list("tipo", "distrito")), [
+            ("origen", "Miraflores"), ("parada", "San Borja"), ("destino", "Surco"),
+        ])
+        self.assertEqual(r.data["price"]["mode"], "advisor")
+
 
 @_NO_THROTTLE
 class GuestSignupTests(APITestCase):

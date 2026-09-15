@@ -74,6 +74,13 @@ const pick = feature => {
   emit('update:modelValue', { ...props.modelValue, district: dist, province, region, lat, lng })
 }
 
+const clear = () => {
+  query.value = ''
+  located.value = false
+  suggestions.value = []
+  emit('update:modelValue', { ...props.modelValue, district: '', province: '', region: '', lat: null, lng: null })
+}
+
 watch(() => props.modelValue, v => {
   const text = displayText(v)
   if (text !== query.value) query.value = text
@@ -93,7 +100,8 @@ onBeforeUnmount(() => { clearTimeout(debounceTimer); abortCtrl?.abort() })
         :append-inner-icon="located ? 'ri-map-pin-2-fill' : undefined"
         :color="located ? 'success' : undefined"
         :hint="!MAPBOX_TOKEN ? 'Autocompletado no disponible: escribí el distrito.' : ''"
-        persistent-hint
+        persistent-hint clearable
+        @click:clear="clear"
         @focus="onFocus"
         @update:model-value="onInput"
       />

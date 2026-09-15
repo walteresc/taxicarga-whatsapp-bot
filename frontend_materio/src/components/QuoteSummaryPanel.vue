@@ -8,6 +8,7 @@ const props = defineProps({
   serviceLabel: { type: String, default: '' },
   origin: { type: Object, default: () => ({}) },
   destination: { type: Object, default: () => ({}) },
+  stops: { type: Array, default: () => [] },
   detail: { type: String, default: '' },
   date: { type: String, default: '' },
   truckLabel: { type: String, default: '' },
@@ -17,11 +18,15 @@ const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || ''
 
 const hasOrigin = computed(() => props.origin?.lat != null && props.origin?.lng != null)
 const hasDestination = computed(() => props.destination?.lat != null && props.destination?.lng != null)
+const validStops = computed(() => (props.stops || []).filter(s => s?.district))
 
 const mapUrl = computed(() => {
   if (!MAPBOX_TOKEN) return ''
   const pins = []
   if (hasOrigin.value) pins.push(`pin-s-a+2E7D32(${props.origin.lng},${props.origin.lat})`)
+  validStops.value.forEach(s => {
+    if (s.lat != null && s.lng != null) pins.push(`pin-s+F9A825(${s.lng},${s.lat})`)
+  })
   if (hasDestination.value) pins.push(`pin-s-b+C62828(${props.destination.lng},${props.destination.lat})`)
   if (!pins.length) return ''
 
@@ -62,6 +67,14 @@ const fmtDate = iso => {
           <div class="text-body-2 font-weight-medium">{{ origin?.district || 'Por definir' }}</div>
         </div>
       </div>
+      <div v-for="(s, i) in validStops" :key="i" class="d-flex align-start ga-2 mb-2">
+        <VIcon icon="ri-map-pin-line" color="warning" size="16" class="mt-1" />
+        <div>
+          <div class="text-caption text-medium-emphasis">Parada {{ i + 1 }}</div>
+          <div class="text-body-2 font-weight-medium">{{ s.district }}</div>
+        </div>
+      </div>
+
       <div class="d-flex align-start ga-2 mb-3">
         <VIcon icon="ri-map-pin-fill" color="error" size="16" class="mt-1" />
         <div>

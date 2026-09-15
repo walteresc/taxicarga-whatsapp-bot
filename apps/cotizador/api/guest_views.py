@@ -97,6 +97,7 @@ class GuestQuoteView(_Public):
         destination = d.get("destination") or {}
         cargo = d.get("cargo") or {}
         contact = d.get("contact") or {}
+        stops = [s for s in (d.get("stops") or []) if s.get("district")]
         if not origin.get("district") or not destination.get("district"):
             raise ValidationError("Necesitamos al menos el distrito de origen y de destino.")
 
@@ -158,6 +159,14 @@ class GuestQuoteView(_Public):
                 "provincia": origin.get("province") or "", "region": origin.get("region") or "",
                 "lat": _coord(origin.get("lat")), "lng": _coord(origin.get("lng")),
             },
+            *[
+                {
+                    "tipo": "parada", "distrito": s.get("district") or "", "direccion": s.get("address") or "",
+                    "provincia": s.get("province") or "", "region": s.get("region") or "",
+                    "lat": _coord(s.get("lat")), "lng": _coord(s.get("lng")),
+                }
+                for s in stops
+            ],
             {
                 "tipo": "destino", "distrito": destination.get("district") or "", "direccion": destination.get("address") or "",
                 "provincia": destination.get("province") or "", "region": destination.get("region") or "",

@@ -78,6 +78,35 @@ class CotizadorTests(TestCase):
         self.assertEqual(cotizacion.precio_max, Decimal("480.00"))
         self.assertEqual(cotizacion.precio_recomendado, Decimal("450.00"))
 
+    def test_multipunto_siempre_pasa_a_asesor(self):
+        """Una ruta con paradas intermedias nunca se cotiza sola — ni el motor
+        por históricos/reglas ni la tabla de tarifas de carga parcial
+        contemplan el costo de las paradas."""
+        from apps.leads.models import LeadUbicacion
+        from apps.leads.route import replace_lead_route
+
+        cliente = Cliente.objects.create(telefono="51933333333")
+        lead = Lead.objects.create(
+            cliente=cliente, tipo_servicio="mudanza",
+            distrito_origen="Miraflores", distrito_destino="Surco",
+        )
+        for price in ["400.00", "450.00", "500.00"]:
+            ServicioHistorico.objects.create(
+                fecha="2026-01-01", tipo_servicio="mudanza",
+                distrito_origen="Miraflores", distrito_destino="Surco",
+                precio_cotizado=Decimal(price), precio_final=Decimal(price), cerrado=True,
+            )
+        replace_lead_route(lead, [
+            {"tipo": LeadUbicacion.ORIGEN, "distrito": "Miraflores"},
+            {"tipo": LeadUbicacion.PARADA, "distrito": "San Borja"},
+            {"tipo": LeadUbicacion.DESTINO, "distrito": "Surco"},
+        ])
+
+        cotizacion = cotizar_lead(lead)
+
+        self.assertEqual(cotizacion.modo, Cotizacion.MODO_MANUAL)
+        self.assertIn("multipunto", cotizacion.explicacion.lower())
+
     def test_cotiza_con_reglas_si_no_hay_historicos(self):
         cliente = Cliente.objects.create(telefono="51922222222")
         lead = Lead.objects.create(

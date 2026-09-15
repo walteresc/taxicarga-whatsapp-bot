@@ -4,7 +4,7 @@ from statistics import median
 
 from django.utils import timezone
 
-from apps.leads.models import Lead
+from apps.leads.models import Lead, LeadUbicacion
 from .models import Cotizacion, ServicioHistorico
 from .pricing import fallback_price_for_lead
 from .similarity import score_service
@@ -46,6 +46,16 @@ def _cotizar_carga_parcial(lead):
 
 
 def cotizar_lead(lead):
+    # Multipunto (con paradas intermedias): ningún camino del motor las
+    # contempla en el cálculo (ni históricos/reglas base, ni la tabla de
+    # tarifas de carga parcial) — siempre pasa a un asesor.
+    if lead.pk and lead.ubicaciones.filter(tipo=LeadUbicacion.PARADA).exists():
+        return Cotizacion.objects.create(
+            lead=lead,
+            precio_min=Decimal(0), precio_max=Decimal(0), precio_recomendado=Decimal(0),
+            servicios_similares_encontrados=0, confianza=25, modo=Cotizacion.MODO_MANUAL,
+            explicacion="Ruta con paradas intermedias (multipunto): requiere confirmación de un asesor.",
+        )
     if lead.es_interprovincial and lead.modo_carga == Lead.MODO_CARGA_PARCIAL:
         return _cotizar_carga_parcial(lead)
     similar_services = _find_similar_services(lead)
