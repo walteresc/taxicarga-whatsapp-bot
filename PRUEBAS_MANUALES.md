@@ -102,6 +102,9 @@ En `/cotizar`, para **Carga**: Origen y Destino ahora van uno al lado del otro (
 - Cotizar Ate → Trujillo con una parada en Chimbote → siempre debería caer en modo "un asesor te confirma el precio" (nunca un precio automático), porque el motor de precios no calcula el costo de las paradas.
 - El mapa de la derecha debería mostrar un pin amarillo por cada parada, entre el verde (origen) y el rojo (destino).
 
+## Actualización 2026-09-14 (8): mismo timeline en /cotizar y Portal Cliente
+Ambas pantallas (`/cotizar` sin login y Portal Cliente → Publicar solicitud) ahora tienen el mismo timeline de 3 pasos arriba: **Servicio → Carga → Confirmar**. El paso "Servicio" queda limpio (solo las 3 tarjetas); todo lo demás (direcciones, paradas, detalle de carga, vehículo, fecha) vive en "Carga"; "Confirmar" es el resumen final antes de enviar. Revisar que se vea igual en ambas pantallas.
+
 ## Flujos sugeridos por área
 
 ### 1. Rastreo público (sin login) — la Fase 0 de hoy
