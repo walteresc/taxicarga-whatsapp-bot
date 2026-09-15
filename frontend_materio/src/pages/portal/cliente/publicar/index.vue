@@ -62,12 +62,12 @@ const submitting = ref(false)
 const result = ref(null)
 const error = ref('')
 
-const step1ok = computed(() => form.origin.district && form.origin.address && form.destination.district && form.destination.address)
-const step2ok = computed(() => {
+const step1ok = computed(() => {
   if (!serviceType.value) return false
 
   return form.quoteMode === 'por_vehiculo' ? !!form.cargo.truckType : !!form.cargo.category
 })
+const step2ok = computed(() => form.origin.district && form.origin.address && form.destination.district && form.destination.address)
 
 const submit = async () => {
   submitting.value = true
@@ -98,17 +98,8 @@ const categoryLabel = computed(() => {
 
     <VCard>
       <VCardText>
-        <VStepper v-model="step" flat :items="['Direcciones', 'Servicio', 'Confirmar', 'Precio']" hide-actions>
+        <VStepper v-model="step" flat :items="['Servicio', 'Direcciones', 'Confirmar', 'Precio']" hide-actions>
           <template #item.1>
-            <div class="text-subtitle-2 mb-2">Origen</div>
-            <AddressAutocomplete v-model="form.origin" label="Dirección de origen" />
-            <VTextField v-model.number="form.origin.floor" label="Piso (opcional)" type="number" class="mb-4" />
-            <div class="text-subtitle-2 mb-2">Destino</div>
-            <AddressAutocomplete v-model="form.destination" label="Dirección de destino" />
-            <VTextField v-model.number="form.destination.floor" label="Piso (opcional)" type="number" />
-          </template>
-
-          <template #item.2>
             <div class="text-subtitle-2 mb-2">¿Qué necesitas?</div>
             <VRow class="mb-2" dense>
               <VCol v-for="s in SERVICE_TYPES" :key="s.value" cols="12" sm="4">
@@ -158,8 +149,24 @@ const categoryLabel = computed(() => {
               />
             </template>
 
+          </template>
+
+          <template #item.2>
+            <div class="text-subtitle-2 mb-2">Origen</div>
+            <AddressAutocomplete
+              v-model="form.origin"
+              :label="serviceType === 'reparto' ? 'Punto de recojo / almacén' : 'Dirección de origen'"
+            />
+            <VTextField v-model.number="form.origin.floor" label="Piso (opcional)" type="number" class="mb-4" />
+            <div class="text-subtitle-2 mb-2">Destino</div>
+            <AddressAutocomplete
+              v-model="form.destination"
+              :label="serviceType === 'reparto' ? 'Zona de reparto (referencia)' : 'Dirección de destino'"
+            />
+            <VTextField v-model.number="form.destination.floor" label="Piso (opcional)" type="number" />
+
             <template v-if="form.origin.district && form.destination.district">
-              <div class="text-caption text-medium-emphasis mb-1 mt-2">
+              <div class="text-caption text-medium-emphasis mb-1 mt-4">
                 Si tu carga es a otra ciudad, elegí cómo la enviamos (si es dentro de Lima, no aplica):
               </div>
               <VBtnToggle v-model="form.loadMode" mandatory density="comfortable" class="mb-2" divided>
