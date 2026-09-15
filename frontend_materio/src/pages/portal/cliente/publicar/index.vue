@@ -3,6 +3,7 @@ import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import AddressAutocomplete from '@/components/AddressAutocomplete.vue'
+import VehiclePickerDialog from '@/components/VehiclePickerDialog.vue'
 import { customerPublish } from '@/services/customerPortalService'
 
 const router = useRouter()
@@ -36,20 +37,26 @@ const step = ref(1)
 const form = reactive({
   origin: { district: '', address: '', floor: null, province: '', region: '', lat: null, lng: null },
   destination: { district: '', address: '', floor: null, province: '', region: '', lat: null, lng: null },
-  cargo: { category: 'cajas', detail: '', weightKg: '', volumeM3: '', operators: null, truckType: 'camion_2t' },
+  cargo: { category: 'cajas', detail: '', weightKg: '', volumeM3: '', operators: null, truckType: null },
   date: '',
   schedule: '',
   quoteMode: 'por_carga',
   loadMode: 'completa',   // completa|parcial — solo importa si la ruta es nacional
 })
 
+const showVehiclePicker = ref(false)
+const chosenTruckLabel = computed(() => TRUCKS.find(t => t.value === form.cargo.truckType)?.title || '')
+
 const selectService = value => {
   serviceType.value = value
   form.quoteMode = 'por_carga'   // "elegir vehículo" solo aplica a Carga
+  form.cargo.truckType = null
   if (value === 'mudanza') form.cargo.category = 'mudanza'
   else if (value === 'reparto') form.cargo.category = 'otros'
   else if (form.cargo.category === 'mudanza') form.cargo.category = 'cajas'
 }
+const pickTruck = value => { form.cargo.truckType = value; form.quoteMode = 'por_vehiculo' }
+const clearTruck = () => { form.cargo.truckType = null; form.quoteMode = 'por_carga' }
 
 const submitting = ref(false)
 const result = ref(null)
@@ -119,24 +126,23 @@ const categoryLabel = computed(() => {
             </VRow>
 
             <template v-if="serviceType === 'carga'">
-              <VBtnToggle v-model="form.quoteMode" mandatory density="comfortable" class="mb-4">
-                <VBtn value="por_carga">Describir la carga</VBtn>
-                <VBtn value="por_vehiculo">Elegir vehículo</VBtn>
-              </VBtnToggle>
+              <VSelect v-model="form.cargo.category" :items="CATEGORIES" label="Tipo de carga" class="mb-2" />
+              <VTextarea v-model="form.cargo.detail" label="¿Qué vas a mover? (detalle)" rows="2" auto-grow class="mb-2" />
+              <div class="d-flex ga-2 mb-2">
+                <VTextField v-model="form.cargo.weightKg" label="Peso aprox. (kg)" type="number" />
+                <VTextField v-model="form.cargo.volumeM3" label="Volumen aprox. (m³)" type="number" />
+              </div>
+              <VTextField v-model.number="form.cargo.operators" label="¿Necesitás operarios de carga? ¿Cuántos?" type="number" class="mb-2" />
 
-              <template v-if="form.quoteMode === 'por_carga'">
-                <VSelect v-model="form.cargo.category" :items="CATEGORIES" label="Tipo de carga" class="mb-2" />
-                <VTextarea v-model="form.cargo.detail" label="¿Qué vas a mover? (detalle)" rows="2" auto-grow class="mb-2" />
-                <div class="d-flex ga-2">
-                  <VTextField v-model="form.cargo.weightKg" label="Peso aprox. (kg)" type="number" />
-                  <VTextField v-model="form.cargo.volumeM3" label="Volumen aprox. (m³)" type="number" />
-                </div>
-                <VTextField v-model.number="form.cargo.operators" label="¿Necesitás operarios de carga? ¿Cuántos?" type="number" />
-              </template>
-              <template v-else>
-                <VSelect v-model="form.cargo.truckType" :items="TRUCKS" label="Tipo de vehículo" class="mb-2" />
-                <VTextarea v-model="form.cargo.detail" label="Detalle (opcional)" rows="2" auto-grow />
-              </template>
+              <div class="d-flex align-center ga-2 mb-2 flex-wrap">
+                <span class="text-body-2 text-medium-emphasis">¿Ya sabés qué vehículo necesitás?</span>
+                <VChip v-if="form.cargo.truckType" closable size="small" color="primary" variant="tonal" @click:close="clearTruck">
+                  {{ chosenTruckLabel }}
+                </VChip>
+                <VBtn v-else size="small" variant="tonal" @click="showVehiclePicker = true">Elegir vehículo</VBtn>
+                <span class="text-caption text-medium-emphasis">(opcional)</span>
+              </div>
+              <VehiclePickerDialog v-model="showVehiclePicker" :trucks="TRUCKS" @select="pickTruck" @clear="clearTruck" />
             </template>
             <template v-else-if="serviceType === 'mudanza'">
               <VTextarea
@@ -183,7 +189,9 @@ const categoryLabel = computed(() => {
               <VIcon icon="ri-checkbox-circle-line" color="success" size="48" class="mb-2" />
               <div class="text-h6">Solicitud {{ result.code }} publicada</div>
               <div v-if="soles(result.price?.amount)" class="text-h5 font-weight-bold my-2">{{ soles(result.price.amount) }}</div>
-              <div v-else class="text-body-2 text-medium-emphasis my-2">Un asesor te confirmará el precio pronto.</div>
+              <div v-else class="text-body-2 text-medium-emphasis my-2">
+                Estamos buscando la mejor alternativa. Te avisaremos apenas tengamos precio, también por WhatsApp.
+              </div>
               <div v-if="result.price?.daysEstimated" class="text-caption text-medium-emphasis">
                 Llega en {{ result.price.daysEstimated }} días hábiles aprox.
               </div>

@@ -3,6 +3,7 @@ import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import AddressAutocomplete from '@/components/AddressAutocomplete.vue'
+import VehiclePickerDialog from '@/components/VehiclePickerDialog.vue'
 import { guestQuote, guestSignup } from '@/services/guestService'
 import { useAuthStore } from '@/stores/authStore'
 
@@ -26,6 +27,18 @@ const CATEGORIES = [
   { title: 'Materiales de construcción', value: 'construccion' },
   { title: 'Otros', value: 'otros' },
 ]
+
+// Elegir vehículo es opcional y no aplica a Mudanza/Reparto — por defecto
+// "que TaxiCarga elija" (quoteMode 'por_carga', sin truckType).
+const TRUCKS = [
+  { title: 'Furgón pequeño (hasta 1 ton)', value: 'furgon_1t', icon: 'ri-taxi-line' },
+  { title: 'Camión 2 ton', value: 'camion_2t' },
+  { title: 'Camión 4 ton', value: 'camion_4t' },
+  { title: 'Camión 8 ton', value: 'camion_8t' },
+]
+const showVehiclePicker = ref(false)
+const chosenTruck = ref(null)
+const chosenTruckLabel = computed(() => TRUCKS.find(t => t.value === chosenTruck.value)?.title || '')
 
 const phase = ref('form')   // form | result | signup
 const busy = ref(false)
@@ -58,8 +71,9 @@ const submitQuote = async () => {
       ? { ...quote.cargo, category: 'mudanza' }
       : serviceType.value === 'reparto'
         ? { ...quote.cargo, category: 'otros', detail: `[REPARTO] ${quote.cargo.detail}`.trim() }
-        : quote.cargo
-    result.value = await guestQuote({ ...quote, cargo, quoteMode: 'por_carga' })
+        : { ...quote.cargo, truckType: chosenTruck.value || undefined }
+    const quoteMode = serviceType.value === 'carga' && chosenTruck.value ? 'por_vehiculo' : 'por_carga'
+    result.value = await guestQuote({ ...quote, cargo, quoteMode })
     phase.value = 'result'
   } catch (e) { error.value = e.message } finally { busy.value = false }
 }
@@ -130,7 +144,20 @@ const submitSignup = async () => {
               <div class="text-subtitle-2 mb-2">¿Qué vas a mover?</div>
               <VSelect v-model="quote.cargo.category" :items="CATEGORIES" label="Tipo de carga" density="comfortable" class="mb-2" />
               <VTextarea v-model="quote.cargo.detail" label="Detalle (opcional)" rows="2" auto-grow density="comfortable" class="mb-2" />
-              <VTextField v-model="quote.cargo.weightKg" label="Peso aprox. (kg, opcional)" type="number" density="comfortable" class="mb-2" />
+              <VTextField v-model="quote.cargo.weightKg" label="Peso aprox. (kg, opcional)" type="number" density="comfortable" class="mb-4" />
+
+              <div class="d-flex align-center ga-2 mb-2 flex-wrap">
+                <span class="text-body-2 text-medium-emphasis">¿Ya sabés qué vehículo necesitás?</span>
+                <VChip v-if="chosenTruck" closable size="small" color="primary" variant="tonal" @click:close="chosenTruck = null">
+                  {{ chosenTruckLabel }}
+                </VChip>
+                <VBtn v-else size="small" variant="tonal" @click="showVehiclePicker = true">Elegir vehículo</VBtn>
+                <span class="text-caption text-medium-emphasis">(opcional)</span>
+              </div>
+              <VehiclePickerDialog
+                v-model="showVehiclePicker" :trucks="TRUCKS"
+                @select="v => chosenTruck = v" @clear="chosenTruck = null"
+              />
             </template>
             <template v-else-if="serviceType === 'mudanza'">
               <div class="text-subtitle-2 mb-2">Contanos de tu mudanza</div>
@@ -177,8 +204,8 @@ const submitSignup = async () => {
 
         <!-- Paso 2: resultado -->
         <VCardText v-else-if="phase === 'result'" class="text-center py-6">
-          <div class="text-body-2 text-medium-emphasis">{{ result.route }}</div>
           <template v-if="result.price.amount != null">
+            <div class="text-body-2 text-medium-emphasis">{{ result.route }}</div>
             <div class="text-h3 font-weight-bold my-3">{{ soles(result.price.amount) }}</div>
             <div v-if="result.price.range" class="text-caption text-medium-emphasis">
               Rango estimado {{ soles(result.price.range[0]) }} – {{ soles(result.price.range[1]) }}
@@ -188,8 +215,11 @@ const submitSignup = async () => {
             </div>
           </template>
           <template v-else>
-            <div class="text-h6 my-3">Un asesor te confirmará el precio</div>
-            <div class="text-body-2 text-medium-emphasis">Tu solicitud tiene detalles que preferimos revisar con vos.</div>
+            <VIcon icon="ri-checkbox-circle-line" color="success" size="40" class="mb-2" />
+            <div class="text-h6">Solicitud recibida</div>
+            <div class="text-body-2 font-weight-medium mt-1">{{ result.quoteCode }} · {{ result.route }}</div>
+            <div class="text-body-2 text-medium-emphasis mt-2">Estamos buscando la mejor alternativa para vos.</div>
+            <div class="text-body-2 text-medium-emphasis">Te avisaremos apenas tengamos precio, también por WhatsApp.</div>
           </template>
           <VDivider class="my-4" />
           <p class="text-body-2 mb-3">
