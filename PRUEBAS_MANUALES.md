@@ -84,6 +84,12 @@ Decisión de negocio: en vez de Carga/Encomiendas/Delivery/Distribución/Última
 - `test_cliente` → Portal Cliente → "Publicar solicitud": mismo selector de 3 tarjetas en el paso 2 del stepper.
 - Una solicitud de "Reparto" cae igual en Comercial → Por cotizar, marcada con "[REPARTO]" en el detalle, siempre en modo "un asesor te confirma el precio" (no tiene tarifario propio todavía).
 
+## Actualización 2026-09-14 (5): cotizador simplificado — vehículo opcional en modal
+En Carga (tanto `/cotizar` sin login como el Portal Cliente → Publicar solicitud), "¿Ya sabés qué vehículo necesitás?" ahora es un botón opcional que abre un modal con la lista, en vez de un toggle/dropdown que había que completar. Probar:
+- Sin tocarlo (dejar que TaxiCarga elija) → debe cotizar igual, sin vehículo específico.
+- Eligiendo un vehículo del modal → aparece como chip, se puede quitar con la "x", y la solicitud queda con ese vehículo.
+- La pantalla de "sin precio todavía" ahora dice "Estamos buscando la mejor alternativa... también por WhatsApp" en vez de "Un asesor te confirmará el precio".
+
 ## Flujos sugeridos por área
 
 ### 1. Rastreo público (sin login) — la Fase 0 de hoy
