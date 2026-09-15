@@ -77,6 +77,13 @@ El dropdown del avatar (arriba a la derecha) tenía "Profile/Settings/Pricing/FA
 - Cualquier usuario logueado: clic en el avatar → debería ver tu nombre y rol real (no "John Doe").
 - "Mi perfil" → lleva a `/perfil`: ver tus datos, editar nombre/email, y cambiar tu contraseña (pide la actual). "Settings/Pricing/FAQ" se quitaron (no llevaban a nada).
 
+## Actualización 2026-09-14 (4): taxonomía de cara al cliente — Carga | Mudanzas | Reparto
+Decisión de negocio: en vez de Carga/Encomiendas/Delivery/Distribución/Última milla como categorías separadas, ahora son 3 líneas claras. Por dentro no cambió nada (misma API, mismos modelos) — revisar:
+- Menú CRM: la sección "Encomiendas" ahora se llama **"Reparto"** (Pedidos + Rutas de reparto).
+- **http://localhost:8001/cotizar** (sin login): ahora primero pregunta "¿Qué necesitas?" con 3 tarjetas — Carga / Mudanzas / Reparto — antes de pedir direcciones. Probar las 3 y confirmar que cada una pide los datos que le corresponden (Mudanza: ambientes/pisos/ascensor; Reparto: cantidad de pedidos/frecuencia/ecommerce).
+- `test_cliente` → Portal Cliente → "Publicar solicitud": mismo selector de 3 tarjetas en el paso 2 del stepper.
+- Una solicitud de "Reparto" cae igual en Comercial → Por cotizar, marcada con "[REPARTO]" en el detalle, siempre en modo "un asesor te confirma el precio" (no tiene tarifario propio todavía).
+
 ## Flujos sugeridos por área
 
 ### 1. Rastreo público (sin login) — la Fase 0 de hoy
