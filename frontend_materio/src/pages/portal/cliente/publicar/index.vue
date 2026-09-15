@@ -3,6 +3,8 @@ import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import AddressAutocomplete from '@/components/AddressAutocomplete.vue'
+import DistrictAutocomplete from '@/components/DistrictAutocomplete.vue'
+import QuoteSummaryPanel from '@/components/QuoteSummaryPanel.vue'
 import VehiclePickerDialog from '@/components/VehiclePickerDialog.vue'
 import { customerPublish } from '@/services/customerPortalService'
 
@@ -67,7 +69,7 @@ const step1ok = computed(() => {
 
   return form.quoteMode === 'por_vehiculo' ? !!form.cargo.truckType : !!form.cargo.category
 })
-const step2ok = computed(() => form.origin.district && form.origin.address && form.destination.district && form.destination.address)
+const step2ok = computed(() => form.origin.district && form.destination.district)
 
 const submit = async () => {
   submitting.value = true
@@ -96,6 +98,8 @@ const categoryLabel = computed(() => {
   <div>
     <h1 class="text-h5 font-weight-bold mb-4">Publicar solicitud</h1>
 
+    <VRow>
+    <VCol cols="12" md="7">
     <VCard>
       <VCardText>
         <VStepper v-model="step" flat :items="['Servicio', 'Direcciones', 'Confirmar', 'Precio']" hide-actions>
@@ -152,18 +156,23 @@ const categoryLabel = computed(() => {
           </template>
 
           <template #item.2>
-            <div class="text-subtitle-2 mb-2">Origen</div>
-            <AddressAutocomplete
-              v-model="form.origin"
-              :label="serviceType === 'reparto' ? 'Punto de recojo / almacén' : 'Dirección de origen'"
-            />
-            <VTextField v-model.number="form.origin.floor" label="Piso (opcional)" type="number" class="mb-4" />
-            <div class="text-subtitle-2 mb-2">Destino</div>
-            <AddressAutocomplete
-              v-model="form.destination"
-              :label="serviceType === 'reparto' ? 'Zona de reparto (referencia)' : 'Dirección de destino'"
-            />
-            <VTextField v-model.number="form.destination.floor" label="Piso (opcional)" type="number" />
+            <template v-if="serviceType === 'reparto'">
+              <div class="text-subtitle-2 mb-2">Origen</div>
+              <AddressAutocomplete v-model="form.origin" label="Punto de recojo / almacén" />
+              <div class="text-subtitle-2 mb-2">Destino</div>
+              <AddressAutocomplete v-model="form.destination" label="Zona de reparto (referencia)" />
+            </template>
+            <template v-else>
+              <div class="text-subtitle-2 mb-2">Origen</div>
+              <DistrictAutocomplete v-model="form.origin" label="Distrito de origen" />
+              <VTextField v-model.number="form.origin.floor" label="Piso (opcional)" type="number" class="mb-4" />
+              <div class="text-subtitle-2 mb-2">Destino</div>
+              <DistrictAutocomplete v-model="form.destination" label="Distrito de destino" />
+              <VTextField v-model.number="form.destination.floor" label="Piso (opcional)" type="number" class="mb-2" />
+              <p class="text-caption text-medium-emphasis">
+                La dirección exacta te la pedimos recién al reservar — para cotizar alcanza con el distrito.
+              </p>
+            </template>
 
             <template v-if="form.origin.district && form.destination.district">
               <div class="text-caption text-medium-emphasis mb-1 mt-4">
@@ -184,7 +193,10 @@ const categoryLabel = computed(() => {
 
           <template #item.3>
             <VList density="compact">
-              <VListItem prepend-icon="ri-map-pin-line" :title="`${form.origin.district} → ${form.destination.district}`" :subtitle="`${form.origin.address} → ${form.destination.address}`" />
+              <VListItem
+                prepend-icon="ri-map-pin-line" :title="`${form.origin.district} → ${form.destination.district}`"
+                :subtitle="form.origin.address ? `${form.origin.address} → ${form.destination.address}` : 'La dirección exacta se confirma al reservar'"
+              />
               <VListItem prepend-icon="ri-archive-line" :title="categoryLabel" :subtitle="form.cargo.detail || '—'" />
               <VListItem prepend-icon="ri-calendar-line" :title="form.date || 'Fecha por confirmar'" :subtitle="form.schedule || 'Horario por confirmar'" />
             </VList>
@@ -216,5 +228,16 @@ const categoryLabel = computed(() => {
         <VBtn v-else-if="step === 3" color="primary" :loading="submitting" @click="submit">Publicar y cotizar</VBtn>
       </VCardActions>
     </VCard>
+    </VCol>
+
+    <VCol cols="12" md="5">
+      <QuoteSummaryPanel
+        :service-label="SERVICE_TYPES.find(s => s.value === serviceType)?.title"
+        :origin="form.origin" :destination="form.destination"
+        :detail="form.cargo.detail" :date="form.date"
+        :truck-label="chosenTruckLabel"
+      />
+    </VCol>
+    </VRow>
   </div>
 </template>

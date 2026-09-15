@@ -3,6 +3,8 @@ import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import AddressAutocomplete from '@/components/AddressAutocomplete.vue'
+import DistrictAutocomplete from '@/components/DistrictAutocomplete.vue'
+import QuoteSummaryPanel from '@/components/QuoteSummaryPanel.vue'
 import VehiclePickerDialog from '@/components/VehiclePickerDialog.vue'
 import { guestQuote, guestSignup } from '@/services/guestService'
 import { useAuthStore } from '@/stores/authStore'
@@ -104,12 +106,14 @@ const submitSignup = async () => {
 
 <template>
   <div class="d-flex justify-center pa-4" style="min-height: 100vh; background: rgb(var(--v-theme-background));">
-    <div style="width: 100%; max-width: 560px;">
+    <div style="width: 100%; max-width: 960px;">
       <div class="text-center my-6">
         <div class="text-h5 font-weight-bold">Lima Express</div>
         <div class="text-body-2 text-medium-emphasis">Cotización rápida</div>
       </div>
 
+      <VRow>
+      <VCol cols="12" md="7">
       <VCard>
         <!-- Paso 1: formulario -->
         <VCardText v-if="phase === 'form'">
@@ -131,14 +135,17 @@ const submitSignup = async () => {
 
           <template v-if="serviceType">
             <div class="text-subtitle-2 mb-2">¿De dónde a dónde?</div>
-            <AddressAutocomplete
-              v-model="quote.origin"
-              :label="serviceType === 'reparto' ? 'Punto de recojo / almacén' : 'Dirección de origen'"
-            />
-            <AddressAutocomplete
-              v-model="quote.destination"
-              :label="serviceType === 'reparto' ? 'Zona de reparto (referencia)' : 'Dirección de destino'"
-            />
+            <template v-if="serviceType === 'reparto'">
+              <AddressAutocomplete v-model="quote.origin" label="Punto de recojo / almacén" />
+              <AddressAutocomplete v-model="quote.destination" label="Zona de reparto (referencia)" />
+            </template>
+            <template v-else>
+              <DistrictAutocomplete v-model="quote.origin" label="Distrito de origen" />
+              <DistrictAutocomplete v-model="quote.destination" label="Distrito de destino" />
+              <p class="text-caption text-medium-emphasis mb-2">
+                La dirección exacta te la pedimos recién al reservar — para cotizar alcanza con el distrito.
+              </p>
+            </template>
 
             <template v-if="serviceType === 'carga'">
               <div class="text-subtitle-2 mb-2">¿Qué vas a mover?</div>
@@ -256,6 +263,17 @@ const submitSignup = async () => {
           </VCardActions>
         </template>
       </VCard>
+      </VCol>
+
+      <VCol cols="12" md="5">
+        <QuoteSummaryPanel
+          :service-label="SERVICE_TYPES.find(s => s.value === serviceType)?.title"
+          :origin="quote.origin" :destination="quote.destination"
+          :detail="quote.cargo.detail" :date="quote.date"
+          :truck-label="chosenTruckLabel"
+        />
+      </VCol>
+      </VRow>
     </div>
   </div>
 </template>
