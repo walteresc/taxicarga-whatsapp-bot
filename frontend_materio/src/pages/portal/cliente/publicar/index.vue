@@ -71,12 +71,13 @@ const submitting = ref(false)
 const result = ref(null)
 const error = ref('')
 
-const step1ok = computed(() => {
-  if (!serviceType.value) return false
+const step1ok = computed(() => !!serviceType.value)
+const step2ok = computed(() => {
+  if (!(form.origin.district && form.destination.district)) return false
 
   return form.quoteMode === 'por_vehiculo' ? !!form.cargo.truckType : !!form.cargo.category
 })
-const step2ok = computed(() => form.origin.district && form.destination.district)
+const submitted = ref(false)
 
 const submit = async () => {
   submitting.value = true
@@ -89,7 +90,7 @@ const submit = async () => {
       : form.cargo
     const validStops = serviceType.value === 'carga' ? stops.filter(s => s.district) : []
     result.value = await customerPublish({ ...form, cargo, stops: validStops })
-    step.value = 4
+    submitted.value = true
   } catch (e) { error.value = e.message || 'No se pudo publicar.' } finally { submitting.value = false }
 }
 const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE')}`)
@@ -108,9 +109,9 @@ const categoryLabel = computed(() => {
 
     <VRow>
     <VCol cols="12" md="7">
-    <VCard>
+    <VCard v-if="!submitted">
       <VCardText>
-        <VStepper v-model="step" flat :items="['Servicio', 'Direcciones', 'Confirmar', 'Precio']" hide-actions>
+        <VStepper v-model="step" flat :items="['Servicio', 'Carga', 'Confirmar']" hide-actions>
           <template #item.1>
             <div class="text-subtitle-2 mb-2">¿Qué necesitas?</div>
             <VRow class="mb-2" dense>
@@ -127,40 +128,6 @@ const categoryLabel = computed(() => {
                 </VCard>
               </VCol>
             </VRow>
-
-            <template v-if="serviceType === 'carga'">
-              <VSelect v-model="form.cargo.category" :items="CATEGORIES" label="Tipo de carga" class="mb-2" />
-              <VTextarea v-model="form.cargo.detail" label="¿Qué vas a mover? (detalle)" rows="2" auto-grow class="mb-2" />
-              <div class="d-flex ga-2 mb-2">
-                <VTextField v-model="form.cargo.weightKg" label="Peso aprox. (kg)" type="number" />
-                <VTextField v-model="form.cargo.volumeM3" label="Volumen aprox. (m³)" type="number" />
-              </div>
-              <VTextField v-model.number="form.cargo.operators" label="¿Necesitás operarios de carga? ¿Cuántos?" type="number" class="mb-2" />
-
-              <div class="d-flex align-center ga-2 mb-2 flex-wrap">
-                <span class="text-body-2 text-medium-emphasis">¿Ya sabés qué vehículo necesitás?</span>
-                <VChip v-if="form.cargo.truckType" closable size="small" color="primary" variant="tonal" @click:close="clearTruck">
-                  {{ chosenTruckLabel }}
-                </VChip>
-                <VBtn v-else size="small" variant="tonal" @click="showVehiclePicker = true">Elegir vehículo</VBtn>
-                <span class="text-caption text-medium-emphasis">(opcional)</span>
-              </div>
-              <VehiclePickerDialog v-model="showVehiclePicker" :trucks="TRUCKS" @select="pickTruck" @clear="clearTruck" />
-            </template>
-            <template v-else-if="serviceType === 'mudanza'">
-              <VTextarea
-                v-model="form.cargo.detail" rows="2" auto-grow class="mb-2"
-                label="Ambientes, pisos, ascensor, muebles grandes (opcional)"
-              />
-              <VTextField v-model.number="form.cargo.operators" label="¿Necesitás operarios para la mudanza? ¿Cuántos?" type="number" />
-            </template>
-            <template v-else-if="serviceType === 'reparto'">
-              <VTextarea
-                v-model="form.cargo.detail" rows="2" auto-grow class="mb-2"
-                label="Cuántos pedidos, frecuencia, si es ecommerce o contra-entrega (opcional)"
-              />
-            </template>
-
           </template>
 
           <template #item.2>
@@ -211,6 +178,41 @@ const categoryLabel = computed(() => {
               </p>
             </template>
 
+            <VDivider class="my-3" />
+
+            <template v-if="serviceType === 'carga'">
+              <VSelect v-model="form.cargo.category" :items="CATEGORIES" label="Tipo de carga" class="mb-2" />
+              <VTextarea v-model="form.cargo.detail" label="¿Qué vas a mover? (detalle)" rows="2" auto-grow class="mb-2" />
+              <div class="d-flex ga-2 mb-2">
+                <VTextField v-model="form.cargo.weightKg" label="Peso aprox. (kg)" type="number" />
+                <VTextField v-model="form.cargo.volumeM3" label="Volumen aprox. (m³)" type="number" />
+              </div>
+              <VTextField v-model.number="form.cargo.operators" label="¿Necesitás operarios de carga? ¿Cuántos?" type="number" class="mb-2" />
+
+              <div class="d-flex align-center ga-2 mb-2 flex-wrap">
+                <span class="text-body-2 text-medium-emphasis">¿Ya sabés qué vehículo necesitás?</span>
+                <VChip v-if="form.cargo.truckType" closable size="small" color="primary" variant="tonal" @click:close="clearTruck">
+                  {{ chosenTruckLabel }}
+                </VChip>
+                <VBtn v-else size="small" variant="tonal" @click="showVehiclePicker = true">Elegir vehículo</VBtn>
+                <span class="text-caption text-medium-emphasis">(opcional)</span>
+              </div>
+              <VehiclePickerDialog v-model="showVehiclePicker" :trucks="TRUCKS" @select="pickTruck" @clear="clearTruck" />
+            </template>
+            <template v-else-if="serviceType === 'mudanza'">
+              <VTextarea
+                v-model="form.cargo.detail" rows="2" auto-grow class="mb-2"
+                label="Ambientes, pisos, ascensor, muebles grandes (opcional)"
+              />
+              <VTextField v-model.number="form.cargo.operators" label="¿Necesitás operarios para la mudanza? ¿Cuántos?" type="number" />
+            </template>
+            <template v-else-if="serviceType === 'reparto'">
+              <VTextarea
+                v-model="form.cargo.detail" rows="2" auto-grow class="mb-2"
+                label="Cuántos pedidos, frecuencia, si es ecommerce o contra-entrega (opcional)"
+              />
+            </template>
+
             <template v-if="form.origin.district && form.destination.district">
               <div class="text-caption text-medium-emphasis mb-1 mt-4">
                 Si tu carga es a otra ciudad, elegí cómo la enviamos (si es dentro de Lima, no aplica):
@@ -240,30 +242,31 @@ const categoryLabel = computed(() => {
             <VAlert v-if="error" type="error" variant="tonal" class="mt-3">{{ error }}</VAlert>
           </template>
 
-          <template #item.4>
-            <div v-if="result" class="text-center py-4">
-              <VIcon icon="ri-checkbox-circle-line" color="success" size="48" class="mb-2" />
-              <div class="text-h6">Solicitud {{ result.code }} publicada</div>
-              <div v-if="soles(result.price?.amount)" class="text-h5 font-weight-bold my-2">{{ soles(result.price.amount) }}</div>
-              <div v-else class="text-body-2 text-medium-emphasis my-2">
-                Estamos buscando la mejor alternativa. Te avisaremos apenas tengamos precio, también por WhatsApp.
-              </div>
-              <div v-if="result.price?.daysEstimated" class="text-caption text-medium-emphasis">
-                Llega en {{ result.price.daysEstimated }} días hábiles aprox.
-              </div>
-              <VBtn color="primary" class="mt-2" @click="router.push(`/portal/cliente/carga/${result.code}`)">Ver carga</VBtn>
-            </div>
-          </template>
         </VStepper>
       </VCardText>
 
-      <VCardActions v-if="step < 4" class="px-4 pb-4">
+      <VCardActions class="px-4 pb-4">
         <VBtn v-if="step > 1" variant="text" @click="step--">Atrás</VBtn>
         <VSpacer />
         <VBtn v-if="step === 1" color="primary" :disabled="!step1ok" @click="step = 2">Siguiente</VBtn>
         <VBtn v-else-if="step === 2" color="primary" :disabled="!step2ok" @click="step = 3">Siguiente</VBtn>
         <VBtn v-else-if="step === 3" color="primary" :loading="submitting" @click="submit">Publicar y cotizar</VBtn>
       </VCardActions>
+    </VCard>
+
+    <VCard v-else>
+      <VCardText class="text-center py-6">
+        <VIcon icon="ri-checkbox-circle-line" color="success" size="48" class="mb-2" />
+        <div class="text-h6">Solicitud {{ result.code }} publicada</div>
+        <div v-if="soles(result.price?.amount)" class="text-h5 font-weight-bold my-2">{{ soles(result.price.amount) }}</div>
+        <div v-else class="text-body-2 text-medium-emphasis my-2">
+          Estamos buscando la mejor alternativa. Te avisaremos apenas tengamos precio, también por WhatsApp.
+        </div>
+        <div v-if="result.price?.daysEstimated" class="text-caption text-medium-emphasis">
+          Llega en {{ result.price.daysEstimated }} días hábiles aprox.
+        </div>
+        <VBtn color="primary" class="mt-2" @click="router.push(`/portal/cliente/carga/${result.code}`)">Ver carga</VBtn>
+      </VCardText>
     </VCard>
     </VCol>
 
