@@ -97,6 +97,11 @@ En `/cotizar` y Portal Cliente → Publicar solicitud, para **Carga** y **Mudanz
 - Reparto sigue pidiendo dirección completa (necesita el punto real de recojo/entrega).
 - La dirección exacta (calle, piso) recién se pide cuando el cliente reserva, no al cotizar.
 
+## Actualización 2026-09-14 (7): Origen/Destino lado a lado + paradas (multipunto)
+En `/cotizar`, para **Carga**: Origen y Destino ahora van uno al lado del otro (no apilados), cada uno con una "x" para limpiarlo. Debajo aparece "+ Agregar parada (opcional)" — se pueden agregar N paradas intermedias, cada una con su propio campo de distrito y botón para quitarla. Probar:
+- Cotizar Ate → Trujillo con una parada en Chimbote → siempre debería caer en modo "un asesor te confirma el precio" (nunca un precio automático), porque el motor de precios no calcula el costo de las paradas.
+- El mapa de la derecha debería mostrar un pin amarillo por cada parada, entre el verde (origen) y el rojo (destino).
+
 ## Flujos sugeridos por área
 
 ### 1. Rastreo público (sin login) — la Fase 0 de hoy
