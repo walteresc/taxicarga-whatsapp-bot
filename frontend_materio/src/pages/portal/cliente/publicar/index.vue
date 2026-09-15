@@ -56,6 +56,7 @@ const selectService = value => {
   if (value === 'mudanza') form.cargo.category = 'mudanza'
   else if (value === 'reparto') form.cargo.category = 'otros'
   else if (form.cargo.category === 'mudanza') form.cargo.category = 'cajas'
+  step.value = 2   // avanza directo — ver los campos no debería depender de otro clic
 }
 const pickTruck = value => { form.cargo.truckType = value; form.quoteMode = 'por_vehiculo' }
 const clearTruck = () => { form.cargo.truckType = null; form.quoteMode = 'por_carga' }

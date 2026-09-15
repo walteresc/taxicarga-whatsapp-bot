@@ -143,7 +143,7 @@ const submitSignup = async () => {
                     :variant="serviceType === s.value ? 'tonal' : 'outlined'"
                     :color="serviceType === s.value ? 'primary' : undefined"
                     class="pa-3 text-center h-100" style="cursor: pointer;"
-                    @click="serviceType = s.value"
+                    @click="serviceType = s.value; step = 2"
                   >
                     <VIcon :icon="s.icon" size="28" class="mb-1" />
                     <div class="text-subtitle-2 font-weight-bold">{{ s.title }}</div>
