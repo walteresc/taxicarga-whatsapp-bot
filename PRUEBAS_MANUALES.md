@@ -90,6 +90,13 @@ En Carga (tanto `/cotizar` sin login como el Portal Cliente → Publicar solicit
 - Eligiendo un vehículo del modal → aparece como chip, se puede quitar con la "x", y la solicitud queda con ese vehículo.
 - La pantalla de "sin precio todavía" ahora dice "Estamos buscando la mejor alternativa... también por WhatsApp" en vez de "Un asesor te confirmará el precio".
 
+## Actualización 2026-09-14 (6): layout de 2 columnas + distrito en vez de dirección exacta
+En `/cotizar` y Portal Cliente → Publicar solicitud, para **Carga** y **Mudanzas**:
+- La pantalla ahora tiene 2 columnas: formulario a la izquierda, resumen con mapa a la derecha (se apila en el celular). El mapa aparece recién cuando cargás origen y destino.
+- Origen/destino ya NO piden la dirección exacta — alcanza con escribir el **distrito** (al hacer clic en el campo se abre el combo de una, para que se entienda que escribiendo filtra). Probar que escribir "San Isidro" muestre primero el de Lima, no el de otra región.
+- Reparto sigue pidiendo dirección completa (necesita el punto real de recojo/entrega).
+- La dirección exacta (calle, piso) recién se pide cuando el cliente reserva, no al cotizar.
+
 ## Flujos sugeridos por área
 
 ### 1. Rastreo público (sin login) — la Fase 0 de hoy
