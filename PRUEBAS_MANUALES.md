@@ -102,6 +102,9 @@ En `/cotizar`, para **Carga**: Origen y Destino ahora van uno al lado del otro (
 - Cotizar Ate → Trujillo con una parada en Chimbote → siempre debería caer en modo "un asesor te confirma el precio" (nunca un precio automático), porque el motor de precios no calcula el costo de las paradas.
 - El mapa de la derecha debería mostrar un pin amarillo por cada parada, entre el verde (origen) y el rojo (destino).
 
+## Actualización 2026-09-15: "Surco" traía el lugar equivocado (corregido)
+Escribir "Surco" en Origen/Destino solo mostraba un caserío de la provincia de Yauyos (sierra de Lima), nunca el distrito de Santiago de Surco — problema del propio geocoder de Mapbox, no de la app. Se agregó un diccionario de apodos (`DISTRICT_ALIASES` en `DistrictAutocomplete.vue`) que busca también por el nombre real. Probar: escribir "Surco" → la primera sugerencia debe ser "Santiago de Surco" (Lima, Provincia de Lima), no el caserío de Yauyos. Si aparece otro distrito con el mismo problema, agregar su apodo al diccionario.
+
 ## Actualización 2026-09-14 (8): mismo timeline en /cotizar y Portal Cliente
 Ambas pantallas (`/cotizar` sin login y Portal Cliente → Publicar solicitud) ahora tienen el mismo timeline de 3 pasos arriba: **Servicio → Carga → Confirmar**. El paso "Servicio" queda limpio (solo las 3 tarjetas); todo lo demás (direcciones, paradas, detalle de carga, vehículo, fecha) vive en "Carga"; "Confirmar" es el resumen final antes de enviar. Revisar que se vea igual en ambas pantallas.
 
