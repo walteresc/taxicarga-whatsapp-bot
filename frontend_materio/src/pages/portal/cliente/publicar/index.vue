@@ -129,12 +129,14 @@ const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE
 
     <VRow>
     <VCol cols="12" md="7">
-    <VStepperHeader v-if="!submitted" class="mb-4">
-      <template v-for="(label, i) in stepperItems" :key="i">
-        <VStepperItem :title="label" :value="i + 1" :complete="step > i + 1" />
-        <VDivider v-if="i < stepperItems.length - 1" />
-      </template>
-    </VStepperHeader>
+    <VStepper v-if="!submitted" v-model="step" flat class="bg-transparent mb-4" hide-actions>
+      <VStepperHeader>
+        <template v-for="(label, i) in stepperItems" :key="i">
+          <VStepperItem :title="label" :value="i + 1" :complete="step > i + 1" />
+          <VDivider v-if="i < stepperItems.length - 1" />
+        </template>
+      </VStepperHeader>
+    </VStepper>
 
     <VCard v-if="!submitted">
       <VCardText>
