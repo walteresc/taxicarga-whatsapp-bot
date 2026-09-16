@@ -6,6 +6,7 @@ import AddressAutocomplete from '@/components/AddressAutocomplete.vue'
 import DistrictAutocomplete from '@/components/DistrictAutocomplete.vue'
 import PriceModePicker from '@/components/PriceModePicker.vue'
 import QuoteSummaryPanel from '@/components/QuoteSummaryPanel.vue'
+import ScheduleStepPicker from '@/components/ScheduleStepPicker.vue'
 import VehiclePickerDialog from '@/components/VehiclePickerDialog.vue'
 import { customerPublish } from '@/services/customerPortalService'
 import { guestQuotePreview } from '@/services/guestService'
@@ -239,10 +240,10 @@ const categoryLabel = computed(() => {
             </template>
 
             <VDivider class="my-3" />
-            <div class="d-flex ga-2">
-              <VTextField v-model="form.date" label="Fecha" type="date" />
-              <VTextField v-model="form.schedule" label="Horario (ej. 09:00)" />
-            </div>
+            <ScheduleStepPicker
+              :date="form.date" :schedule="form.schedule"
+              @update:date="v => form.date = v" @update:schedule="v => form.schedule = v"
+            />
           </template>
 
           <template #item.3>

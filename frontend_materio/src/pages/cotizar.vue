@@ -6,6 +6,7 @@ import AddressAutocomplete from '@/components/AddressAutocomplete.vue'
 import DistrictAutocomplete from '@/components/DistrictAutocomplete.vue'
 import PriceModePicker from '@/components/PriceModePicker.vue'
 import QuoteSummaryPanel from '@/components/QuoteSummaryPanel.vue'
+import ScheduleStepPicker from '@/components/ScheduleStepPicker.vue'
 import VehiclePickerDialog from '@/components/VehiclePickerDialog.vue'
 import { guestQuote, guestQuotePreview, guestSignup } from '@/services/guestService'
 import { useAuthStore } from '@/stores/authStore'
@@ -50,6 +51,7 @@ const quote = reactive({
   cargo: { category: 'cajas', detail: '', weightKg: '' },
   loadMode: 'completa',   // completa|parcial — solo importa si la ruta es nacional
   date: '',
+  schedule: '',
   contact: { name: '', phone: '', email: '' },
   website: '',   // honeypot
 })
@@ -258,7 +260,11 @@ const submitSignup = async () => {
                 />
               </template>
 
-              <VTextField v-model="quote.date" label="Fecha (opcional)" type="date" density="comfortable" class="mb-2" />
+              <VDivider class="my-3" />
+              <ScheduleStepPicker
+                :date="quote.date" :schedule="quote.schedule"
+                @update:date="v => quote.date = v" @update:schedule="v => quote.schedule = v"
+              />
             </template>
 
             <template #item.3>
@@ -280,7 +286,7 @@ const submitSignup = async () => {
                     prepend-icon="ri-map-pin-line" :title="`${quote.origin.district} → ${quote.destination.district}`"
                   />
                   <VListItem prepend-icon="ri-archive-line" :title="categoryLabel" :subtitle="quote.cargo.detail || '—'" />
-                  <VListItem prepend-icon="ri-calendar-line" :title="quote.date || 'Fecha por confirmar'" />
+                  <VListItem prepend-icon="ri-calendar-line" :title="quote.date || 'Fecha por confirmar'" :subtitle="quote.schedule || undefined" />
                 </VList>
                 <VDivider class="my-3" />
                 <div class="text-subtitle-2 mb-2">¿Cómo te contactamos?</div>
@@ -299,7 +305,7 @@ const submitSignup = async () => {
                 />
                 <VListItem prepend-icon="ri-archive-line" :title="categoryLabel" :subtitle="quote.cargo.detail || '—'" />
                 <VListItem v-if="!hasStops" prepend-icon="ri-scales-3-line" :title="loadModeLabel" />
-                <VListItem prepend-icon="ri-calendar-line" :title="quote.date || 'Fecha por confirmar'" />
+                <VListItem prepend-icon="ri-calendar-line" :title="quote.date || 'Fecha por confirmar'" :subtitle="quote.schedule || undefined" />
               </VList>
               <VDivider class="my-3" />
               <div class="text-subtitle-2 mb-2">¿Cómo te contactamos?</div>
