@@ -455,7 +455,8 @@ const submitSignup = async () => {
   font-size: 0.8125rem;
 }
 .route-stepper :deep(.v-divider) {
-  margin: 0 -4px;
-  max-width: 32px;
+  margin: 0 4px;
+  min-width: 24px;
+  opacity: 0.6;
 }
 </style>

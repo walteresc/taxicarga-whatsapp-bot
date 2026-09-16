@@ -125,7 +125,7 @@ const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE
 
 <template>
   <div>
-    <div class="d-flex flex-wrap align-center justify-space-between ga-4 mb-4">
+    <div class="d-flex flex-wrap align-center ga-8 mb-4">
       <h1 class="text-h5 font-weight-bold">Publicar solicitud</h1>
       <VStepper v-if="!submitted" v-model="step" flat class="bg-transparent route-stepper" hide-actions>
         <VStepperHeader>
@@ -375,7 +375,8 @@ const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE
   font-size: 0.8125rem;
 }
 .route-stepper :deep(.v-divider) {
-  margin: 0 -4px;
-  max-width: 32px;
+  margin: 0 4px;
+  min-width: 24px;
+  opacity: 0.6;
 }
 </style>
