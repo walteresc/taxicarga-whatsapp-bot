@@ -98,8 +98,21 @@ const fmtDate = iso => {
 </script>
 
 <template>
-  <VCard variant="outlined" class="mb-4">
-    <VCardText>
+  <VCard variant="outlined" class="h-100 position-relative overflow-hidden" style="min-height: 560px;">
+    <img v-if="mapUrl" :src="mapUrl" alt="Mapa de ruta" class="position-absolute" style="inset: 0; width: 100%; height: 100%; object-fit: cover;">
+    <div
+      v-else class="position-absolute d-flex align-center justify-center text-medium-emphasis"
+      style="inset: 0; background: rgba(var(--v-theme-on-surface), 0.04);"
+    >
+      <div class="text-center px-4">
+        <VIcon icon="ri-map-2-line" size="32" class="mb-1" />
+        <div class="text-caption">El mapa aparece cuando cargás origen y destino</div>
+      </div>
+    </div>
+
+    <!-- "Resumen del servicio" flota sobre el mapa, no ocupa un bloque
+         aparte — el mapa abarca todo el panel. -->
+    <VCard variant="elevated" class="position-absolute pa-4" style="top: 12px; left: 12px; right: 12px;">
       <div class="d-flex align-center justify-space-between mb-3">
         <span class="text-subtitle-1 font-weight-bold">Resumen del servicio</span>
         <VChip
@@ -154,20 +167,7 @@ const fmtDate = iso => {
           <div class="text-body-2 text-capitalize">{{ fmtDate(date) }}</div>
         </div>
       </template>
-    </VCardText>
-  </VCard>
-
-  <VCard variant="outlined" class="position-relative overflow-hidden">
-    <img v-if="mapUrl" :src="mapUrl" alt="Mapa de ruta" class="w-100" style="display:block; height:360px; object-fit:cover;">
-    <div
-      v-else class="d-flex align-center justify-center text-medium-emphasis"
-      style="height:220px; background:rgba(var(--v-theme-on-surface), 0.04);"
-    >
-      <div class="text-center px-4">
-        <VIcon icon="ri-map-2-line" size="32" class="mb-1" />
-        <div class="text-caption">El mapa aparece cuando cargás origen y destino</div>
-      </div>
-    </div>
+    </VCard>
 
     <VCard
       v-if="mapUrl" variant="elevated" class="position-absolute pa-3 d-flex ga-2"
