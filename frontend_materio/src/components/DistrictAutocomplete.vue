@@ -14,6 +14,9 @@ import { onBeforeUnmount, ref, watch } from 'vue'
 const props = defineProps({
   modelValue: { type: Object, required: true },
   label: { type: String, default: 'Distrito o provincia' },
+  // El mockup de Carga muestra el campo limpio (sin ícono de pin adentro) y
+  // usa un punto de color afuera, en el "riel" origen→destino, para eso.
+  hideIcons: { type: Boolean, default: false },
 })
 const emit = defineEmits(['update:modelValue'])
 
@@ -122,8 +125,8 @@ onBeforeUnmount(() => { clearTimeout(debounceTimer); abortCtrl?.abort() })
       <VTextField
         v-bind="menuProps"
         :model-value="query" :label="label" density="comfortable"
-        prepend-inner-icon="ri-map-pin-line"
-        :append-inner-icon="located ? 'ri-map-pin-2-fill' : undefined"
+        :prepend-inner-icon="hideIcons ? undefined : 'ri-map-pin-line'"
+        :append-inner-icon="hideIcons ? undefined : (located ? 'ri-map-pin-2-fill' : undefined)"
         :color="located ? 'success' : undefined"
         :hint="!MAPBOX_TOKEN ? 'Autocompletado no disponible: escribí el distrito.' : ''"
         persistent-hint clearable

@@ -12,6 +12,7 @@ import ScheduleStepPicker from '@/components/ScheduleStepPicker.vue'
 import VehiclePickerDialog from '@/components/VehiclePickerDialog.vue'
 import { customerPublish } from '@/services/customerPortalService'
 import { guestQuotePreview } from '@/services/guestService'
+import { extractVolumeM3, extractWeightKg } from '@/utils/cargoText'
 
 const router = useRouter()
 
@@ -24,30 +25,6 @@ const SERVICE_TYPES = [
   { value: 'reparto', icon: 'ri-e-bike-2-line', title: 'Reparto', subtitle: 'Entregas a clientes, tiendas o múltiples destinos.' },
 ]
 const serviceType = ref('carga')
-
-// El mockup no tiene campos separados de categoría/peso/volumen para Carga —
-// el cliente describe todo en un solo texto libre ("40 cajas..., peso total
-// 500 kg..."). El motor de precios de Consolidada sí necesita un peso
-// estructurado (ver apps/tercerizacion/services.py::resolver_tarifa_parcial),
-// así que lo extraemos con una regex best-effort; si no lo encuentra, cae al
-// modo "asesor confirma" — el mismo fallback que ya existía. Mismo criterio
-// que /cotizar.vue.
-const extractWeightKg = text => {
-  if (!text) return null
-  const t = text.toLowerCase()
-  let m = t.match(/(\d+(?:[.,]\d+)?)\s*(?:kg|kilos?)\b/)
-  if (m) return parseFloat(m[1].replace(',', '.'))
-  m = t.match(/(\d+(?:[.,]\d+)?)\s*(?:ton(?:elada)?s?)\b/)
-  if (m) return parseFloat(m[1].replace(',', '.')) * 1000
-
-  return null
-}
-const extractVolumeM3 = text => {
-  if (!text) return null
-  const m = text.toLowerCase().match(/(\d+(?:[.,]\d+)?)\s*m\s*(?:3|³|cubicos?|cúbicos?)/)
-
-  return m ? parseFloat(m[1].replace(',', '.')) : null
-}
 
 const step = ref(1)
 const form = reactive({
@@ -156,7 +133,7 @@ const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE
       <VCardText>
         <VStepper v-model="step" flat :items="stepperItems" hide-actions>
           <template #item.1>
-            <div class="text-subtitle-2 mb-1">Elige un tipo de servicio</div>
+            <div class="text-h6 font-weight-bold mb-1">Elige un tipo de servicio</div>
             <p class="text-caption text-medium-emphasis mb-3">Selecciona el tipo de servicio que mejor se adapte a tu necesidad.</p>
             <VRow class="mb-3" dense>
               <VCol v-for="s in SERVICE_TYPES" :key="s.value" cols="12" sm="4">
@@ -199,24 +176,25 @@ const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE
               </div>
               <p class="text-caption text-medium-emphasis mb-3">Indica los puntos de origen y destino para cotizar tu servicio.</p>
 
-              <div class="d-flex align-center ga-2 mb-1">
-                <VIcon icon="ri-record-circle-line" color="success" size="14" />
-                <span class="text-caption text-medium-emphasis">Origen</span>
+              <div class="d-flex">
+                <div class="d-flex flex-column align-center mr-3" style="width: 10px;">
+                  <div style="width:10px; height:10px; border-radius:50%; background:#56CA00; flex-shrink:0;" />
+                  <div style="flex:1; width:0; border-left:2px dotted rgba(var(--v-theme-on-surface), 0.3); margin: 4px 0;" />
+                  <div style="width:10px; height:10px; border-radius:50%; background:#8C57FF; flex-shrink:0;" />
+                </div>
+                <div class="flex-grow-1">
+                  <DistrictAutocomplete v-model="form.origin" label="Origen" hide-icons class="mb-1" />
+                  <VTextField v-if="serviceType === 'mudanza'" v-model.number="form.origin.floor" label="Piso (opcional)" type="number" class="mb-2" />
+                  <div v-else class="mb-3" />
+                  <DistrictAutocomplete v-model="form.destination" label="Destino" hide-icons />
+                  <VTextField v-if="serviceType === 'mudanza'" v-model.number="form.destination.floor" label="Piso (opcional)" type="number" />
+                </div>
               </div>
-              <DistrictAutocomplete v-model="form.origin" label="Distrito de origen" class="mb-1" />
-              <VTextField v-if="serviceType === 'mudanza'" v-model.number="form.origin.floor" label="Piso (opcional)" type="number" class="mb-2" />
-
-              <div class="d-flex align-center ga-2 mb-1" :class="serviceType === 'carga' ? 'mt-2' : ''">
-                <VIcon icon="ri-map-pin-fill" color="primary" size="14" />
-                <span class="text-caption text-medium-emphasis">Destino</span>
-              </div>
-              <DistrictAutocomplete v-model="form.destination" label="Distrito de destino" />
-              <VTextField v-if="serviceType === 'mudanza'" v-model.number="form.destination.floor" label="Piso (opcional)" type="number" />
 
               <template v-if="serviceType === 'carga'">
-                <VRow v-for="(stop, i) in stops" :key="i" dense class="mt-1">
+                <VRow v-for="(stop, i) in stops" :key="i" dense class="mt-3">
                   <VCol cols="10" sm="11">
-                    <DistrictAutocomplete v-model="stops[i]" :label="`Parada ${i + 1}`" />
+                    <DistrictAutocomplete v-model="stops[i]" :label="`Parada ${i + 1}`" hide-icons />
                   </VCol>
                   <VCol cols="2" sm="1" class="d-flex align-center">
                     <VBtn icon variant="text" size="small" @click="removeStop(i)">
@@ -364,6 +342,7 @@ const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE
         :origin="form.origin" :destination="form.destination" :stops="stops"
         :detail="form.cargo.detail" :date="form.date"
         :truck-label="chosenTruckLabel"
+        @edit-type="step = 1"
       />
     </VCol>
     </VRow>
