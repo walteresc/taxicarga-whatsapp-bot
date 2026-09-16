@@ -1,13 +1,14 @@
 <script setup>
 /**
- * Autocompletado de DISTRITO/PROVINCIA/REGIÓN (no dirección exacta) — para
- * cotizar rápido. La dirección completa (calle, número, piso) recién se pide
- * al reservar, no acá: acelera la cotización y evita pedir un dato que en
- * esta etapa no hace falta.
+ * Autocompletado de origen/destino — acepta tanto un DISTRITO/PROVINCIA como
+ * una DIRECCIÓN completa en el mismo campo (el cliente puede escribir
+ * cualquiera de los dos). Reutiliza el mismo Mapbox Geocoding v6 que
+ * AddressAutocomplete, con tipos administrativos + direcciones.
  *
- * v-model = { district, province, region, lat, lng }. Reutiliza el mismo
- * Mapbox Geocoding v6 que AddressAutocomplete, pero acotado a tipos
- * administrativos (place/locality/district/region) — sin direcciones/POIs.
+ * v-model = { district, province, region, address, lat, lng }. `district`
+ * siempre se resuelve (aunque se haya elegido una dirección puntual) porque
+ * el motor de precios y el resto del backend lo necesitan; `address` solo se
+ * completa cuando la sugerencia elegida es una dirección puntual.
  */
 import { onBeforeUnmount, ref, watch } from 'vue'
 
@@ -32,7 +33,7 @@ const DISTRICT_ALIASES = {
   surco: 'Santiago de Surco',
 }
 
-const displayText = v => [v?.district, v?.province].filter(Boolean).join(', ')
+const displayText = v => v?.address || [v?.district, v?.province].filter(Boolean).join(', ')
 
 const query = ref(displayText(props.modelValue))
 const suggestions = ref([])
@@ -49,7 +50,7 @@ const geocode = async (text, signal) => {
   // salir primero de otra región homónima.
   const url = `https://api.mapbox.com/search/geocode/v6/forward?q=${encodeURIComponent(text)}` +
     `&autocomplete=true&country=pe&language=es&limit=6&proximity=-77.0428,-12.0464` +
-    `&types=place,locality,district,region&access_token=${MAPBOX_TOKEN}`
+    `&types=address,street,place,locality,district,region&access_token=${MAPBOX_TOKEN}`
   const res = await fetch(url, { signal })
   const data = await res.json()
 
@@ -94,20 +95,22 @@ const pick = feature => {
   const region = ctx.region?.name || ''
   const province = ctx.district?.name || ''
   const dist = ctx.place?.name || ctx.locality?.name || feature.properties?.name || ''
+  const isAddress = ['address', 'street'].includes(feature.properties?.feature_type)
+  const address = isAddress ? (feature.properties?.full_address || feature.properties?.place_formatted || feature.properties?.name || '') : ''
   const [lng, lat] = feature.geometry?.coordinates || [null, null]
 
-  query.value = displayText({ district: dist, province }) || feature.properties?.name || ''
+  query.value = displayText({ district: dist, province, address }) || feature.properties?.name || ''
   located.value = lat != null && lng != null
   suggestions.value = []
   menuOpen.value = false
-  emit('update:modelValue', { ...props.modelValue, district: dist, province, region, lat, lng })
+  emit('update:modelValue', { ...props.modelValue, district: dist, province, region, address, lat, lng })
 }
 
 const clear = () => {
   query.value = ''
   located.value = false
   suggestions.value = []
-  emit('update:modelValue', { ...props.modelValue, district: '', province: '', region: '', lat: null, lng: null })
+  emit('update:modelValue', { ...props.modelValue, district: '', province: '', region: '', address: '', lat: null, lng: null })
 }
 
 watch(() => props.modelValue, v => {
@@ -128,7 +131,7 @@ onBeforeUnmount(() => { clearTimeout(debounceTimer); abortCtrl?.abort() })
         :prepend-inner-icon="hideIcons ? undefined : 'ri-map-pin-line'"
         :append-inner-icon="hideIcons ? undefined : (located ? 'ri-map-pin-2-fill' : undefined)"
         :color="located ? 'success' : undefined"
-        :hint="!MAPBOX_TOKEN ? 'Autocompletado no disponible: escribí el distrito.' : ''"
+        :hint="!MAPBOX_TOKEN ? 'Autocompletado no disponible: escribí el distrito o la dirección.' : ''"
         persistent-hint clearable
         @click:clear="clear"
         @focus="onFocus"
@@ -139,7 +142,7 @@ onBeforeUnmount(() => { clearTimeout(debounceTimer); abortCtrl?.abort() })
       <VListItem v-if="loading" title="Buscando…" />
       <VListItem
         v-else-if="!suggestions.length"
-        :title="query.trim().length < 2 ? 'Escribí el distrito o provincia…' : 'Sin resultados — probá con otro nombre.'"
+        :title="query.trim().length < 2 ? 'Escribí el distrito o la dirección…' : 'Sin resultados — probá con otro nombre.'"
         class="text-medium-emphasis"
       />
       <VListItem

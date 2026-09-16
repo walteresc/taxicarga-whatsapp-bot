@@ -167,11 +167,18 @@ const submitSignup = async () => {
 
       <VRow>
       <VCol cols="12" md="7">
+      <VStepperHeader v-if="phase === 'form'" class="mb-4">
+        <template v-for="(label, i) in stepperItems" :key="i">
+          <VStepperItem :title="label" :value="i + 1" :complete="step > i + 1" />
+          <VDivider v-if="i < stepperItems.length - 1" />
+        </template>
+      </VStepperHeader>
+
       <VCard>
         <!-- Paso 1: formulario -->
         <VCardText v-if="phase === 'form'">
-          <VStepper v-model="step" flat :items="stepperItems" hide-actions>
-            <template #item.1>
+          <VWindow v-model="step">
+            <VWindowItem :value="1">
               <div class="text-h6 font-weight-bold mb-1">Elige un tipo de servicio</div>
               <p class="text-caption text-medium-emphasis mb-3">Selecciona el tipo de servicio que mejor se adapte a tu necesidad.</p>
               <VRow class="mb-3" dense>
@@ -214,9 +221,8 @@ const submitSignup = async () => {
                     <VAvatar size="28" color="primary" variant="tonal"><VIcon icon="ri-map-pin-line" size="16" /></VAvatar>
                     <span class="text-subtitle-2 font-weight-bold">Ingresa la ruta de tu {{ serviceType === 'mudanza' ? 'mudanza' : 'carga' }}</span>
                   </div>
-                  <p class="text-caption text-medium-emphasis mb-3">Indica los puntos de origen y destino para cotizar tu servicio.</p>
 
-                  <div class="d-flex">
+                  <div class="d-flex mt-3">
                     <div class="d-flex flex-column align-center mr-3" style="width: 10px;">
                       <div style="width:10px; height:10px; border-radius:50%; background:#56CA00; flex-shrink:0;" />
                       <div style="flex:1; width:0; border-left:2px dotted rgba(var(--v-theme-on-surface), 0.3); margin: 4px 0;" />
@@ -246,9 +252,9 @@ const submitSignup = async () => {
                   </template>
                 </template>
               </template>
-            </template>
+            </VWindowItem>
 
-            <template #item.2>
+            <VWindowItem :value="2">
               <template v-if="serviceType === 'carga'">
                 <div class="text-subtitle-2 mb-1">¿Qué vas a transportar?</div>
                 <p class="text-caption text-medium-emphasis mb-2">
@@ -296,9 +302,9 @@ const submitSignup = async () => {
                   @select="v => chosenTruck = v" @clear="chosenTruck = null"
                 />
               </template>
-            </template>
+            </VWindowItem>
 
-            <template #item.3>
+            <VWindowItem :value="3">
               <template v-if="serviceType === 'carga'">
                 <div class="text-subtitle-2 mb-2">Elige cómo quieres cotizar tu carga</div>
                 <template v-if="hasStops">
@@ -330,9 +336,9 @@ const submitSignup = async () => {
                 <VTextField v-model="quote.contact.email" label="Correo (opcional)" type="email" density="comfortable" />
                 <VAlert v-if="error" type="error" variant="tonal" class="mt-3">{{ error }}</VAlert>
               </template>
-            </template>
+            </VWindowItem>
 
-            <template #item.4>
+            <VWindowItem :value="4">
               <ScheduleStepPicker
                 :date="quote.date" :schedule="quote.schedule"
                 @update:date="v => quote.date = v" @update:schedule="v => quote.schedule = v"
@@ -344,8 +350,8 @@ const submitSignup = async () => {
               <VTextField v-model="quote.contact.email" label="Correo (opcional)" type="email" density="comfortable" />
               <p class="text-caption text-medium-emphasis mt-1 mb-0">La dirección exacta de recojo y entrega se confirma al reservar.</p>
               <VAlert v-if="error" type="error" variant="tonal" class="mt-3">{{ error }}</VAlert>
-            </template>
-          </VStepper>
+            </VWindowItem>
+          </VWindow>
 
           <input v-model="quote.website" type="text" tabindex="-1" autocomplete="off" style="position:absolute; left:-9999px;" aria-hidden="true">
         </VCardText>
