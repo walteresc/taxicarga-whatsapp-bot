@@ -25,19 +25,35 @@ const SERVICE_TYPES = [
 ]
 const serviceType = ref('carga')
 
-const CATEGORIES = [
-  { title: 'Cajas, paquetes y bultos', value: 'cajas' },
-  { title: 'Mercadería comercial', value: 'mercaderia' },
-  { title: 'Maquinaria y equipos', value: 'maquinaria' },
-  { title: 'Materiales de construcción', value: 'construccion' },
-  { title: 'Pallets / parihuelas', value: 'pallets' },
-  { title: 'Otros', value: 'otros' },
-]
+// El mockup no tiene campos separados de categoría/peso/volumen para Carga —
+// el cliente describe todo en un solo texto libre ("40 cajas..., peso total
+// 500 kg..."). El motor de precios de Consolidada sí necesita un peso
+// estructurado (ver apps/tercerizacion/services.py::resolver_tarifa_parcial),
+// así que lo extraemos con una regex best-effort; si no lo encuentra, cae al
+// modo "asesor confirma" — el mismo fallback que ya existía. Mismo criterio
+// que /cotizar.vue.
+const extractWeightKg = text => {
+  if (!text) return null
+  const t = text.toLowerCase()
+  let m = t.match(/(\d+(?:[.,]\d+)?)\s*(?:kg|kilos?)\b/)
+  if (m) return parseFloat(m[1].replace(',', '.'))
+  m = t.match(/(\d+(?:[.,]\d+)?)\s*(?:ton(?:elada)?s?)\b/)
+  if (m) return parseFloat(m[1].replace(',', '.')) * 1000
+
+  return null
+}
+const extractVolumeM3 = text => {
+  if (!text) return null
+  const m = text.toLowerCase().match(/(\d+(?:[.,]\d+)?)\s*m\s*(?:3|³|cubicos?|cúbicos?)/)
+
+  return m ? parseFloat(m[1].replace(',', '.')) : null
+}
+
 const step = ref(1)
 const form = reactive({
   origin: { district: '', address: '', floor: null, province: '', region: '', lat: null, lng: null },
   destination: { district: '', address: '', floor: null, province: '', region: '', lat: null, lng: null },
-  cargo: { category: 'cajas', detail: '', weightKg: '', volumeM3: '', operators: null, truckType: null },
+  cargo: { category: 'otros', detail: '', operators: null, truckType: null },
   date: '',
   schedule: '',
   quoteMode: 'por_carga',
@@ -55,8 +71,7 @@ const selectService = value => {
   form.quoteMode = 'por_carga'   // "elegir vehículo" solo aplica a Carga
   form.cargo.truckType = null
   if (value === 'mudanza') form.cargo.category = 'mudanza'
-  else if (value === 'reparto') form.cargo.category = 'otros'
-  else if (form.cargo.category === 'mudanza') form.cargo.category = 'cajas'
+  else form.cargo.category = 'otros'
 }
 const pickTruck = value => { form.cargo.truckType = value; form.quoteMode = 'por_vehiculo' }
 const clearTruck = () => { form.cargo.truckType = null; form.quoteMode = 'por_carga' }
@@ -81,7 +96,7 @@ const fetchPricePreview = async () => {
   try {
     pricePreview.value = await guestQuotePreview({
       origin: form.origin, destination: form.destination,
-      cargo: { category: form.cargo.category, weightKg: form.cargo.weightKg },
+      cargo: { category: form.cargo.category, weightKg: extractWeightKg(form.cargo.detail) },
     })
     form.loadMode = pricePreview.value.consolidated ? 'parcial' : 'completa'
   } catch (e) { pricePreview.value = null } finally { previewLoading.value = false }
@@ -114,7 +129,9 @@ const submit = async () => {
     // 'otros' marcado en el detalle (ver mismo criterio en /cotizar).
     const cargo = serviceType.value === 'reparto'
       ? { ...form.cargo, detail: `[REPARTO] ${form.cargo.detail}`.trim() }
-      : form.cargo
+      : serviceType.value === 'carga'
+        ? { ...form.cargo, weightKg: extractWeightKg(form.cargo.detail), volumeM3: extractVolumeM3(form.cargo.detail) }
+        : form.cargo
     const validStops = serviceType.value === 'carga' ? stops.filter(s => s.district) : []
     const wantsOwnPrice = serviceType.value === 'carga' && continueMode.value === 'propio'
     const payload = {
@@ -139,15 +156,20 @@ const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE
       <VCardText>
         <VStepper v-model="step" flat :items="stepperItems" hide-actions>
           <template #item.1>
-            <div class="text-subtitle-2 mb-2">¿Qué necesitas?</div>
+            <div class="text-subtitle-2 mb-1">Elige un tipo de servicio</div>
+            <p class="text-caption text-medium-emphasis mb-3">Selecciona el tipo de servicio que mejor se adapte a tu necesidad.</p>
             <VRow class="mb-3" dense>
               <VCol v-for="s in SERVICE_TYPES" :key="s.value" cols="12" sm="4">
                 <VCard
                   :variant="serviceType === s.value ? 'tonal' : 'outlined'"
                   :color="serviceType === s.value ? 'primary' : undefined"
-                  class="pa-3 text-center h-100" style="cursor: pointer;"
+                  class="pa-3 text-center h-100 position-relative" style="cursor: pointer;"
                   @click="selectService(s.value)"
                 >
+                  <VIcon
+                    v-if="serviceType === s.value" icon="ri-checkbox-circle-fill" color="primary" size="18"
+                    style="position:absolute; top:6px; right:6px;"
+                  />
                   <VIcon :icon="s.icon" size="24" class="mb-1" />
                   <div class="text-body-2 font-weight-bold">{{ s.title }}</div>
                   <div class="text-caption text-medium-emphasis">{{ s.subtitle }}</div>
@@ -156,35 +178,43 @@ const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE
             </VRow>
 
             <VDivider class="mb-3" />
-            <div class="text-subtitle-2 mb-2">¿De dónde a dónde?</div>
             <template v-if="serviceType === 'reparto'">
+              <div class="d-flex align-center ga-2 mb-3">
+                <VAvatar size="28" color="primary" variant="tonal"><VIcon icon="ri-map-pin-line" size="16" /></VAvatar>
+                <span class="text-subtitle-2 font-weight-bold">Ingresa la ruta de tu reparto</span>
+              </div>
               <VRow dense>
                 <VCol cols="12" sm="6">
-                  <div class="text-subtitle-2 mb-2">Origen</div>
                   <AddressAutocomplete v-model="form.origin" label="Punto de recojo / almacén" />
                 </VCol>
                 <VCol cols="12" sm="6">
-                  <div class="text-subtitle-2 mb-2">Destino</div>
                   <AddressAutocomplete v-model="form.destination" label="Zona de reparto (referencia)" />
                 </VCol>
               </VRow>
             </template>
             <template v-else>
-              <VRow dense>
-                <VCol cols="12" sm="6">
-                  <div class="text-subtitle-2 mb-2">Origen</div>
-                  <DistrictAutocomplete v-model="form.origin" label="Distrito de origen" />
-                  <VTextField v-model.number="form.origin.floor" label="Piso (opcional)" type="number" />
-                </VCol>
-                <VCol cols="12" sm="6">
-                  <div class="text-subtitle-2 mb-2">Destino</div>
-                  <DistrictAutocomplete v-model="form.destination" label="Distrito de destino" />
-                  <VTextField v-model.number="form.destination.floor" label="Piso (opcional)" type="number" />
-                </VCol>
-              </VRow>
+              <div class="d-flex align-center ga-2 mb-1">
+                <VAvatar size="28" color="primary" variant="tonal"><VIcon icon="ri-map-pin-line" size="16" /></VAvatar>
+                <span class="text-subtitle-2 font-weight-bold">Ingresa la ruta de tu {{ serviceType === 'mudanza' ? 'mudanza' : 'carga' }}</span>
+              </div>
+              <p class="text-caption text-medium-emphasis mb-3">Indica los puntos de origen y destino para cotizar tu servicio.</p>
+
+              <div class="d-flex align-center ga-2 mb-1">
+                <VIcon icon="ri-record-circle-line" color="success" size="14" />
+                <span class="text-caption text-medium-emphasis">Origen</span>
+              </div>
+              <DistrictAutocomplete v-model="form.origin" label="Distrito de origen" class="mb-1" />
+              <VTextField v-if="serviceType === 'mudanza'" v-model.number="form.origin.floor" label="Piso (opcional)" type="number" class="mb-2" />
+
+              <div class="d-flex align-center ga-2 mb-1" :class="serviceType === 'carga' ? 'mt-2' : ''">
+                <VIcon icon="ri-map-pin-fill" color="primary" size="14" />
+                <span class="text-caption text-medium-emphasis">Destino</span>
+              </div>
+              <DistrictAutocomplete v-model="form.destination" label="Distrito de destino" />
+              <VTextField v-if="serviceType === 'mudanza'" v-model.number="form.destination.floor" label="Piso (opcional)" type="number" />
 
               <template v-if="serviceType === 'carga'">
-                <VRow v-for="(stop, i) in stops" :key="i" dense>
+                <VRow v-for="(stop, i) in stops" :key="i" dense class="mt-1">
                   <VCol cols="10" sm="11">
                     <DistrictAutocomplete v-model="stops[i]" :label="`Parada ${i + 1}`" />
                   </VCol>
@@ -194,27 +224,24 @@ const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE
                     </VBtn>
                   </VCol>
                 </VRow>
-                <VBtn variant="text" size="small" prepend-icon="ri-add-line" class="mb-2" @click="addStop">
-                  Agregar parada (opcional)
+                <VBtn variant="text" size="small" prepend-icon="ri-add-line" class="mt-2" @click="addStop">
+                  Agregar parada
                 </VBtn>
+                <p class="text-caption text-medium-emphasis mt-1 mb-0">Puedes añadir paradas intermedias (opcional).</p>
               </template>
-
-              <p class="text-caption text-medium-emphasis mb-0">
-                La dirección exacta te la pedimos recién al reservar — para cotizar alcanza con el distrito.
-              </p>
             </template>
           </template>
 
           <template #item.2>
             <template v-if="serviceType === 'carga'">
-              <div class="text-subtitle-2 mb-2">¿Qué vas a transportar?</div>
-              <VSelect v-model="form.cargo.category" :items="CATEGORIES" label="Tipo de carga" class="mb-2" />
-              <VTextarea v-model="form.cargo.detail" label="Detalle (opcional)" rows="2" auto-grow class="mb-2" />
-              <div class="d-flex ga-2 mb-2">
-                <VTextField v-model="form.cargo.weightKg" label="Peso aprox. (kg)" type="number" />
-                <VTextField v-model="form.cargo.volumeM3" label="Volumen aprox. (m³)" type="number" />
-              </div>
-              <VTextField v-model.number="form.cargo.operators" label="¿Necesitás operarios de carga? ¿Cuántos?" type="number" class="mb-2" />
+              <div class="text-subtitle-2 mb-1">¿Qué vas a transportar?</div>
+              <p class="text-caption text-medium-emphasis mb-2">
+                Describe tu carga con el mayor detalle posible para recibir mejores cotizaciones. Indica peso aprox. y volumen aprox.
+              </p>
+              <VTextarea
+                v-model="form.cargo.detail" rows="4" auto-grow class="mb-4"
+                counter maxlength="500" placeholder="Ej: 40 cajas de repuestos automotrices, peso total 500 kg y volumen aprox. 2 m³"
+              />
             </template>
             <template v-else-if="serviceType === 'mudanza'">
               <div class="text-subtitle-2 mb-2">¿Qué vas a mudar?</div>
@@ -236,13 +263,18 @@ const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE
 
             <template v-if="serviceType === 'carga'">
               <VDivider class="my-3" />
-              <div class="d-flex align-center ga-2 mb-2 flex-wrap">
-                <span class="text-body-2 text-medium-emphasis">¿Ya sabés qué vehículo necesitás?</span>
-                <VChip v-if="form.cargo.truckType" closable size="small" color="primary" variant="tonal" @click:close="clearTruck">
-                  {{ chosenTruckLabel }}
-                </VChip>
-                <VBtn v-else size="small" variant="tonal" @click="showVehiclePicker = true">Elegir vehículo</VBtn>
-                <span class="text-caption text-medium-emphasis">(opcional — si no elegís, TaxiCarga te asigna la mejor opción)</span>
+              <div class="d-flex align-start ga-3">
+                <VAvatar size="40" color="primary" variant="tonal"><VIcon icon="ri-truck-line" /></VAvatar>
+                <div class="flex-grow-1">
+                  <div class="text-subtitle-2 font-weight-bold">¿Quieres elegir vehículo?</div>
+                  <div class="text-caption text-medium-emphasis mb-2">
+                    Puedes elegir un tipo de vehículo para tu carga o continuar sin seleccionar uno. TaxiCarga te asignará la mejor opción disponible.
+                  </div>
+                  <VChip v-if="form.cargo.truckType" closable color="primary" variant="tonal" @click:close="clearTruck">
+                    {{ chosenTruckLabel }}
+                  </VChip>
+                  <VBtn v-else variant="tonal" size="small" @click="showVehiclePicker = true">Elegir vehículo</VBtn>
+                </div>
               </div>
               <VehiclePickerDialog v-model="showVehiclePicker" @select="pickTruck" @clear="clearTruck" />
             </template>
@@ -282,6 +314,12 @@ const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE
               :date="form.date" :schedule="form.schedule"
               @update:date="v => form.date = v" @update:schedule="v => form.schedule = v"
             />
+            <VAlert type="info" variant="tonal" density="comfortable" class="mt-4">
+              <div class="text-body-2 font-weight-medium mb-1">Dirección y datos de contacto</div>
+              <div class="text-caption">
+                La dirección exacta de recogida y entrega, así como tus datos de contacto, se confirmarán en el siguiente paso.
+              </div>
+            </VAlert>
             <VAlert v-if="error" type="error" variant="tonal" class="mt-3">{{ error }}</VAlert>
           </template>
 

@@ -26,13 +26,28 @@ const SERVICE_TYPES = [
 ]
 const serviceType = ref('')
 
-const CATEGORIES = [
-  { title: 'Cajas, paquetes y bultos', value: 'cajas' },
-  { title: 'Mercadería comercial', value: 'mercaderia' },
-  { title: 'Maquinaria y equipos', value: 'maquinaria' },
-  { title: 'Materiales de construcción', value: 'construccion' },
-  { title: 'Otros', value: 'otros' },
-]
+// El mockup no tiene campos separados de categoría/peso/volumen — el cliente
+// describe todo en un solo texto libre ("40 cajas..., peso total 500 kg...").
+// El motor de precios de Consolidada sí necesita un peso estructurado (ver
+// apps/tercerizacion/services.py::resolver_tarifa_parcial), así que lo
+// extraemos con una regex best-effort; si no lo encuentra, cae al modo
+// "asesor confirma" — el mismo fallback que ya existía.
+const extractWeightKg = text => {
+  if (!text) return null
+  const t = text.toLowerCase()
+  let m = t.match(/(\d+(?:[.,]\d+)?)\s*(?:kg|kilos?)\b/)
+  if (m) return parseFloat(m[1].replace(',', '.'))
+  m = t.match(/(\d+(?:[.,]\d+)?)\s*(?:ton(?:elada)?s?)\b/)
+  if (m) return parseFloat(m[1].replace(',', '.')) * 1000
+
+  return null
+}
+const extractVolumeM3 = text => {
+  if (!text) return null
+  const m = text.toLowerCase().match(/(\d+(?:[.,]\d+)?)\s*m\s*(?:3|³|cubicos?|cúbicos?)/)
+
+  return m ? parseFloat(m[1].replace(',', '.')) : null
+}
 
 // Elegir vehículo es opcional y no aplica a Mudanza/Reparto — por defecto
 // "que TaxiCarga elija" (quoteMode 'por_carga', sin truckType). El picker
@@ -50,7 +65,7 @@ const error = ref('')
 const quote = reactive({
   origin: { district: '', address: '', province: '', region: '', lat: null, lng: null },
   destination: { district: '', address: '', province: '', region: '', lat: null, lng: null },
-  cargo: { category: 'cajas', detail: '', weightKg: '' },
+  cargo: { category: 'otros', detail: '' },
   loadMode: 'completa',   // completa|parcial — solo importa si la ruta es nacional
   date: '',
   schedule: '',
@@ -82,7 +97,7 @@ const fetchPricePreview = async () => {
   try {
     pricePreview.value = await guestQuotePreview({
       origin: quote.origin, destination: quote.destination,
-      cargo: { category: quote.cargo.category, weightKg: quote.cargo.weightKg },
+      cargo: { category: quote.cargo.category, weightKg: extractWeightKg(quote.cargo.detail) },
     })
     quote.loadMode = pricePreview.value.consolidated ? 'parcial' : 'completa'
   } catch (e) { pricePreview.value = null } finally { previewLoading.value = false }
@@ -123,7 +138,10 @@ const submitQuote = async () => {
       ? { ...quote.cargo, category: 'mudanza' }
       : serviceType.value === 'reparto'
         ? { ...quote.cargo, category: 'otros', detail: `[REPARTO] ${quote.cargo.detail}`.trim() }
-        : { ...quote.cargo, truckType: chosenTruck.value || undefined }
+        : {
+            ...quote.cargo, truckType: chosenTruck.value || undefined,
+            weightKg: extractWeightKg(quote.cargo.detail), volumeM3: extractVolumeM3(quote.cargo.detail),
+          }
     const quoteMode = serviceType.value === 'carga' && chosenTruck.value ? 'por_vehiculo' : 'por_carga'
     const validStops = serviceType.value === 'carga' ? stops.filter(s => s.district) : []
     const wantsOwnPrice = serviceType.value === 'carga' && continueMode.value === 'propio'
@@ -176,7 +194,8 @@ const submitSignup = async () => {
         <VCardText v-if="phase === 'form'">
           <VStepper v-model="step" flat :items="stepperItems" hide-actions>
             <template #item.1>
-              <div class="text-subtitle-2 mb-2">Elige un tipo de servicio</div>
+              <div class="text-subtitle-2 mb-1">Elige un tipo de servicio</div>
+              <p class="text-caption text-medium-emphasis mb-3">Selecciona el tipo de servicio que mejor se adapte a tu necesidad.</p>
               <VRow class="mb-3" dense>
                 <VCol v-for="s in SERVICE_TYPES" :key="s.value" cols="12" sm="4">
                   <VCard
@@ -198,8 +217,11 @@ const submitSignup = async () => {
 
               <template v-if="serviceType">
                 <VDivider class="mb-3" />
-                <div class="text-subtitle-2 mb-2">Ingresa la ruta de tu {{ serviceType === 'mudanza' ? 'mudanza' : serviceType === 'reparto' ? 'reparto' : 'carga' }}</div>
                 <template v-if="serviceType === 'reparto'">
+                  <div class="d-flex align-center ga-2 mb-3">
+                    <VAvatar size="28" color="primary" variant="tonal"><VIcon icon="ri-map-pin-line" size="16" /></VAvatar>
+                    <span class="text-subtitle-2 font-weight-bold">Ingresa la ruta de tu reparto</span>
+                  </div>
                   <VRow dense>
                     <VCol cols="12" sm="6">
                       <AddressAutocomplete v-model="quote.origin" label="Punto de recojo / almacén" />
@@ -210,17 +232,26 @@ const submitSignup = async () => {
                   </VRow>
                 </template>
                 <template v-else>
-                  <VRow dense>
-                    <VCol cols="12" sm="6">
-                      <DistrictAutocomplete v-model="quote.origin" label="Origen" />
-                    </VCol>
-                    <VCol cols="12" sm="6">
-                      <DistrictAutocomplete v-model="quote.destination" label="Destino" />
-                    </VCol>
-                  </VRow>
+                  <div class="d-flex align-center ga-2 mb-1">
+                    <VAvatar size="28" color="primary" variant="tonal"><VIcon icon="ri-map-pin-line" size="16" /></VAvatar>
+                    <span class="text-subtitle-2 font-weight-bold">Ingresa la ruta de tu {{ serviceType === 'mudanza' ? 'mudanza' : 'carga' }}</span>
+                  </div>
+                  <p class="text-caption text-medium-emphasis mb-3">Indica los puntos de origen y destino para cotizar tu servicio.</p>
+
+                  <div class="d-flex align-center ga-2 mb-1">
+                    <VIcon icon="ri-record-circle-line" color="success" size="14" />
+                    <span class="text-caption text-medium-emphasis">Origen</span>
+                  </div>
+                  <DistrictAutocomplete v-model="quote.origin" label="Distrito de origen" class="mb-3" />
+
+                  <div class="d-flex align-center ga-2 mb-1">
+                    <VIcon icon="ri-map-pin-fill" color="primary" size="14" />
+                    <span class="text-caption text-medium-emphasis">Destino</span>
+                  </div>
+                  <DistrictAutocomplete v-model="quote.destination" label="Distrito de destino" />
 
                   <template v-if="serviceType === 'carga'">
-                    <VRow v-for="(stop, i) in stops" :key="i" dense>
+                    <VRow v-for="(stop, i) in stops" :key="i" dense class="mt-1">
                       <VCol cols="10" sm="11">
                         <DistrictAutocomplete v-model="stops[i]" :label="`Parada ${i + 1}`" />
                       </VCol>
@@ -230,24 +261,25 @@ const submitSignup = async () => {
                         </VBtn>
                       </VCol>
                     </VRow>
-                    <VBtn variant="text" size="small" prepend-icon="ri-add-line" class="mb-2" @click="addStop">
-                      Agregar parada (opcional)
+                    <VBtn variant="text" size="small" prepend-icon="ri-add-line" class="mt-2" @click="addStop">
+                      Agregar parada
                     </VBtn>
+                    <p class="text-caption text-medium-emphasis mt-1 mb-0">Puedes añadir paradas intermedias (opcional).</p>
                   </template>
-
-                  <p class="text-caption text-medium-emphasis mb-0">
-                    La dirección exacta te la pedimos recién al reservar — para cotizar alcanza con el distrito.
-                  </p>
                 </template>
               </template>
             </template>
 
             <template #item.2>
               <template v-if="serviceType === 'carga'">
-                <div class="text-subtitle-2 mb-2">¿Qué vas a transportar?</div>
-                <VSelect v-model="quote.cargo.category" :items="CATEGORIES" label="Tipo de carga" density="comfortable" class="mb-2" />
-                <VTextarea v-model="quote.cargo.detail" label="Detalle (opcional)" rows="2" auto-grow density="comfortable" class="mb-2" />
-                <VTextField v-model="quote.cargo.weightKg" label="Peso aprox. (kg, opcional)" type="number" density="comfortable" class="mb-4" />
+                <div class="text-subtitle-2 mb-1">¿Qué vas a transportar?</div>
+                <p class="text-caption text-medium-emphasis mb-2">
+                  Describe tu carga con el mayor detalle posible para recibir mejores cotizaciones. Indica peso aprox. y volumen aprox.
+                </p>
+                <VTextarea
+                  v-model="quote.cargo.detail" rows="4" auto-grow density="comfortable" class="mb-4"
+                  counter maxlength="500" placeholder="Ej: 40 cajas de repuestos automotrices, peso total 500 kg y volumen aprox. 2 m³"
+                />
               </template>
               <template v-else-if="serviceType === 'mudanza'">
                 <div class="text-subtitle-2 mb-2">¿Qué vas a mudar?</div>
@@ -268,13 +300,18 @@ const submitSignup = async () => {
 
               <template v-if="serviceType === 'carga'">
                 <VDivider class="my-3" />
-                <div class="d-flex align-center ga-2 mb-2 flex-wrap">
-                  <span class="text-body-2 text-medium-emphasis">¿Ya sabés qué vehículo necesitás?</span>
-                  <VChip v-if="chosenTruck" closable size="small" color="primary" variant="tonal" @click:close="chosenTruck = null">
-                    {{ chosenTruckLabel }}
-                  </VChip>
-                  <VBtn v-else size="small" variant="tonal" @click="showVehiclePicker = true">Elegir vehículo</VBtn>
-                  <span class="text-caption text-medium-emphasis">(opcional — si no elegís, TaxiCarga te asigna la mejor opción)</span>
+                <div class="d-flex align-start ga-3">
+                  <VAvatar size="40" color="primary" variant="tonal"><VIcon icon="ri-truck-line" /></VAvatar>
+                  <div class="flex-grow-1">
+                    <div class="text-subtitle-2 font-weight-bold">¿Quieres elegir vehículo?</div>
+                    <div class="text-caption text-medium-emphasis mb-2">
+                      Puedes elegir un tipo de vehículo para tu carga o continuar sin seleccionar uno. TaxiCarga te asignará la mejor opción disponible.
+                    </div>
+                    <VChip v-if="chosenTruck" closable color="primary" variant="tonal" @click:close="chosenTruck = null">
+                      {{ chosenTruckLabel }}
+                    </VChip>
+                    <VBtn v-else variant="tonal" size="small" @click="showVehiclePicker = true">Elegir vehículo</VBtn>
+                  </div>
                 </div>
                 <VehiclePickerDialog
                   v-model="showVehiclePicker"
@@ -327,6 +364,7 @@ const submitSignup = async () => {
               <VTextField v-model="quote.contact.name" label="Tu nombre" density="comfortable" class="mb-2" />
               <VTextField v-model="quote.contact.phone" label="Teléfono / WhatsApp" density="comfortable" class="mb-2" />
               <VTextField v-model="quote.contact.email" label="Correo (opcional)" type="email" density="comfortable" />
+              <p class="text-caption text-medium-emphasis mt-1 mb-0">La dirección exacta de recojo y entrega se confirma al reservar.</p>
               <VAlert v-if="error" type="error" variant="tonal" class="mt-3">{{ error }}</VAlert>
             </template>
           </VStepper>
