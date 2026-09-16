@@ -170,7 +170,7 @@ const submitSignup = async () => {
       <VStepper v-if="phase === 'form'" v-model="step" flat class="bg-transparent route-stepper mb-4" hide-actions>
         <VStepperHeader>
           <template v-for="(label, i) in stepperItems" :key="i">
-            <VStepperItem :title="label" :value="i + 1" :complete="step > i + 1" />
+            <VStepperItem :title="label" :value="i + 1" :complete="step > i + 1" color="primary" />
             <VDivider v-if="i < stepperItems.length - 1" />
           </template>
         </VStepperHeader>

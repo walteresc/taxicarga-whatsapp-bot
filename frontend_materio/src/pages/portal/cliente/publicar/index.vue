@@ -130,7 +130,7 @@ const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE
       <VStepper v-if="!submitted" v-model="step" flat class="bg-transparent route-stepper" hide-actions>
         <VStepperHeader>
           <template v-for="(label, i) in stepperItems" :key="i">
-            <VStepperItem :title="label" :value="i + 1" :complete="step > i + 1" />
+            <VStepperItem :title="label" :value="i + 1" :complete="step > i + 1" color="primary" />
             <VDivider v-if="i < stepperItems.length - 1" />
           </template>
         </VStepperHeader>
