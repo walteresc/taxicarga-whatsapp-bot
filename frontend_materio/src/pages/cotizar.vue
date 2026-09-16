@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 
 import AddressAutocomplete from '@/components/AddressAutocomplete.vue'
 import CargoPhotosPicker from '@/components/CargoPhotosPicker.vue'
+import ContinueModePicker from '@/components/ContinueModePicker.vue'
 import DistrictAutocomplete from '@/components/DistrictAutocomplete.vue'
 import PriceModePicker from '@/components/PriceModePicker.vue'
 import QuoteSummaryPanel from '@/components/QuoteSummaryPanel.vue'
@@ -53,9 +54,12 @@ const quote = reactive({
   loadMode: 'completa',   // completa|parcial — solo importa si la ruta es nacional
   date: '',
   schedule: '',
+  proposedPrice: '',      // solo si continueMode === 'propio'
+  priceNegotiable: true,
   contact: { name: '', phone: '', email: '' },
   website: '',   // honeypot
 })
+const continueMode = ref('ofertas')   // 'ofertas' | 'propio' — solo Carga
 const result = ref(null)
 
 // Paradas intermedias (multipunto) — solo Carga. El motor de precios no las
@@ -92,7 +96,12 @@ const maxStep = computed(() => serviceType.value === 'carga' ? 4 : 3)
 const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE')}`)
 const step1ok = computed(() => !!serviceType.value)
 const step2ok = computed(() => !!(quote.origin.district && quote.destination.district))
-const formOk = computed(() => step2ok.value && quote.contact.phone && quote.contact.name)
+const formOk = computed(() => {
+  if (!(step2ok.value && quote.contact.phone && quote.contact.name)) return false
+  if (serviceType.value === 'carga' && continueMode.value === 'propio' && !quote.proposedPrice) return false
+
+  return true
+})
 const loadModeLabel = computed(() => (quote.loadMode === 'parcial' ? 'Carga consolidada' : 'Carga express'))
 
 const goToStep3 = async () => {
@@ -122,7 +131,13 @@ const submitQuote = async () => {
         : { ...quote.cargo, truckType: chosenTruck.value || undefined }
     const quoteMode = serviceType.value === 'carga' && chosenTruck.value ? 'por_vehiculo' : 'por_carga'
     const validStops = serviceType.value === 'carga' ? stops.filter(s => s.district) : []
-    result.value = await guestQuote({ ...quote, cargo, quoteMode, stops: validStops }, photos.value)
+    const wantsOwnPrice = serviceType.value === 'carga' && continueMode.value === 'propio'
+    const payload = {
+      ...quote, cargo, quoteMode, stops: validStops,
+      proposedPrice: wantsOwnPrice ? quote.proposedPrice : null,
+      priceNegotiable: wantsOwnPrice ? quote.priceNegotiable : true,
+    }
+    result.value = await guestQuote(payload, photos.value)
     phase.value = 'result'
   } catch (e) { error.value = e.message } finally { busy.value = false }
 }
@@ -284,6 +299,13 @@ const submitSignup = async () => {
                   v-else v-model="quote.loadMode" :loading="previewLoading"
                   :express="pricePreview?.express" :consolidated="pricePreview?.consolidated"
                 />
+
+                <VDivider class="my-4" />
+                <ContinueModePicker
+                  :mode="continueMode" :price="quote.proposedPrice" :negotiable="quote.priceNegotiable"
+                  @update:mode="v => continueMode = v" @update:price="v => quote.proposedPrice = v"
+                  @update:negotiable="v => quote.priceNegotiable = v"
+                />
               </template>
               <template v-else>
                 <VList density="compact">
@@ -310,6 +332,11 @@ const submitSignup = async () => {
                 />
                 <VListItem prepend-icon="ri-archive-line" :title="categoryLabel" :subtitle="quote.cargo.detail || '—'" />
                 <VListItem v-if="!hasStops" prepend-icon="ri-scales-3-line" :title="loadModeLabel" />
+                <VListItem
+                  v-if="continueMode === 'propio' && quote.proposedPrice"
+                  prepend-icon="ri-price-tag-3-line" :title="`Tu precio: S/ ${quote.proposedPrice}`"
+                  :subtitle="quote.priceNegotiable ? 'Negociable' : 'Fijo'"
+                />
                 <VListItem prepend-icon="ri-calendar-line" :title="quote.date || 'Fecha por confirmar'" :subtitle="quote.schedule || undefined" />
               </VList>
               <VDivider class="my-3" />

@@ -1,5 +1,6 @@
 """F7 · Cotización rápida de invitado + conversión a cliente/empresa."""
 import json
+from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
@@ -79,6 +80,20 @@ class GuestQuoteTests(APITestCase):
         payload = {**_QUOTE, "contact": {"name": "x"}}
         r = self.client.post("/api/v2/guest/quote", payload, format="json")
         self.assertEqual(r.status_code, 400)
+
+    def test_publicar_con_precio_propio_guarda_precio_real(self):
+        payload = {**_QUOTE, "proposedPrice": "850", "priceNegotiable": False}
+        r = self.client.post("/api/v2/guest/quote", payload, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        lead = Lead.objects.get(codigo=r.data["quoteCode"])
+        self.assertEqual(lead.precio_propuesto_cliente, Decimal("850"))
+        self.assertFalse(lead.precio_propuesto_negociable)
+
+    def test_sin_precio_propio_queda_en_null_negociable_por_defecto(self):
+        r = self.client.post("/api/v2/guest/quote", _QUOTE, format="json")
+        lead = Lead.objects.get(codigo=r.data["quoteCode"])
+        self.assertIsNone(lead.precio_propuesto_cliente)
+        self.assertTrue(lead.precio_propuesto_negociable)
 
     def test_con_paradas_guarda_la_ruta_completa_y_pasa_a_asesor(self):
         payload = {

@@ -224,6 +224,11 @@ class GuestQuoteView(_Public):
             fecha_servicio=fecha,
             horario_servicio=(d.get("schedule") or ""),
             estado=Lead.NUEVO,
+            # "Publicar con mi precio" — precio real que el cliente ofrece
+            # pagar, no solo un dato informativo. Las comisiones se siguen
+            # calculando igual que siempre sobre lo que el asesor acuerde.
+            precio_propuesto_cliente=_num(d.get("proposedPrice")),
+            precio_propuesto_negociable=bool(d.get("priceNegotiable", True)),
         )
         save_lead_photos(lead, fotos)
         replace_lead_route(lead, [

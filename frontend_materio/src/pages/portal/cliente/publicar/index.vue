@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 
 import AddressAutocomplete from '@/components/AddressAutocomplete.vue'
 import CargoPhotosPicker from '@/components/CargoPhotosPicker.vue'
+import ContinueModePicker from '@/components/ContinueModePicker.vue'
 import DistrictAutocomplete from '@/components/DistrictAutocomplete.vue'
 import PriceModePicker from '@/components/PriceModePicker.vue'
 import QuoteSummaryPanel from '@/components/QuoteSummaryPanel.vue'
@@ -41,7 +42,10 @@ const form = reactive({
   schedule: '',
   quoteMode: 'por_carga',
   loadMode: 'completa',   // completa|parcial — solo importa si la ruta es nacional
+  proposedPrice: '',      // solo si continueMode === 'propio'
+  priceNegotiable: true,
 })
+const continueMode = ref('ofertas')   // 'ofertas' | 'propio' — solo Carga
 
 const showVehiclePicker = ref(false)
 const chosenTruckLabel = computed(() => form.cargo.truckType || '')
@@ -117,7 +121,13 @@ const submit = async () => {
       ? { ...form.cargo, detail: `[REPARTO] ${form.cargo.detail}`.trim() }
       : form.cargo
     const validStops = serviceType.value === 'carga' ? stops.filter(s => s.district) : []
-    result.value = await customerPublish({ ...form, cargo, stops: validStops }, photos.value)
+    const wantsOwnPrice = serviceType.value === 'carga' && continueMode.value === 'propio'
+    const payload = {
+      ...form, cargo, stops: validStops,
+      proposedPrice: wantsOwnPrice ? form.proposedPrice : null,
+      priceNegotiable: wantsOwnPrice ? form.priceNegotiable : true,
+    }
+    result.value = await customerPublish(payload, photos.value)
     submitted.value = true
   } catch (e) { error.value = e.message || 'No se pudo publicar.' } finally { submitting.value = false }
 }
@@ -263,6 +273,13 @@ const categoryLabel = computed(() => {
                 v-else v-model="form.loadMode" :loading="previewLoading"
                 :express="pricePreview?.express" :consolidated="pricePreview?.consolidated"
               />
+
+              <VDivider class="my-4" />
+              <ContinueModePicker
+                :mode="continueMode" :price="form.proposedPrice" :negotiable="form.priceNegotiable"
+                @update:mode="v => continueMode = v" @update:price="v => form.proposedPrice = v"
+                @update:negotiable="v => form.priceNegotiable = v"
+              />
             </template>
             <template v-else>
               <VList density="compact">
@@ -285,6 +302,11 @@ const categoryLabel = computed(() => {
               />
               <VListItem prepend-icon="ri-archive-line" :title="categoryLabel" :subtitle="form.cargo.detail || '—'" />
               <VListItem v-if="!hasStops" prepend-icon="ri-scales-3-line" :title="loadModeLabel" />
+              <VListItem
+                v-if="continueMode === 'propio' && form.proposedPrice"
+                prepend-icon="ri-price-tag-3-line" :title="`Tu precio: S/ ${form.proposedPrice}`"
+                :subtitle="form.priceNegotiable ? 'Negociable' : 'Fijo'"
+              />
               <VListItem prepend-icon="ri-calendar-line" :title="form.date || 'Fecha por confirmar'" :subtitle="form.schedule || 'Horario por confirmar'" />
             </VList>
             <VAlert v-if="error" type="error" variant="tonal" class="mt-3">{{ error }}</VAlert>
@@ -299,7 +321,13 @@ const categoryLabel = computed(() => {
         <VBtn v-if="step === 1" color="primary" :disabled="!step1ok" @click="step = 2">Siguiente</VBtn>
         <VBtn v-else-if="step === 2" color="primary" :disabled="!step2ok" @click="goToStep3">Siguiente</VBtn>
         <VBtn v-else-if="step < maxStep" color="primary" @click="step++">Siguiente</VBtn>
-        <VBtn v-else color="primary" :loading="submitting" @click="submit">Publicar y cotizar</VBtn>
+        <VBtn
+          v-else color="primary" :loading="submitting"
+          :disabled="serviceType === 'carga' && continueMode === 'propio' && !form.proposedPrice"
+          @click="submit"
+        >
+          Publicar y cotizar
+        </VBtn>
       </VCardActions>
     </VCard>
 

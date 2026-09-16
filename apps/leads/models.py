@@ -207,6 +207,14 @@ class Lead(models.Model):
     precio_recomendado = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     precio_cotizado = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     precio_final = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    precio_propuesto_cliente = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True,
+        help_text="Precio real que el cliente ofrece pagar al publicar (opción "
+                  "'Publicar con mi precio', en vez de recibir ofertas). Lo ve el "
+                  "asesor al cotizar — las comisiones se siguen calculando igual "
+                  "que siempre sobre lo que finalmente se acuerde.",
+    )
+    precio_propuesto_negociable = models.BooleanField(default=True)
     esperando_motivo_no_reserva = models.BooleanField(default=False)
     requiere_asesor = models.BooleanField(default=False)
     es_interprovincial = models.BooleanField(
