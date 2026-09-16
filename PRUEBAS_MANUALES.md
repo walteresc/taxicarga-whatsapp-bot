@@ -123,6 +123,22 @@ Todo esto solo en el paso "Carga"/"Detalles" de **Carga** (mudanza/reparto no ca
 ## Actualización 2026-09-14 (8): mismo timeline en /cotizar y Portal Cliente
 Ambas pantallas (`/cotizar` sin login y Portal Cliente → Publicar solicitud) ahora tienen el mismo timeline de 3 pasos arriba: **Servicio → Carga → Confirmar**. El paso "Servicio" queda limpio (solo las 3 tarjetas); todo lo demás (direcciones, paradas, detalle de carga, vehículo, fecha) vive en "Carga"; "Confirmar" es el resumen final antes de enviar. Revisar que se vea igual en ambas pantallas.
 
+## Actualización 2026-09-16 (3): timeline corregido para calzar con el mockup original
+Los pasos de arriba (109, 124) quedaron reemplazados — el timeline real ahora es el de las 4 capturas que pasó el cliente, sin fusionar pasos:
+- **Carga**: Servicio y ruta → Detalles → Precio → Reserva.
+- **Mudanza/Reparto**: Servicio y ruta → Detalles → Reserva (sin paso Precio).
+
+Qué va en cada uno:
+- **Servicio y ruta**: las 3 tarjetas de servicio y, apenas se elige una, aparecen inline (mismo paso, sin cambiar de pantalla) origen/destino/paradas.
+- **Detalles**: categoría/peso (Carga) o el textarea correspondiente (Mudanza/Reparto), fotos, y elegir vehículo (Carga).
+- **Precio** (solo Carga): Consolidada vs. Express + "¿Cómo quieres continuar?" — sin cambios de contenido, solo de posición.
+- **Reserva**: fecha/hora (`ScheduleStepPicker`) + datos de contacto + botón final de publicar.
+
+Probar en ambas pantallas (`/cotizar` y Portal Cliente → Publicar solicitud):
+- Elegir un servicio no debe cambiar de paso — los campos de ruta aparecen debajo, en la misma pantalla.
+- El botón "Siguiente" del paso 1 queda deshabilitado hasta tener servicio + origen + destino.
+- El resumen de la derecha (mapa) sigue actualizándose en cada paso, así que ya no hace falta una pantalla de repaso aparte antes de publicar.
+
 ## Flujos sugeridos por área
 
 ### 1. Rastreo público (sin login) — la Fase 0 de hoy
