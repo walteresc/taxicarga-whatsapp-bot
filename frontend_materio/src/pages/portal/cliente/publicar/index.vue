@@ -377,9 +377,21 @@ const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE
 }
 .route-stepper :deep(.v-stepper-header) {
   box-shadow: none;
+  overflow-x: visible;
+  flex-wrap: wrap;
+  row-gap: 4px;
+  justify-content: center;
 }
 .route-stepper :deep(.v-stepper-item) {
   padding: 0 0.5rem;
+}
+/* Pantallas muy angostas: si ni envolviendo en línea alcanza, se sacan las
+   líneas conectoras (no aportan info y compiten por espacio) — nunca debe
+   aparecer una barra de scroll horizontal en el timeline. */
+@media (max-width: 480px) {
+  .route-stepper :deep(.v-divider) {
+    display: none;
+  }
 }
 .route-stepper :deep(.v-stepper-item__avatar) {
   width: 22px;
@@ -393,5 +405,6 @@ const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE
   margin: 0 4px;
   min-width: 24px;
   opacity: 0.6;
+  flex: 0 1 32px;
 }
 </style>
