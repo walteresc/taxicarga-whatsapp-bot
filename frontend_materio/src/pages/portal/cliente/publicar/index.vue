@@ -126,8 +126,8 @@ const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE
 <template>
   <div>
     <h1 class="text-h5 font-weight-bold mb-2">Publicar solicitud</h1>
-    <div class="d-flex justify-center mb-4">
-      <VStepper v-if="!submitted" v-model="step" flat class="bg-transparent route-stepper" hide-actions>
+    <div class="mb-4">
+      <VStepper v-if="!submitted" v-model="step" flat class="bg-transparent route-stepper w-100" hide-actions>
         <VStepperHeader>
           <template v-for="(label, i) in stepperItems" :key="i">
             <VStepperItem :title="label" :value="i + 1" :complete="step > i + 1" color="primary" />
