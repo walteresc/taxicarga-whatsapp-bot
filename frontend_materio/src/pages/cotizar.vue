@@ -438,8 +438,13 @@ const submitSignup = async () => {
 </template>
 
 <style scoped>
-/* Timeline compacto, sin caja/sombra propia — ver mismo criterio en
-   portal/cliente/publicar/index.vue. */
+/* Timeline compacto, sin caja/sombra/fondo propio — ver mismo criterio en
+   portal/cliente/publicar/index.vue. bg-transparent no le gana al fondo
+   del VSheet base de VStepper, por eso se fuerza acá con !important. */
+.route-stepper {
+  background: transparent !important;
+  box-shadow: none !important;
+}
 .route-stepper :deep(.v-stepper-header) {
   box-shadow: none;
 }

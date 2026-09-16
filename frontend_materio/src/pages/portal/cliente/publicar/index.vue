@@ -125,9 +125,12 @@ const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE
 
 <template>
   <div>
-    <div class="d-flex flex-wrap align-center ga-8 mb-4">
+    <div class="position-relative d-flex align-center mb-4" style="min-height: 40px;">
       <h1 class="text-h5 font-weight-bold">Publicar solicitud</h1>
-      <VStepper v-if="!submitted" v-model="step" flat class="bg-transparent route-stepper" hide-actions>
+      <VStepper
+        v-if="!submitted" v-model="step" flat class="bg-transparent route-stepper position-absolute"
+        style="left: 50%; transform: translateX(-50%);" hide-actions
+      >
         <VStepperHeader>
           <template v-for="(label, i) in stepperItems" :key="i">
             <VStepperItem :title="label" :value="i + 1" :complete="step > i + 1" color="primary" />
@@ -358,8 +361,14 @@ const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE
 </template>
 
 <style scoped>
-/* Timeline compacto junto al título de la página, sin caja/sombra propia —
-   como en el mockup (no es una sección aparte, es parte del encabezado). */
+/* Timeline compacto, centrado en la página, sin caja/sombra/fondo propio —
+   como en el mockup (no es una sección aparte, es parte del encabezado).
+   bg-transparent no le gana al fondo del VSheet base de VStepper, por eso
+   se fuerza acá con !important. */
+.route-stepper {
+  background: transparent !important;
+  box-shadow: none !important;
+}
 .route-stepper :deep(.v-stepper-header) {
   box-shadow: none;
 }
