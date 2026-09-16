@@ -232,22 +232,22 @@ const submitSignup = async () => {
                     </div>
                     <div class="flex-grow-1">
                       <DistrictAutocomplete v-model="quote.origin" label="Origen" hide-icons class="mb-4" />
+
+                      <template v-if="serviceType === 'carga'">
+                        <div v-for="(stop, i) in stops" :key="i" class="d-flex align-center ga-2 mb-4">
+                          <DistrictAutocomplete v-model="stops[i]" :label="`Parada ${i + 1}`" hide-icons class="flex-grow-1" />
+                          <VBtn icon variant="text" size="small" @click="removeStop(i)">
+                            <VIcon icon="ri-close-line" />
+                          </VBtn>
+                        </div>
+                      </template>
+
                       <DistrictAutocomplete v-model="quote.destination" label="Destino" hide-icons />
                     </div>
                   </div>
 
                   <template v-if="serviceType === 'carga'">
-                    <VRow v-for="(stop, i) in stops" :key="i" dense class="mt-3">
-                      <VCol cols="10" sm="11">
-                        <DistrictAutocomplete v-model="stops[i]" :label="`Parada ${i + 1}`" hide-icons />
-                      </VCol>
-                      <VCol cols="2" sm="1" class="d-flex align-center">
-                        <VBtn icon variant="text" size="small" @click="removeStop(i)">
-                          <VIcon icon="ri-close-line" />
-                        </VBtn>
-                      </VCol>
-                    </VRow>
-                    <VBtn variant="text" size="small" prepend-icon="ri-add-line" class="mt-2" @click="addStop">
+                    <VBtn variant="text" size="small" prepend-icon="ri-add-line" class="mt-3" @click="addStop">
                       Agregar parada
                     </VBtn>
                     <p class="text-caption text-medium-emphasis mt-1 mb-0">Puedes añadir paradas intermedias (opcional).</p>
