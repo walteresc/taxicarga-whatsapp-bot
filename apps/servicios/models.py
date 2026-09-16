@@ -151,6 +151,11 @@ class Servicio(models.Model):
         default=False,
         help_text="Ruta fuera de Lima Metropolitana. Heredado del lead de origen.",
     )
+    modo_carga = models.CharField(
+        max_length=10, choices=Lead.MODOS_CARGA, default=Lead.MODO_CARGA_COMPLETA,
+        help_text="Solo relevante si es_interprovincial=True. Heredado del lead de origen "
+                  "(Express/camión dedicado vs. Consolidada/comparte camión).",
+    )
 
     # -- Fecha / Hora / Precio --
     fecha_servicio = models.DateField(null=True, blank=True)

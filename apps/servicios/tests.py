@@ -102,6 +102,14 @@ class CrearServicioDesdeLeadTests(TestCase):
         servicio, _ = crear_servicio_desde_lead(lead)
         self.assertEqual(servicio.cliente.telefono, "111222333")
 
+    def test_hereda_modo_carga_del_lead(self):
+        lead = create_lead()
+        lead.es_interprovincial = True
+        lead.modo_carga = Lead.MODO_CARGA_PARCIAL
+        lead.save(update_fields=["es_interprovincial", "modo_carga"])
+        servicio, _ = crear_servicio_desde_lead(lead)
+        self.assertEqual(servicio.modo_carga, Lead.MODO_CARGA_PARCIAL)
+
 
 # ---------------------------------------------------------------------------
 # Tests: Views del módulo Reservas

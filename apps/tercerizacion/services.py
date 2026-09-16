@@ -169,6 +169,21 @@ def precio_cliente_sugerido(costo, categoria="", *, markup_pct=None):
     return precio
 
 
+def existe_tarifa_especifica(destino):
+    """True si hay una tarifa de carga parcial cargada a propósito para ESE
+    destino (no la general "" que cubre cualquier ciudad) — es la señal de
+    "ruta frecuente": si un asesor cargó una tarifa propia para Arequipa,
+    Arequipa es frecuente; una ciudad sin tarifa propia (aunque exista la
+    general) no lo es. La usa el preview de precio (Consolidada vs. Express)
+    para decidir si le ofrece Consolidada al cliente."""
+    from apps.tercerizacion.models import TarifaCargaParcial
+
+    destino_norm = (destino or "").strip().lower()
+    if not destino_norm:
+        return False
+    return TarifaCargaParcial.objects.filter(activo=True, destino__iexact=destino_norm).exists()
+
+
 def resolver_tarifa_parcial(destino, peso_kg):
     """Busca en `TarifaCargaParcial` el tramo activo para `destino` (o el
     general) cuyo rango de peso contiene `peso_kg`. Devuelve

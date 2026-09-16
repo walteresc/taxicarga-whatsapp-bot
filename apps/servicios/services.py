@@ -49,6 +49,7 @@ def crear_servicio_desde_lead(lead, usuario=None, revision=None, *, require_acce
         estado=SERVICIO_PENDIENTE,
         fecha_confirmacion=timezone.localdate(),
         es_interprovincial=lead.es_interprovincial,
+        modo_carga=lead.modo_carga,
         tipo_servicio=lead.tipo_servicio,
         distrito_origen=lead.distrito_origen,
         distrito_destino=lead.distrito_destino,

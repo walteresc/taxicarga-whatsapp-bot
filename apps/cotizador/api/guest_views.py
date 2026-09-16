@@ -22,9 +22,10 @@ from rest_framework.views import APIView
 
 from apps.api.exceptions import api_exception_handler
 from apps.clientes.models import Cliente, ClienteUsuario, Empresa
-from apps.cotizador.services import cotizar_lead
+from apps.cotizador.models import Cotizacion
+from apps.cotizador.services import cotizar_lead, estimar_precio
 from apps.dashboard.views_auth_api import _user_payload
-from apps.leads.geo import clasificar_y_marcar_ambito
+from apps.leads.geo import clasificar_y_marcar_ambito, evaluar_ambito
 from apps.leads.models import Lead
 from apps.leads.route import replace_lead_route
 
@@ -74,6 +75,20 @@ def _quote_view(lead):
     }
 
 
+def _price_view_from_calc(calc):
+    """Como `_quote_view`, pero sobre el dict que devuelve `estimar_precio`
+    (sin Cotizacion persistida) — para el preview de precio."""
+    if calc["modo"] == Cotizacion.MODO_MANUAL:
+        return {"amount": None, "mode": "advisor", "confidence": calc["confianza"]}
+    return {
+        "amount": float(calc["precio_recomendado"]),
+        "mode": "auto",
+        "confidence": calc["confianza"],
+        "range": [float(calc["precio_min"]), float(calc["precio_max"])],
+        "daysEstimated": calc.get("dias_estimados"),
+    }
+
+
 class _Public(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
@@ -81,6 +96,61 @@ class _Public(APIView):
 
     def get_exception_handler(self):
         return api_exception_handler
+
+
+class PreviewQuoteView(_Public):
+    """Precio de referencia ANTES de publicar — no crea nada (ni Cliente ni
+    Lead). Compara Express (camión dedicado) vs. Consolidada (comparte
+    camión, solo si hay tabla de tarifas cargada para ese destino/peso — ver
+    `apps.tercerizacion.services.resolver_tarifa_parcial`). Sirve para que el
+    cliente elija la modalidad ANTES de que exista la solicitud real; el
+    precio final se recalcula (y sí se guarda) al publicar de verdad, con la
+    modalidad ya elegida.
+
+        POST /api/v2/guest/quote/preview  {origin, destination, cargo}
+        → {isInterprovincial, express, consolidated}
+    """
+    throttle_scope = "guest_quote_preview"
+
+    def post(self, request):
+        d = request.data
+        origin = d.get("origin") or {}
+        destination = d.get("destination") or {}
+        cargo = d.get("cargo") or {}
+        if not origin.get("district") or not destination.get("district"):
+            raise ValidationError("Necesitamos al menos el distrito de origen y de destino.")
+
+        lead = Lead(
+            categoria_carga=(cargo.get("category") or ""),
+            tipo_servicio=(cargo.get("category") or "carga"),
+            distrito_origen=origin.get("district") or "",
+            distrito_destino=destination.get("district") or "",
+            peso_carga_kg=_num(cargo.get("weightKg")),
+            volumen_carga_m3=_num(cargo.get("volumeM3")),
+            lat_origen=_coord(origin.get("lat")), lng_origen=_coord(origin.get("lng")),
+            lat_destino=_coord(destination.get("lat")), lng_destino=_coord(destination.get("lng")),
+        )
+        lead.es_interprovincial = evaluar_ambito(lead)
+
+        lead.modo_carga = Lead.MODO_CARGA_COMPLETA
+        express = _price_view_from_calc(estimar_precio(lead))
+
+        consolidated = None
+        if lead.es_interprovincial:
+            from apps.tercerizacion.services import existe_tarifa_especifica
+
+            # Solo se ofrece Consolidada en rutas "frecuentes" — con tarifa
+            # propia cargada para ese destino, no la tarifa general (esa
+            # cubre cualquier ciudad y no distingue frecuente de ocasional).
+            if existe_tarifa_especifica(destination.get("district")):
+                lead.modo_carga = Lead.MODO_CARGA_PARCIAL
+                consolidated = _price_view_from_calc(estimar_precio(lead))
+
+        return Response({
+            "isInterprovincial": lead.es_interprovincial,
+            "express": express,
+            "consolidated": consolidated,
+        })
 
 
 class GuestQuoteView(_Public):

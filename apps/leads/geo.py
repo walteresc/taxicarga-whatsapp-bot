@@ -43,11 +43,10 @@ def haversine_km(lat1, lng1, lat2, lng2):
     return r * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
-def clasificar_y_marcar_ambito(lead):
-    """Si el lead tiene coordenadas de origen y/o destino, mide la distancia
-    al punto de referencia local (`ConfiguracionOperaciones`) y actualiza
-    `lead.es_interprovincial` en consecuencia. Guarda solo ese campo si cambió.
-    No hace nada si no hay coordenadas (deja la detección por texto tal cual)."""
+def evaluar_ambito(lead):
+    """Misma clasificación que `clasificar_y_marcar_ambito`, pero de solo
+    lectura (no guarda nada) — para un lead sin persistir todavía, como el
+    preview de precio del cotizador antes de publicar la solicitud."""
     from apps.servicios.models import ConfiguracionOperaciones
 
     puntos = [
@@ -56,23 +55,27 @@ def clasificar_y_marcar_ambito(lead):
     ]
     puntos = [(lat, lng) for lat, lng in puntos if lat is not None and lng is not None]
     if not puntos:
-        if not lead.es_interprovincial and _parece_fuera_de_lima(
+        return bool(lead.es_interprovincial) or _parece_fuera_de_lima(
             f"{lead.distrito_origen or ''} {lead.distrito_destino or ''}"
-        ):
-            lead.es_interprovincial = True
-            lead.save(update_fields=["es_interprovincial"])
-            return True
-        return False
+        )
 
     config = ConfiguracionOperaciones.get_solo()
     ref_lat, ref_lng = config.lat_referencia_local, config.lng_referencia_local
     radio = Decimal(str(config.radio_local_km))
-    es_nacional = any(
+    return any(
         Decimal(str(haversine_km(lat, lng, ref_lat, ref_lng))) > radio
         for lat, lng in puntos
     )
-    if bool(lead.es_interprovincial) != es_nacional:
-        lead.es_interprovincial = es_nacional
+
+
+def clasificar_y_marcar_ambito(lead):
+    """Si el lead tiene coordenadas de origen y/o destino, mide la distancia
+    al punto de referencia local (`ConfiguracionOperaciones`) y actualiza
+    `lead.es_interprovincial` en consecuencia. Guarda solo ese campo si cambió.
+    No hace nada si no hay coordenadas (deja la detección por texto tal cual)."""
+    nuevo = evaluar_ambito(lead)
+    if bool(lead.es_interprovincial) != nuevo:
+        lead.es_interprovincial = nuevo
         lead.save(update_fields=["es_interprovincial"])
         return True
     return False

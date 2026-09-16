@@ -17,7 +17,18 @@ logger = logging.getLogger(__name__)
 _CATEGORIAS_MOTOR = {"", "mudanza"}
 
 
-def _cotizar_carga_parcial(lead):
+def _calcular_multipunto():
+    """Ruta con paradas intermedias: ningún camino del motor las contempla en
+    el cálculo (ni históricos/reglas base, ni la tabla de tarifas de carga
+    parcial) — siempre pasa a un asesor."""
+    return {
+        "precio_min": Decimal(0), "precio_max": Decimal(0), "precio_recomendado": Decimal(0),
+        "servicios_similares_encontrados": 0, "confianza": 25, "modo": Cotizacion.MODO_MANUAL,
+        "explicacion": "Ruta con paradas intermedias (multipunto): requiere confirmación de un asesor.",
+    }
+
+
+def _calcular_carga_parcial(lead):
     """Carga nacional PARCIAL/consolidada: el transportista comparte el camión
     con otra carga suya, así que cotizamos por peso × tabla de tarifas (no por
     camión dedicado) — ver `apps.tercerizacion.services.resolver_tarifa_parcial`.
@@ -26,38 +37,24 @@ def _cotizar_carga_parcial(lead):
 
     tarifa = resolver_tarifa_parcial(lead.distrito_destino, lead.peso_carga_kg)
     if tarifa is None:
-        return Cotizacion.objects.create(
-            lead=lead,
-            precio_min=Decimal(0), precio_max=Decimal(0), precio_recomendado=Decimal(0),
-            servicios_similares_encontrados=0, confianza=20, modo=Cotizacion.MODO_MANUAL,
-            explicacion="Carga nacional parcial sin tarifa cargada para ese destino/peso: "
-                        "requiere confirmación de un asesor.",
-        )
+        return {
+            "precio_min": Decimal(0), "precio_max": Decimal(0), "precio_recomendado": Decimal(0),
+            "servicios_similares_encontrados": 0, "confianza": 20, "modo": Cotizacion.MODO_MANUAL,
+            "explicacion": "Carga nacional parcial sin tarifa cargada para ese destino/peso: "
+                           "requiere confirmación de un asesor.",
+        }
     precio = tarifa["precio"]
-    return Cotizacion.objects.create(
-        lead=lead,
-        precio_min=precio, precio_max=precio, precio_recomendado=precio,
-        servicios_similares_encontrados=0, confianza=70, modo=Cotizacion.MODO_AUTOMATICO,
-        dias_estimados=tarifa["dias_estimados"],
-        explicacion=f"Carga parcial/consolidada por tabla de tarifas: S/ {precio} · "
-                    f"llega en {tarifa['dias_estimados']} días hábiles aprox. "
-                    "(comparte camión con otra carga del transportista).",
-    )
+    return {
+        "precio_min": precio, "precio_max": precio, "precio_recomendado": precio,
+        "servicios_similares_encontrados": 0, "confianza": 70, "modo": Cotizacion.MODO_AUTOMATICO,
+        "dias_estimados": tarifa["dias_estimados"],
+        "explicacion": f"Carga parcial/consolidada por tabla de tarifas: S/ {precio} · "
+                       f"llega en {tarifa['dias_estimados']} días hábiles aprox. "
+                       "(comparte camión con otra carga del transportista).",
+    }
 
 
-def cotizar_lead(lead):
-    # Multipunto (con paradas intermedias): ningún camino del motor las
-    # contempla en el cálculo (ni históricos/reglas base, ni la tabla de
-    # tarifas de carga parcial) — siempre pasa a un asesor.
-    if lead.pk and lead.ubicaciones.filter(tipo=LeadUbicacion.PARADA).exists():
-        return Cotizacion.objects.create(
-            lead=lead,
-            precio_min=Decimal(0), precio_max=Decimal(0), precio_recomendado=Decimal(0),
-            servicios_similares_encontrados=0, confianza=25, modo=Cotizacion.MODO_MANUAL,
-            explicacion="Ruta con paradas intermedias (multipunto): requiere confirmación de un asesor.",
-        )
-    if lead.es_interprovincial and lead.modo_carga == Lead.MODO_CARGA_PARCIAL:
-        return _cotizar_carga_parcial(lead)
+def _calcular_general(lead):
     similar_services = _find_similar_services(lead)
     n = len(similar_services)
     if n >= 3:
@@ -92,16 +89,41 @@ def cotizar_lead(lead):
     else:
         modo = Cotizacion.MODO_AUTOMATICO if confianza >= 40 else Cotizacion.MODO_MANUAL
 
-    return Cotizacion.objects.create(
-        lead=lead,
-        precio_min=price_min,
-        precio_max=price_max,
-        precio_recomendado=recommended,
-        servicios_similares_encontrados=n,
-        confianza=confianza,
-        modo=modo,
-        explicacion=explanation,
-    )
+    return {
+        "precio_min": price_min,
+        "precio_max": price_max,
+        "precio_recomendado": recommended,
+        "servicios_similares_encontrados": n,
+        "confianza": confianza,
+        "modo": modo,
+        "explicacion": explanation,
+    }
+
+
+def _calcular_precio(lead, *, tiene_paradas):
+    """Despacha al cálculo que corresponda. Puro (sin persistir) — lo usan
+    tanto `cotizar_lead` (guarda una Cotizacion) como `estimar_precio`
+    (preview, sobre un lead sin guardar todavía)."""
+    if tiene_paradas:
+        return _calcular_multipunto()
+    if lead.es_interprovincial and lead.modo_carga == Lead.MODO_CARGA_PARCIAL:
+        return _calcular_carga_parcial(lead)
+    return _calcular_general(lead)
+
+
+def cotizar_lead(lead):
+    tiene_paradas = bool(lead.pk) and lead.ubicaciones.filter(tipo=LeadUbicacion.PARADA).exists()
+    return Cotizacion.objects.create(lead=lead, **_calcular_precio(lead, tiene_paradas=tiene_paradas))
+
+
+def estimar_precio(lead):
+    """Como `cotizar_lead`, pero sin persistir nada — para mostrar un precio
+    de referencia ANTES de publicar la solicitud (paso "Precio" del
+    cotizador, para comparar Consolidada vs. Express). `lead` puede ser una
+    instancia sin guardar (sin pk); en ese caso nunca hay paradas que
+    consultar (todavía no existen en la base), así que ese camino no aplica.
+    Devuelve el mismo dict que arma `Cotizacion`, sin crear el registro."""
+    return _calcular_precio(lead, tiene_paradas=False)
 
 
 def _find_similar_services(lead):

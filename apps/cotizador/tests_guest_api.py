@@ -21,7 +21,9 @@ _QUOTE = {
 # Rates altas para no chocar con el throttle dentro de un test.
 _NO_THROTTLE = override_settings(REST_FRAMEWORK={
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
-    "DEFAULT_THROTTLE_RATES": {"guest_quote": "1000/hour", "guest_signup": "1000/hour"},
+    "DEFAULT_THROTTLE_RATES": {
+        "guest_quote": "1000/hour", "guest_quote_preview": "1000/hour", "guest_signup": "1000/hour",
+    },
 })
 
 
@@ -87,6 +89,71 @@ class GuestQuoteTests(APITestCase):
             ("origen", "Miraflores"), ("parada", "San Borja"), ("destino", "Surco"),
         ])
         self.assertEqual(r.data["price"]["mode"], "advisor")
+
+
+@_NO_THROTTLE
+class PreviewQuoteTests(APITestCase):
+    """No persiste nada — ni Cliente ni Lead — a diferencia de /guest/quote."""
+    def setUp(self):
+        caches["throttle"].clear()
+
+    def _post(self, **overrides):
+        payload = {
+            "origin": {"district": "Lima", "lat": -12.0464, "lng": -77.0428},
+            "destination": {"district": "Trujillo", "lat": -8.1116, "lng": -79.0288},
+            "cargo": {"category": "cajas", "weightKg": "100"},
+            **overrides,
+        }
+        return self.client.post("/api/v2/guest/quote/preview", payload, format="json")
+
+    def test_no_crea_lead_ni_cliente(self):
+        n_leads, n_clientes = Lead.objects.count(), Cliente.objects.count()
+        r = self._post()
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(Lead.objects.count(), n_leads)
+        self.assertEqual(Cliente.objects.count(), n_clientes)
+
+    def test_ruta_local_no_ofrece_consolidada(self):
+        r = self._post(
+            origin={"district": "Miraflores", "lat": -12.1211, "lng": -77.0297},
+            destination={"district": "Surco", "lat": -12.1350, "lng": -76.9900},
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertFalse(r.data["isInterprovincial"])
+        self.assertIsNone(r.data["consolidated"])
+        self.assertIsNotNone(r.data["express"])
+
+    def test_ruta_interprovincial_frecuente_ofrece_ambas(self):
+        from apps.tercerizacion.models import TarifaCargaParcial
+        TarifaCargaParcial.objects.create(
+            destino="trujillo", peso_desde_kg=0, peso_hasta_kg=None,
+            precio_por_kg="3.50", monto_minimo="35", dias_estimados=3, activo=True,
+        )
+        r = self._post()
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertTrue(r.data["isInterprovincial"])
+        self.assertIsNotNone(r.data["consolidated"])
+        self.assertEqual(r.data["consolidated"]["mode"], "auto")
+
+    def test_ruta_interprovincial_no_frecuente_no_ofrece_consolidada(self):
+        # Yauyos no tiene tarifa propia. Aunque exista una tarifa general
+        # ("") que cubriría cualquier destino, a propósito NO cuenta como
+        # "ruta frecuente" — por eso no se ofrece Consolidada.
+        from apps.tercerizacion.models import TarifaCargaParcial
+        TarifaCargaParcial.objects.create(
+            destino="", peso_desde_kg=0, peso_hasta_kg=None,
+            precio_por_kg="4.00", monto_minimo="40", dias_estimados=5, activo=True,
+        )
+        r = self._post(
+            destination={"district": "Yauyos", "lat": -12.4708, "lng": -75.9083},
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertTrue(r.data["isInterprovincial"])
+        self.assertIsNone(r.data["consolidated"])
+
+    def test_falta_distrito_400(self):
+        r = self._post(destination={})
+        self.assertEqual(r.status_code, 400)
 
 
 @_NO_THROTTLE
