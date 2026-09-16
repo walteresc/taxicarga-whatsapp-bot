@@ -4,9 +4,10 @@ import { useRouter } from 'vue-router'
 
 import AddressAutocomplete from '@/components/AddressAutocomplete.vue'
 import DistrictAutocomplete from '@/components/DistrictAutocomplete.vue'
+import PriceModePicker from '@/components/PriceModePicker.vue'
 import QuoteSummaryPanel from '@/components/QuoteSummaryPanel.vue'
 import VehiclePickerDialog from '@/components/VehiclePickerDialog.vue'
-import { guestQuote, guestSignup } from '@/services/guestService'
+import { guestQuote, guestQuotePreview, guestSignup } from '@/services/guestService'
 import { useAuthStore } from '@/stores/authStore'
 
 const router = useRouter()
@@ -31,16 +32,12 @@ const CATEGORIES = [
 ]
 
 // Elegir vehículo es opcional y no aplica a Mudanza/Reparto — por defecto
-// "que TaxiCarga elija" (quoteMode 'por_carga', sin truckType).
-const TRUCKS = [
-  { title: 'Furgón pequeño (hasta 1 ton)', value: 'furgon_1t', icon: 'ri-taxi-line' },
-  { title: 'Camión 2 ton', value: 'camion_2t' },
-  { title: 'Camión 4 ton', value: 'camion_4t' },
-  { title: 'Camión 8 ton', value: 'camion_8t' },
-]
+// "que TaxiCarga elija" (quoteMode 'por_carga', sin truckType). El picker
+// trae sus propias opciones del catálogo real (apps/catalogo) y emite
+// directamente el nombre de la unidad elegida (p. ej. "Camión 4 ton").
 const showVehiclePicker = ref(false)
 const chosenTruck = ref(null)
-const chosenTruckLabel = computed(() => TRUCKS.find(t => t.value === chosenTruck.value)?.title || '')
+const chosenTruckLabel = computed(() => chosenTruck.value || '')
 
 const phase = ref('form')   // form | result | signup
 const step = ref(1)
@@ -64,11 +61,40 @@ const result = ref(null)
 const stops = reactive([])
 const addStop = () => stops.push({ district: '', province: '', region: '', lat: null, lng: null })
 const removeStop = index => stops.splice(index, 1)
+const hasStops = computed(() => stops.some(s => s.district))
+
+// Paso "Precio" (solo Carga, sin paradas): compara Consolidada vs. Express
+// ANTES de publicar — no crea nada, es solo un precio de referencia (ver
+// apps/cotizador/api/guest_views.py::PreviewQuoteView).
+const pricePreview = ref(null)
+const previewLoading = ref(false)
+const fetchPricePreview = async () => {
+  if (hasStops.value) { pricePreview.value = null; return }
+  previewLoading.value = true
+  try {
+    pricePreview.value = await guestQuotePreview({
+      origin: quote.origin, destination: quote.destination,
+      cargo: { category: quote.cargo.category, weightKg: quote.cargo.weightKg },
+    })
+    quote.loadMode = pricePreview.value.consolidated ? 'parcial' : 'completa'
+  } catch (e) { pricePreview.value = null } finally { previewLoading.value = false }
+}
+
+const stepperItems = computed(() => serviceType.value === 'carga'
+  ? ['Servicio', 'Carga', 'Precio', 'Confirmar']
+  : ['Servicio', 'Carga', 'Confirmar'])
+const maxStep = computed(() => serviceType.value === 'carga' ? 4 : 3)
 
 const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE')}`)
 const step1ok = computed(() => !!serviceType.value)
 const step2ok = computed(() => !!(quote.origin.district && quote.destination.district))
 const formOk = computed(() => step2ok.value && quote.contact.phone && quote.contact.name)
+const loadModeLabel = computed(() => (quote.loadMode === 'parcial' ? 'Carga consolidada' : 'Carga express'))
+
+const goToStep3 = async () => {
+  step.value = 3
+  if (serviceType.value === 'carga') await fetchPricePreview()
+}
 const categoryLabel = computed(() => {
   if (serviceType.value === 'carga' && chosenTruck.value) return chosenTruckLabel.value
   if (serviceType.value === 'mudanza') return 'Mudanza'
@@ -134,7 +160,7 @@ const submitSignup = async () => {
       <VCard>
         <!-- Paso 1: formulario -->
         <VCardText v-if="phase === 'form'">
-          <VStepper v-model="step" flat :items="['Servicio', 'Carga', 'Confirmar']" hide-actions>
+          <VStepper v-model="step" flat :items="stepperItems" hide-actions>
             <template #item.1>
               <div class="text-subtitle-2 mb-2">¿Qué necesitas?</div>
               <VRow class="mb-2" dense>
@@ -213,7 +239,7 @@ const submitSignup = async () => {
                   <span class="text-caption text-medium-emphasis">(opcional)</span>
                 </div>
                 <VehiclePickerDialog
-                  v-model="showVehiclePicker" :trucks="TRUCKS"
+                  v-model="showVehiclePicker"
                   @select="v => chosenTruck = v" @clear="chosenTruck = null"
                 />
               </template>
@@ -232,26 +258,47 @@ const submitSignup = async () => {
                 />
               </template>
 
-              <template v-if="quote.origin.district && quote.destination.district">
-                <div class="text-caption text-medium-emphasis mb-1">
-                  Si tu carga es a otra ciudad, elegí cómo la enviamos (si es dentro de Lima, no aplica):
-                </div>
-                <VBtnToggle v-model="quote.loadMode" mandatory density="comfortable" class="mb-4" divided>
-                  <VBtn value="completa" size="small">Completa (camión dedicado, más rápido)</VBtn>
-                  <VBtn value="parcial" size="small">Parcial (comparte camión, más económico)</VBtn>
-                </VBtnToggle>
-              </template>
-
               <VTextField v-model="quote.date" label="Fecha (opcional)" type="date" density="comfortable" class="mb-2" />
             </template>
 
             <template #item.3>
+              <template v-if="serviceType === 'carga'">
+                <div class="text-subtitle-2 mb-2">Elegí cómo cotizar tu carga</div>
+                <template v-if="hasStops">
+                  <VAlert type="info" variant="tonal">
+                    Con paradas intermedias, un asesor te confirma el precio — no aplica Consolidada/Express.
+                  </VAlert>
+                </template>
+                <PriceModePicker
+                  v-else v-model="quote.loadMode" :loading="previewLoading"
+                  :express="pricePreview?.express" :consolidated="pricePreview?.consolidated"
+                />
+              </template>
+              <template v-else>
+                <VList density="compact">
+                  <VListItem
+                    prepend-icon="ri-map-pin-line" :title="`${quote.origin.district} → ${quote.destination.district}`"
+                  />
+                  <VListItem prepend-icon="ri-archive-line" :title="categoryLabel" :subtitle="quote.cargo.detail || '—'" />
+                  <VListItem prepend-icon="ri-calendar-line" :title="quote.date || 'Fecha por confirmar'" />
+                </VList>
+                <VDivider class="my-3" />
+                <div class="text-subtitle-2 mb-2">¿Cómo te contactamos?</div>
+                <VTextField v-model="quote.contact.name" label="Tu nombre" density="comfortable" class="mb-2" />
+                <VTextField v-model="quote.contact.phone" label="Teléfono / WhatsApp" density="comfortable" class="mb-2" />
+                <VTextField v-model="quote.contact.email" label="Correo (opcional)" type="email" density="comfortable" />
+                <VAlert v-if="error" type="error" variant="tonal" class="mt-3">{{ error }}</VAlert>
+              </template>
+            </template>
+
+            <template #item.4>
               <VList density="compact">
                 <VListItem
                   prepend-icon="ri-map-pin-line" :title="`${quote.origin.district} → ${quote.destination.district}`"
                   :subtitle="stops.filter(s => s.district).map(s => s.district).join(' → ') || undefined"
                 />
                 <VListItem prepend-icon="ri-archive-line" :title="categoryLabel" :subtitle="quote.cargo.detail || '—'" />
+                <VListItem v-if="!hasStops" prepend-icon="ri-scales-3-line" :title="loadModeLabel" />
                 <VListItem prepend-icon="ri-calendar-line" :title="quote.date || 'Fecha por confirmar'" />
               </VList>
               <VDivider class="my-3" />
@@ -270,7 +317,8 @@ const submitSignup = async () => {
           <VBtn v-else variant="text" to="/login">Ya tengo cuenta</VBtn>
           <VSpacer />
           <VBtn v-if="step === 1" color="primary" :disabled="!step1ok" @click="step = 2">Siguiente</VBtn>
-          <VBtn v-else-if="step === 2" color="primary" :disabled="!step2ok" @click="step = 3">Siguiente</VBtn>
+          <VBtn v-else-if="step === 2" color="primary" :disabled="!step2ok" @click="goToStep3">Siguiente</VBtn>
+          <VBtn v-else-if="step < maxStep" color="primary" @click="step++">Siguiente</VBtn>
           <VBtn v-else color="primary" :loading="busy" :disabled="!formOk" @click="submitQuote">Cotizar</VBtn>
         </VCardActions>
 

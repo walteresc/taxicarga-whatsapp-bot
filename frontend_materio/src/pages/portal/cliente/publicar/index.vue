@@ -4,9 +4,11 @@ import { useRouter } from 'vue-router'
 
 import AddressAutocomplete from '@/components/AddressAutocomplete.vue'
 import DistrictAutocomplete from '@/components/DistrictAutocomplete.vue'
+import PriceModePicker from '@/components/PriceModePicker.vue'
 import QuoteSummaryPanel from '@/components/QuoteSummaryPanel.vue'
 import VehiclePickerDialog from '@/components/VehiclePickerDialog.vue'
 import { customerPublish } from '@/services/customerPortalService'
+import { guestQuotePreview } from '@/services/guestService'
 
 const router = useRouter()
 
@@ -28,13 +30,6 @@ const CATEGORIES = [
   { title: 'Pallets / parihuelas', value: 'pallets' },
   { title: 'Otros', value: 'otros' },
 ]
-const TRUCKS = [
-  { title: 'Furgón pequeño (hasta 1 ton)', value: 'furgon_1t' },
-  { title: 'Camión 2 ton', value: 'camion_2t' },
-  { title: 'Camión 4 ton', value: 'camion_4t' },
-  { title: 'Camión 8 ton', value: 'camion_8t' },
-]
-
 const step = ref(1)
 const form = reactive({
   origin: { district: '', address: '', floor: null, province: '', region: '', lat: null, lng: null },
@@ -47,7 +42,7 @@ const form = reactive({
 })
 
 const showVehiclePicker = ref(false)
-const chosenTruckLabel = computed(() => TRUCKS.find(t => t.value === form.cargo.truckType)?.title || '')
+const chosenTruckLabel = computed(() => form.cargo.truckType || '')
 
 const selectService = value => {
   serviceType.value = value
@@ -67,6 +62,35 @@ const clearTruck = () => { form.cargo.truckType = null; form.quoteMode = 'por_ca
 const stops = reactive([])
 const addStop = () => stops.push({ district: '', province: '', region: '', lat: null, lng: null })
 const removeStop = index => stops.splice(index, 1)
+const hasStops = computed(() => stops.some(s => s.district))
+
+// Paso "Precio" (solo Carga, sin paradas): compara Consolidada vs. Express
+// ANTES de publicar — no crea nada, es solo un precio de referencia (ver
+// apps/cotizador/api/guest_views.py::PreviewQuoteView).
+const pricePreview = ref(null)
+const previewLoading = ref(false)
+const fetchPricePreview = async () => {
+  if (hasStops.value) { pricePreview.value = null; return }
+  previewLoading.value = true
+  try {
+    pricePreview.value = await guestQuotePreview({
+      origin: form.origin, destination: form.destination,
+      cargo: { category: form.cargo.category, weightKg: form.cargo.weightKg },
+    })
+    form.loadMode = pricePreview.value.consolidated ? 'parcial' : 'completa'
+  } catch (e) { pricePreview.value = null } finally { previewLoading.value = false }
+}
+
+const stepperItems = computed(() => serviceType.value === 'carga'
+  ? ['Servicio', 'Carga', 'Precio', 'Confirmar']
+  : ['Servicio', 'Carga', 'Confirmar'])
+const maxStep = computed(() => serviceType.value === 'carga' ? 4 : 3)
+const loadModeLabel = computed(() => (form.loadMode === 'parcial' ? 'Carga consolidada' : 'Carga express'))
+
+const goToStep3 = async () => {
+  step.value = 3
+  if (serviceType.value === 'carga') await fetchPricePreview()
+}
 
 const submitting = ref(false)
 const result = ref(null)
@@ -96,7 +120,7 @@ const submit = async () => {
 }
 const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE')}`)
 const categoryLabel = computed(() => {
-  if (form.quoteMode === 'por_vehiculo') return TRUCKS.find(t => t.value === form.cargo.truckType)?.title
+  if (form.quoteMode === 'por_vehiculo') return form.cargo.truckType
   if (serviceType.value === 'mudanza') return 'Mudanza'
   if (serviceType.value === 'reparto') return 'Reparto'
 
@@ -112,7 +136,7 @@ const categoryLabel = computed(() => {
     <VCol cols="12" md="7">
     <VCard v-if="!submitted">
       <VCardText>
-        <VStepper v-model="step" flat :items="['Servicio', 'Carga', 'Confirmar']" hide-actions>
+        <VStepper v-model="step" flat :items="stepperItems" hide-actions>
           <template #item.1>
             <div class="text-subtitle-2 mb-2">¿Qué necesitas?</div>
             <VRow class="mb-2" dense>
@@ -198,7 +222,7 @@ const categoryLabel = computed(() => {
                 <VBtn v-else size="small" variant="tonal" @click="showVehiclePicker = true">Elegir vehículo</VBtn>
                 <span class="text-caption text-medium-emphasis">(opcional)</span>
               </div>
-              <VehiclePickerDialog v-model="showVehiclePicker" :trucks="TRUCKS" @select="pickTruck" @clear="clearTruck" />
+              <VehiclePickerDialog v-model="showVehiclePicker" @select="pickTruck" @clear="clearTruck" />
             </template>
             <template v-else-if="serviceType === 'mudanza'">
               <VTextarea
@@ -214,16 +238,6 @@ const categoryLabel = computed(() => {
               />
             </template>
 
-            <template v-if="form.origin.district && form.destination.district">
-              <div class="text-caption text-medium-emphasis mb-1 mt-4">
-                Si tu carga es a otra ciudad, elegí cómo la enviamos (si es dentro de Lima, no aplica):
-              </div>
-              <VBtnToggle v-model="form.loadMode" mandatory density="comfortable" class="mb-2" divided>
-                <VBtn value="completa" size="small">Completa (camión dedicado, más rápido)</VBtn>
-                <VBtn value="parcial" size="small">Parcial (comparte camión, más económico)</VBtn>
-              </VBtnToggle>
-            </template>
-
             <VDivider class="my-3" />
             <div class="d-flex ga-2">
               <VTextField v-model="form.date" label="Fecha" type="date" />
@@ -232,12 +246,39 @@ const categoryLabel = computed(() => {
           </template>
 
           <template #item.3>
+            <template v-if="serviceType === 'carga'">
+              <div class="text-subtitle-2 mb-2">Elegí cómo cotizar tu carga</div>
+              <template v-if="hasStops">
+                <VAlert type="info" variant="tonal">
+                  Con paradas intermedias, un asesor te confirma el precio — no aplica Consolidada/Express.
+                </VAlert>
+              </template>
+              <PriceModePicker
+                v-else v-model="form.loadMode" :loading="previewLoading"
+                :express="pricePreview?.express" :consolidated="pricePreview?.consolidated"
+              />
+            </template>
+            <template v-else>
+              <VList density="compact">
+                <VListItem
+                  prepend-icon="ri-map-pin-line" :title="`${form.origin.district} → ${form.destination.district}`"
+                  :subtitle="form.origin.address ? `${form.origin.address} → ${form.destination.address}` : 'La dirección exacta se confirma al reservar'"
+                />
+                <VListItem prepend-icon="ri-archive-line" :title="categoryLabel" :subtitle="form.cargo.detail || '—'" />
+                <VListItem prepend-icon="ri-calendar-line" :title="form.date || 'Fecha por confirmar'" :subtitle="form.schedule || 'Horario por confirmar'" />
+              </VList>
+              <VAlert v-if="error" type="error" variant="tonal" class="mt-3">{{ error }}</VAlert>
+            </template>
+          </template>
+
+          <template #item.4>
             <VList density="compact">
               <VListItem
                 prepend-icon="ri-map-pin-line" :title="`${form.origin.district} → ${form.destination.district}`"
                 :subtitle="form.origin.address ? `${form.origin.address} → ${form.destination.address}` : 'La dirección exacta se confirma al reservar'"
               />
               <VListItem prepend-icon="ri-archive-line" :title="categoryLabel" :subtitle="form.cargo.detail || '—'" />
+              <VListItem v-if="!hasStops" prepend-icon="ri-scales-3-line" :title="loadModeLabel" />
               <VListItem prepend-icon="ri-calendar-line" :title="form.date || 'Fecha por confirmar'" :subtitle="form.schedule || 'Horario por confirmar'" />
             </VList>
             <VAlert v-if="error" type="error" variant="tonal" class="mt-3">{{ error }}</VAlert>
@@ -250,8 +291,9 @@ const categoryLabel = computed(() => {
         <VBtn v-if="step > 1" variant="text" @click="step--">Atrás</VBtn>
         <VSpacer />
         <VBtn v-if="step === 1" color="primary" :disabled="!step1ok" @click="step = 2">Siguiente</VBtn>
-        <VBtn v-else-if="step === 2" color="primary" :disabled="!step2ok" @click="step = 3">Siguiente</VBtn>
-        <VBtn v-else-if="step === 3" color="primary" :loading="submitting" @click="submit">Publicar y cotizar</VBtn>
+        <VBtn v-else-if="step === 2" color="primary" :disabled="!step2ok" @click="goToStep3">Siguiente</VBtn>
+        <VBtn v-else-if="step < maxStep" color="primary" @click="step++">Siguiente</VBtn>
+        <VBtn v-else color="primary" :loading="submitting" @click="submit">Publicar y cotizar</VBtn>
       </VCardActions>
     </VCard>
 

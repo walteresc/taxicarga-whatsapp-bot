@@ -133,6 +133,8 @@ const openConversation = row => {
             <td>
               {{ row.route }}
               <VChip v-if="row.isInterprovincial" size="x-small" color="warning" class="ms-1">Fuera de Lima</VChip>
+              <VChip v-if="row.loadMode === 'parcial'" size="x-small" color="info" class="ms-1">Consolidada</VChip>
+              <VChip v-else-if="row.loadMode === 'completa'" size="x-small" color="default" class="ms-1">Express</VChip>
             </td>
             <td>{{ row.serviceDate || 'Por confirmar' }}</td>
             <td>

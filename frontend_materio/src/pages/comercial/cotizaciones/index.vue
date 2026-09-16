@@ -199,7 +199,12 @@ const submitClosePrice = async () => {
               <VBadge v-if="!row.seen" dot inline color="primary" class="me-1" title="Sin abrir" />{{ row.code }}
             </td>
             <td>{{ row.customerName }}</td>
-            <td>{{ row.route }}</td>
+            <td>
+              {{ row.route }}
+              <VChip v-if="row.isInterprovincial" size="x-small" color="warning" class="ms-1">Fuera de Lima</VChip>
+              <VChip v-if="row.loadMode === 'parcial'" size="x-small" color="info" class="ms-1">Consolidada</VChip>
+              <VChip v-else-if="row.loadMode === 'completa'" size="x-small" color="default" class="ms-1">Express</VChip>
+            </td>
             <td>
               <VChip size="small" :color="STATE[row.state]?.color">{{ STATE[row.state]?.label || row.state }}</VChip>
               <div v-if="row.outsourced" class="text-caption text-medium-emphasis mt-1">

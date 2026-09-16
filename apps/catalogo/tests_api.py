@@ -77,3 +77,25 @@ class CategoriaCrudApiTests(_Base):
         r = self.client.post(f"/api/v2/vehicle-categories/{cid}/toggle-active/")
         self.assertEqual(r.status_code, 200)
         self.assertFalse(r.data["enabled"])
+
+
+class PublicVehiclePickerTests(APITestCase):
+    """Sin login — lo usa el selector de vehículo del cotizador de invitado."""
+    def test_sin_login_devuelve_solo_camioneta_y_camion(self):
+        r = self.client.get("/api/v2/catalog/vehicle-picker")
+        self.assertEqual(r.status_code, 200, r.content)
+        vehicle_types = {u["vehicleType"] for u in r.data["units"]}
+        self.assertEqual(vehicle_types, {"camioneta", "camion"})
+        self.assertTrue(any(u["name"] == "Camión 2 ton" for u in r.data["units"]))
+
+    def test_no_incluye_moto_ni_semitrailer(self):
+        r = self.client.get("/api/v2/catalog/vehicle-picker")
+        vehicle_types = {u["vehicleType"] for u in r.data["units"]}
+        self.assertNotIn("moto", vehicle_types)
+        self.assertNotIn("semitrailer", vehicle_types)
+
+    def test_body_types_solo_habilitados_y_compatibles(self):
+        r = self.client.get("/api/v2/catalog/vehicle-picker")
+        codes = {b["code"] for b in r.data["bodyTypes"]}
+        self.assertIn("furgon_cerrado", codes)
+        self.assertIn("plataforma", codes)

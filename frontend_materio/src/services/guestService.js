@@ -14,4 +14,5 @@ const post = async (path, body) => {
 }
 
 export const guestQuote = body => post('quote', body)
+export const guestQuotePreview = body => post('quote/preview', body)
 export const guestSignup = body => post('signup', body)
