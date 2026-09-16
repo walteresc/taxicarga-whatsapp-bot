@@ -42,6 +42,7 @@ const loading = ref(false)
 const located = ref(!!(props.modelValue?.lat && props.modelValue?.lng))
 
 let debounceTimer = null
+let blurTimer = null
 let abortCtrl = null
 
 const geocode = async (text, signal) => {
@@ -80,7 +81,13 @@ const search = async text => {
   } finally { loading.value = false }
 }
 
-const onFocus = () => { menuOpen.value = true }
+const onFocus = () => { clearTimeout(blurTimer); menuOpen.value = true }
+// Sin esto, el menú de un campo se queda abierto para siempre al pasar a otro
+// (tab o click) porque nada lo cierra salvo elegir una sugerencia — con
+// varias paradas se apilaban varios menús abiertos a la vez. El delay deja
+// que el click sobre un ítem de la lista (mousedown → blur → click) alcance
+// a disparar `pick()` antes de que el menú se desmonte.
+const onBlur = () => { blurTimer = setTimeout(() => { menuOpen.value = false }, 150) }
 
 const onInput = value => {
   query.value = value
@@ -119,7 +126,7 @@ watch(() => props.modelValue, v => {
   located.value = !!(v?.lat && v?.lng)
 }, { deep: true })
 
-onBeforeUnmount(() => { clearTimeout(debounceTimer); abortCtrl?.abort() })
+onBeforeUnmount(() => { clearTimeout(debounceTimer); clearTimeout(blurTimer); abortCtrl?.abort() })
 </script>
 
 <template>
@@ -135,6 +142,7 @@ onBeforeUnmount(() => { clearTimeout(debounceTimer); abortCtrl?.abort() })
         persistent-hint clearable
         @click:clear="clear"
         @focus="onFocus"
+        @blur="onBlur"
         @update:model-value="onInput"
       />
     </template>
