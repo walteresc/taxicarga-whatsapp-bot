@@ -143,7 +143,7 @@ const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE
       <VCardText>
         <VWindow v-model="step">
           <VWindowItem :value="1">
-            <div class="text-h6 font-weight-bold mb-1">Elige un tipo de servicio</div>
+            <div class="text-h6 font-weight-bold mb-1">Elige El tipo de servicio que mejor se adapta a tu carga</div>
             <p class="text-caption text-medium-emphasis mb-3">Selecciona el tipo de servicio que mejor se adapte a tu necesidad.</p>
             <VRow class="mb-3" dense>
               <VCol v-for="s in SERVICE_TYPES" :key="s.value" cols="12" sm="4">
