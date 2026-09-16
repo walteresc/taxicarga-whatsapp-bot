@@ -57,7 +57,6 @@ const selectService = value => {
   if (value === 'mudanza') form.cargo.category = 'mudanza'
   else if (value === 'reparto') form.cargo.category = 'otros'
   else if (form.cargo.category === 'mudanza') form.cargo.category = 'cajas'
-  step.value = 2   // avanza directo — ver los campos no debería depender de otro clic
 }
 const pickTruck = value => { form.cargo.truckType = value; form.quoteMode = 'por_vehiculo' }
 const clearTruck = () => { form.cargo.truckType = null; form.quoteMode = 'por_carga' }
@@ -88,11 +87,12 @@ const fetchPricePreview = async () => {
   } catch (e) { pricePreview.value = null } finally { previewLoading.value = false }
 }
 
+// Mismo timeline que las capturas: "Servicio y ruta" → "Detalles" → "Precio"
+// (solo Carga) → "Reserva". Ver mismo criterio en /cotizar.vue.
 const stepperItems = computed(() => serviceType.value === 'carga'
-  ? ['Servicio', 'Carga', 'Precio', 'Confirmar']
-  : ['Servicio', 'Carga', 'Confirmar'])
+  ? ['Servicio y ruta', 'Detalles', 'Precio', 'Reserva']
+  : ['Servicio y ruta', 'Detalles', 'Reserva'])
 const maxStep = computed(() => serviceType.value === 'carga' ? 4 : 3)
-const loadModeLabel = computed(() => (form.loadMode === 'parcial' ? 'Carga consolidada' : 'Carga express'))
 
 const goToStep3 = async () => {
   step.value = 3
@@ -103,12 +103,7 @@ const submitting = ref(false)
 const result = ref(null)
 const error = ref('')
 
-const step1ok = computed(() => !!serviceType.value)
-const step2ok = computed(() => {
-  if (!(form.origin.district && form.destination.district)) return false
-
-  return form.quoteMode === 'por_vehiculo' ? !!form.cargo.truckType : !!form.cargo.category
-})
+const step1ok = computed(() => !!(serviceType.value && form.origin.district && form.destination.district))
 const submitted = ref(false)
 
 const submit = async () => {
@@ -132,13 +127,6 @@ const submit = async () => {
   } catch (e) { error.value = e.message || 'No se pudo publicar.' } finally { submitting.value = false }
 }
 const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE')}`)
-const categoryLabel = computed(() => {
-  if (form.quoteMode === 'por_vehiculo') return form.cargo.truckType
-  if (serviceType.value === 'mudanza') return 'Mudanza'
-  if (serviceType.value === 'reparto') return 'Reparto'
-
-  return CATEGORIES.find(c => c.value === form.cargo.category)?.title
-})
 </script>
 
 <template>
@@ -152,7 +140,7 @@ const categoryLabel = computed(() => {
         <VStepper v-model="step" flat :items="stepperItems" hide-actions>
           <template #item.1>
             <div class="text-subtitle-2 mb-2">¿Qué necesitas?</div>
-            <VRow class="mb-2" dense>
+            <VRow class="mb-3" dense>
               <VCol v-for="s in SERVICE_TYPES" :key="s.value" cols="12" sm="4">
                 <VCard
                   :variant="serviceType === s.value ? 'tonal' : 'outlined'"
@@ -166,9 +154,9 @@ const categoryLabel = computed(() => {
                 </VCard>
               </VCol>
             </VRow>
-          </template>
 
-          <template #item.2>
+            <VDivider class="mb-3" />
+            <div class="text-subtitle-2 mb-2">¿De dónde a dónde?</div>
             <template v-if="serviceType === 'reparto'">
               <VRow dense>
                 <VCol cols="12" sm="6">
@@ -211,33 +199,25 @@ const categoryLabel = computed(() => {
                 </VBtn>
               </template>
 
-              <p class="text-caption text-medium-emphasis">
+              <p class="text-caption text-medium-emphasis mb-0">
                 La dirección exacta te la pedimos recién al reservar — para cotizar alcanza con el distrito.
               </p>
             </template>
+          </template>
 
-            <VDivider class="my-3" />
-
+          <template #item.2>
             <template v-if="serviceType === 'carga'">
+              <div class="text-subtitle-2 mb-2">¿Qué vas a transportar?</div>
               <VSelect v-model="form.cargo.category" :items="CATEGORIES" label="Tipo de carga" class="mb-2" />
-              <VTextarea v-model="form.cargo.detail" label="¿Qué vas a mover? (detalle)" rows="2" auto-grow class="mb-2" />
+              <VTextarea v-model="form.cargo.detail" label="Detalle (opcional)" rows="2" auto-grow class="mb-2" />
               <div class="d-flex ga-2 mb-2">
                 <VTextField v-model="form.cargo.weightKg" label="Peso aprox. (kg)" type="number" />
                 <VTextField v-model="form.cargo.volumeM3" label="Volumen aprox. (m³)" type="number" />
               </div>
               <VTextField v-model.number="form.cargo.operators" label="¿Necesitás operarios de carga? ¿Cuántos?" type="number" class="mb-2" />
-
-              <div class="d-flex align-center ga-2 mb-2 flex-wrap">
-                <span class="text-body-2 text-medium-emphasis">¿Ya sabés qué vehículo necesitás?</span>
-                <VChip v-if="form.cargo.truckType" closable size="small" color="primary" variant="tonal" @click:close="clearTruck">
-                  {{ chosenTruckLabel }}
-                </VChip>
-                <VBtn v-else size="small" variant="tonal" @click="showVehiclePicker = true">Elegir vehículo</VBtn>
-                <span class="text-caption text-medium-emphasis">(opcional)</span>
-              </div>
-              <VehiclePickerDialog v-model="showVehiclePicker" @select="pickTruck" @clear="clearTruck" />
             </template>
             <template v-else-if="serviceType === 'mudanza'">
+              <div class="text-subtitle-2 mb-2">¿Qué vas a mudar?</div>
               <VTextarea
                 v-model="form.cargo.detail" rows="2" auto-grow class="mb-2"
                 label="Ambientes, pisos, ascensor, muebles grandes (opcional)"
@@ -245,20 +225,27 @@ const categoryLabel = computed(() => {
               <VTextField v-model.number="form.cargo.operators" label="¿Necesitás operarios para la mudanza? ¿Cuántos?" type="number" />
             </template>
             <template v-else-if="serviceType === 'reparto'">
+              <div class="text-subtitle-2 mb-2">Contanos tu operación de reparto</div>
               <VTextarea
                 v-model="form.cargo.detail" rows="2" auto-grow class="mb-2"
                 label="Cuántos pedidos, frecuencia, si es ecommerce o contra-entrega (opcional)"
               />
             </template>
 
-            <VDivider class="my-3" />
             <CargoPhotosPicker v-model="photos" class="mb-2" />
 
-            <VDivider class="my-3" />
-            <ScheduleStepPicker
-              :date="form.date" :schedule="form.schedule"
-              @update:date="v => form.date = v" @update:schedule="v => form.schedule = v"
-            />
+            <template v-if="serviceType === 'carga'">
+              <VDivider class="my-3" />
+              <div class="d-flex align-center ga-2 mb-2 flex-wrap">
+                <span class="text-body-2 text-medium-emphasis">¿Ya sabés qué vehículo necesitás?</span>
+                <VChip v-if="form.cargo.truckType" closable size="small" color="primary" variant="tonal" @click:close="clearTruck">
+                  {{ chosenTruckLabel }}
+                </VChip>
+                <VBtn v-else size="small" variant="tonal" @click="showVehiclePicker = true">Elegir vehículo</VBtn>
+                <span class="text-caption text-medium-emphasis">(opcional — si no elegís, TaxiCarga te asigna la mejor opción)</span>
+              </div>
+              <VehiclePickerDialog v-model="showVehiclePicker" @select="pickTruck" @clear="clearTruck" />
+            </template>
           </template>
 
           <template #item.3>
@@ -282,33 +269,19 @@ const categoryLabel = computed(() => {
               />
             </template>
             <template v-else>
-              <VList density="compact">
-                <VListItem
-                  prepend-icon="ri-map-pin-line" :title="`${form.origin.district} → ${form.destination.district}`"
-                  :subtitle="form.origin.address ? `${form.origin.address} → ${form.destination.address}` : 'La dirección exacta se confirma al reservar'"
-                />
-                <VListItem prepend-icon="ri-archive-line" :title="categoryLabel" :subtitle="form.cargo.detail || '—'" />
-                <VListItem prepend-icon="ri-calendar-line" :title="form.date || 'Fecha por confirmar'" :subtitle="form.schedule || 'Horario por confirmar'" />
-              </VList>
+              <ScheduleStepPicker
+                :date="form.date" :schedule="form.schedule"
+                @update:date="v => form.date = v" @update:schedule="v => form.schedule = v"
+              />
               <VAlert v-if="error" type="error" variant="tonal" class="mt-3">{{ error }}</VAlert>
             </template>
           </template>
 
           <template #item.4>
-            <VList density="compact">
-              <VListItem
-                prepend-icon="ri-map-pin-line" :title="`${form.origin.district} → ${form.destination.district}`"
-                :subtitle="form.origin.address ? `${form.origin.address} → ${form.destination.address}` : 'La dirección exacta se confirma al reservar'"
-              />
-              <VListItem prepend-icon="ri-archive-line" :title="categoryLabel" :subtitle="form.cargo.detail || '—'" />
-              <VListItem v-if="!hasStops" prepend-icon="ri-scales-3-line" :title="loadModeLabel" />
-              <VListItem
-                v-if="continueMode === 'propio' && form.proposedPrice"
-                prepend-icon="ri-price-tag-3-line" :title="`Tu precio: S/ ${form.proposedPrice}`"
-                :subtitle="form.priceNegotiable ? 'Negociable' : 'Fijo'"
-              />
-              <VListItem prepend-icon="ri-calendar-line" :title="form.date || 'Fecha por confirmar'" :subtitle="form.schedule || 'Horario por confirmar'" />
-            </VList>
+            <ScheduleStepPicker
+              :date="form.date" :schedule="form.schedule"
+              @update:date="v => form.date = v" @update:schedule="v => form.schedule = v"
+            />
             <VAlert v-if="error" type="error" variant="tonal" class="mt-3">{{ error }}</VAlert>
           </template>
 
@@ -319,7 +292,7 @@ const categoryLabel = computed(() => {
         <VBtn v-if="step > 1" variant="text" @click="step--">Atrás</VBtn>
         <VSpacer />
         <VBtn v-if="step === 1" color="primary" :disabled="!step1ok" @click="step = 2">Siguiente</VBtn>
-        <VBtn v-else-if="step === 2" color="primary" :disabled="!step2ok" @click="goToStep3">Siguiente</VBtn>
+        <VBtn v-else-if="step === 2" color="primary" @click="goToStep3">Siguiente</VBtn>
         <VBtn v-else-if="step < maxStep" color="primary" @click="step++">Siguiente</VBtn>
         <VBtn
           v-else color="primary" :loading="submitting"

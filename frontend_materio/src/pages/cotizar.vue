@@ -88,33 +88,28 @@ const fetchPricePreview = async () => {
   } catch (e) { pricePreview.value = null } finally { previewLoading.value = false }
 }
 
+// Mismo timeline que las capturas: "Servicio y ruta" → "Detalles" → "Precio"
+// (solo Carga) → "Reserva". El resumen/mapa de la derecha (QuoteSummaryPanel)
+// hace de confirmación permanente — no hace falta un paso final de "revisar
+// todo" aparte, por eso Reserva ya incluye los datos de contacto y termina
+// en el botón de publicar.
 const stepperItems = computed(() => serviceType.value === 'carga'
-  ? ['Servicio', 'Carga', 'Precio', 'Confirmar']
-  : ['Servicio', 'Carga', 'Confirmar'])
+  ? ['Servicio y ruta', 'Detalles', 'Precio', 'Reserva']
+  : ['Servicio y ruta', 'Detalles', 'Reserva'])
 const maxStep = computed(() => serviceType.value === 'carga' ? 4 : 3)
 
 const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE')}`)
-const step1ok = computed(() => !!serviceType.value)
-const step2ok = computed(() => !!(quote.origin.district && quote.destination.district))
+const step1ok = computed(() => !!(serviceType.value && quote.origin.district && quote.destination.district))
 const formOk = computed(() => {
-  if (!(step2ok.value && quote.contact.phone && quote.contact.name)) return false
+  if (!(step1ok.value && quote.contact.phone && quote.contact.name)) return false
   if (serviceType.value === 'carga' && continueMode.value === 'propio' && !quote.proposedPrice) return false
 
   return true
 })
-const loadModeLabel = computed(() => (quote.loadMode === 'parcial' ? 'Carga consolidada' : 'Carga express'))
-
 const goToStep3 = async () => {
   step.value = 3
   if (serviceType.value === 'carga') await fetchPricePreview()
 }
-const categoryLabel = computed(() => {
-  if (serviceType.value === 'carga' && chosenTruck.value) return chosenTruckLabel.value
-  if (serviceType.value === 'mudanza') return 'Mudanza'
-  if (serviceType.value === 'reparto') return 'Reparto'
-
-  return CATEGORIES.find(c => c.value === quote.cargo.category)?.title
-})
 
 const submitQuote = async () => {
   busy.value = true
@@ -181,89 +176,81 @@ const submitSignup = async () => {
         <VCardText v-if="phase === 'form'">
           <VStepper v-model="step" flat :items="stepperItems" hide-actions>
             <template #item.1>
-              <div class="text-subtitle-2 mb-2">¿Qué necesitas?</div>
-              <VRow class="mb-2" dense>
+              <div class="text-subtitle-2 mb-2">Elige un tipo de servicio</div>
+              <VRow class="mb-3" dense>
                 <VCol v-for="s in SERVICE_TYPES" :key="s.value" cols="12" sm="4">
                   <VCard
                     :variant="serviceType === s.value ? 'tonal' : 'outlined'"
                     :color="serviceType === s.value ? 'primary' : undefined"
-                    class="pa-3 text-center h-100" style="cursor: pointer;"
-                    @click="serviceType = s.value; step = 2"
+                    class="pa-3 text-center h-100 position-relative" style="cursor: pointer;"
+                    @click="serviceType = s.value"
                   >
+                    <VIcon
+                      v-if="serviceType === s.value" icon="ri-checkbox-circle-fill" color="primary" size="18"
+                      style="position:absolute; top:6px; right:6px;"
+                    />
                     <VIcon :icon="s.icon" size="28" class="mb-1" />
                     <div class="text-subtitle-2 font-weight-bold">{{ s.title }}</div>
                     <div class="text-caption text-medium-emphasis">{{ s.subtitle }}</div>
                   </VCard>
                 </VCol>
               </VRow>
+
+              <template v-if="serviceType">
+                <VDivider class="mb-3" />
+                <div class="text-subtitle-2 mb-2">Ingresa la ruta de tu {{ serviceType === 'mudanza' ? 'mudanza' : serviceType === 'reparto' ? 'reparto' : 'carga' }}</div>
+                <template v-if="serviceType === 'reparto'">
+                  <VRow dense>
+                    <VCol cols="12" sm="6">
+                      <AddressAutocomplete v-model="quote.origin" label="Punto de recojo / almacén" />
+                    </VCol>
+                    <VCol cols="12" sm="6">
+                      <AddressAutocomplete v-model="quote.destination" label="Zona de reparto (referencia)" />
+                    </VCol>
+                  </VRow>
+                </template>
+                <template v-else>
+                  <VRow dense>
+                    <VCol cols="12" sm="6">
+                      <DistrictAutocomplete v-model="quote.origin" label="Origen" />
+                    </VCol>
+                    <VCol cols="12" sm="6">
+                      <DistrictAutocomplete v-model="quote.destination" label="Destino" />
+                    </VCol>
+                  </VRow>
+
+                  <template v-if="serviceType === 'carga'">
+                    <VRow v-for="(stop, i) in stops" :key="i" dense>
+                      <VCol cols="10" sm="11">
+                        <DistrictAutocomplete v-model="stops[i]" :label="`Parada ${i + 1}`" />
+                      </VCol>
+                      <VCol cols="2" sm="1" class="d-flex align-center">
+                        <VBtn icon variant="text" size="small" @click="removeStop(i)">
+                          <VIcon icon="ri-close-line" />
+                        </VBtn>
+                      </VCol>
+                    </VRow>
+                    <VBtn variant="text" size="small" prepend-icon="ri-add-line" class="mb-2" @click="addStop">
+                      Agregar parada (opcional)
+                    </VBtn>
+                  </template>
+
+                  <p class="text-caption text-medium-emphasis mb-0">
+                    La dirección exacta te la pedimos recién al reservar — para cotizar alcanza con el distrito.
+                  </p>
+                </template>
+              </template>
             </template>
 
             <template #item.2>
-              <div class="text-subtitle-2 mb-2">¿De dónde a dónde?</div>
-              <template v-if="serviceType === 'reparto'">
-                <VRow dense>
-                  <VCol cols="12" sm="6">
-                    <AddressAutocomplete v-model="quote.origin" label="Punto de recojo / almacén" />
-                  </VCol>
-                  <VCol cols="12" sm="6">
-                    <AddressAutocomplete v-model="quote.destination" label="Zona de reparto (referencia)" />
-                  </VCol>
-                </VRow>
-              </template>
-              <template v-else>
-                <VRow dense>
-                  <VCol cols="12" sm="6">
-                    <DistrictAutocomplete v-model="quote.origin" label="Origen" />
-                  </VCol>
-                  <VCol cols="12" sm="6">
-                    <DistrictAutocomplete v-model="quote.destination" label="Destino" />
-                  </VCol>
-                </VRow>
-
-                <template v-if="serviceType === 'carga'">
-                  <VRow v-for="(stop, i) in stops" :key="i" dense>
-                    <VCol cols="10" sm="11">
-                      <DistrictAutocomplete v-model="stops[i]" :label="`Parada ${i + 1}`" />
-                    </VCol>
-                    <VCol cols="2" sm="1" class="d-flex align-center">
-                      <VBtn icon variant="text" size="small" @click="removeStop(i)">
-                        <VIcon icon="ri-close-line" />
-                      </VBtn>
-                    </VCol>
-                  </VRow>
-                  <VBtn variant="text" size="small" prepend-icon="ri-add-line" class="mb-2" @click="addStop">
-                    Agregar parada (opcional)
-                  </VBtn>
-                </template>
-
-                <p class="text-caption text-medium-emphasis mb-2">
-                  La dirección exacta te la pedimos recién al reservar — para cotizar alcanza con el distrito.
-                </p>
-              </template>
-
-              <VDivider class="my-3" />
-
               <template v-if="serviceType === 'carga'">
-                <div class="text-subtitle-2 mb-2">¿Qué vas a mover?</div>
+                <div class="text-subtitle-2 mb-2">¿Qué vas a transportar?</div>
                 <VSelect v-model="quote.cargo.category" :items="CATEGORIES" label="Tipo de carga" density="comfortable" class="mb-2" />
                 <VTextarea v-model="quote.cargo.detail" label="Detalle (opcional)" rows="2" auto-grow density="comfortable" class="mb-2" />
                 <VTextField v-model="quote.cargo.weightKg" label="Peso aprox. (kg, opcional)" type="number" density="comfortable" class="mb-4" />
-
-                <div class="d-flex align-center ga-2 mb-2 flex-wrap">
-                  <span class="text-body-2 text-medium-emphasis">¿Ya sabés qué vehículo necesitás?</span>
-                  <VChip v-if="chosenTruck" closable size="small" color="primary" variant="tonal" @click:close="chosenTruck = null">
-                    {{ chosenTruckLabel }}
-                  </VChip>
-                  <VBtn v-else size="small" variant="tonal" @click="showVehiclePicker = true">Elegir vehículo</VBtn>
-                  <span class="text-caption text-medium-emphasis">(opcional)</span>
-                </div>
-                <VehiclePickerDialog
-                  v-model="showVehiclePicker"
-                  @select="v => chosenTruck = v" @clear="chosenTruck = null"
-                />
               </template>
               <template v-else-if="serviceType === 'mudanza'">
-                <div class="text-subtitle-2 mb-2">Contanos de tu mudanza</div>
+                <div class="text-subtitle-2 mb-2">¿Qué vas a mudar?</div>
                 <VTextarea
                   v-model="quote.cargo.detail" rows="2" auto-grow density="comfortable" class="mb-2"
                   label="Ambientes, pisos, ascensor, muebles grandes (opcional)"
@@ -277,19 +264,28 @@ const submitSignup = async () => {
                 />
               </template>
 
-              <VDivider class="my-3" />
               <CargoPhotosPicker v-model="photos" class="mb-2" />
 
-              <VDivider class="my-3" />
-              <ScheduleStepPicker
-                :date="quote.date" :schedule="quote.schedule"
-                @update:date="v => quote.date = v" @update:schedule="v => quote.schedule = v"
-              />
+              <template v-if="serviceType === 'carga'">
+                <VDivider class="my-3" />
+                <div class="d-flex align-center ga-2 mb-2 flex-wrap">
+                  <span class="text-body-2 text-medium-emphasis">¿Ya sabés qué vehículo necesitás?</span>
+                  <VChip v-if="chosenTruck" closable size="small" color="primary" variant="tonal" @click:close="chosenTruck = null">
+                    {{ chosenTruckLabel }}
+                  </VChip>
+                  <VBtn v-else size="small" variant="tonal" @click="showVehiclePicker = true">Elegir vehículo</VBtn>
+                  <span class="text-caption text-medium-emphasis">(opcional — si no elegís, TaxiCarga te asigna la mejor opción)</span>
+                </div>
+                <VehiclePickerDialog
+                  v-model="showVehiclePicker"
+                  @select="v => chosenTruck = v" @clear="chosenTruck = null"
+                />
+              </template>
             </template>
 
             <template #item.3>
               <template v-if="serviceType === 'carga'">
-                <div class="text-subtitle-2 mb-2">Elegí cómo cotizar tu carga</div>
+                <div class="text-subtitle-2 mb-2">Elige cómo quieres cotizar tu carga</div>
                 <template v-if="hasStops">
                   <VAlert type="info" variant="tonal">
                     Con paradas intermedias, un asesor te confirma el precio — no aplica Consolidada/Express.
@@ -308,14 +304,11 @@ const submitSignup = async () => {
                 />
               </template>
               <template v-else>
-                <VList density="compact">
-                  <VListItem
-                    prepend-icon="ri-map-pin-line" :title="`${quote.origin.district} → ${quote.destination.district}`"
-                  />
-                  <VListItem prepend-icon="ri-archive-line" :title="categoryLabel" :subtitle="quote.cargo.detail || '—'" />
-                  <VListItem prepend-icon="ri-calendar-line" :title="quote.date || 'Fecha por confirmar'" :subtitle="quote.schedule || undefined" />
-                </VList>
-                <VDivider class="my-3" />
+                <ScheduleStepPicker
+                  :date="quote.date" :schedule="quote.schedule"
+                  @update:date="v => quote.date = v" @update:schedule="v => quote.schedule = v"
+                />
+                <VDivider class="my-4" />
                 <div class="text-subtitle-2 mb-2">¿Cómo te contactamos?</div>
                 <VTextField v-model="quote.contact.name" label="Tu nombre" density="comfortable" class="mb-2" />
                 <VTextField v-model="quote.contact.phone" label="Teléfono / WhatsApp" density="comfortable" class="mb-2" />
@@ -325,21 +318,11 @@ const submitSignup = async () => {
             </template>
 
             <template #item.4>
-              <VList density="compact">
-                <VListItem
-                  prepend-icon="ri-map-pin-line" :title="`${quote.origin.district} → ${quote.destination.district}`"
-                  :subtitle="stops.filter(s => s.district).map(s => s.district).join(' → ') || undefined"
-                />
-                <VListItem prepend-icon="ri-archive-line" :title="categoryLabel" :subtitle="quote.cargo.detail || '—'" />
-                <VListItem v-if="!hasStops" prepend-icon="ri-scales-3-line" :title="loadModeLabel" />
-                <VListItem
-                  v-if="continueMode === 'propio' && quote.proposedPrice"
-                  prepend-icon="ri-price-tag-3-line" :title="`Tu precio: S/ ${quote.proposedPrice}`"
-                  :subtitle="quote.priceNegotiable ? 'Negociable' : 'Fijo'"
-                />
-                <VListItem prepend-icon="ri-calendar-line" :title="quote.date || 'Fecha por confirmar'" :subtitle="quote.schedule || undefined" />
-              </VList>
-              <VDivider class="my-3" />
+              <ScheduleStepPicker
+                :date="quote.date" :schedule="quote.schedule"
+                @update:date="v => quote.date = v" @update:schedule="v => quote.schedule = v"
+              />
+              <VDivider class="my-4" />
               <div class="text-subtitle-2 mb-2">¿Cómo te contactamos?</div>
               <VTextField v-model="quote.contact.name" label="Tu nombre" density="comfortable" class="mb-2" />
               <VTextField v-model="quote.contact.phone" label="Teléfono / WhatsApp" density="comfortable" class="mb-2" />
@@ -355,7 +338,7 @@ const submitSignup = async () => {
           <VBtn v-else variant="text" to="/login">Ya tengo cuenta</VBtn>
           <VSpacer />
           <VBtn v-if="step === 1" color="primary" :disabled="!step1ok" @click="step = 2">Siguiente</VBtn>
-          <VBtn v-else-if="step === 2" color="primary" :disabled="!step2ok" @click="goToStep3">Siguiente</VBtn>
+          <VBtn v-else-if="step === 2" color="primary" @click="goToStep3">Siguiente</VBtn>
           <VBtn v-else-if="step < maxStep" color="primary" @click="step++">Siguiente</VBtn>
           <VBtn v-else color="primary" :loading="busy" :disabled="!formOk" @click="submitQuote">Cotizar</VBtn>
         </VCardActions>
