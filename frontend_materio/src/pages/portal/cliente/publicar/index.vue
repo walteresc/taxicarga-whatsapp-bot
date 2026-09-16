@@ -125,19 +125,20 @@ const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE
 
 <template>
   <div>
-    <h1 class="text-h5 font-weight-bold mb-4">Publicar solicitud</h1>
+    <div class="d-flex flex-wrap align-center justify-space-between ga-4 mb-4">
+      <h1 class="text-h5 font-weight-bold">Publicar solicitud</h1>
+      <VStepper v-if="!submitted" v-model="step" flat class="bg-transparent route-stepper" hide-actions>
+        <VStepperHeader>
+          <template v-for="(label, i) in stepperItems" :key="i">
+            <VStepperItem :title="label" :value="i + 1" :complete="step > i + 1" />
+            <VDivider v-if="i < stepperItems.length - 1" />
+          </template>
+        </VStepperHeader>
+      </VStepper>
+    </div>
 
     <VRow>
     <VCol cols="12" md="7">
-    <VStepper v-if="!submitted" v-model="step" flat class="bg-transparent mb-4" hide-actions>
-      <VStepperHeader>
-        <template v-for="(label, i) in stepperItems" :key="i">
-          <VStepperItem :title="label" :value="i + 1" :complete="step > i + 1" />
-          <VDivider v-if="i < stepperItems.length - 1" />
-        </template>
-      </VStepperHeader>
-    </VStepper>
-
     <VCard v-if="!submitted">
       <VCardText>
         <VWindow v-model="step">
@@ -355,3 +356,26 @@ const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE
     </VRow>
   </div>
 </template>
+
+<style scoped>
+/* Timeline compacto junto al título de la página, sin caja/sombra propia —
+   como en el mockup (no es una sección aparte, es parte del encabezado). */
+.route-stepper :deep(.v-stepper-header) {
+  box-shadow: none;
+}
+.route-stepper :deep(.v-stepper-item) {
+  padding: 0 0.5rem;
+}
+.route-stepper :deep(.v-stepper-item__avatar) {
+  width: 22px;
+  height: 22px;
+  font-size: 0.6875rem;
+}
+.route-stepper :deep(.v-stepper-item__title) {
+  font-size: 0.8125rem;
+}
+.route-stepper :deep(.v-divider) {
+  margin: 0 -4px;
+  max-width: 32px;
+}
+</style>

@@ -167,7 +167,7 @@ const submitSignup = async () => {
 
       <VRow>
       <VCol cols="12" md="7">
-      <VStepper v-if="phase === 'form'" v-model="step" flat class="bg-transparent mb-4" hide-actions>
+      <VStepper v-if="phase === 'form'" v-model="step" flat class="bg-transparent route-stepper mb-4" hide-actions>
         <VStepperHeader>
           <template v-for="(label, i) in stepperItems" :key="i">
             <VStepperItem :title="label" :value="i + 1" :complete="step > i + 1" />
@@ -436,3 +436,26 @@ const submitSignup = async () => {
     </div>
   </div>
 </template>
+
+<style scoped>
+/* Timeline compacto, sin caja/sombra propia — ver mismo criterio en
+   portal/cliente/publicar/index.vue. */
+.route-stepper :deep(.v-stepper-header) {
+  box-shadow: none;
+}
+.route-stepper :deep(.v-stepper-item) {
+  padding: 0 0.5rem;
+}
+.route-stepper :deep(.v-stepper-item__avatar) {
+  width: 22px;
+  height: 22px;
+  font-size: 0.6875rem;
+}
+.route-stepper :deep(.v-stepper-item__title) {
+  font-size: 0.8125rem;
+}
+.route-stepper :deep(.v-divider) {
+  margin: 0 -4px;
+  max-width: 32px;
+}
+</style>
