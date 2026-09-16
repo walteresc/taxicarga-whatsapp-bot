@@ -1,9 +1,12 @@
 <script setup>
-// Panel de resumen (columna derecha del cotizador): tarjeta "Resumen del
-// servicio" + mapa con la ruta real dibujada (Mapbox Directions), para que
-// el cliente sienta que "ve" su solicitud mientras la completa. Colores de
-// los puntos tomados del tema (success/primary), no inventados.
-import { computed, ref, watch } from 'vue'
+// Panel de resumen (columna derecha del cotizador): mapa INTERACTIVO real
+// (Mapbox GL JS — zoom/pan con el mouse o los controles) con la ruta
+// dibujada (Mapbox Directions), y "Resumen del servicio" flotando encima
+// como una tarjeta, no como un bloque aparte. Colores tomados del tema
+// (success/primary/warning), no inventados.
+import mapboxgl from 'mapbox-gl'
+import 'mapbox-gl/dist/mapbox-gl.css'
+import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 
 import { extractVolumeM3, extractWeightKg } from '@/utils/cargoText'
 
@@ -19,13 +22,36 @@ const props = defineProps({
 const emit = defineEmits(['edit-type'])
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || ''
-const COLOR_ORIGIN = '56CA00'    // theme success
-const COLOR_DEST = '8C57FF'      // theme primary
-const COLOR_STOP = 'F9A825'
+const COLOR_ORIGIN = '#56CA00'    // theme success
+const COLOR_DEST = '#8C57FF'      // theme primary
+const COLOR_STOP = '#F9A825'      // theme warning
+const LIMA_CENTER = [-77.0428, -12.0464]
+const ROUTE_SOURCE = 'route-line'
+
+if (MAPBOX_TOKEN) mapboxgl.accessToken = MAPBOX_TOKEN
 
 const hasOrigin = computed(() => props.origin?.lat != null && props.origin?.lng != null)
 const hasDestination = computed(() => props.destination?.lat != null && props.destination?.lng != null)
-const validStops = computed(() => (props.stops || []).filter(s => s?.district))
+const validStops = computed(() => (props.stops || []).filter(s => s?.district && s.lat != null && s.lng != null))
+
+const mapEl = ref(null)
+const map = shallowRef(null)
+const mapReady = ref(false)
+let markers = []
+
+const clearMarkers = () => { markers.forEach(m => m.remove()); markers = [] }
+
+const ensureRouteLayer = () => {
+  if (map.value.getSource(ROUTE_SOURCE)) return
+  map.value.addSource(ROUTE_SOURCE, {
+    type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: [] } },
+  })
+  map.value.addLayer({
+    id: ROUTE_SOURCE, type: 'line', source: ROUTE_SOURCE,
+    layout: { 'line-join': 'round', 'line-cap': 'round' },
+    paint: { 'line-color': COLOR_DEST, 'line-width': 4, 'line-opacity': 0.85 },
+  })
+}
 
 // Ruta real (distancia/duración + geometría) vía Mapbox Directions — se
 // recalcula cuando cambian origen/destino, con debounce para no disparar un
@@ -33,24 +59,80 @@ const validStops = computed(() => (props.stops || []).filter(s => s?.district))
 const route = ref(null)
 let routeDebounce = null
 
+const updateRouteLayer = () => {
+  if (!mapReady.value) return
+  ensureRouteLayer()
+  map.value.getSource(ROUTE_SOURCE).setData({
+    type: 'Feature', geometry: { type: 'LineString', coordinates: route.value?.coordinates || [] },
+  })
+}
+
 const fetchRoute = async () => {
-  if (!hasOrigin.value || !hasDestination.value || !MAPBOX_TOKEN) { route.value = null; return }
+  if (!hasOrigin.value || !hasDestination.value || !MAPBOX_TOKEN) { route.value = null; updateRouteLayer(); return }
   try {
     const url = `https://api.mapbox.com/directions/v5/mapbox/driving/` +
       `${props.origin.lng},${props.origin.lat};${props.destination.lng},${props.destination.lat}` +
-      `?geometries=polyline&overview=simplified&access_token=${MAPBOX_TOKEN}`
+      `?geometries=geojson&overview=simplified&access_token=${MAPBOX_TOKEN}`
     const res = await fetch(url)
     const data = await res.json()
     const r = data.routes?.[0]
-    route.value = r ? { distanceKm: r.distance / 1000, durationMin: r.duration / 60, polyline: r.geometry } : null
+    route.value = r ? { distanceKm: r.distance / 1000, durationMin: r.duration / 60, coordinates: r.geometry.coordinates } : null
   } catch (e) { route.value = null }
+  updateRouteLayer()
+}
+
+const updateMarkers = () => {
+  if (!mapReady.value) return
+  clearMarkers()
+  if (hasOrigin.value) markers.push(new mapboxgl.Marker({ color: COLOR_ORIGIN }).setLngLat([props.origin.lng, props.origin.lat]).addTo(map.value))
+  validStops.value.forEach(s => markers.push(new mapboxgl.Marker({ color: COLOR_STOP }).setLngLat([s.lng, s.lat]).addTo(map.value)))
+  if (hasDestination.value) markers.push(new mapboxgl.Marker({ color: COLOR_DEST }).setLngLat([props.destination.lng, props.destination.lat]).addTo(map.value))
+}
+
+// El mapa recién es visible por debajo de la tarjeta "Resumen del servicio"
+// (flota arriba) y por encima de la nota "Mapa de ruta" (flota abajo) — el
+// padding del fitBounds evita que la ruta quede tapada por esas tarjetas.
+const fitToRoute = () => {
+  if (!mapReady.value) return
+  const points = []
+  if (hasOrigin.value) points.push([props.origin.lng, props.origin.lat])
+  validStops.value.forEach(s => points.push([s.lng, s.lat]))
+  if (hasDestination.value) points.push([props.destination.lng, props.destination.lat])
+  if (!points.length) return
+  if (points.length === 1) { map.value.flyTo({ center: points[0], zoom: 12 }); return }
+  const bounds = points.reduce((b, p) => b.extend(p), new mapboxgl.LngLatBounds(points[0], points[0]))
+  map.value.fitBounds(bounds, { padding: { top: 170, bottom: 90, left: 40, right: 40 }, maxZoom: 14, duration: 600 })
 }
 
 watch(
-  () => [props.origin?.lat, props.origin?.lng, props.destination?.lat, props.destination?.lng].join(','),
-  () => { clearTimeout(routeDebounce); routeDebounce = setTimeout(fetchRoute, 400) },
-  { immediate: true },
+  () => [props.origin?.lat, props.origin?.lng, props.destination?.lat, props.destination?.lng, validStops.value.length].join(','),
+  () => {
+    updateMarkers()
+    fitToRoute()
+    clearTimeout(routeDebounce)
+    routeDebounce = setTimeout(fetchRoute, 400)
+  },
 )
+
+onMounted(() => {
+  if (!MAPBOX_TOKEN || !mapEl.value) return
+  map.value = new mapboxgl.Map({
+    container: mapEl.value, style: 'mapbox://styles/mapbox/streets-v12', center: LIMA_CENTER, zoom: 10,
+  })
+  map.value.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'bottom-right')
+  map.value.on('load', () => {
+    mapReady.value = true
+    ensureRouteLayer()
+    updateMarkers()
+    fitToRoute()
+  })
+})
+
+onBeforeUnmount(() => {
+  clearTimeout(routeDebounce)
+  clearMarkers()
+  map.value?.remove()
+})
 
 const distanceLabel = computed(() => {
   if (!route.value) return null
@@ -61,21 +143,6 @@ const distanceLabel = computed(() => {
   const dur = h > 0 ? `${h} h${m ? ` ${m} min` : ''}` : `${m} min`
 
   return `${km} km · ${dur} aprox.`
-})
-
-const mapUrl = computed(() => {
-  if (!MAPBOX_TOKEN) return ''
-  const overlays = []
-  if (route.value?.polyline) overlays.push(`path-4+${COLOR_DEST}-0.85(${encodeURIComponent(route.value.polyline)})`)
-  if (hasOrigin.value) overlays.push(`pin-s-a+${COLOR_ORIGIN}(${props.origin.lng},${props.origin.lat})`)
-  validStops.value.forEach(s => {
-    if (s.lat != null && s.lng != null) overlays.push(`pin-s+${COLOR_STOP}(${s.lng},${s.lat})`)
-  })
-  if (hasDestination.value) overlays.push(`pin-s-b+${COLOR_DEST}(${props.destination.lng},${props.destination.lat})`)
-  if (!overlays.length) return ''
-
-  return `https://api.mapbox.com/styles/v1/mapbox/streets-v12/static/${overlays.join(',')}/auto/640x420@2x` +
-    `?padding=50&access_token=${MAPBOX_TOKEN}`
 })
 
 const weightVolumeLabel = computed(() => {
@@ -99,14 +166,14 @@ const fmtDate = iso => {
 
 <template>
   <VCard variant="outlined" class="h-100 position-relative overflow-hidden" style="min-height: 560px;">
-    <img v-if="mapUrl" :src="mapUrl" alt="Mapa de ruta" class="position-absolute" style="inset: 0; width: 100%; height: 100%; object-fit: cover;">
+    <div ref="mapEl" class="position-absolute" style="inset: 0;" />
     <div
-      v-else class="position-absolute d-flex align-center justify-center text-medium-emphasis"
+      v-if="!MAPBOX_TOKEN" class="position-absolute d-flex align-center justify-center text-medium-emphasis"
       style="inset: 0; background: rgba(var(--v-theme-on-surface), 0.04);"
     >
       <div class="text-center px-4">
         <VIcon icon="ri-map-2-line" size="32" class="mb-1" />
-        <div class="text-caption">El mapa aparece cuando cargás origen y destino</div>
+        <div class="text-caption">Mapa no disponible</div>
       </div>
     </div>
 
@@ -170,8 +237,8 @@ const fmtDate = iso => {
     </VCard>
 
     <VCard
-      v-if="mapUrl" variant="elevated" class="position-absolute pa-3 d-flex ga-2"
-      style="left:12px; right:12px; bottom:12px; max-width:300px;"
+      v-if="hasOrigin && hasDestination" variant="elevated" class="position-absolute pa-3 d-flex ga-2"
+      style="left:12px; bottom:12px; max-width:280px;"
     >
       <VIcon icon="ri-map-2-line" size="18" class="mt-1" />
       <div>
