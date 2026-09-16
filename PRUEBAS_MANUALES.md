@@ -113,6 +113,13 @@ Nuevo 4to paso del timeline ("Servicio → Carga → Precio → Confirmar") en `
 - El precio mostrado es de referencia — no crea la solicitud todavía; recién se publica al tocar "Cotizar"/"Publicar y cotizar" en el paso Confirmar, con la modalidad ya elegida.
 - **CRM**: en Comercial → "Por cotizar" y "Cotizados", las rutas interprovinciales ahora muestran un chip "Consolidada" o "Express" junto a la ruta.
 
+## Actualización 2026-09-16 (2): vehículo real, fecha/hora detallada, fotos, precio propio
+Todo esto solo en el paso "Carga"/"Detalles" de **Carga** (mudanza/reparto no cambian):
+- **Elegir vehículo**: ahora trae carrocería real (Furgón, Plataforma, etc.) + unidades reales del catálogo con su capacidad — ya no es una lista fija de 4 opciones.
+- **¿Para cuándo?**: Urgente/Hoy/Mañana, fecha fija vs. flexible ±2 días, franja horaria (mañana/tarde/noche/durante el día) o hora exacta.
+- **Agregar fotos**: hasta 5, se suben junto con la solicitud (no antes) — probar que se vean como miniaturas y se puedan quitar antes de publicar.
+- **Paso Precio → "¿Cómo quieres continuar?"**: debajo de Consolidada/Express, elegir "Recibir ofertas" (por defecto) o "Publicar con mi precio" (fijo o negociable) — ese precio es real, queda guardado en el lead para que el asesor lo vea al cotizar.
+
 ## Actualización 2026-09-14 (8): mismo timeline en /cotizar y Portal Cliente
 Ambas pantallas (`/cotizar` sin login y Portal Cliente → Publicar solicitud) ahora tienen el mismo timeline de 3 pasos arriba: **Servicio → Carga → Confirmar**. El paso "Servicio" queda limpio (solo las 3 tarjetas); todo lo demás (direcciones, paradas, detalle de carga, vehículo, fecha) vive en "Carga"; "Confirmar" es el resumen final antes de enviar. Revisar que se vea igual en ambas pantallas.
 
