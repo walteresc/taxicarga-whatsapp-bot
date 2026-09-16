@@ -228,6 +228,12 @@ const submitSignup = async () => {
                     <div class="d-flex flex-column align-center mr-3" style="width: 10px;">
                       <div style="width:10px; height:10px; border-radius:50%; background:#56CA00; flex-shrink:0;" />
                       <div style="flex:1; width:0; border-left:2px dotted rgba(var(--v-theme-on-surface), 0.3); margin: 4px 0;" />
+                      <template v-if="serviceType === 'carga'">
+                        <template v-for="(stop, i) in stops" :key="i">
+                          <div style="width:10px; height:10px; border-radius:50%; background:#F9A825; flex-shrink:0;" />
+                          <div style="flex:1; width:0; border-left:2px dotted rgba(var(--v-theme-on-surface), 0.3); margin: 4px 0;" />
+                        </template>
+                      </template>
                       <div style="width:10px; height:10px; border-radius:50%; background:#8C57FF; flex-shrink:0;" />
                     </div>
                     <div class="flex-grow-1">
