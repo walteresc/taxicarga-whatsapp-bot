@@ -298,3 +298,19 @@ class LeadUbicacion(models.Model):
 
     def __str__(self):
         return f"{self.lead_id}:{self.orden} {self.tipo} {self.distrito}"
+
+
+class LeadFoto(models.Model):
+    """Fotos de la carga (hasta 5) que el cliente adjunta al cotizar — para
+    que el asesor/transportista vean qué es antes de dar precio."""
+
+    lead = models.ForeignKey(Lead, on_delete=models.CASCADE, related_name="fotos")
+    imagen = models.FileField(upload_to="leads/fotos/%Y/%m/")
+    orden = models.PositiveSmallIntegerField(default=0)
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["orden", "id"]
+
+    def __str__(self):
+        return f"{self.lead_id}:{self.orden}"

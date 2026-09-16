@@ -1,7 +1,10 @@
 """F7 · Cotización rápida de invitado + conversión a cliente/empresa."""
+import json
+
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.core.cache import caches
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
 from rest_framework.test import APITestCase
 
@@ -154,6 +157,48 @@ class PreviewQuoteTests(APITestCase):
     def test_falta_distrito_400(self):
         r = self._post(destination={})
         self.assertEqual(r.status_code, 400)
+
+
+@_NO_THROTTLE
+class GuestQuotePhotosTests(APITestCase):
+    """Multipart (data=JSON + photo1..photo5) en vez de JSON plano — mismo
+    endpoint, sin login."""
+    def setUp(self):
+        caches["throttle"].clear()
+
+    def _img(self, name="foto.jpg"):
+        # 1x1 px GIF válido — no hace falta una imagen real para el test.
+        return SimpleUploadedFile(
+            name, b"GIF87a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\x00\x00\x00\x21\xf9\x04\x01\x00\x00\x00\x00\x2c"
+            b"\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02\x44\x01\x00\x3b",
+            content_type="image/gif",
+        )
+
+    def test_multipart_con_fotos_crea_el_lead_y_las_guarda(self):
+        r = self.client.post("/api/v2/guest/quote", {
+            "data": json.dumps(_QUOTE),
+            "photo1": self._img("uno.jpg"),
+            "photo2": self._img("dos.jpg"),
+        }, format="multipart")
+        self.assertEqual(r.status_code, 201, r.content)
+        lead = Lead.objects.get(codigo=r.data["quoteCode"])
+        self.assertEqual(lead.fotos.count(), 2)
+        self.assertEqual(list(lead.fotos.order_by("orden").values_list("orden", flat=True)), [0, 1])
+
+    def test_mas_de_5_fotos_se_recorta_a_5(self):
+        fields = {"data": json.dumps(_QUOTE)}
+        for i in range(7):
+            fields[f"photo{i}"] = self._img(f"f{i}.jpg")
+        r = self.client.post("/api/v2/guest/quote", fields, format="multipart")
+        self.assertEqual(r.status_code, 201, r.content)
+        lead = Lead.objects.get(codigo=r.data["quoteCode"])
+        self.assertEqual(lead.fotos.count(), 5)
+
+    def test_sin_fotos_multipart_igual_funciona(self):
+        r = self.client.post("/api/v2/guest/quote", {"data": json.dumps(_QUOTE)}, format="multipart")
+        self.assertEqual(r.status_code, 201, r.content)
+        lead = Lead.objects.get(codigo=r.data["quoteCode"])
+        self.assertEqual(lead.fotos.count(), 0)
 
 
 @_NO_THROTTLE

@@ -35,6 +35,7 @@ def lead_summary(lead):
         "elevatorDestination": lead.ascensor_destino,
         "items": lead.lista_objetos or None,
         "heavyItems": lead.objetos_pesados or None,
+        "photos": [f.imagen.url for f in lead.fotos.all()],
         "serviceDate": _d(lead.fecha_servicio),
         "schedule": lead.horario_servicio or None,
         "weightKg": float(lead.peso_carga_kg) if lead.peso_carga_kg is not None else None,

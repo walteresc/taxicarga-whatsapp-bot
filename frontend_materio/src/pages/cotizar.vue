@@ -3,6 +3,7 @@ import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import AddressAutocomplete from '@/components/AddressAutocomplete.vue'
+import CargoPhotosPicker from '@/components/CargoPhotosPicker.vue'
 import DistrictAutocomplete from '@/components/DistrictAutocomplete.vue'
 import PriceModePicker from '@/components/PriceModePicker.vue'
 import QuoteSummaryPanel from '@/components/QuoteSummaryPanel.vue'
@@ -60,6 +61,7 @@ const result = ref(null)
 // Paradas intermedias (multipunto) — solo Carga. El motor de precios no las
 // contempla en el cálculo (ver apps/cotizador/services.py::cotizar_lead), así
 // que una solicitud con paradas siempre pasa a modo asesor, a propósito.
+const photos = ref([])
 const stops = reactive([])
 const addStop = () => stops.push({ district: '', province: '', region: '', lat: null, lng: null })
 const removeStop = index => stops.splice(index, 1)
@@ -120,7 +122,7 @@ const submitQuote = async () => {
         : { ...quote.cargo, truckType: chosenTruck.value || undefined }
     const quoteMode = serviceType.value === 'carga' && chosenTruck.value ? 'por_vehiculo' : 'por_carga'
     const validStops = serviceType.value === 'carga' ? stops.filter(s => s.district) : []
-    result.value = await guestQuote({ ...quote, cargo, quoteMode, stops: validStops })
+    result.value = await guestQuote({ ...quote, cargo, quoteMode, stops: validStops }, photos.value)
     phase.value = 'result'
   } catch (e) { error.value = e.message } finally { busy.value = false }
 }
@@ -259,6 +261,9 @@ const submitSignup = async () => {
                   label="Cuántos pedidos, frecuencia, si es ecommerce o contra-entrega (opcional)"
                 />
               </template>
+
+              <VDivider class="my-3" />
+              <CargoPhotosPicker v-model="photos" class="mb-2" />
 
               <VDivider class="my-3" />
               <ScheduleStepPicker

@@ -158,7 +158,9 @@ class GuestQuoteView(_Public):
 
     @transaction.atomic
     def post(self, request):
-        d = request.data
+        from apps.leads.photos import parse_request_body, save_lead_photos
+
+        d, fotos = parse_request_body(request)
         if _honeypot(d):
             # respuesta plausible pero sin crear nada
             return Response({"quoteCode": None, "price": {"amount": None, "mode": "advisor"}})
@@ -223,6 +225,7 @@ class GuestQuoteView(_Public):
             horario_servicio=(d.get("schedule") or ""),
             estado=Lead.NUEVO,
         )
+        save_lead_photos(lead, fotos)
         replace_lead_route(lead, [
             {
                 "tipo": "origen", "distrito": origin.get("district") or "", "direccion": origin.get("address") or "",

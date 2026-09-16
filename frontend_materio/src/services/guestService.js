@@ -2,17 +2,31 @@
 const BASE = '/api/v2/guest'
 
 const post = async (path, body) => {
+  const isForm = typeof FormData !== 'undefined' && body instanceof FormData
+  const headers = { 'X-Requested-With': 'XMLHttpRequest' }
+  if (!isForm) headers['Content-Type'] = 'application/json'
   const res = await fetch(`${BASE}/${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+    headers,
     credentials: 'include',
-    body: JSON.stringify(body),
+    body: isForm ? body : JSON.stringify(body),
   })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(data.error || 'No se pudo completar la solicitud.')
   return data
 }
 
-export const guestQuote = body => post('quote', body)
+// Con fotos (photos: File[]) se manda multipart: el resto del body va
+// stringificado en el campo `data`, ver apps/leads/photos.py::parse_request_body.
+const withPhotos = (body, photos) => {
+  if (!photos?.length) return body
+  const fd = new FormData()
+  fd.append('data', JSON.stringify(body))
+  photos.forEach((file, i) => fd.append(`photo${i}`, file))
+
+  return fd
+}
+
+export const guestQuote = (body, photos) => post('quote', withPhotos(body, photos))
 export const guestQuotePreview = body => post('quote/preview', body)
 export const guestSignup = body => post('signup', body)

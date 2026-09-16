@@ -5,7 +5,18 @@ const P = '/api/v2/portal/customer'
 
 export const customerMe = () => apiClient.get(`${P}/me`)
 export const customerLoads = () => apiClient.get(`${P}/loads`)
-export const customerPublish = body => apiClient.post(`${P}/loads`, body)
+
+// Con fotos (photos: File[]) se manda multipart: el resto del body va
+// stringificado en el campo `data`, ver apps/leads/photos.py::parse_request_body.
+const withPhotos = (body, photos) => {
+  if (!photos?.length) return body
+  const fd = new FormData()
+  fd.append('data', JSON.stringify(body))
+  photos.forEach((file, i) => fd.append(`photo${i}`, file))
+
+  return fd
+}
+export const customerPublish = (body, photos) => apiClient.post(`${P}/loads`, withPhotos(body, photos))
 export const customerLoad = code => apiClient.get(`${P}/loads/${code}`)
 export const customerAccept = (code, body) => apiClient.post(`${P}/loads/${code}/accept`, body)
 export const customerRequestAdvisor = code => apiClient.post(`${P}/loads/${code}/request-advisor`, {})

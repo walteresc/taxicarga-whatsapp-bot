@@ -3,6 +3,7 @@ import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import AddressAutocomplete from '@/components/AddressAutocomplete.vue'
+import CargoPhotosPicker from '@/components/CargoPhotosPicker.vue'
 import DistrictAutocomplete from '@/components/DistrictAutocomplete.vue'
 import PriceModePicker from '@/components/PriceModePicker.vue'
 import QuoteSummaryPanel from '@/components/QuoteSummaryPanel.vue'
@@ -60,6 +61,7 @@ const clearTruck = () => { form.cargo.truckType = null; form.quoteMode = 'por_ca
 // Paradas intermedias (multipunto) — solo Carga. Ver cotizar.vue: el motor de
 // precios no las contempla, así que una solicitud con paradas siempre pasa a
 // modo asesor, a propósito.
+const photos = ref([])
 const stops = reactive([])
 const addStop = () => stops.push({ district: '', province: '', region: '', lat: null, lng: null })
 const removeStop = index => stops.splice(index, 1)
@@ -115,7 +117,7 @@ const submit = async () => {
       ? { ...form.cargo, detail: `[REPARTO] ${form.cargo.detail}`.trim() }
       : form.cargo
     const validStops = serviceType.value === 'carga' ? stops.filter(s => s.district) : []
-    result.value = await customerPublish({ ...form, cargo, stops: validStops })
+    result.value = await customerPublish({ ...form, cargo, stops: validStops }, photos.value)
     submitted.value = true
   } catch (e) { error.value = e.message || 'No se pudo publicar.' } finally { submitting.value = false }
 }
@@ -238,6 +240,9 @@ const categoryLabel = computed(() => {
                 label="Cuántos pedidos, frecuencia, si es ecommerce o contra-entrega (opcional)"
               />
             </template>
+
+            <VDivider class="my-3" />
+            <CargoPhotosPicker v-model="photos" class="mb-2" />
 
             <VDivider class="my-3" />
             <ScheduleStepPicker
