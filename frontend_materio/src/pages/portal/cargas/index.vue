@@ -38,6 +38,8 @@ onMounted(async () => {
   await load()
 })
 
+const lightbox = ref('')   // url de la foto ampliada, '' = cerrado
+
 const form = reactive({ open: false, load: null, amount: '', vehicleId: null, note: '' })
 const busy = ref(false)
 const openOffer = l => {
@@ -90,9 +92,15 @@ const submit = async () => {
               <VIcon icon="ri-map-pin-line" size="14" /> {{ l.origin }} → {{ l.destination }}
               <span v-if="l.date"> · {{ new Date(l.date).toLocaleDateString('es-PE') }}</span>
             </div>
-            <ul class="text-caption text-medium-emphasis mb-3" style="padding-left: 1rem;">
+            <ul class="text-caption text-medium-emphasis mb-2" style="padding-left: 1rem;">
               <li v-for="(line, i) in l.lines" :key="i">{{ line }}</li>
             </ul>
+            <div v-if="l.photos?.length" class="d-flex ga-2 mb-3">
+              <VImg
+                v-for="(url, i) in l.photos" :key="i" :src="url" width="56" height="56" cover
+                class="rounded" style="cursor: pointer;" @click="lightbox = url"
+              />
+            </div>
             <div class="d-flex align-center justify-space-between">
               <span class="text-body-2">
                 <span class="text-medium-emphasis">Precio guía:</span> <strong>{{ soles(l.targetPrice) }}</strong>
@@ -127,6 +135,10 @@ const submit = async () => {
           <VBtn color="primary" :loading="busy" @click="submit">Enviar</VBtn>
         </VCardActions>
       </VCard>
+    </VDialog>
+
+    <VDialog :model-value="!!lightbox" max-width="640" @update:model-value="lightbox = ''">
+      <VImg :src="lightbox" style="cursor: pointer;" @click="lightbox = ''" />
     </VDialog>
 
     <VSnackbar v-model="snackbar.show" :color="snackbar.color" timeout="3500">{{ snackbar.text }}</VSnackbar>

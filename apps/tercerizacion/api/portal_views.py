@@ -74,8 +74,17 @@ def _amount(raw):
 
 
 def _safe_load(pub, mi_oferta=None):
-    """Vista de una carga SIN datos del cliente. Fuente única: la lista blanca."""
+    """Vista de una carga SIN datos del cliente. Fuente única: la lista blanca.
+
+    Las fotos de la carga (LeadFoto) no revelan datos del cliente — son fotos
+    de la mercadería, igual que ya se le muestran al cliente en su cotización
+    (ver apps/cotizador/api/shapes.py) — por eso se agregan acá directo, sin
+    pasar por lineas_detalle_permitido(): el transportista las necesita para
+    decidir si su carrocería sirve, o rechazar el servicio si no calza.
+    """
     s = pub.servicio
+    photos = [f.imagen.url for f in s.lead_origen.fotos.all()] if s.lead_origen_id else []
+
     return {
         "code": pub.codigo,
         "priceMode": _PRICE_MODE_EN.get(pub.modo_precio, pub.modo_precio),
@@ -85,6 +94,7 @@ def _safe_load(pub, mi_oferta=None):
         "serviceType": s.tipo_servicio or "",
         "date": _d(s.fecha_servicio),
         "lines": lineas_detalle_permitido(s),
+        "photos": photos,
         "myOfferId": mi_oferta.id if mi_oferta else None,
         "myOfferAmount": _num(mi_oferta.monto_actual or mi_oferta.precio_ofertado) if mi_oferta else None,
         "myOfferState": _OFFER_STATE_EN.get(mi_oferta.estado) if mi_oferta else None,
