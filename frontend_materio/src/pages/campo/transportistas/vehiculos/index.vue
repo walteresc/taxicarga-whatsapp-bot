@@ -19,9 +19,11 @@ const vehicleCategories = ref([])
 let searchTimer
 
 const WEIGHT_OPTIONS = [
+  { title: 'Menores', value: 'menores' },
   { title: 'Livianos', value: 'livianos' },
   { title: 'Medianos', value: 'medianos' },
   { title: 'Pesados', value: 'pesados' },
+  { title: 'Especiales', value: 'especiales' },
 ]
 const hasFilters = computed(() =>
   !!search.value || onlyActive.value || weightFilter.value || bodyTypeFilter.value || categoryFilter.value)

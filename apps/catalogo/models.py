@@ -71,13 +71,17 @@ class CategoriaVehiculo(models.Model):
     """Fila de la tabla de categorización peso/capacidad. El sistema asigna la
     categoría al registrar un vehículo según su capacidad de carga (ton)."""
 
+    MENORES = "menores"
     LIVIANOS = "livianos"
     MEDIANOS = "medianos"
     PESADOS = "pesados"
+    ESPECIALES = "especiales"
     CATEGORIAS = [
+        (MENORES, "Menores"),
         (LIVIANOS, "Livianos"),
         (MEDIANOS, "Medianos"),
         (PESADOS, "Pesados"),
+        (ESPECIALES, "Especiales"),
     ]
 
     tipo_vehiculo = models.ForeignKey(

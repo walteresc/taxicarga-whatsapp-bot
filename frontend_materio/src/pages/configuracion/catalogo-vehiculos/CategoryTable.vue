@@ -5,11 +5,13 @@ import { ApiError } from '@/services/apiClient'
 import { vehicleCategoriesService, vehicleTypesService } from '@/services/catalogService'
 
 const CATS = [
+  { title: 'Menores', value: 'menores' },
   { title: 'Livianos', value: 'livianos' },
   { title: 'Medianos', value: 'medianos' },
   { title: 'Pesados', value: 'pesados' },
+  { title: 'Especiales', value: 'especiales' },
 ]
-const CAT_COLOR = { livianos: 'success', medianos: 'warning', pesados: 'error' }
+const CAT_COLOR = { menores: 'info', livianos: 'success', medianos: 'warning', pesados: 'error', especiales: 'secondary' }
 
 const rows = ref([])
 const types = ref([])
