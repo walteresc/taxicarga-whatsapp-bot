@@ -79,9 +79,9 @@ const clear = () => { emit('clear'); close() }
 </script>
 
 <template>
-  <VDialog :model-value="modelValue" max-width="460" @update:model-value="v => emit('update:modelValue', v)">
-    <VCard>
-      <VCardTitle class="d-flex align-center justify-space-between">
+  <VDialog :model-value="modelValue" max-width="540" @update:model-value="v => emit('update:modelValue', v)">
+    <VCard style="height: 600px; display: flex; flex-direction: column;">
+      <VCardTitle class="d-flex align-center justify-space-between flex-shrink-0">
         <div>
           <span class="text-subtitle-1 font-weight-bold d-block">Elegir vehículo</span>
           <span v-if="step === 1" class="text-caption text-medium-emphasis">Elegí por capacidad — la carrocería va después.</span>
@@ -92,10 +92,10 @@ const clear = () => { emit('clear'); close() }
         </VBtn>
       </VCardTitle>
 
-      <VCardText v-if="step === 1" class="pt-0">
-        <VProgressLinear v-if="loading" indeterminate class="mb-3" />
+      <VCardText v-if="step === 1" class="pt-0 flex-grow-1 d-flex flex-column" style="min-height: 0;">
+        <VProgressLinear v-if="loading" indeterminate class="mb-3 flex-shrink-0" />
 
-        <div v-if="weightCategories.length" class="d-flex flex-wrap ga-2 mb-3">
+        <div v-if="weightCategories.length" class="d-flex flex-wrap ga-2 mb-3 flex-shrink-0">
           <VChip
             :color="!selectedWeight ? 'primary' : undefined" :variant="!selectedWeight ? 'flat' : 'outlined'"
             size="small" @click="selectedWeight = ''"
@@ -111,7 +111,7 @@ const clear = () => { emit('clear'); close() }
           </VChip>
         </div>
 
-        <VList density="comfortable" style="max-height: 320px; overflow-y: auto;">
+        <VList density="comfortable" class="flex-grow-1" style="overflow-y: auto;">
           <VListItem
             v-for="u in filteredUnits" :key="u.code" link
             prepend-icon="ri-truck-line" :title="u.name" :subtitle="capacityLabel(u)"
@@ -121,7 +121,7 @@ const clear = () => { emit('clear'); close() }
         </VList>
       </VCardText>
 
-      <VCardText v-else class="pt-0">
+      <VCardText v-else class="pt-0 flex-grow-1" style="overflow-y: auto; min-height: 0;">
         <div class="d-flex align-center ga-2 mb-4">
           <VIcon icon="ri-truck-line" />
           <div>
@@ -150,7 +150,7 @@ const clear = () => { emit('clear'); close() }
         </p>
       </VCardText>
 
-      <VCardActions class="px-4 pb-4">
+      <VCardActions class="px-4 pb-4 flex-shrink-0">
         <VBtn v-if="step === 2" variant="text" @click="back">Atrás</VBtn>
         <VSpacer />
         <VBtn v-if="step === 1" variant="tonal" @click="clear">Dejar que TaxiCarga elija</VBtn>
