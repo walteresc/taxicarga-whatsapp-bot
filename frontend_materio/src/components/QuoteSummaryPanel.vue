@@ -214,21 +214,33 @@ const fmtDate = iso => {
 
       <template v-if="detail || weightVolumeLabel || truckLabel || fmtDate(date)">
         <VDivider class="my-3" />
-        <div v-if="detail" class="mb-2">
-          <div class="text-caption text-medium-emphasis">Descripción</div>
-          <div class="text-body-2">{{ detail }}</div>
+        <div v-if="detail" class="d-flex align-start ga-2 mb-3">
+          <VIcon icon="ri-file-text-line" size="16" class="text-medium-emphasis mt-1" />
+          <div>
+            <div class="text-caption text-medium-emphasis">Descripción</div>
+            <div class="text-body-2">{{ detail }}</div>
+          </div>
         </div>
-        <div v-if="weightVolumeLabel" class="mb-2">
-          <div class="text-caption text-medium-emphasis">Peso / volumen</div>
-          <div class="text-body-2">{{ weightVolumeLabel }}</div>
+        <div v-if="weightVolumeLabel" class="d-flex align-start ga-2 mb-3">
+          <VIcon icon="ri-scales-3-line" size="16" class="text-medium-emphasis mt-1" />
+          <div>
+            <div class="text-caption text-medium-emphasis">Peso / volumen</div>
+            <div class="text-body-2">{{ weightVolumeLabel }}</div>
+          </div>
         </div>
-        <div v-if="truckLabel" class="mb-2">
-          <div class="text-caption text-medium-emphasis">Vehículo</div>
-          <div class="text-body-2">{{ truckLabel }}</div>
+        <div v-if="truckLabel" class="d-flex align-start ga-2 mb-3">
+          <VIcon icon="ri-truck-line" size="16" class="text-medium-emphasis mt-1" />
+          <div>
+            <div class="text-caption text-medium-emphasis">Vehículo</div>
+            <div class="text-body-2">{{ truckLabel }}</div>
+          </div>
         </div>
-        <div v-if="fmtDate(date)">
-          <div class="text-caption text-medium-emphasis">Fecha</div>
-          <div class="text-body-2 text-capitalize">{{ fmtDate(date) }}</div>
+        <div v-if="fmtDate(date)" class="d-flex align-start ga-2">
+          <VIcon icon="ri-calendar-line" size="16" class="text-medium-emphasis mt-1" />
+          <div>
+            <div class="text-caption text-medium-emphasis">Fecha</div>
+            <div class="text-body-2 text-capitalize">{{ fmtDate(date) }}</div>
+          </div>
         </div>
       </template>
     </VCard>

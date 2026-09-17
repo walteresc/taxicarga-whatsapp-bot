@@ -43,10 +43,11 @@ onBeforeUnmount(() => { Object.values(previews.value).forEach(url => URL.revokeO
       <div v-for="(file, i) in modelValue" :key="file.name + file.lastModified" class="position-relative">
         <VImg :src="urlFor(file)" width="88" height="88" cover class="rounded" />
         <VBtn
-          icon size="x-small" color="error" variant="flat"
-          style="position: absolute; top: -8px; right: -8px;" @click="remove(i)"
+          icon size="x-small" variant="flat"
+          style="position: absolute; top: -8px; right: -8px; background: rgba(33, 33, 33, 0.75);"
+          @click="remove(i)"
         >
-          <VIcon icon="ri-close-line" size="16" />
+          <VIcon icon="ri-close-line" size="16" color="white" />
         </VBtn>
       </div>
       <VCard
