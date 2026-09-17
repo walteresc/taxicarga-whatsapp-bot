@@ -31,6 +31,10 @@ const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || ''
 // primero, sin ocultar lo que Mapbox hubiera devuelto igual.
 const DISTRICT_ALIASES = {
   surco: 'Santiago de Surco',
+  // Mapbox guarda ese distrito solo como "Lima" — el nombre coloquial
+  // "Cercado de Lima" no existe en su base, así que buscarlo literal no
+  // trae nada útil (a veces ni siquiera "Lima" a secas aparece).
+  'cercado de lima': 'Lima',
 }
 
 const displayText = v => v?.address || [v?.district, v?.province].filter(Boolean).join(', ')
