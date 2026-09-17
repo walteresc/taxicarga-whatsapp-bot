@@ -70,7 +70,16 @@ class PublicVehiclePickerView(APIView):
             {"code": bt.codigo, "name": bt.nombre, "icon": bt.icono or "ri-truck-line"}
             for bt in sorted(body_codes_seen.values(), key=lambda b: (b.orden, b.nombre))
         ]
-        weight_categories = [{"code": code, "name": name} for code, name in CategoriaVehiculo.CATEGORIAS]
+        # Solo las categorías de peso que de verdad quedaron con unidades acá —
+        # no toda CategoriaVehiculo.CATEGORIAS. Por ejemplo "Menores" existe
+        # como categoría (Moto, Auto), pero esos tipos de vehículo están afuera
+        # de _VEHICLE_CODES_PUBLICOS a propósito, así que nunca debería
+        # aparecer como filtro en este selector — se autoactualiza si algún
+        # día se le asigna una fila de Camión/Camioneta.
+        codes_con_unidades = {u["weightCategory"] for u in units}
+        weight_categories = [
+            {"code": code, "name": name} for code, name in CategoriaVehiculo.CATEGORIAS if code in codes_con_unidades
+        ]
         return Response({"bodyTypes": body_types, "weightCategories": weight_categories, "units": units})
 
 
