@@ -149,15 +149,20 @@ const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE
                 <VCard
                   :variant="serviceType === s.value ? 'tonal' : 'outlined'"
                   :color="serviceType === s.value ? 'primary' : undefined"
-                  class="pa-3 text-center h-100 position-relative" style="cursor: pointer;"
+                  class="pa-4 text-center h-100 position-relative service-tile" style="cursor: pointer;"
                   @click="selectService(s.value)"
                 >
                   <VIcon
-                    v-if="serviceType === s.value" icon="ri-checkbox-circle-fill" color="primary" size="18"
-                    style="position:absolute; top:6px; right:6px;"
+                    v-if="serviceType === s.value" icon="ri-checkbox-circle-fill" color="primary" size="20"
+                    style="position:absolute; top:10px; right:10px;"
                   />
-                  <VIcon :icon="s.icon" size="24" class="mb-1" />
-                  <div class="text-body-2 font-weight-bold">{{ s.title }}</div>
+                  <VAvatar
+                    size="48" class="mb-3" :variant="serviceType === s.value ? 'elevated' : 'tonal'"
+                    :color="serviceType === s.value ? 'primary' : 'surface-variant'"
+                  >
+                    <VIcon :icon="s.icon" size="24" :color="serviceType === s.value ? 'white' : undefined" />
+                  </VAvatar>
+                  <div class="text-subtitle-1 font-weight-bold mb-1">{{ s.title }}</div>
                   <div class="text-caption text-medium-emphasis">{{ s.subtitle }}</div>
                 </VCard>
               </VCol>
@@ -226,8 +231,8 @@ const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE
 
           <VWindowItem :value="2">
             <template v-if="serviceType === 'carga'">
-              <div class="text-subtitle-2 mb-1">¿Qué vas a transportar?</div>
-              <p class="text-caption text-medium-emphasis mb-2">
+              <div class="text-h6 font-weight-bold mb-1">¿Qué vas a transportar?</div>
+              <p class="text-caption text-medium-emphasis mb-4">
                 Describe tu carga con el mayor detalle posible para recibir mejores cotizaciones. Indica peso aprox. y volumen aprox.
               </p>
               <VTextarea
@@ -236,7 +241,7 @@ const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE
               />
             </template>
             <template v-else-if="serviceType === 'mudanza'">
-              <div class="text-subtitle-2 mb-2">¿Qué vas a mudar?</div>
+              <div class="text-h6 font-weight-bold mb-4">¿Qué vas a mudar?</div>
               <VTextarea
                 v-model="form.cargo.detail" rows="2" auto-grow class="mb-2"
                 label="Ambientes, pisos, ascensor, muebles grandes (opcional)"
@@ -244,7 +249,7 @@ const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE
               <VTextField v-model.number="form.cargo.operators" label="¿Necesitás operarios para la mudanza? ¿Cuántos?" type="number" />
             </template>
             <template v-else-if="serviceType === 'reparto'">
-              <div class="text-subtitle-2 mb-2">Contanos tu operación de reparto</div>
+              <div class="text-h6 font-weight-bold mb-4">Contanos tu operación de reparto</div>
               <VTextarea
                 v-model="form.cargo.detail" rows="2" auto-grow class="mb-2"
                 label="Cuántos pedidos, frecuencia, si es ecommerce o contra-entrega (opcional)"
@@ -274,7 +279,7 @@ const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE
 
           <VWindowItem :value="3">
             <template v-if="serviceType === 'carga'">
-              <div class="text-subtitle-2 mb-2">Elegí cómo cotizar tu carga</div>
+              <div class="text-h6 font-weight-bold mb-4">Elegí cómo cotizar tu carga</div>
               <template v-if="hasStops">
                 <VAlert type="info" variant="tonal">
                   Con paradas intermedias, un asesor te confirma el precio — no aplica Consolidada/Express.
@@ -363,6 +368,14 @@ const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE
 </template>
 
 <style scoped>
+.service-tile {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.service-tile:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(var(--v-theme-on-surface), 0.12);
+}
+
 /* Timeline compacto, centrado en la página, sin caja/sombra/fondo propio —
    como en el mockup (no es una sección aparte, es parte del encabezado).
    bg-transparent no le gana al fondo del VSheet base de VStepper, por eso

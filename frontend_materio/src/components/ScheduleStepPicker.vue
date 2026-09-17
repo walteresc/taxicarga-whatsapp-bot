@@ -63,7 +63,7 @@ const showFlexRow = computed(() => quickPick.value !== 'urgente')
 
 <template>
   <div>
-    <div class="text-subtitle-2 mb-2">¿Para cuándo?</div>
+    <div class="text-h6 font-weight-bold mb-3">¿Para cuándo?</div>
     <VRow dense class="mb-2">
       <VCol v-for="q in [{ v: 'urgente', t: 'Urgente', s: 'Lo antes posible' }, { v: 'hoy', t: 'Hoy', s: 'En el transcurso de hoy' }, { v: 'manana', t: 'Mañana', s: 'Mañana' }]" :key="q.v" cols="4">
         <VCard
