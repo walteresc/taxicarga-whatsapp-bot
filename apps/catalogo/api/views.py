@@ -57,6 +57,11 @@ class PublicVehiclePickerView(APIView):
                     "code": str(cat.id),
                     "name": cat.nombre,
                     "vehicleType": tv.codigo,
+                    # Categoría de peso (Menores/Livianos/Medianos/Pesados/Especiales) es el
+                    # filtro principal del selector — la carrocería queda como dato
+                    # informativo, no como filtro obligatorio (la decide el transportista
+                    # al aceptar el servicio, no el cliente al pedirlo).
+                    "weightCategory": cat.categoria,
                     "minTon": float(cat.min_ton) if cat.min_ton is not None else None,
                     "maxTon": float(cat.max_ton) if cat.max_ton is not None else None,
                     "bodyTypes": body_codes,
@@ -65,7 +70,8 @@ class PublicVehiclePickerView(APIView):
             {"code": bt.codigo, "name": bt.nombre, "icon": bt.icono or "ri-truck-line"}
             for bt in sorted(body_codes_seen.values(), key=lambda b: (b.orden, b.nombre))
         ]
-        return Response({"bodyTypes": body_types, "units": units})
+        weight_categories = [{"code": code, "name": name} for code, name in CategoriaVehiculo.CATEGORIAS]
+        return Response({"bodyTypes": body_types, "weightCategories": weight_categories, "units": units})
 
 
 class _ToggleMixin:
