@@ -4,7 +4,7 @@
 // según la carga descrita; este picker es solo para el cliente que ya
 // sabe qué necesita.
 //
-// Flujo en 2 pasos:
+// Flujo en 2 pasos (VWindow, mismo patrón que el wizard principal):
 //  1) Categoría de PESO (Menores/Livianos/Medianos/Pesados/Especiales) +
 //     unidad — es la decisión de menor fricción para un cliente que no
 //     conoce términos técnicos, y la que más acota la lista.
@@ -12,6 +12,10 @@
 //     carga) como opción por defecto — no es obligatorio acertarla: si no
 //     calza, el transportista lo evalúa al aceptar (ve foto/descripción/
 //     peso) y puede rechazar.
+//
+// El modal tiene tamaño FIJO (.vehicle-picker-card) para que no "salte" al
+// cambiar de paso — antes dependía de un style inline en VCard, que no
+// garantizaba que el layout flex llegue a los hijos reales.
 import { computed, ref, watch } from 'vue'
 
 import { vehiclePickerCatalog } from '@/services/catalogService'
@@ -64,14 +68,16 @@ const capacityLabel = u => {
 
   return `${u.minTon} – ${u.maxTon} ton`
 }
-const bodyName = code => bodyTypes.value.find(bt => bt.code === code)?.name || code
-const unitBodyOptions = computed(() => (chosenUnit.value?.bodyTypes || []).map(code => ({ code, name: bodyName(code) })))
+const unitBodyOptions = computed(() => (chosenUnit.value?.bodyTypes || [])
+  .map(code => bodyTypes.value.find(bt => bt.code === code))
+  .filter(Boolean))
 
 const close = () => emit('update:modelValue', false)
 const chooseUnit = unit => { chosenUnit.value = unit; chosenBody.value = ''; step.value = 2 }
 const back = () => { step.value = 1 }
 const confirm = () => {
-  const label = chosenBody.value ? `${chosenUnit.value.name} (${bodyName(chosenBody.value)})` : chosenUnit.value.name
+  const bt = unitBodyOptions.value.find(b => b.code === chosenBody.value)
+  const label = bt ? `${chosenUnit.value.name} (${bt.name})` : chosenUnit.value.name
   emit('select', label)
   close()
 }
@@ -79,83 +85,163 @@ const clear = () => { emit('clear'); close() }
 </script>
 
 <template>
-  <VDialog :model-value="modelValue" max-width="540" @update:model-value="v => emit('update:modelValue', v)">
-    <VCard style="height: 600px; display: flex; flex-direction: column;">
-      <VCardTitle class="d-flex align-center justify-space-between flex-shrink-0">
+  <VDialog :model-value="modelValue" max-width="560" @update:model-value="v => emit('update:modelValue', v)">
+    <VCard class="vehicle-picker-card">
+      <VCardTitle class="d-flex align-center justify-space-between flex-shrink-0 pb-2">
         <div>
-          <span class="text-subtitle-1 font-weight-bold d-block">Elegir vehículo</span>
-          <span v-if="step === 1" class="text-caption text-medium-emphasis">Elegí por capacidad — la carrocería va después.</span>
-          <span v-else class="text-caption text-medium-emphasis">¿Necesitás una carrocería en particular?</span>
+          <div class="d-flex align-center ga-2 mb-1">
+            <span class="text-subtitle-1 font-weight-bold">Elegir vehículo</span>
+            <div class="d-flex ga-1">
+              <div class="step-dot" :class="{ 'step-dot--active': step === 1 }" />
+              <div class="step-dot" :class="{ 'step-dot--active': step === 2 }" />
+            </div>
+          </div>
+          <span v-if="step === 1" class="text-caption text-medium-emphasis">Paso 1 de 2 — elegí por capacidad.</span>
+          <span v-else class="text-caption text-medium-emphasis">Paso 2 de 2 — carrocería (opcional).</span>
         </div>
         <VBtn icon variant="text" size="small" @click="close">
           <VIcon icon="ri-close-line" />
         </VBtn>
       </VCardTitle>
+      <VDivider />
 
-      <VCardText v-if="step === 1" class="pt-0 flex-grow-1 d-flex flex-column" style="min-height: 0;">
+      <VCardText class="vehicle-picker-body pa-4">
         <VProgressLinear v-if="loading" indeterminate class="mb-3 flex-shrink-0" />
 
-        <div v-if="weightCategories.length" class="d-flex flex-wrap ga-2 mb-3 flex-shrink-0">
-          <VChip
-            :color="!selectedWeight ? 'primary' : undefined" :variant="!selectedWeight ? 'flat' : 'outlined'"
-            size="small" @click="selectedWeight = ''"
-          >
-            Todas
-          </VChip>
-          <VChip
-            v-for="wc in weightCategories" :key="wc.code"
-            :color="selectedWeight === wc.code ? 'primary' : undefined" :variant="selectedWeight === wc.code ? 'flat' : 'outlined'"
-            size="small" @click="selectedWeight = wc.code"
-          >
-            {{ wc.name }}
-          </VChip>
-        </div>
+        <VWindow v-model="step" class="h-100">
+          <VWindowItem :value="1" class="h-100 d-flex flex-column">
+            <div v-if="weightCategories.length" class="d-flex flex-wrap ga-2 mb-3 flex-shrink-0">
+              <VChip
+                :color="!selectedWeight ? 'primary' : undefined" :variant="!selectedWeight ? 'flat' : 'outlined'"
+                size="small" @click="selectedWeight = ''"
+              >
+                Todas
+              </VChip>
+              <VChip
+                v-for="wc in weightCategories" :key="wc.code"
+                :color="selectedWeight === wc.code ? 'primary' : undefined" :variant="selectedWeight === wc.code ? 'flat' : 'outlined'"
+                size="small" @click="selectedWeight = wc.code"
+              >
+                {{ wc.name }}
+              </VChip>
+            </div>
 
-        <VList density="comfortable" class="flex-grow-1" style="overflow-y: auto;">
-          <VListItem
-            v-for="u in filteredUnits" :key="u.code" link
-            prepend-icon="ri-truck-line" :title="u.name" :subtitle="capacityLabel(u)"
-            @click="chooseUnit(u)"
-          />
-          <VListItem v-if="!loading && !filteredUnits.length" title="No hay unidades para esa categoría." class="text-medium-emphasis" />
-        </VList>
+            <div class="flex-grow-1" style="overflow-y: auto; min-height: 0;">
+              <VCard
+                v-for="u in filteredUnits" :key="u.code" variant="outlined" class="d-flex align-center pa-3 mb-2 unit-card"
+                @click="chooseUnit(u)"
+              >
+                <VAvatar color="primary" variant="tonal" size="40" class="mr-3">
+                  <VIcon icon="ri-truck-line" />
+                </VAvatar>
+                <div class="flex-grow-1">
+                  <div class="text-body-2 font-weight-bold">{{ u.name }}</div>
+                  <div class="text-caption text-medium-emphasis">{{ capacityLabel(u) }}</div>
+                </div>
+                <VIcon icon="ri-arrow-right-s-line" class="text-medium-emphasis" />
+              </VCard>
+              <div v-if="!loading && !filteredUnits.length" class="text-medium-emphasis text-body-2 text-center py-6">
+                No hay unidades para esa categoría.
+              </div>
+            </div>
+          </VWindowItem>
+
+          <VWindowItem :value="2" class="h-100 d-flex flex-column">
+            <VCard variant="tonal" color="primary" class="d-flex align-center pa-3 mb-4 flex-shrink-0">
+              <VAvatar color="primary" variant="elevated" size="40" class="mr-3">
+                <VIcon icon="ri-truck-line" />
+              </VAvatar>
+              <div>
+                <div class="text-body-2 font-weight-bold">{{ chosenUnit.name }}</div>
+                <div class="text-caption text-medium-emphasis">{{ capacityLabel(chosenUnit) }}</div>
+              </div>
+            </VCard>
+
+            <p class="text-body-2 font-weight-medium mb-3 flex-shrink-0">¿Necesitás una carrocería en particular?</p>
+
+            <div class="flex-grow-1" style="overflow-y: auto; min-height: 0;">
+              <VCard
+                variant="outlined" class="d-flex align-center pa-3 mb-2 unit-card"
+                :color="!chosenBody ? 'primary' : undefined"
+                @click="chosenBody = ''"
+              >
+                <VAvatar :color="!chosenBody ? 'primary' : 'surface-variant'" :variant="!chosenBody ? 'elevated' : 'tonal'" size="40" class="mr-3">
+                  <VIcon icon="ri-checkbox-multiple-blank-line" :color="!chosenBody ? 'white' : undefined" />
+                </VAvatar>
+                <div class="flex-grow-1">
+                  <div class="text-body-2 font-weight-bold">Cualquiera</div>
+                  <div class="text-caption text-medium-emphasis">Compatible con mi carga</div>
+                </div>
+                <VIcon v-if="!chosenBody" icon="ri-checkbox-circle-fill" color="primary" />
+              </VCard>
+              <VCard
+                v-for="bt in unitBodyOptions" :key="bt.code" variant="outlined" class="d-flex align-center pa-3 mb-2 unit-card"
+                :color="chosenBody === bt.code ? 'primary' : undefined"
+                @click="chosenBody = bt.code"
+              >
+                <VAvatar :color="chosenBody === bt.code ? 'primary' : 'surface-variant'" :variant="chosenBody === bt.code ? 'elevated' : 'tonal'" size="40" class="mr-3">
+                  <VIcon :icon="bt.icon" :color="chosenBody === bt.code ? 'white' : undefined" />
+                </VAvatar>
+                <div class="flex-grow-1 text-body-2 font-weight-bold">{{ bt.name }}</div>
+                <VIcon v-if="chosenBody === bt.code" icon="ri-checkbox-circle-fill" color="primary" />
+              </VCard>
+              <p v-if="!unitBodyOptions.length" class="text-caption text-medium-emphasis mt-2 mb-0">
+                Esta unidad no tiene carrocerías específicas cargadas — queda en "Cualquiera".
+              </p>
+            </div>
+          </VWindowItem>
+        </VWindow>
       </VCardText>
 
-      <VCardText v-else class="pt-0 flex-grow-1" style="overflow-y: auto; min-height: 0;">
-        <div class="d-flex align-center ga-2 mb-4">
-          <VIcon icon="ri-truck-line" />
-          <div>
-            <div class="text-body-2 font-weight-bold">{{ chosenUnit.name }}</div>
-            <div class="text-caption text-medium-emphasis">{{ capacityLabel(chosenUnit) }}</div>
-          </div>
-        </div>
-
-        <div class="d-flex flex-wrap ga-2">
-          <VChip
-            :color="!chosenBody ? 'primary' : undefined" :variant="!chosenBody ? 'flat' : 'outlined'"
-            @click="chosenBody = ''"
-          >
-            Cualquiera (compatible con mi carga)
-          </VChip>
-          <VChip
-            v-for="bt in unitBodyOptions" :key="bt.code"
-            :color="chosenBody === bt.code ? 'primary' : undefined" :variant="chosenBody === bt.code ? 'flat' : 'outlined'"
-            @click="chosenBody = bt.code"
-          >
-            {{ bt.name }}
-          </VChip>
-        </div>
-        <p v-if="!unitBodyOptions.length" class="text-caption text-medium-emphasis mt-2 mb-0">
-          Esta unidad no tiene carrocerías específicas cargadas — queda en "Cualquiera".
-        </p>
-      </VCardText>
-
-      <VCardActions class="px-4 pb-4 flex-shrink-0">
-        <VBtn v-if="step === 2" variant="text" @click="back">Atrás</VBtn>
+      <VDivider />
+      <VCardActions class="px-4 py-3 flex-shrink-0">
+        <VBtn v-if="step === 2" variant="text" prepend-icon="ri-arrow-left-line" @click="back">Atrás</VBtn>
         <VSpacer />
         <VBtn v-if="step === 1" variant="tonal" @click="clear">Dejar que TaxiCarga elija</VBtn>
-        <VBtn v-else color="primary" @click="confirm">Confirmar</VBtn>
+        <VBtn v-else color="primary" variant="elevated" rounded="lg" @click="confirm">Confirmar</VBtn>
       </VCardActions>
     </VCard>
   </VDialog>
 </template>
+
+<style scoped>
+/* Tamaño fijo real (clase + altura explícita en el propio elemento) — nunca
+   depende del contenido de cada paso, así el modal no "salta" al pasar de
+   la lista de unidades a la de carrocerías. */
+.vehicle-picker-card {
+  width: 100%;
+  height: 640px;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+}
+.vehicle-picker-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.vehicle-picker-body :deep(.v-window),
+.vehicle-picker-body :deep(.v-window__container),
+.vehicle-picker-body :deep(.v-window-item) {
+  height: 100%;
+}
+
+.step-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(var(--v-theme-on-surface), 0.2);
+}
+.step-dot--active {
+  background: rgb(var(--v-theme-primary));
+}
+
+.unit-card {
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.unit-card:hover {
+  border-color: rgb(var(--v-theme-primary));
+}
+</style>
