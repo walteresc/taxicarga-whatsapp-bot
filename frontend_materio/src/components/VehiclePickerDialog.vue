@@ -11,8 +11,13 @@
 // elegir carrocería, con "Cualquiera" (compatible con mi carga) como
 // opción por defecto — no es obligatorio acertarla: si no calza, el
 // transportista lo evalúa al aceptar (ve foto/descripción/peso) y puede
-// rechazar. Elegir cualquier opción confirma y cierra directo — menos
-// clics, menos pantallas.
+// rechazar.
+//
+// "Dejar que TaxiCarga elija" solo tiene sentido ANTES de elegir una
+// unidad (deja que TaxiCarga elija el VEHÍCULO) — una vez que el cliente
+// ya eligió un camión específico, ese botón confundiría ("¿elige la
+// carrocería?"). Por eso el botón de abajo cambia a "Confirmar" (con
+// "Cualquiera" preseleccionado) apenas se expande una unidad.
 import { computed, ref, watch } from 'vue'
 
 import { vehiclePickerCatalog } from '@/services/catalogService'
@@ -28,6 +33,8 @@ const weightCategories = ref([])
 const units = ref([])
 const selectedWeight = ref('')   // '' = Todas
 const expandedUnit = ref('')     // code de la unidad con el panel de carrocería abierto
+const chosenUnit = ref(null)
+const chosenBody = ref(null)     // null = Cualquiera
 
 const load = async () => {
   if (units.value.length) return   // ya cargado, no repetir
@@ -42,7 +49,7 @@ const load = async () => {
 }
 watch(() => props.modelValue, v => {
   if (v) load()
-  else expandedUnit.value = ''
+  else { expandedUnit.value = ''; chosenUnit.value = null; chosenBody.value = null }
 })
 
 const filteredUnits = computed(() => selectedWeight.value
@@ -61,9 +68,15 @@ const bodyOptionsFor = u => (u.bodyTypes || [])
   .filter(Boolean)
 
 const close = () => emit('update:modelValue', false)
-const toggleUnit = u => { expandedUnit.value = expandedUnit.value === u.code ? '' : u.code }
-const pickBody = (unit, bt) => {
-  const label = bt ? `${unit.name} (${bt.name})` : unit.name
+const toggleUnit = u => {
+  const opening = expandedUnit.value !== u.code
+  expandedUnit.value = opening ? u.code : ''
+  chosenUnit.value = opening ? u : null
+  chosenBody.value = null
+}
+const pickBody = bt => { chosenBody.value = bt }
+const confirm = () => {
+  const label = chosenBody.value ? `${chosenUnit.value.name} (${chosenBody.value.name})` : chosenUnit.value.name
   emit('select', label)
   close()
 }
@@ -126,12 +139,16 @@ const clear = () => { emit('clear'); close() }
                   ¿Alguna carrocería en particular? Elegí "Cualquiera" si no te importa.
                 </div>
                 <div class="d-flex flex-wrap ga-2">
-                  <VChip variant="tonal" color="primary" prepend-icon="ri-checkbox-multiple-blank-line" @click="pickBody(u, null)">
+                  <VChip
+                    :color="!chosenBody ? 'primary' : undefined" :variant="!chosenBody ? 'flat' : 'outlined'"
+                    prepend-icon="ri-checkbox-multiple-blank-line" @click="pickBody(null)"
+                  >
                     Cualquiera
                   </VChip>
                   <VChip
-                    v-for="bt in bodyOptionsFor(u)" :key="bt.code" variant="outlined"
-                    :prepend-icon="bt.icon" @click="pickBody(u, bt)"
+                    v-for="bt in bodyOptionsFor(u)" :key="bt.code"
+                    :color="chosenBody?.code === bt.code ? 'primary' : undefined" :variant="chosenBody?.code === bt.code ? 'flat' : 'outlined'"
+                    :prepend-icon="bt.icon" @click="pickBody(bt)"
                   >
                     {{ bt.name }}
                   </VChip>
@@ -147,8 +164,10 @@ const clear = () => { emit('clear'); close() }
 
       <VDivider />
       <VCardActions class="px-4 py-3 flex-shrink-0">
+        <VBtn v-if="expandedUnit" variant="text" prepend-icon="ri-close-line" @click="toggleUnit(chosenUnit)">Cambiar unidad</VBtn>
         <VSpacer />
-        <VBtn variant="tonal" @click="clear">Dejar que TaxiCarga elija</VBtn>
+        <VBtn v-if="!expandedUnit" variant="tonal" @click="clear">Dejar que TaxiCarga elija</VBtn>
+        <VBtn v-else color="primary" variant="elevated" rounded="lg" @click="confirm">Confirmar</VBtn>
       </VCardActions>
     </VCard>
   </VDialog>
