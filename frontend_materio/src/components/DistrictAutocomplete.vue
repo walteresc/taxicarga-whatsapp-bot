@@ -110,11 +110,34 @@ const onInput = value => {
   debounceTimer = setTimeout(() => search(value), 300)
 }
 
+// Para direcciones dentro de Lima Metropolitana, Mapbox pone SIEMPRE "Lima"
+// en context.place (es el bucket ancho de toda la metrópoli, no el
+// distrito) — el distrito real (Surco, Comas, San Isidro...) vive en
+// context.locality. En otras provincias (p.ej. Callao) es al revés: place
+// ya es el distrito correcto y locality es más granular todavía — por eso
+// el fallback a locality-primero solo aplica cuando place es justo ese
+// "Lima" ambiguo. Se usa tanto al elegir una sugerencia como para mostrar
+// el distrito correcto en el subtítulo de la lista.
+const resolveDistrict = feature => {
+  const ctx = feature.properties?.context || {}
+
+  return (ctx.place?.name === 'Lima' && ctx.locality?.name)
+    ? ctx.locality.name
+    : (ctx.place?.name || ctx.locality?.name || feature.properties?.name || '')
+}
+const suggestionSubtitle = feature => {
+  const ctx = feature.properties?.context || {}
+  const dist = resolveDistrict(feature)
+  const province = ctx.district?.name || ''
+
+  return [dist, province].filter((v, i, arr) => v && arr.indexOf(v) === i).join(', ') || feature.properties?.place_formatted
+}
+
 const pick = feature => {
   const ctx = feature.properties?.context || {}
   const region = ctx.region?.name || ''
   const province = ctx.district?.name || ''
-  const dist = ctx.place?.name || ctx.locality?.name || feature.properties?.name || ''
+  const dist = resolveDistrict(feature)
   const isAddress = ['address', 'street'].includes(feature.properties?.feature_type)
   const address = isAddress ? (feature.properties?.full_address || feature.properties?.place_formatted || feature.properties?.name || '') : ''
   const [lng, lat] = feature.geometry?.coordinates || [null, null]
@@ -168,7 +191,7 @@ onBeforeUnmount(() => { clearTimeout(debounceTimer); clearTimeout(blurTimer); ab
       />
       <VListItem
         v-for="f in suggestions" :key="f.properties.mapbox_id"
-        :title="f.properties.name" :subtitle="f.properties.place_formatted"
+        :title="f.properties.name" :subtitle="suggestionSubtitle(f)"
         @click="pick(f)"
       />
     </VList>
