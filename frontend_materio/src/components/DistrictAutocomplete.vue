@@ -64,7 +64,14 @@ const search = async text => {
   abortCtrl = new AbortController()
   loading.value = true
   try {
-    const alias = DISTRICT_ALIASES[text.trim().toLowerCase()]
+    // Match por prefijo (no solo exacto): si el alias dispara recién con la
+    // palabra completa, alcanzás a hacer click en una sugerencia de una
+    // búsqueda parcial anterior (p.ej. "surc") que todavía no lo incluía —
+    // ahí es cuando se cuela el lugar homónimo equivocado.
+    const t = text.trim().toLowerCase()
+    const alias = t.length >= 4
+      ? Object.entries(DISTRICT_ALIASES).find(([key]) => key === t || key.startsWith(t))?.[1]
+      : DISTRICT_ALIASES[t]
     const results = alias
       ? await Promise.all([geocode(alias, abortCtrl.signal), geocode(text, abortCtrl.signal)])
       : [await geocode(text, abortCtrl.signal)]
