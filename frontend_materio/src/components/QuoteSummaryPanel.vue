@@ -190,28 +190,25 @@ const fmtDate = iso => {
         </VChip>
       </div>
 
-      <div class="d-flex align-start ga-2 mb-2">
-        <div class="mt-1 flex-shrink-0" style="width:10px; height:10px; border-radius:50%; background:#56CA00;" />
-        <div>
-          <div class="text-caption text-medium-emphasis">Origen</div>
-          <div class="text-body-2 font-weight-medium">{{ origin?.district || 'Por definir' }}</div>
+      <div class="d-flex align-center flex-wrap ga-1 mb-1">
+        <div class="d-flex align-center ga-1">
+          <div class="flex-shrink-0" style="width:9px; height:9px; border-radius:50%; background:#56CA00;" />
+          <span class="text-body-2 font-weight-medium">{{ origin?.district || 'Por definir' }}</span>
+        </div>
+        <template v-for="(s, i) in validStops" :key="i">
+          <VIcon icon="ri-arrow-right-line" size="14" class="text-medium-emphasis" />
+          <div class="d-flex align-center ga-1">
+            <div class="flex-shrink-0" style="width:9px; height:9px; border-radius:50%; background:#F9A825;" />
+            <span class="text-body-2 font-weight-medium">{{ s.district }}</span>
+          </div>
+        </template>
+        <VIcon icon="ri-arrow-right-line" size="14" class="text-medium-emphasis" />
+        <div class="d-flex align-center ga-1">
+          <div class="flex-shrink-0" style="width:9px; height:9px; border-radius:50%; background:#8C57FF;" />
+          <span class="text-body-2 font-weight-medium">{{ destination?.district || 'Por definir' }}</span>
         </div>
       </div>
-      <div v-for="(s, i) in validStops" :key="i" class="d-flex align-start ga-2 mb-2">
-        <div class="mt-1 flex-shrink-0" style="width:10px; height:10px; border-radius:50%; background:#F9A825;" />
-        <div>
-          <div class="text-caption text-medium-emphasis">Parada {{ i + 1 }}</div>
-          <div class="text-body-2 font-weight-medium">{{ s.district }}</div>
-        </div>
-      </div>
-      <div class="d-flex align-start ga-2">
-        <div class="mt-1 flex-shrink-0" style="width:10px; height:10px; border-radius:50%; background:#8C57FF;" />
-        <div>
-          <div class="text-caption text-medium-emphasis">Destino</div>
-          <div class="text-body-2 font-weight-medium">{{ destination?.district || 'Por definir' }}</div>
-        </div>
-      </div>
-      <div v-if="distanceLabel" class="text-caption text-medium-emphasis mt-1" style="padding-left: 18px;">
+      <div v-if="distanceLabel" class="text-caption text-medium-emphasis mb-1">
         {{ distanceLabel }}
       </div>
 
