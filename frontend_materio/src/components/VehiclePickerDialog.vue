@@ -20,6 +20,7 @@
 // "Cualquiera" preseleccionado) apenas se expande una unidad.
 import { computed, ref, watch } from 'vue'
 
+import CarroceriaIcon from '@/components/CarroceriaIcon.vue'
 import { vehiclePickerCatalog } from '@/services/catalogService'
 
 const props = defineProps({
@@ -148,8 +149,9 @@ const clear = () => { emit('clear'); close() }
                   <VChip
                     v-for="bt in bodyOptionsFor(u)" :key="bt.code"
                     :color="chosenBody?.code === bt.code ? 'primary' : undefined" :variant="chosenBody?.code === bt.code ? 'flat' : 'outlined'"
-                    :prepend-icon="bt.icon" @click="pickBody(bt)"
+                    @click="pickBody(bt)"
                   >
+                    <CarroceriaIcon :code="bt.code" size="16" class="mr-1" />
                     {{ bt.name }}
                   </VChip>
                 </div>
