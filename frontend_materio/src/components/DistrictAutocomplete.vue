@@ -129,8 +129,22 @@ const suggestionSubtitle = feature => {
   const ctx = feature.properties?.context || {}
   const dist = resolveDistrict(feature)
   const province = ctx.district?.name || ''
+  const region = ctx.region?.name || ''
 
-  return [dist, province].filter((v, i, arr) => v && arr.indexOf(v) === i).join(', ') || feature.properties?.place_formatted
+  // Si la sugerencia ES el distrito (título y distrito resuelto son lo
+  // mismo), repetirlo en el subtítulo no aporta nada — mostrar dónde queda
+  // (provincia/región) en vez de duplicar el nombre.
+  if (dist && dist === feature.properties?.name) {
+    return [province, region].filter(Boolean).join(', ') || 'Perú'
+  }
+
+  const joined = [dist, province].filter((v, i, arr) => v && arr.indexOf(v) === i).join(', ')
+  if (joined) return joined
+
+  // Fallback: el texto crudo de Mapbox, pero sin el prefijo "Distrito de/
+  // Provincia de/Departamento de" — los demás subtítulos no lo llevan, y
+  // mezclar formatos se ve como un dato distinto en vez de solo más amplio.
+  return (feature.properties?.place_formatted || '').replace(/^(Distrito|Provincia|Departamento) de /i, '')
 }
 
 const pick = feature => {
