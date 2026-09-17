@@ -4,7 +4,7 @@
 // según la carga descrita; este picker es solo para el cliente que ya
 // sabe qué necesita.
 //
-// Flujo en 2 pasos (VWindow, mismo patrón que el wizard principal):
+// Flujo en 2 pasos (v-if/v-else — a propósito NO se usa VWindow, ver abajo):
 //  1) Categoría de PESO (Menores/Livianos/Medianos/Pesados/Especiales) +
 //     unidad — es la decisión de menor fricción para un cliente que no
 //     conoce términos técnicos, y la que más acota la lista.
@@ -14,8 +14,11 @@
 //     peso) y puede rechazar.
 //
 // El modal tiene tamaño FIJO (.vehicle-picker-card) para que no "salte" al
-// cambiar de paso — antes dependía de un style inline en VCard, que no
-// garantizaba que el layout flex llegue a los hijos reales.
+// cambiar de paso. Se probó con VWindow (como el wizard principal) pero
+// VWindow anima su propio alto entre items (mide el contenido y lo
+// interpola) — forzar una altura fija ahí adentro rompía su mecanismo de
+// v-show y los dos pasos quedaban visibles superpuestos. Con v-if/v-else
+// simple no hay ese conflicto: un solo paso existe en el DOM a la vez.
 import { computed, ref, watch } from 'vue'
 
 import { vehiclePickerCatalog } from '@/services/catalogService'
@@ -108,8 +111,8 @@ const clear = () => { emit('clear'); close() }
       <VCardText class="vehicle-picker-body pa-4">
         <VProgressLinear v-if="loading" indeterminate class="mb-3 flex-shrink-0" />
 
-        <VWindow v-model="step" class="h-100">
-          <VWindowItem :value="1" class="h-100 d-flex flex-column">
+        <template v-if="step === 1">
+          <div class="h-100 d-flex flex-column">
             <div v-if="weightCategories.length" class="d-flex flex-wrap ga-2 mb-3 flex-shrink-0">
               <VChip
                 :color="!selectedWeight ? 'primary' : undefined" :variant="!selectedWeight ? 'flat' : 'outlined'"
@@ -144,9 +147,11 @@ const clear = () => { emit('clear'); close() }
                 No hay unidades para esa categoría.
               </div>
             </div>
-          </VWindowItem>
+          </div>
+        </template>
 
-          <VWindowItem :value="2" class="h-100 d-flex flex-column">
+        <template v-else>
+          <div class="h-100 d-flex flex-column">
             <VCard variant="tonal" color="primary" class="d-flex align-center pa-3 mb-4 flex-shrink-0">
               <VAvatar color="primary" variant="elevated" size="40" class="mr-3">
                 <VIcon icon="ri-truck-line" />
@@ -189,8 +194,8 @@ const clear = () => { emit('clear'); close() }
                 Esta unidad no tiene carrocerías específicas cargadas — queda en "Cualquiera".
               </p>
             </div>
-          </VWindowItem>
-        </VWindow>
+          </div>
+        </template>
       </VCardText>
 
       <VDivider />
@@ -221,12 +226,6 @@ const clear = () => { emit('clear'); close() }
   display: flex;
   flex-direction: column;
 }
-.vehicle-picker-body :deep(.v-window),
-.vehicle-picker-body :deep(.v-window__container),
-.vehicle-picker-body :deep(.v-window-item) {
-  height: 100%;
-}
-
 .step-dot {
   width: 6px;
   height: 6px;
