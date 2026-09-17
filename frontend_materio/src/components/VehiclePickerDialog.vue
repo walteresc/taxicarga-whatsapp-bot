@@ -104,39 +104,41 @@ const clear = () => { emit('clear'); close() }
         </div>
 
         <div class="flex-grow-1" style="overflow-y: auto; min-height: 0;">
-          <template v-for="u in filteredUnits" :key="u.code">
-            <VCard
-              variant="outlined" class="d-flex align-center pa-3 mb-2 unit-card"
-              :color="expandedUnit === u.code ? 'primary' : undefined"
-              @click="toggleUnit(u)"
-            >
-              <VAvatar :color="expandedUnit === u.code ? 'primary' : undefined" variant="tonal" size="40" class="mr-3">
-                <VIcon icon="ri-truck-line" />
+          <VCard
+            v-for="u in filteredUnits" :key="u.code" variant="outlined" class="mb-2 unit-card"
+            :class="{ 'unit-card--expanded': expandedUnit === u.code }"
+          >
+            <div class="d-flex align-center pa-3" style="cursor: pointer;" @click="toggleUnit(u)">
+              <VAvatar :color="expandedUnit === u.code ? 'primary' : 'surface-variant'" :variant="expandedUnit === u.code ? 'elevated' : 'tonal'" size="40" class="mr-3">
+                <VIcon icon="ri-truck-line" :color="expandedUnit === u.code ? 'white' : undefined" />
               </VAvatar>
               <div class="flex-grow-1">
                 <div class="text-body-2 font-weight-bold">{{ u.name }}</div>
                 <div class="text-caption text-medium-emphasis">{{ capacityLabel(u) }}</div>
               </div>
               <VIcon :icon="expandedUnit === u.code ? 'ri-arrow-up-s-line' : 'ri-arrow-right-s-line'" class="text-medium-emphasis" />
-            </VCard>
+            </div>
 
-            <VCard v-if="expandedUnit === u.code" variant="tonal" color="primary" class="pa-3 mb-3">
-              <div class="text-caption font-weight-medium mb-2">¿Algún tipo de carrocería?</div>
-              <div class="d-flex flex-wrap ga-2">
-                <div class="body-chip body-chip--active" @click="pickBody(u, null)">
-                  <VIcon icon="ri-checkbox-multiple-blank-line" size="16" class="mr-1" />
-                  <div>
-                    <div class="text-caption font-weight-bold">Cualquiera</div>
-                    <div class="text-caption text-medium-emphasis" style="font-size: 0.65rem; line-height: 1;">Compatible con mi carga</div>
-                  </div>
+            <template v-if="expandedUnit === u.code">
+              <VDivider />
+              <div class="pa-3 body-panel">
+                <div class="text-caption text-medium-emphasis mb-2">
+                  ¿Alguna carrocería en particular? Elegí "Cualquiera" si no te importa.
                 </div>
-                <div v-for="bt in bodyOptionsFor(u)" :key="bt.code" class="body-chip" @click="pickBody(u, bt)">
-                  <VIcon :icon="bt.icon" size="16" class="mr-1" />
-                  <span class="text-caption font-weight-bold">{{ bt.name }}</span>
+                <div class="d-flex flex-wrap ga-2">
+                  <VChip variant="tonal" color="primary" prepend-icon="ri-checkbox-multiple-blank-line" @click="pickBody(u, null)">
+                    Cualquiera
+                  </VChip>
+                  <VChip
+                    v-for="bt in bodyOptionsFor(u)" :key="bt.code" variant="outlined"
+                    :prepend-icon="bt.icon" @click="pickBody(u, bt)"
+                  >
+                    {{ bt.name }}
+                  </VChip>
                 </div>
               </div>
-            </VCard>
-          </template>
+            </template>
+          </VCard>
           <div v-if="!loading && !filteredUnits.length" class="text-medium-emphasis text-body-2 text-center py-6">
             No hay unidades para esa categoría.
           </div>
@@ -177,25 +179,16 @@ const clear = () => { emit('clear'); close() }
 }
 
 .unit-card {
-  cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition: border-color 0.15s ease;
 }
 .unit-card:hover {
   border-color: rgb(var(--v-theme-primary));
 }
-
-.body-chip {
-  display: flex;
-  align-items: center;
-  cursor: pointer;
-  padding: 6px 10px;
-  border-radius: 8px;
-  background: rgb(var(--v-theme-surface));
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.15);
-  transition: border-color 0.15s ease, background 0.15s ease;
-}
-.body-chip:hover,
-.body-chip--active {
+.unit-card--expanded {
   border-color: rgb(var(--v-theme-primary));
+  border-width: 2px;
+}
+.body-panel {
+  background: rgba(var(--v-theme-primary), 0.05);
 }
 </style>
