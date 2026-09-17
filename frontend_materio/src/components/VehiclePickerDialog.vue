@@ -48,6 +48,18 @@ const load = async () => {
   } catch (e) { /* si falla, queda el picker vacío — "TaxiCarga elige" sigue disponible */ }
   finally { loading.value = false }
 }
+// Si la unidad expandida queda afuera del filtro (p. ej. se cambia de
+// categoría de peso mientras hay una unidad abierta), había quedado el
+// botón "Confirmar"/"Cambiar unidad" activo para una unidad que ya no se
+// veía en la lista — colapsa el panel para evitar ese estado fantasma.
+watch(selectedWeight, () => {
+  if (expandedUnit.value && !filteredUnits.value.some(u => u.code === expandedUnit.value)) {
+    expandedUnit.value = ''
+    chosenUnit.value = null
+    chosenBody.value = null
+  }
+})
+
 watch(() => props.modelValue, v => {
   if (v) load()
   else { expandedUnit.value = ''; chosenUnit.value = null; chosenBody.value = null }
