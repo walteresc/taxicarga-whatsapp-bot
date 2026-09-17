@@ -366,10 +366,10 @@ const submitSignup = async () => {
           <VBtn v-if="step > 1" variant="text" @click="step--">Atrás</VBtn>
           <VBtn v-else variant="text" to="/login">Ya tengo cuenta</VBtn>
           <VSpacer />
-          <VBtn v-if="step === 1" color="primary" :disabled="!step1ok" @click="step = 2">Siguiente</VBtn>
-          <VBtn v-else-if="step === 2" color="primary" @click="goToStep3">Siguiente</VBtn>
-          <VBtn v-else-if="step < maxStep" color="primary" @click="step++">Siguiente</VBtn>
-          <VBtn v-else color="primary" :loading="busy" :disabled="!formOk" @click="submitQuote">Cotizar</VBtn>
+          <VBtn v-if="step === 1" color="primary" variant="elevated" rounded="lg" :disabled="!step1ok" @click="step = 2">Siguiente</VBtn>
+          <VBtn v-else-if="step === 2" color="primary" variant="elevated" rounded="lg" @click="goToStep3">Siguiente</VBtn>
+          <VBtn v-else-if="step < maxStep" color="primary" variant="elevated" rounded="lg" @click="step++">Siguiente</VBtn>
+          <VBtn v-else color="primary" variant="elevated" rounded="lg" :loading="busy" :disabled="!formOk" @click="submitQuote">Cotizar</VBtn>
         </VCardActions>
 
         <!-- Paso 2: resultado -->
