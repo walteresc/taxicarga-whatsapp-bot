@@ -210,13 +210,20 @@ const clear = () => { emit('clear'); close() }
 </template>
 
 <style scoped>
-/* Tamaño fijo real (clase + altura explícita en el propio elemento) — nunca
-   depende del contenido de cada paso, así el modal no "salta" al pasar de
-   la lista de unidades a la de carrocerías. */
+/* Tamaño fijo real. OJO: dentro de un VDialog, Vuetify le aplica a la VCard
+   "flex: 1 1 100%" por su propio CSS (.v-dialog > .v-overlay__content >
+   .v-card) — con flex-basis en 100% (no "auto"), el algoritmo de flexbox
+   IGNORA la propiedad height por completo (así lo define el spec: un
+   flex-basis explícito reemplaza a height/width para el tamaño principal).
+   Por eso el height de acá abajo nunca se aplicaba y el modal seguía
+   ajustándose al contenido. Se anula ese flex-basis (flex: 0 0 auto) con
+   !important porque el selector de Vuetify (3 clases encadenadas) tiene más
+   especificidad que esta clase sola. */
 .vehicle-picker-card {
   width: 100%;
   height: 640px;
   max-height: 88vh;
+  flex: 0 0 auto !important;
   display: flex;
   flex-direction: column;
 }
