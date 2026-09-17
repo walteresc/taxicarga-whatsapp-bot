@@ -217,29 +217,29 @@ const fmtDate = iso => {
         <div v-if="detail" class="d-flex align-start ga-2 mb-3">
           <VIcon icon="ri-file-text-line" size="16" class="text-medium-emphasis mt-1" />
           <div>
-            <div class="text-caption text-medium-emphasis">Descripción</div>
-            <div class="text-body-2">{{ detail }}</div>
+            <div class="summary-label">Descripción de la carga</div>
+            <div class="text-body-2 font-weight-medium">{{ detail }}</div>
           </div>
         </div>
         <div v-if="weightVolumeLabel" class="d-flex align-start ga-2 mb-3">
           <VIcon icon="ri-scales-3-line" size="16" class="text-medium-emphasis mt-1" />
           <div>
-            <div class="text-caption text-medium-emphasis">Peso / volumen</div>
-            <div class="text-body-2">{{ weightVolumeLabel }}</div>
+            <div class="summary-label">Peso / volumen</div>
+            <div class="text-body-2 font-weight-medium">{{ weightVolumeLabel }}</div>
           </div>
         </div>
         <div v-if="truckLabel" class="d-flex align-start ga-2 mb-3">
           <VIcon icon="ri-truck-line" size="16" class="text-medium-emphasis mt-1" />
           <div>
-            <div class="text-caption text-medium-emphasis">Vehículo</div>
-            <div class="text-body-2">{{ truckLabel }}</div>
+            <div class="summary-label">Vehículo elegido</div>
+            <div class="text-body-2 font-weight-medium">{{ truckLabel }}</div>
           </div>
         </div>
         <div v-if="fmtDate(date)" class="d-flex align-start ga-2">
           <VIcon icon="ri-calendar-line" size="16" class="text-medium-emphasis mt-1" />
           <div>
-            <div class="text-caption text-medium-emphasis">Fecha</div>
-            <div class="text-body-2 text-capitalize">{{ fmtDate(date) }}</div>
+            <div class="summary-label">Fecha del servicio</div>
+            <div class="text-body-2 font-weight-medium text-capitalize">{{ fmtDate(date) }}</div>
           </div>
         </div>
       </template>
@@ -257,3 +257,17 @@ const fmtDate = iso => {
     </VCard>
   </VCard>
 </template>
+
+<style scoped>
+/* Etiqueta claramente distinta del valor que describe — chica, mayúscula,
+   espaciada — para que nunca se confunda con el contenido real (p. ej.
+   "Descripción" no debe leerse igual que la descripción en sí). */
+.summary-label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(var(--v-theme-on-surface), var(--v-medium-emphasis-opacity));
+  margin-bottom: 2px;
+}
+</style>
