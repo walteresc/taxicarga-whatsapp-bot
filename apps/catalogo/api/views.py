@@ -20,12 +20,6 @@ from .serializers import BodyTypeSerializer, VehicleCategorySerializer, VehicleT
 
 _ROLES = ("Administrador", "Supervisor")
 
-# Tipos de vehículo relevantes para cotizar Carga de cara al cliente — a
-# propósito se dejan afuera Moto/Auto/Minivan (no aplican a "carga") y
-# Semitrailer/Camión Remolque (carga muy pesada/especial, fuera del alcance
-# de este cotizador rápido).
-_VEHICLE_CODES_PUBLICOS = ["camioneta", "camion"]
-
 
 class PublicVehiclePickerView(APIView):
     """Datos del catálogo real de vehículos para el selector de vehículo del
@@ -38,8 +32,12 @@ class PublicVehiclePickerView(APIView):
         return api_exception_handler
 
     def get(self, request):
+        # Qué tipos de vehículo aparecen acá es editable desde Configuración →
+        # Catálogo → Tipos de Vehículos (columna "Visible en cotizador
+        # público") — antes era una lista fija en el código que nadie podía
+        # tocar sin desplegar (_VEHICLE_CODES_PUBLICOS, ya retirada).
         tipos = list(
-            TipoVehiculo.objects.filter(habilitado=True, codigo__in=_VEHICLE_CODES_PUBLICOS)
+            TipoVehiculo.objects.filter(habilitado=True, visible_cotizador_publico=True)
             .prefetch_related("categorias", "compatibilidades__tipo_carroceria")
             .order_by("orden", "nombre")
         )
@@ -72,10 +70,10 @@ class PublicVehiclePickerView(APIView):
         ]
         # Solo las categorías de peso que de verdad quedaron con unidades acá —
         # no toda CategoriaVehiculo.CATEGORIAS. Por ejemplo "Menores" existe
-        # como categoría (Moto, Auto), pero esos tipos de vehículo están afuera
-        # de _VEHICLE_CODES_PUBLICOS a propósito, así que nunca debería
-        # aparecer como filtro en este selector — se autoactualiza si algún
-        # día se le asigna una fila de Camión/Camioneta.
+        # como categoría (Moto, Auto), pero esos tipos de vehículo no están
+        # marcados "Visible en cotizador público" — se autoactualiza si algún
+        # día se habilita ahí Moto/Auto, o se le asigna esa categoría a una
+        # fila de Camión/Camioneta.
         codes_con_unidades = {u["weightCategory"] for u in units}
         weight_categories = [
             {"code": code, "name": name} for code, name in CategoriaVehiculo.CATEGORIAS if code in codes_con_unidades

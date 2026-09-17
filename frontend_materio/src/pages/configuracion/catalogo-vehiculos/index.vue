@@ -28,7 +28,7 @@ const tab = ref('vehiculos')
 
     <VWindow v-model="tab">
       <VWindowItem value="vehiculos">
-        <CatalogTypeList :service="vehicleTypesService" singular="tipo de vehículo" create-label="Nuevo tipo" />
+        <CatalogTypeList :service="vehicleTypesService" singular="tipo de vehículo" create-label="Nuevo tipo" show-public-toggle />
       </VWindowItem>
       <VWindowItem value="carrocerias">
         <CatalogTypeList :service="bodyTypesService" singular="tipo de carrocería" create-label="Nueva carrocería" />

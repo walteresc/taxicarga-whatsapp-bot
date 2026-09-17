@@ -12,6 +12,7 @@ class VehicleTypeSerializer(serializers.ModelSerializer):
     icon = serializers.CharField(source="icono", max_length=60, required=False, allow_blank=True, default="")
     enabled = serializers.BooleanField(source="habilitado", required=False, default=True)
     order = serializers.IntegerField(source="orden", required=False, default=0)
+    visibleInPublicQuoter = serializers.BooleanField(source="visible_cotizador_publico", required=False, default=False)
     compatibleBodyTypeIds = serializers.PrimaryKeyRelatedField(
         many=True, required=False, queryset=TipoCarroceria.objects.all(), source="_compat_write",
     )
@@ -20,7 +21,7 @@ class VehicleTypeSerializer(serializers.ModelSerializer):
     class Meta:
         model = TipoVehiculo
         fields = (
-            "id", "code", "name", "icon", "enabled", "order",
+            "id", "code", "name", "icon", "enabled", "order", "visibleInPublicQuoter",
             "compatibleBodyTypeIds", "compatibleBodyTypes",
         )
 

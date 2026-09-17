@@ -17,6 +17,18 @@ class TipoVehiculo(models.Model):
     )
     habilitado = models.BooleanField(default=True)
     orden = models.PositiveSmallIntegerField(default=0)
+    visible_cotizador_publico = models.BooleanField(
+        default=False,
+        help_text=(
+            "Si aparece como opción en el selector de vehículo del cotizador público "
+            "de Carga (invitado/portal cliente). Antes era una lista fija en el código "
+            "(_VEHICLE_CODES_PUBLICOS) que no se podía tocar desde acá — p. ej. Moto/"
+            "Auto/Minivan no aplican a 'carga', y Semitrailer/Camión Remolque son carga "
+            "muy pesada/especial que hoy pasa siempre por un asesor, no por el "
+            "cotizador rápido. Se deja editable para no tener que tocar código si eso "
+            "cambia."
+        ),
+    )
 
     class Meta:
         verbose_name = "Tipo de vehículo"

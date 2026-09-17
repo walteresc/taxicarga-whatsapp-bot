@@ -7,6 +7,11 @@ const props = defineProps({
   service: { type: Object, required: true },
   singular: { type: String, required: true }, // "tipo de vehículo"
   createLabel: { type: String, required: true }, // "Nuevo Tipo"
+  // Solo aplica a Tipos de Vehículo: antes esto era una lista fija en el
+  // código (_VEHICLE_CODES_PUBLICOS) que decidía qué tipos aparecen en el
+  // selector de vehículo del cotizador público de Carga — ahora es un campo
+  // real, editable acá.
+  showPublicToggle: { type: Boolean, default: false },
 })
 
 const rows = ref([])
@@ -34,17 +39,23 @@ const dialog = ref(false)
 const editing = ref(null)
 const saving = ref(false)
 const errors = ref({})
-const form = reactive({ name: '', code: '', icon: '', enabled: true, order: 0 })
+const form = reactive({ name: '', code: '', icon: '', enabled: true, order: 0, visibleInPublicQuoter: false })
 
 const openCreate = () => {
   editing.value = null
-  Object.assign(form, { name: '', code: '', icon: '', enabled: true, order: (rows.value.at(-1)?.order ?? 0) + 1 })
+  Object.assign(form, {
+    name: '', code: '', icon: '', enabled: true, order: (rows.value.at(-1)?.order ?? 0) + 1,
+    visibleInPublicQuoter: false,
+  })
   errors.value = {}
   dialog.value = true
 }
 const openEdit = row => {
   editing.value = row
-  Object.assign(form, { name: row.name, code: row.code, icon: row.icon || '', enabled: row.enabled, order: row.order })
+  Object.assign(form, {
+    name: row.name, code: row.code, icon: row.icon || '', enabled: row.enabled, order: row.order,
+    visibleInPublicQuoter: !!row.visibleInPublicQuoter,
+  })
   errors.value = {}
   dialog.value = true
 }
@@ -54,6 +65,7 @@ const submit = async () => {
   errors.value = {}
   try {
     const payload = { ...form }
+    if (!props.showPublicToggle) delete payload.visibleInPublicQuoter
     if (editing.value) await props.service.update(editing.value.id, payload)
     else await props.service.create(payload)
     dialog.value = false
@@ -73,6 +85,14 @@ const toggle = async row => {
     await load()
   } catch (e) {
     notify(e.message || 'No se pudo cambiar el estado.', 'error')
+  }
+}
+const togglePublicVisibility = async row => {
+  try {
+    await props.service.update(row.id, { visibleInPublicQuoter: !row.visibleInPublicQuoter })
+    await load()
+  } catch (e) {
+    notify(e.message || 'No se pudo cambiar la visibilidad.', 'error')
   }
 }
 
@@ -118,9 +138,19 @@ const doDelete = async () => {
               <span :class="row.enabled ? 'text-success' : 'text-disabled'" class="text-caption">
                 {{ row.enabled ? 'Habilitado' : 'Deshabilitado' }}
               </span>
+              <span v-if="showPublicToggle" :class="row.visibleInPublicQuoter ? 'text-primary' : 'text-disabled'" class="text-caption">
+                · {{ row.visibleInPublicQuoter ? 'Visible en cotizador público' : 'No visible en cotizador público' }}
+              </span>
             </VListItemSubtitle>
             <template #append>
               <div class="d-flex align-center">
+                <div v-if="showPublicToggle" class="d-flex flex-column align-center mr-2">
+                  <VSwitch
+                    :model-value="row.visibleInPublicQuoter" color="primary" hide-details density="compact"
+                    @update:model-value="togglePublicVisibility(row)"
+                  />
+                  <span class="text-caption text-medium-emphasis" style="font-size: 0.625rem; line-height: 1;">Cotizador</span>
+                </div>
                 <VSwitch :model-value="row.enabled" color="success" hide-details density="compact" @update:model-value="toggle(row)" />
                 <VBtn icon="ri-edit-line" variant="text" size="small" title="Editar" @click="openEdit(row)" />
                 <VBtn icon="ri-delete-bin-line" variant="text" size="small" color="error" title="Eliminar" @click="confirming = row" />
@@ -155,6 +185,18 @@ const doDelete = async () => {
             </VCol>
             <VCol cols="12">
               <VSwitch v-model="form.enabled" label="Habilitado" color="primary" />
+            </VCol>
+            <VCol v-if="showPublicToggle" cols="12">
+              <VSwitch v-model="form.visibleInPublicQuoter" color="primary" hide-details>
+                <template #label>
+                  <div>
+                    <div>Visible en cotizador público de Carga</div>
+                    <div class="text-caption text-medium-emphasis">
+                      Aparece como opción al elegir vehículo en /cotizar y el Portal Cliente.
+                    </div>
+                  </div>
+                </template>
+              </VSwitch>
             </VCol>
           </VRow>
         </VCardText>
