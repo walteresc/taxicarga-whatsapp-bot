@@ -49,9 +49,12 @@ const geocode = async (text, signal) => {
   // proximity sesgado a Lima Metropolitana: la mayoría de las cotizaciones
   // arrancan ahí, y sin esto un distrito común (p.ej. "San Isidro") puede
   // salir primero de otra región homónima.
+  // "district"/"region" en la taxonomía de Mapbox son provincia/departamento
+  // (demasiado amplios para cotizar) — se dejan afuera a propósito. "place"
+  // es el nivel que corresponde a distrito en Perú.
   const url = `https://api.mapbox.com/search/geocode/v6/forward?q=${encodeURIComponent(text)}` +
     `&autocomplete=true&country=pe&language=es&limit=6&proximity=-77.0428,-12.0464` +
-    `&types=address,street,place,locality,district,region&access_token=${MAPBOX_TOKEN}`
+    `&types=address,street,place,locality&access_token=${MAPBOX_TOKEN}`
   const res = await fetch(url, { signal })
   const data = await res.json()
 
