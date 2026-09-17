@@ -181,7 +181,7 @@ const submitSignup = async () => {
         <VCardText v-if="phase === 'form'">
           <VWindow v-model="step">
             <VWindowItem :value="1">
-              <div class="text-h6 font-weight-bold mb-1">Elige el tipo de servicio que mejor se adapta a tu carga</div>
+              <div class="text-h6 font-weight-bold mb-4">Elige el tipo de servicio que mejor se adapta a tu carga</div>
               <VRow class="mb-3" dense>
                 <VCol v-for="s in SERVICE_TYPES" :key="s.value" cols="12" sm="4">
                   <VCard
