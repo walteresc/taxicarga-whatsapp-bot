@@ -13,23 +13,12 @@ class VehicleTypeSerializer(serializers.ModelSerializer):
     enabled = serializers.BooleanField(source="habilitado", required=False, default=True)
     order = serializers.IntegerField(source="orden", required=False, default=0)
     visibleInPublicQuoter = serializers.BooleanField(source="visible_cotizador_publico", required=False, default=False)
-    compatibleBodyTypeIds = serializers.PrimaryKeyRelatedField(
-        many=True, required=False, queryset=TipoCarroceria.objects.all(), source="_compat_write",
-    )
-    compatibleBodyTypes = serializers.SerializerMethodField()
 
     class Meta:
         model = TipoVehiculo
         fields = (
             "id", "code", "name", "icon", "enabled", "order", "visibleInPublicQuoter",
-            "compatibleBodyTypeIds", "compatibleBodyTypes",
         )
-
-    def get_compatibleBodyTypes(self, obj):
-        return [
-            {"id": c.tipo_carroceria_id, "name": c.tipo_carroceria.nombre}
-            for c in obj.compatibilidades.select_related("tipo_carroceria").all()
-        ]
 
     def validate_code(self, value):
         qs = TipoVehiculo.objects.filter(codigo=value)
@@ -38,30 +27,6 @@ class VehicleTypeSerializer(serializers.ModelSerializer):
         if qs.exists():
             raise serializers.ValidationError("Ya existe un tipo con este código.")
         return value
-
-    def _sync_compat(self, instance, carrocerias):
-        instance.compatibilidades.exclude(
-            tipo_carroceria__in=carrocerias,
-        ).delete()
-        existentes = set(instance.compatibilidades.values_list("tipo_carroceria_id", flat=True))
-        CompatibilidadCarroceria.objects.bulk_create([
-            CompatibilidadCarroceria(tipo_vehiculo=instance, tipo_carroceria=c)
-            for c in carrocerias if c.id not in existentes
-        ])
-
-    def create(self, validated_data):
-        compat = validated_data.pop("_compat_write", None)
-        instance = super().create(validated_data)
-        if compat is not None:
-            self._sync_compat(instance, compat)
-        return instance
-
-    def update(self, instance, validated_data):
-        compat = validated_data.pop("_compat_write", None)
-        instance = super().update(instance, validated_data)
-        if compat is not None:
-            self._sync_compat(instance, compat)
-        return instance
 
 
 class BodyTypeSerializer(serializers.ModelSerializer):
@@ -99,10 +64,48 @@ class VehicleCategorySerializer(serializers.ModelSerializer):
     )
     order = serializers.IntegerField(source="orden", required=False, default=0)
     enabled = serializers.BooleanField(source="habilitado", required=False, default=True)
+    # Compatibilidad de carrocería: por CATEGORÍA puntual (tonelaje), no por
+    # tipo de vehículo genérico — un "Camión 2 ton" y un "Camión 15 ton" no
+    # tienen por qué admitir las mismas carrocerías.
+    compatibleBodyTypeIds = serializers.PrimaryKeyRelatedField(
+        many=True, required=False, queryset=TipoCarroceria.objects.all(), source="_compat_write",
+    )
+    compatibleBodyTypes = serializers.SerializerMethodField()
 
     class Meta:
         model = CategoriaVehiculo
         fields = (
             "id", "vehicleTypeId", "vehicleTypeName", "name", "category",
             "minTons", "maxTons", "order", "enabled",
+            "compatibleBodyTypeIds", "compatibleBodyTypes",
         )
+
+    def get_compatibleBodyTypes(self, obj):
+        return [
+            {"id": c.tipo_carroceria_id, "name": c.tipo_carroceria.nombre}
+            for c in obj.compatibilidades.select_related("tipo_carroceria").all()
+        ]
+
+    def _sync_compat(self, instance, carrocerias):
+        instance.compatibilidades.exclude(
+            tipo_carroceria__in=carrocerias,
+        ).delete()
+        existentes = set(instance.compatibilidades.values_list("tipo_carroceria_id", flat=True))
+        CompatibilidadCarroceria.objects.bulk_create([
+            CompatibilidadCarroceria(categoria_vehiculo=instance, tipo_carroceria=c)
+            for c in carrocerias if c.id not in existentes
+        ])
+
+    def create(self, validated_data):
+        compat = validated_data.pop("_compat_write", None)
+        instance = super().create(validated_data)
+        if compat is not None:
+            self._sync_compat(instance, compat)
+        return instance
+
+    def update(self, instance, validated_data):
+        compat = validated_data.pop("_compat_write", None)
+        instance = super().update(instance, validated_data)
+        if compat is not None:
+            self._sync_compat(instance, compat)
+        return instance

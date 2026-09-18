@@ -56,11 +56,18 @@ class TipoCarroceria(models.Model):
 
 
 class CompatibilidadCarroceria(models.Model):
-    """Carrocerías que admite un tipo de vehículo. Si un tipo no tiene filas =
-    'sin carrocería / sin restricción'."""
+    """Carrocerías que admite una CATEGORÍA de vehículo puntual (un tonelaje
+    concreto, p. ej. "Camión 2 ton" vs "Camión 15 ton") — no el tipo de
+    vehículo genérico completo. Antes estaba ligada a TipoVehiculo, lo que
+    hacía que TODAS las categorías de un mismo tipo (p. ej. todos los
+    "Camión", desde 2 hasta 15 ton) compartieran exactamente la misma lista
+    de carrocerías — un camión de 2 ton terminaba pudiendo "ofrecer" Volquete
+    o Grúa Telescópica, que en la práctica son de camiones mucho más
+    pesados. Si una categoría no tiene filas = 'sin carrocería / sin
+    restricción'."""
 
-    tipo_vehiculo = models.ForeignKey(
-        TipoVehiculo, on_delete=models.CASCADE, related_name="compatibilidades",
+    categoria_vehiculo = models.ForeignKey(
+        "CategoriaVehiculo", on_delete=models.CASCADE, related_name="compatibilidades",
     )
     tipo_carroceria = models.ForeignKey(
         TipoCarroceria, on_delete=models.CASCADE, related_name="compatibilidades",
@@ -71,12 +78,12 @@ class CompatibilidadCarroceria(models.Model):
         verbose_name_plural = "Compatibilidades vehículo–carrocería"
         constraints = [
             models.UniqueConstraint(
-                fields=["tipo_vehiculo", "tipo_carroceria"], name="catalogo_compat_unica",
+                fields=["categoria_vehiculo", "tipo_carroceria"], name="catalogo_compat_unica",
             ),
         ]
 
     def __str__(self):
-        return f"{self.tipo_vehiculo} → {self.tipo_carroceria}"
+        return f"{self.categoria_vehiculo} → {self.tipo_carroceria}"
 
 
 class CategoriaVehiculo(models.Model):

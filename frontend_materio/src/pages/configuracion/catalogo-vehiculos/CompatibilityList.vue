@@ -1,9 +1,14 @@
 <script setup>
+// Compatibilidad de carrocería por CATEGORÍA puntual (tonelaje) — no por
+// tipo de vehículo genérico. Un "Camión 2 ton" y un "Camión 15 ton" no
+// tienen por qué admitir las mismas carrocerías (antes sí, porque la
+// compatibilidad colgaba de TipoVehiculo). Se agrupa visualmente por tipo
+// de vehículo para no mostrar una lista plana de 20+ filas.
 import { computed, reactive, ref } from 'vue'
 
-import { bodyTypesService, vehicleTypesService } from '@/services/catalogService'
+import { bodyTypesService, vehicleCategoriesService } from '@/services/catalogService'
 
-const types = ref([])
+const categories = ref([])
 const bodyTypes = ref([])
 const loading = ref(true)
 const loadError = ref('')
@@ -12,11 +17,11 @@ const load = async () => {
   loading.value = true
   loadError.value = ''
   try {
-    const [t, b] = await Promise.all([
-      vehicleTypesService.list({ pageSize: 200 }),
+    const [c, b] = await Promise.all([
+      vehicleCategoriesService.list({ pageSize: 300 }),
       bodyTypesService.list({ pageSize: 200 }),
     ])
-    types.value = t.results
+    categories.value = c.results
     bodyTypes.value = b.results
   } catch (e) {
     loadError.value = e.message || 'No se pudo cargar.'
@@ -25,6 +30,16 @@ const load = async () => {
   }
 }
 load()
+
+const groups = computed(() => {
+  const byType = new Map()
+  for (const cat of categories.value) {
+    const key = cat.vehicleTypeName || '—'
+    if (!byType.has(key)) byType.set(key, [])
+    byType.get(key).push(cat)
+  }
+  return Array.from(byType.entries()).map(([vehicleTypeName, rows]) => ({ vehicleTypeName, rows }))
+})
 
 const bodyOptions = computed(() => bodyTypes.value.map(b => ({ title: b.name, value: b.id })))
 
@@ -45,7 +60,7 @@ const openEdit = row => {
 const submit = async () => {
   saving.value = true
   try {
-    await vehicleTypesService.update(editing.value.id, { compatibleBodyTypeIds: selected.value })
+    await vehicleCategoriesService.update(editing.value.id, { compatibleBodyTypeIds: selected.value })
     dialog.value = false
     notify('Compatibilidades actualizadas.')
     await load()
@@ -60,8 +75,8 @@ const submit = async () => {
 <template>
   <div>
     <p class="text-body-2 text-medium-emphasis mb-4">
-      Define qué tipos de carrocería puede tener cada tipo de vehículo. Al registrar un vehículo
-      solo se mostrarán las carrocerías compatibles.
+      Define qué carrocerías admite cada categoría de vehículo (por tonelaje puntual). Al registrar
+      un vehículo solo se mostrarán las carrocerías compatibles con su categoría.
     </p>
 
     <VAlert v-if="loadError" type="error" variant="tonal" class="mb-4">
@@ -69,16 +84,15 @@ const submit = async () => {
       <template #append><VBtn size="small" variant="text" @click="load">Reintentar</VBtn></template>
     </VAlert>
 
-    <VCard>
-      <VList v-if="!loading" lines="two" class="py-0">
-        <template v-for="(row, i) in types" :key="row.id">
+    <div v-if="loading" class="text-center py-10"><VProgressCircular indeterminate color="primary" /></div>
+
+    <VCard v-for="group in groups" v-else :key="group.vehicleTypeName" class="mb-4">
+      <VCardTitle class="text-subtitle-1 font-weight-bold py-3">{{ group.vehicleTypeName }}</VCardTitle>
+      <VDivider />
+      <VList lines="two" class="py-0">
+        <template v-for="(row, i) in group.rows" :key="row.id">
           <VDivider v-if="i" />
           <VListItem>
-            <template #prepend>
-              <VAvatar rounded="lg" color="primary" variant="tonal" size="40" class="me-3">
-                <VIcon :icon="row.icon || 'ri-shape-line'" />
-              </VAvatar>
-            </template>
             <VListItemTitle class="font-weight-medium">{{ row.name }}</VListItemTitle>
             <VListItemSubtitle class="mt-1">
               <template v-if="row.compatibleBodyTypes?.length">
@@ -97,7 +111,6 @@ const submit = async () => {
           </VListItem>
         </template>
       </VList>
-      <div v-else class="text-center py-10"><VProgressCircular indeterminate color="primary" /></div>
     </VCard>
 
     <VDialog v-model="dialog" max-width="520" persistent>

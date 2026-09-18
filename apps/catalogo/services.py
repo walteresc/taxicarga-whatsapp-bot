@@ -12,7 +12,7 @@ _CAT_ORDER = {
 
 
 def vehicle_types_queryset(params):
-    qs = TipoVehiculo.objects.prefetch_related("compatibilidades")
+    qs = TipoVehiculo.objects.all()
     qs = apply_search(qs, params.get("search"), ("nombre", "codigo"))
     qs = apply_active_filter(qs, params.get("status"), field="habilitado")
     return apply_ordering(qs, params.get("ordering"), _VT_ORDER, ("orden", "nombre"))
@@ -26,7 +26,7 @@ def body_types_queryset(params):
 
 
 def vehicle_categories_queryset(params):
-    qs = CategoriaVehiculo.objects.select_related("tipo_vehiculo")
+    qs = CategoriaVehiculo.objects.select_related("tipo_vehiculo").prefetch_related("compatibilidades")
     qs = apply_search(qs, params.get("search"), ("nombre", "tipo_vehiculo__nombre"))
     qs = apply_active_filter(qs, params.get("status"), field="habilitado")
     vt = params.get("vehicleTypeId")

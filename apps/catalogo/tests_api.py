@@ -39,30 +39,61 @@ class CategorizacionTests(_Base):
 
 
 class CompatibilidadesApiTests(_Base):
+    """La compatibilidad es por CATEGORÍA puntual (tonelaje), no por tipo de
+    vehículo genérico — un "Camión 2 ton" y un "Camión 15 ton" pueden admitir
+    carrocerías distintas."""
+
     def test_patch_sincroniza_compatibilidades(self):
-        camioneta = TipoVehiculo.objects.get(codigo="camioneta")
+        categoria = CategoriaVehiculo.objects.get(nombre="Camioneta")
         pickup = TipoCarroceria.objects.get(codigo="pickup")
         furgon = TipoCarroceria.objects.get(codigo="furgon_cerrado")
 
         r = self.client.patch(
-            f"/api/v2/vehicle-types/{camioneta.id}/",
+            f"/api/v2/vehicle-categories/{categoria.id}/",
             {"compatibleBodyTypeIds": [pickup.id, furgon.id]}, format="json",
         )
         self.assertEqual(r.status_code, 200)
         got = set(
             CompatibilidadCarroceria.objects
-            .filter(tipo_vehiculo=camioneta).values_list("tipo_carroceria__codigo", flat=True)
+            .filter(categoria_vehiculo=categoria).values_list("tipo_carroceria__codigo", flat=True)
         )
         self.assertEqual(got, {"pickup", "furgon_cerrado"})
 
     def test_patch_vacio_deja_sin_carroceria(self):
-        camion = TipoVehiculo.objects.get(codigo="camion")
+        categoria = CategoriaVehiculo.objects.get(nombre="Camión 2 ton")
         r = self.client.patch(
-            f"/api/v2/vehicle-types/{camion.id}/",
+            f"/api/v2/vehicle-categories/{categoria.id}/",
             {"compatibleBodyTypeIds": []}, format="json",
         )
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(CompatibilidadCarroceria.objects.filter(tipo_vehiculo=camion).count(), 0)
+        self.assertEqual(CompatibilidadCarroceria.objects.filter(categoria_vehiculo=categoria).count(), 0)
+
+    def test_categorias_del_mismo_tipo_no_comparten_compatibilidad(self):
+        """Regresion: antes CompatibilidadCarroceria colgaba de TipoVehiculo,
+        asi que TODAS las categorias de "Camion" (2 ton .. 15 ton)
+        terminaban con la misma lista de carrocerias compatibles. El seed
+        arranca compartido (la migracion copia la lista vieja a cada
+        categoria como punto de partida) — lo que se prueba acá es que,
+        una vez que un admin afina una categoria por separado, la otra NO
+        se ve afectada (algo imposible con el modelo viejo)."""
+        liviano = CategoriaVehiculo.objects.get(nombre="Camión 2 ton")
+        pesado = CategoriaVehiculo.objects.get(nombre="Camión 15 ton")
+        volquete = TipoCarroceria.objects.get(codigo="volquete")
+        furgon = TipoCarroceria.objects.get(codigo="furgon_cerrado")
+
+        self.client.patch(
+            f"/api/v2/vehicle-categories/{liviano.id}/",
+            {"compatibleBodyTypeIds": [furgon.id]}, format="json",
+        )
+        self.client.patch(
+            f"/api/v2/vehicle-categories/{pesado.id}/",
+            {"compatibleBodyTypeIds": [volquete.id]}, format="json",
+        )
+        r = self.client.get(f"/api/v2/vehicle-categories/{liviano.id}/")
+        self.assertEqual(r.status_code, 200)
+        got = [c["id"] for c in r.data["compatibleBodyTypes"]]
+        self.assertEqual(got, [furgon.id])
+        self.assertNotIn(volquete.id, got)
 
 
 class CategoriaCrudApiTests(_Base):

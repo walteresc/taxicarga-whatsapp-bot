@@ -38,19 +38,21 @@ class PublicVehiclePickerView(APIView):
         # tocar sin desplegar (_VEHICLE_CODES_PUBLICOS, ya retirada).
         tipos = list(
             TipoVehiculo.objects.filter(habilitado=True, visible_cotizador_publico=True)
-            .prefetch_related("categorias", "compatibilidades__tipo_carroceria")
+            .prefetch_related("categorias__compatibilidades__tipo_carroceria")
             .order_by("orden", "nombre")
         )
         body_codes_seen = {}
         units = []
         for tv in tipos:
-            body_types = [
-                c.tipo_carroceria for c in tv.compatibilidades.all() if c.tipo_carroceria.habilitado
-            ]
-            for bt in body_types:
-                body_codes_seen[bt.codigo] = bt
-            body_codes = [bt.codigo for bt in body_types]
             for cat in tv.categorias.filter(habilitado=True).order_by("orden", "id"):
+                # La carrocería compatible es por CATEGORÍA puntual (tonelaje),
+                # no por tipo de vehículo genérico — un "Camión 2 ton" no
+                # admite lo mismo que un "Camión 15 ton".
+                body_types = [
+                    c.tipo_carroceria for c in cat.compatibilidades.all() if c.tipo_carroceria.habilitado
+                ]
+                for bt in body_types:
+                    body_codes_seen[bt.codigo] = bt
                 units.append({
                     "code": str(cat.id),
                     "name": cat.nombre,
@@ -62,7 +64,7 @@ class PublicVehiclePickerView(APIView):
                     "weightCategory": cat.categoria,
                     "minTon": float(cat.min_ton) if cat.min_ton is not None else None,
                     "maxTon": float(cat.max_ton) if cat.max_ton is not None else None,
-                    "bodyTypes": body_codes,
+                    "bodyTypes": [bt.codigo for bt in body_types],
                 })
         body_types = [
             {"code": bt.codigo, "name": bt.nombre, "icon": bt.icono or "ri-truck-line"}

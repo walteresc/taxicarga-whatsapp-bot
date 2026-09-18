@@ -75,13 +75,30 @@ onMounted(async () => {
 const carrierOptions = computed(() => carriers.value.map(c => ({ title: c.name, value: c.id })))
 const typeOptions = computed(() => vehicleTypes.value.map(t => ({ title: t.name, value: t.id })))
 const selectedType = computed(() => vehicleTypes.value.find(t => t.id === form.vehicleTypeId))
+// La carrocería compatible es por CATEGORÍA puntual (tonelaje) — ver
+// apps/catalogo — no por tipo de vehículo genérico: un "Camión 2 ton" no
+// admite lo mismo que un "Camión 15 ton". Se resuelve la categoría del
+// mismo modo que categoria_para_capacidad() en el backend (aproximado,
+// solo para filtrar qué carrocerías ofrecer acá — la categoría real la
+// vuelve a resolver el backend al guardar).
+const categoriesForType = computed(() =>
+  vehicleCategories.value.filter(c => c.vehicleTypeId === form.vehicleTypeId))
+const resolvedCategory = computed(() => {
+  const cats = categoriesForType.value
+  if (!cats.length) return null
+  const ton = form.capacityUsefulTons === '' ? null : Number(form.capacityUsefulTons)
+  if (ton == null || Number.isNaN(ton)) return cats[0]
+  const match = cats.find(c =>
+    (c.minTons == null || ton >= c.minTons) && (c.maxTons == null || ton <= c.maxTons))
+  return match || cats[0]
+})
 const bodyOptions = computed(() => {
-  const compat = selectedType.value?.compatibleBodyTypes || []
+  const compat = resolvedCategory.value?.compatibleBodyTypes || []
   if (!compat.length) return []
   const ids = new Set(compat.map(c => c.id))
   return bodyTypes.value.filter(b => ids.has(b.id)).map(b => ({ title: b.name, value: b.id }))
 })
-const bodyNotApplicable = computed(() => selectedType.value && !(selectedType.value.compatibleBodyTypes || []).length)
+const bodyNotApplicable = computed(() => resolvedCategory.value && !(resolvedCategory.value.compatibleBodyTypes || []).length)
 
 const snackbar = reactive({ show: false, text: '', color: 'success' })
 const notify = (text, color = 'success') => Object.assign(snackbar, { show: true, text, color })
