@@ -51,7 +51,7 @@ const single = computed(() => (options.value.length === 1 ? options.value[0] : n
   <div>
     <VProgressLinear v-if="loading" indeterminate class="mb-4" />
     <template v-else-if="single">
-      <VCard variant="tonal" color="primary" class="pa-4 d-flex align-center ga-3 flex-wrap">
+      <VCard variant="outlined" class="pa-4 d-flex align-center ga-3 flex-wrap price-tile price-tile--selected">
         <VAvatar size="40" color="primary" variant="elevated">
           <VIcon :icon="single.icon" size="20" color="white" />
         </VAvatar>
@@ -72,9 +72,10 @@ const single = computed(() => (options.value.length === 1 ? options.value[0] : n
       <VRow dense>
         <VCol v-for="o in options" :key="o.value" cols="12" sm="6">
           <VCard
-            :variant="modelValue === o.value ? 'tonal' : 'outlined'"
-            :color="modelValue === o.value ? 'primary' : undefined"
-            class="pa-4 h-100 position-relative price-tile" style="cursor: pointer;"
+            variant="outlined"
+            class="pa-4 h-100 position-relative price-tile"
+            :class="{ 'price-tile--selected': modelValue === o.value }"
+            style="cursor: pointer;"
             @click="emit('update:modelValue', o.value)"
           >
             <VIcon
@@ -106,9 +107,14 @@ const single = computed(() => (options.value.length === 1 ? options.value[0] : n
 
 <style scoped>
 .price-tile {
-  transition: border-color 0.15s ease, transform 0.1s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 .price-tile:hover {
   border-color: rgb(var(--v-theme-primary));
+}
+.price-tile--selected {
+  border-color: rgb(var(--v-theme-primary)) !important;
+  border-inline-start: 3px solid rgb(var(--v-theme-primary)) !important;
+  box-shadow: 0 4px 14px rgba(var(--v-theme-primary), 0.22);
 }
 </style>

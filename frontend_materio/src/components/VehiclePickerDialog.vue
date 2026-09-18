@@ -188,7 +188,7 @@ const clear = () => { emit('clear'); close() }
       <VCardActions class="px-4 py-3 flex-shrink-0">
         <VBtn v-if="expandedUnit" variant="text" prepend-icon="ri-close-line" @click="toggleUnit(chosenUnit)">Cambiar unidad</VBtn>
         <VSpacer />
-        <VBtn v-if="!expandedUnit" variant="tonal" @click="clear">Dejar que TaxiCarga elija</VBtn>
+        <VBtn v-if="!expandedUnit" variant="outlined" @click="clear">Dejar que TaxiCarga elija</VBtn>
         <VBtn v-else color="primary" variant="elevated" rounded="lg" @click="confirm">Confirmar</VBtn>
       </VCardActions>
     </VCard>
@@ -226,8 +226,9 @@ const clear = () => { emit('clear'); close() }
   border-color: rgb(var(--v-theme-primary));
 }
 .unit-card--expanded {
-  border-color: rgb(var(--v-theme-primary));
-  border-width: 2px;
+  border-color: rgb(var(--v-theme-primary)) !important;
+  border-inline-start: 3px solid rgb(var(--v-theme-primary)) !important;
+  box-shadow: 0 4px 14px rgba(var(--v-theme-primary), 0.22);
 }
 .body-panel {
   background: rgba(var(--v-theme-primary), 0.05);

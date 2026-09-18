@@ -28,8 +28,10 @@ const OPTIONS = [
     <VRow dense>
       <VCol v-for="o in OPTIONS" :key="o.value" cols="12" sm="6">
         <VCard
-          :variant="mode === o.value ? 'tonal' : 'outlined'" :color="mode === o.value ? 'primary' : undefined"
-          class="pa-4 h-100 position-relative price-tile" style="cursor: pointer;"
+          variant="outlined"
+          class="pa-4 h-100 position-relative price-tile"
+          :class="{ 'price-tile--selected': mode === o.value }"
+          style="cursor: pointer;"
           @click="emit('update:mode', o.value)"
         >
           <VIcon
@@ -69,9 +71,14 @@ const OPTIONS = [
 
 <style scoped>
 .price-tile {
-  transition: border-color 0.15s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 .price-tile:hover {
   border-color: rgb(var(--v-theme-primary));
+}
+.price-tile--selected {
+  border-color: rgb(var(--v-theme-primary)) !important;
+  border-inline-start: 3px solid rgb(var(--v-theme-primary)) !important;
+  box-shadow: 0 4px 14px rgba(var(--v-theme-primary), 0.22);
 }
 </style>

@@ -147,9 +147,10 @@ const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE
             <VRow class="mb-3" dense>
               <VCol v-for="s in SERVICE_TYPES" :key="s.value" cols="12" sm="4">
                 <VCard
-                  :variant="serviceType === s.value ? 'tonal' : 'outlined'"
-                  :color="serviceType === s.value ? 'primary' : undefined"
-                  class="pa-4 text-center h-100 position-relative service-tile" style="cursor: pointer;"
+                  variant="outlined"
+                  class="pa-4 text-center h-100 position-relative service-tile"
+                  :class="{ 'service-tile--selected': serviceType === s.value }"
+                  style="cursor: pointer;"
                   @click="selectService(s.value)"
                 >
                   <VIcon
@@ -265,12 +266,12 @@ const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE
                 <div class="flex-grow-1">
                   <div class="text-subtitle-2 font-weight-bold">¿Quieres elegir vehículo?</div>
                   <div class="text-caption text-medium-emphasis mb-2">
-                    Puedes elegir un tipo de vehículo para tu carga o continuar sin seleccionar uno. TaxiCarga te asignará la mejor opción disponible.
+                    Opcional — si no elegís, te asignamos la mejor opción disponible.
                   </div>
                   <VChip v-if="form.cargo.truckType" closable color="primary" variant="tonal" @click:close="clearTruck">
                     {{ chosenTruckLabel }}
                   </VChip>
-                  <VBtn v-else variant="tonal" size="small" @click="showVehiclePicker = true">Elegir vehículo</VBtn>
+                  <VBtn v-else variant="outlined" size="small" @click="showVehiclePicker = true">Elegir vehículo</VBtn>
                 </div>
               </div>
               <VehiclePickerDialog v-model="showVehiclePicker" @select="pickTruck" @clear="clearTruck" />
@@ -369,11 +370,19 @@ const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE
 
 <style scoped>
 .service-tile {
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
 }
 .service-tile:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(var(--v-theme-on-surface), 0.12);
+}
+/* Selección con acento de color + sombra en vez de rellenar toda la
+   tarjeta de "tonal" (color plano) — más sobrio y menos repetitivo cuando
+   se repite el mismo patrón en varios pasos del formulario. */
+.service-tile--selected {
+  border-color: rgb(var(--v-theme-primary)) !important;
+  border-inline-start: 3px solid rgb(var(--v-theme-primary)) !important;
+  box-shadow: 0 4px 14px rgba(var(--v-theme-primary), 0.22);
 }
 
 /* Timeline compacto, centrado en la página, sin caja/sombra/fondo propio —
