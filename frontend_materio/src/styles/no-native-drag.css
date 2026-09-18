@@ -19,16 +19,9 @@ a,
   user-drag: none;
 }
 
-/* Mismo problema, otro gatillo: seleccionar TEXTO (click + arrastre sobre
-   caracteres, no sobre el fondo de la tarjeta) dentro de una VCard que
-   navega (:to=, se renderiza como <a>) también deja la página paralizada
-   — confirmado que persiste incluso con el drag nativo ya desactivado
-   arriba, porque seleccionar texto es un mecanismo distinto del navegador
-   (no es "arrastrar el elemento", es "arrastrar el cursor de texto").
-   Una tarjeta que navega no es un lugar donde tenga sentido copiar texto
-   de todos modos, así que se desactiva la selección ahí en vez de perseguir
-   la causa exacta dentro del navegador. */
-a.v-card,
-a.v-card * {
-  user-select: none;
-}
+/* NOTA: se probó además desactivar user-select en las VCard que navegan
+   (mismo síntoma al seleccionar texto ahí) pero se revirtió — confirmado
+   que el cuelgue pasa IGUAL en wikipedia.org, así que no es de esta app;
+   es del navegador/GPU/drivers de esa máquina. No tiene sentido sacrificar
+   la posibilidad de seleccionar/copiar texto para "arreglar" algo que no
+   causamos ni podemos arreglar desde el código. */
