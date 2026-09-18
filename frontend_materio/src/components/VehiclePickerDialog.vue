@@ -157,7 +157,7 @@ const clear = () => { emit('clear'); close() }
               <VDivider />
               <div class="pa-3 body-panel">
                 <div class="text-caption text-medium-emphasis mb-2">
-                  Opcional: elegí un tipo de carrocería, o dejala en "Compatible" para conseguir vehículos compatibles con tu carga.
+                  <strong>Opcional:</strong> elegí un tipo de carrocería, o dejala en "Compatible" para conseguir vehículos compatibles con tu carga.
                 </div>
                 <div class="d-flex flex-wrap ga-2">
                   <VChip
