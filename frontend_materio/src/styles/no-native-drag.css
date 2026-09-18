@@ -18,3 +18,17 @@ a,
   -webkit-user-drag: none;
   user-drag: none;
 }
+
+/* Mismo problema, otro gatillo: seleccionar TEXTO (click + arrastre sobre
+   caracteres, no sobre el fondo de la tarjeta) dentro de una VCard que
+   navega (:to=, se renderiza como <a>) también deja la página paralizada
+   — confirmado que persiste incluso con el drag nativo ya desactivado
+   arriba, porque seleccionar texto es un mecanismo distinto del navegador
+   (no es "arrastrar el elemento", es "arrastrar el cursor de texto").
+   Una tarjeta que navega no es un lugar donde tenga sentido copiar texto
+   de todos modos, así que se desactiva la selección ahí en vez de perseguir
+   la causa exacta dentro del navegador. */
+a.v-card,
+a.v-card * {
+  user-select: none;
+}
