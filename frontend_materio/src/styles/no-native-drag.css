@@ -1,0 +1,20 @@
+/* Bug reportado: hacer click sobre una tarjeta/etiqueta que navega
+   (VCard :to=, VChip, VBtn — todos se renderizan como <a>) y ARRASTRAR
+   el mouse antes de soltar (sin llegar a hacer click real) deja la
+   página completamente paralizada — ningún botón responde hasta F5.
+   Causa: <a> tiene "draggable" nativo por defecto en el navegador; al
+   arrastrar en vez de hacer click, el navegador dispara su propio drag
+   nativo del link, que se cruza con el estado de "presionado"/ripple de
+   Vuetify (que espera un mouseup normal) y lo deja trabado — bloqueando
+   los clics del resto de la página.
+   No hay ninguna función real de "arrastrar un link a otra pestaña/
+   escritorio" en esta app, así que se desactiva el drag nativo en los
+   elementos clicables. Los drags propios (Pizarra, diálogos rápidos)
+   usan pointer events, no drag nativo — no se ven afectados. */
+a,
+.v-card,
+.v-btn,
+.v-chip {
+  -webkit-user-drag: none;
+  user-drag: none;
+}
