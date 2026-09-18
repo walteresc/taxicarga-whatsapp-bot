@@ -9,53 +9,69 @@ const props = defineProps({
   negotiable: { type: Boolean, default: true },      // v-model:negotiable
 })
 const emit = defineEmits(['update:mode', 'update:price', 'update:negotiable'])
+
+const OPTIONS = [
+  {
+    value: 'ofertas', icon: 'ri-team-line', title: 'Recibir ofertas',
+    subtitle: 'Los transportistas proponen su precio.',
+  },
+  {
+    value: 'propio', icon: 'ri-price-tag-3-line', title: 'Poner mi precio',
+    subtitle: 'Vos decidís cuánto pagar.',
+  },
+]
 </script>
 
 <template>
   <div>
-    <div class="text-subtitle-2 mb-2">¿Cómo quieres continuar?</div>
+    <div class="text-h6 font-weight-bold mb-3">¿Cómo quieres continuar?</div>
     <VRow dense>
-      <VCol cols="12" sm="6">
+      <VCol v-for="o in OPTIONS" :key="o.value" cols="12" sm="6">
         <VCard
-          :variant="mode === 'ofertas' ? 'tonal' : 'outlined'" :color="mode === 'ofertas' ? 'primary' : undefined"
-          class="pa-4 h-100" style="cursor: pointer;" @click="emit('update:mode', 'ofertas')"
+          :variant="mode === o.value ? 'tonal' : 'outlined'" :color="mode === o.value ? 'primary' : undefined"
+          class="pa-4 h-100 position-relative price-tile" style="cursor: pointer;"
+          @click="emit('update:mode', o.value)"
         >
-          <VIcon icon="ri-team-line" size="24" class="mb-2" />
-          <div class="text-subtitle-2 font-weight-bold mb-1">Publicar sin precio, recibir ofertas</div>
-          <div class="text-caption text-medium-emphasis">
-            Nuestros transportistas proponen su precio — vos aceptás o negociás el que más te convenga.
-          </div>
-        </VCard>
-      </VCol>
-      <VCol cols="12" sm="6">
-        <VCard
-          :variant="mode === 'propio' ? 'tonal' : 'outlined'" :color="mode === 'propio' ? 'primary' : undefined"
-          class="pa-4 h-100" style="cursor: pointer;" @click="emit('update:mode', 'propio')"
-        >
-          <VIcon icon="ri-price-tag-3-line" size="24" class="mb-2" />
-          <div class="text-subtitle-2 font-weight-bold mb-1">Publicar con mi precio</div>
-          <div class="text-caption text-medium-emphasis">
-            Indicá el precio que querés pagar — fijo o abierto a que te contraofrezcan.
-          </div>
+          <VIcon
+            v-if="mode === o.value" icon="ri-checkbox-circle-fill" color="primary" size="18"
+            style="position:absolute; top:10px; right:10px;"
+          />
+          <VAvatar
+            size="40" class="mb-2" :variant="mode === o.value ? 'elevated' : 'tonal'"
+            :color="mode === o.value ? 'primary' : 'surface-variant'"
+          >
+            <VIcon :icon="o.icon" size="20" :color="mode === o.value ? 'white' : undefined" />
+          </VAvatar>
+          <div class="text-subtitle-1 font-weight-bold">{{ o.title }}</div>
+          <div class="text-caption text-medium-emphasis">{{ o.subtitle }}</div>
         </VCard>
       </VCol>
     </VRow>
 
     <template v-if="mode === 'propio'">
       <VTextField
-        :model-value="price" label="Tu precio (S/)" type="number" density="comfortable" class="mt-3 mb-2"
+        :model-value="price" label="Tu precio (S/)" type="number" density="comfortable" class="mt-4 mb-3"
         prefix="S/" @update:model-value="v => emit('update:price', v)"
       />
-      <VRadioGroup
-        :model-value="negotiable" density="comfortable" inline hide-details
+      <VBtnToggle
+        :model-value="negotiable" color="primary" variant="outlined" divided density="comfortable" mandatory
         @update:model-value="v => emit('update:negotiable', v)"
       >
-        <VRadio :value="false" label="Fijo" />
-        <VRadio :value="true" label="Negociable" />
-      </VRadioGroup>
-      <p class="text-caption text-medium-emphasis mt-1 mb-0">
-        Los transportistas aceptan tu precio {{ negotiable ? 'o proponen una contraoferta.' : '.' }}
+        <VBtn :value="false" class="px-6">Fijo</VBtn>
+        <VBtn :value="true" class="px-6">Negociable</VBtn>
+      </VBtnToggle>
+      <p class="text-caption text-medium-emphasis mt-2 mb-0">
+        {{ negotiable ? 'Aceptan tu precio o proponen otro.' : 'Se paga exactamente ese monto.' }}
       </p>
     </template>
   </div>
 </template>
+
+<style scoped>
+.price-tile {
+  transition: border-color 0.15s ease;
+}
+.price-tile:hover {
+  border-color: rgb(var(--v-theme-primary));
+}
+</style>
