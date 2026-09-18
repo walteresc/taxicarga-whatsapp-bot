@@ -67,7 +67,7 @@ const logout = async () => {
     </VAppBar>
 
     <VMain>
-      <VContainer fluid class="pa-3 pa-md-6" style="max-width: 1200px;">
+      <VContainer fluid class="pa-3 pa-md-6">
         <RouterView />
       </VContainer>
     </VMain>

@@ -21,9 +21,9 @@ const auth = useAuthStore()
 // (Carga / Mudanzas / Reparto); por dentro las 3 pasan por el mismo cotizador
 // de invitado, solo cambia qué categoría de `cargo` mandamos.
 const SERVICE_TYPES = [
-  { value: 'carga', icon: 'ri-truck-line', title: 'Carga', subtitle: 'Paquetes, mercadería, pallets, maquinaria o carga nacional.' },
-  { value: 'mudanza', icon: 'ri-home-4-line', title: 'Mudanzas', subtitle: 'Trasladar una casa, departamento, oficina o empresa.' },
-  { value: 'reparto', icon: 'ri-e-bike-2-line', title: 'Reparto', subtitle: 'Entregar pedidos a clientes, tiendas o múltiples destinos.' },
+  { value: 'carga', icon: 'ri-truck-line', title: 'Carga', subtitle: 'Paquetes, mercadería o carga nacional.' },
+  { value: 'mudanza', icon: 'ri-home-4-line', title: 'Mudanzas', subtitle: 'Casa, oficina o empresa.' },
+  { value: 'reparto', icon: 'ri-e-bike-2-line', title: 'Reparto', subtitle: 'Entregas y última milla.' },
 ]
 const serviceType = ref('')
 

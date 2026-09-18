@@ -20,9 +20,9 @@ const router = useRouter()
 // cliente el negocio se presenta en 3 líneas (Carga/Mudanzas/Reparto), por
 // dentro las 3 siguen siendo una "carga" con distinta categoría/detalle.
 const SERVICE_TYPES = [
-  { value: 'carga', icon: 'ri-truck-line', title: 'Carga', subtitle: 'Paquetes, mercadería, pallets, maquinaria o carga nacional.' },
-  { value: 'mudanza', icon: 'ri-home-4-line', title: 'Mudanzas', subtitle: 'Casa, departamento, oficina o empresa.' },
-  { value: 'reparto', icon: 'ri-e-bike-2-line', title: 'Reparto', subtitle: 'Entregas a clientes, tiendas o múltiples destinos.' },
+  { value: 'carga', icon: 'ri-truck-line', title: 'Carga', subtitle: 'Paquetes, mercadería o carga nacional.' },
+  { value: 'mudanza', icon: 'ri-home-4-line', title: 'Mudanzas', subtitle: 'Casa, oficina o empresa.' },
+  { value: 'reparto', icon: 'ri-e-bike-2-line', title: 'Reparto', subtitle: 'Entregas y última milla.' },
 ]
 const serviceType = ref('carga')
 
