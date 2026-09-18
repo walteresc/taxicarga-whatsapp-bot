@@ -57,6 +57,7 @@ const OPTIONS = [
       />
       <VBtnToggle
         :model-value="negotiable" color="primary" variant="outlined" divided density="comfortable" mandatory
+        class="price-btn-toggle"
         @update:model-value="v => emit('update:negotiable', v)"
       >
         <VBtn :value="false" class="px-6">Fijo</VBtn>
@@ -80,5 +81,15 @@ const OPTIONS = [
   border-color: rgb(var(--v-theme-primary)) !important;
   border-inline-start: 3px solid rgb(var(--v-theme-primary)) !important;
   box-shadow: 0 4px 14px rgba(var(--v-theme-primary), 0.22);
+}
+
+/* El tema (Materio) fuerza en .v-btn-toggle un ancho fijo de 44/52px por
+   botón (pensado para toggles de solo ícono) — con texto ("Fijo" /
+   "Negociable") eso los aplasta y superpone. Se anula ese ancho fijo acá;
+   la especificidad extra (dos clases en el mismo elemento) es necesaria
+   para ganarle al !important del tema. */
+:deep(.price-btn-toggle.v-btn-toggle .v-btn) {
+  inline-size: auto !important;
+  block-size: 40px !important;
 }
 </style>
