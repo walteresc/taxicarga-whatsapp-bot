@@ -157,14 +157,14 @@ const clear = () => { emit('clear'); close() }
               <VDivider />
               <div class="pa-3 body-panel">
                 <div class="text-caption text-medium-emphasis mb-2">
-                  ¿Alguna carrocería en particular? Elegí "Cualquiera" si no te importa.
+                  Opcional: elegí un tipo de carrocería, o dejala en "Compatible" para conseguir vehículos compatibles con tu carga.
                 </div>
                 <div class="d-flex flex-wrap ga-2">
                   <VChip
                     :color="!chosenBody ? 'primary' : undefined" :variant="!chosenBody ? 'flat' : 'outlined'"
                     prepend-icon="ri-checkbox-multiple-blank-line" @click="pickBody(null)"
                   >
-                    Cualquiera
+                    Compatible
                   </VChip>
                   <VChip
                     v-for="bt in bodyOptionsFor(u)" :key="bt.code"
