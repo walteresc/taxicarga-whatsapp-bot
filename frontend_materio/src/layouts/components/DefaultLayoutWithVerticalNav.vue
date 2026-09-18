@@ -1,6 +1,6 @@
 <script setup>
 import { useRoute } from 'vue-router'
-import { computed, onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted, watch } from 'vue'
 import NavItems from '@/layouts/components/NavItems.vue'
 import logo from '@images/logo.svg?raw'
 import VerticalNavLayout from '@layouts/components/VerticalNavLayout.vue'
@@ -24,63 +24,38 @@ const conversationsStore = useConversationsStore()
 const messagesStore = useMessagesStore()
 const { initialize, cleanup } = useWhatsAppRealtime(conversationsStore, messagesStore)
 
-onMounted(async () => {
-  console.log('[LAYOUT] DefaultLayoutWithVerticalNav mounted')
-
-  // Record initialization attempt in diagnostics
-  if (typeof window !== 'undefined' && window.__WHATSAPP_REALTIME_DIAGNOSTICS__) {
-    const diagnostics = Object.values(window.__WHATSAPP_REALTIME_DIAGNOSTICS__)[0]
-    if (diagnostics) {
-      if (!diagnostics.initializationAttempts) diagnostics.initializationAttempts = []
-      diagnostics.initializationAttempts.push({
-        timestamp: new Date().toISOString(),
-        status: 'starting',
-      })
-    }
-  }
-
+// La conexión SSE de tiempo real (WhatsApp) solo tiene consumidores reales
+// en Bandeja de entrada (ningún otro módulo lee conversationsStore/
+// messagesStore) — antes se abría al montar este layout, es decir en
+// CUALQUIER página interna (dashboard, gerencia, catálogo...), y quedaba
+// abierta indefinidamente mientras esa pestaña estuviera abierta. Con
+// Gunicorn sirviendo un pool finito de hilos, cada pestaña interna abierta
+// consumía uno para siempre sin necesidad, y alcanzaba para colgar la app
+// para todo el mundo. Ahora se conecta solo al entrar a Bandeja de entrada
+// y se desconecta al salir.
+const connectRealtime = async () => {
+  console.log('[LAYOUT] Entering bandeja-entrada, connecting real-time...')
   try {
-    // CORRECCIÓN 2: Verify authentication before initializing SSE
-    console.log('[LAYOUT] Checking authentication...')
-
     const isAuthenticated = await checkAuth()
     if (!isAuthenticated) {
       console.warn('[LAYOUT] Not authenticated, skipping real-time initialization')
 
-      // Record failed auth check
-      if (typeof window !== 'undefined' && window.__WHATSAPP_REALTIME_DIAGNOSTICS__) {
-        const diagnostics = Object.values(window.__WHATSAPP_REALTIME_DIAGNOSTICS__)[0]
-        if (diagnostics && diagnostics.initializationAttempts) {
-          diagnostics.initializationAttempts[diagnostics.initializationAttempts.length - 1].status = 'auth_failed'
-        }
-      }
-      
       return
     }
-    console.log('[LAYOUT] Authentication verified, calling initialize()...')
     await initialize()
     console.log('[LAYOUT] initialize() completed successfully')
-
-    // Record successful initialization
-    if (typeof window !== 'undefined' && window.__WHATSAPP_REALTIME_DIAGNOSTICS__) {
-      const diagnostics = Object.values(window.__WHATSAPP_REALTIME_DIAGNOSTICS__)[0]
-      if (diagnostics && diagnostics.initializationAttempts) {
-        diagnostics.initializationAttempts[diagnostics.initializationAttempts.length - 1].status = 'success'
-      }
-    }
   } catch (error) {
-    console.error('[LAYOUT] Failed to initialize real-time:', error)
-    console.error('[LAYOUT] Error details:', error.message, error.stack)
-
-    // Record failed initialization with error
-    if (typeof window !== 'undefined' && window.__WHATSAPP_REALTIME_DIAGNOSTICS__) {
-      const diagnostics = Object.values(window.__WHATSAPP_REALTIME_DIAGNOSTICS__)[0]
-      if (diagnostics && diagnostics.initializationAttempts) {
-        diagnostics.initializationAttempts[diagnostics.initializationAttempts.length - 1].status = 'error'
-        diagnostics.initializationAttempts[diagnostics.initializationAttempts.length - 1].error = error.message
-      }
-    }
+    console.error('[LAYOUT] Failed to initialize real-time:', error.message, error.stack)
   }
+}
+
+onMounted(() => {
+  if (isInboxRoute.value) connectRealtime()
+})
+
+watch(isInboxRoute, (entering, wasIn) => {
+  if (entering && !wasIn) connectRealtime()
+  else if (!entering && wasIn) cleanup()
 })
 
 onUnmounted(() => {
