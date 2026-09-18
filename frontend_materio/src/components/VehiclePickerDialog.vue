@@ -81,11 +81,19 @@ const bodyOptionsFor = u => (u.bodyTypes || [])
   .filter(Boolean)
 
 const close = () => emit('update:modelValue', false)
+// Tocar la fila de una unidad ABIERTA solo la colapsa (no descarta la
+// carrocería ya elegida — antes se perdía silenciosamente si el usuario
+// volvía a tocar la fila, p. ej. pensando que así confirmaba su elección).
+// La carrocería solo se reinicia a "Cualquiera" al abrir una unidad
+// DISTINTA a la que estaba elegida.
 const toggleUnit = u => {
-  const opening = expandedUnit.value !== u.code
-  expandedUnit.value = opening ? u.code : ''
-  chosenUnit.value = opening ? u : null
-  chosenBody.value = null
+  if (expandedUnit.value === u.code) {
+    expandedUnit.value = ''
+    return
+  }
+  expandedUnit.value = u.code
+  if (chosenUnit.value?.code !== u.code) chosenBody.value = null
+  chosenUnit.value = u
 }
 const pickBody = bt => { chosenBody.value = bt }
 const confirm = () => {
