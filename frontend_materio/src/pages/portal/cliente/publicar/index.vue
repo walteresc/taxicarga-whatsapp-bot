@@ -325,11 +325,11 @@ const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE
       <VCardActions class="px-4 pb-4">
         <VBtn v-if="step > 1" variant="text" @click="step--">Atrás</VBtn>
         <VSpacer />
-        <VBtn v-if="step === 1" color="primary" variant="elevated" rounded="lg" :disabled="!step1ok" @click="step = 2">Siguiente</VBtn>
-        <VBtn v-else-if="step === 2" color="primary" variant="elevated" rounded="lg" @click="goToStep3">Siguiente</VBtn>
-        <VBtn v-else-if="step < maxStep" color="primary" variant="elevated" rounded="lg" @click="step++">Siguiente</VBtn>
+        <VBtn v-if="step === 1" color="primary" variant="elevated" rounded="lg" size="large" min-width="180" :disabled="!step1ok" @click="step = 2">Siguiente</VBtn>
+        <VBtn v-else-if="step === 2" color="primary" variant="elevated" rounded="lg" size="large" min-width="180" @click="goToStep3">Siguiente</VBtn>
+        <VBtn v-else-if="step < maxStep" color="primary" variant="elevated" rounded="lg" size="large" min-width="180" @click="step++">Siguiente</VBtn>
         <VBtn
-          v-else color="primary" variant="elevated" rounded="lg" :loading="submitting"
+          v-else color="primary" variant="elevated" rounded="lg" size="large" min-width="180" :loading="submitting"
           :disabled="serviceType === 'carga' && continueMode === 'propio' && !form.proposedPrice"
           @click="submit"
         >
