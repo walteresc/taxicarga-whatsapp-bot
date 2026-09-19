@@ -39,34 +39,44 @@ class PublicVehiclePickerView(APIView):
         tipos = list(
             TipoVehiculo.objects.filter(habilitado=True, visible_cotizador_publico=True)
             .prefetch_related("categorias__compatibilidades__tipo_carroceria")
-            .order_by("orden", "nombre")
+        )
+        # Todas las categorías de todos los tipos habilitados, en UNA sola
+        # lista ordenada globalmente por su propio "Orden" (Configuración →
+        # Catálogo → Categorización) — antes se agrupaba primero por tipo de
+        # vehículo y recién adentro por orden, así que una categoría con
+        # orden más bajo (p. ej. Semitrailer 20 ton) podía salir después de
+        # otra con orden más alto pero del mismo tipo agrupado antes (p. ej.
+        # Camión Grúa 5 ton), aunque el admin haya puesto un orden global
+        # pensado para intercalar tipos de vehículo.
+        pares = sorted(
+            ((cat, tv) for tv in tipos for cat in tv.categorias.all() if cat.habilitado),
+            key=lambda par: (par[0].orden, par[0].id),
         )
         body_codes_seen = {}
         units = []
-        for tv in tipos:
-            for cat in tv.categorias.filter(habilitado=True).order_by("orden", "id"):
-                # La carrocería compatible es por CATEGORÍA puntual (tonelaje),
-                # no por tipo de vehículo genérico — un "Camión 2 ton" no
-                # admite lo mismo que un "Camión 15 ton".
-                body_types = sorted(
-                    (c.tipo_carroceria for c in cat.compatibilidades.all() if c.tipo_carroceria.habilitado),
-                    key=lambda bt: (bt.orden, bt.nombre),
-                )
-                for bt in body_types:
-                    body_codes_seen[bt.codigo] = bt
-                units.append({
-                    "code": str(cat.id),
-                    "name": cat.nombre,
-                    "vehicleType": tv.codigo,
-                    # Categoría de peso (Menores/Livianos/Medianos/Pesados/Especiales) es el
-                    # filtro principal del selector — la carrocería queda como dato
-                    # informativo, no como filtro obligatorio (la decide el transportista
-                    # al aceptar el servicio, no el cliente al pedirlo).
-                    "weightCategory": cat.categoria,
-                    "minTon": float(cat.min_ton) if cat.min_ton is not None else None,
-                    "maxTon": float(cat.max_ton) if cat.max_ton is not None else None,
-                    "bodyTypes": [bt.codigo for bt in body_types],
-                })
+        for cat, tv in pares:
+            # La carrocería compatible es por CATEGORÍA puntual (tonelaje),
+            # no por tipo de vehículo genérico — un "Camión 2 ton" no
+            # admite lo mismo que un "Camión 15 ton".
+            body_types = sorted(
+                (c.tipo_carroceria for c in cat.compatibilidades.all() if c.tipo_carroceria.habilitado),
+                key=lambda bt: (bt.orden, bt.nombre),
+            )
+            for bt in body_types:
+                body_codes_seen[bt.codigo] = bt
+            units.append({
+                "code": str(cat.id),
+                "name": cat.nombre,
+                "vehicleType": tv.codigo,
+                # Categoría de peso (Menores/Livianos/Medianos/Pesados/Especiales) es el
+                # filtro principal del selector — la carrocería queda como dato
+                # informativo, no como filtro obligatorio (la decide el transportista
+                # al aceptar el servicio, no el cliente al pedirlo).
+                "weightCategory": cat.categoria,
+                "minTon": float(cat.min_ton) if cat.min_ton is not None else None,
+                "maxTon": float(cat.max_ton) if cat.max_ton is not None else None,
+                "bodyTypes": [bt.codigo for bt in body_types],
+            })
         body_types = [
             {"code": bt.codigo, "name": bt.nombre, "icon": bt.icono or "ri-truck-line"}
             for bt in sorted(body_codes_seen.values(), key=lambda b: (b.orden, b.nombre))
