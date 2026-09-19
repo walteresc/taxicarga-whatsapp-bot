@@ -13,6 +13,7 @@ const emit = defineEmits(['close', 'saved'])
 
 const vehicleTypes = ref([])
 const bodyTypes = ref([])
+const vehicleCategories = ref([])
 const saving = ref(false)
 const errs = ref({})
 
@@ -28,6 +29,7 @@ onMounted(async () => {
     const cat = await fetchVehicleCatalog()
     vehicleTypes.value = cat.vehicleTypes
     bodyTypes.value = cat.bodyTypes
+    vehicleCategories.value = cat.categories || []
   } catch { /* */ }
   if (props.vehicle) {
     Object.assign(form, {
@@ -44,12 +46,28 @@ onMounted(async () => {
 })
 
 const typeOptions = computed(() => vehicleTypes.value.map(t => ({ title: t.name, value: t.id })))
-const selType = computed(() => vehicleTypes.value.find(t => t.id === form.vehicleTypeId))
+// La carrocería compatible es por CATEGORÍA puntual (tonelaje) — ver
+// apps/catalogo — no por tipo de vehículo genérico: un "Camión 2 ton" no
+// admite lo mismo que un "Camión 15 ton". Se resuelve la categoría del
+// mismo modo que categoria_para_capacidad() en el backend (aproximado,
+// solo para filtrar qué carrocerías ofrecer acá — la categoría real la
+// vuelve a resolver el backend al guardar).
+const categoriesForType = computed(() =>
+  vehicleCategories.value.filter(c => c.vehicleTypeId === form.vehicleTypeId))
+const resolvedCategory = computed(() => {
+  const cats = categoriesForType.value
+  if (!cats.length) return null
+  const ton = form.capacityUsefulTons === '' ? null : Number(form.capacityUsefulTons)
+  if (ton == null || Number.isNaN(ton)) return cats[0]
+  const match = cats.find(c =>
+    (c.minTons == null || ton >= c.minTons) && (c.maxTons == null || ton <= c.maxTons))
+  return match || cats[0]
+})
 const bodyOptions = computed(() => {
-  const ids = new Set((selType.value?.compatibleBodyTypes || []).map(c => c.id))
+  const ids = new Set((resolvedCategory.value?.compatibleBodyTypes || []).map(c => c.id))
   return bodyTypes.value.filter(b => ids.has(b.id)).map(b => ({ title: b.name, value: b.id }))
 })
-const bodyNA = computed(() => selType.value && !(selType.value.compatibleBodyTypes || []).length)
+const bodyNA = computed(() => resolvedCategory.value && !(resolvedCategory.value.compatibleBodyTypes || []).length)
 const numOrNull = v => (v === '' || v == null ? null : Number(v))
 
 const submit = async () => {
