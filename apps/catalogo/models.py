@@ -7,6 +7,23 @@ publicar/derivar una carga.
 """
 from django.db import models
 
+# Categorías de peso/capacidad — constante a nivel de módulo (no colgada de
+# CategoriaVehiculo) porque CompatibilidadCarroceria, definida antes que
+# CategoriaVehiculo en este archivo, también la necesita (ver
+# categoria_cliente más abajo).
+MENORES = "menores"
+LIVIANOS = "livianos"
+MEDIANOS = "medianos"
+PESADOS = "pesados"
+ESPECIALES = "especiales"
+CATEGORIAS_PESO = [
+    (MENORES, "Menores"),
+    (LIVIANOS, "Livianos"),
+    (MEDIANOS, "Medianos"),
+    (PESADOS, "Pesados"),
+    (ESPECIALES, "Especiales"),
+]
+
 
 class TipoVehiculo(models.Model):
     codigo = models.SlugField(max_length=40, unique=True)
@@ -86,6 +103,21 @@ class CompatibilidadCarroceria(models.Model):
             "Vacío = se muestra solo como carrocería dentro de la categoría, como siempre."
         ),
     )
+    # Solo tiene efecto junto con nombre_cliente. La "unidad virtual" hereda
+    # por defecto la categoría de peso (Menores/Livianos/.../Especiales) de
+    # la CategoriaVehiculo real de base — pero esa real puede ser, p. ej.,
+    # "Livianos" (para el uso normal de "Camión 5 ton") mientras que la
+    # variante con grúa de esa misma categoría real se quiere mostrar al
+    # cliente en "Especiales". Este campo permite esa diferencia.
+    categoria_cliente = models.CharField(
+        max_length=20, choices=CATEGORIAS_PESO, blank=True, default="",
+        help_text=(
+            "Solo con nombre_cliente completado: en qué categoría de peso "
+            "(Menores/Livianos/.../Especiales) mostrar esta unidad virtual al "
+            "cliente. Vacío = usa la misma categoría de peso que la categoría "
+            "real de base."
+        ),
+    )
 
     class Meta:
         verbose_name = "Compatibilidad vehículo–carrocería"
@@ -104,18 +136,15 @@ class CategoriaVehiculo(models.Model):
     """Fila de la tabla de categorización peso/capacidad. El sistema asigna la
     categoría al registrar un vehículo según su capacidad de carga (ton)."""
 
-    MENORES = "menores"
-    LIVIANOS = "livianos"
-    MEDIANOS = "medianos"
-    PESADOS = "pesados"
-    ESPECIALES = "especiales"
-    CATEGORIAS = [
-        (MENORES, "Menores"),
-        (LIVIANOS, "Livianos"),
-        (MEDIANOS, "Medianos"),
-        (PESADOS, "Pesados"),
-        (ESPECIALES, "Especiales"),
-    ]
+    # Alias de las constantes a nivel de módulo (ver arriba) — se mantienen
+    # acá para no romper el código existente que las usa como
+    # CategoriaVehiculo.CATEGORIAS / .LIVIANOS / etc.
+    MENORES = MENORES
+    LIVIANOS = LIVIANOS
+    MEDIANOS = MEDIANOS
+    PESADOS = PESADOS
+    ESPECIALES = ESPECIALES
+    CATEGORIAS = CATEGORIAS_PESO
 
     tipo_vehiculo = models.ForeignKey(
         TipoVehiculo, on_delete=models.CASCADE, related_name="categorias",

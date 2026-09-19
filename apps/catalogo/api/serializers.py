@@ -79,13 +79,23 @@ class VehicleCategorySerializer(serializers.ModelSerializer):
         child=serializers.CharField(allow_blank=True, max_length=80, required=False),
         required=False, source="_display_names_write",
     )
+    # En qué categoría de peso mostrar la "unidad virtual" al cliente (ver
+    # CompatibilidadCarroceria.categoria_cliente) — {"<tipoCarroceriaId>":
+    # "especiales"}. Solo tiene efecto si esa carrocería además tiene un
+    # nombre propio (bodyTypeDisplayNames); vacío = usa la categoría de peso
+    # de la categoría real de base, como antes.
+    bodyTypeWeightCategories = serializers.DictField(
+        child=serializers.ChoiceField(choices=CategoriaVehiculo.CATEGORIAS, allow_blank=True, required=False),
+        required=False, source="_weight_categories_write",
+    )
 
     class Meta:
         model = CategoriaVehiculo
         fields = (
             "id", "vehicleTypeId", "vehicleTypeName", "name", "category",
             "minTons", "maxTons", "order", "enabled",
-            "compatibleBodyTypeIds", "compatibleBodyTypes", "bodyTypeDisplayNames",
+            "compatibleBodyTypeIds", "compatibleBodyTypes",
+            "bodyTypeDisplayNames", "bodyTypeWeightCategories",
         )
 
     def get_compatibleBodyTypes(self, obj):
@@ -94,7 +104,10 @@ class VehicleCategorySerializer(serializers.ModelSerializer):
             key=lambda c: (c.tipo_carroceria.orden, c.tipo_carroceria.nombre),
         )
         return [
-            {"id": c.tipo_carroceria_id, "name": c.tipo_carroceria.nombre, "displayName": c.nombre_cliente}
+            {
+                "id": c.tipo_carroceria_id, "name": c.tipo_carroceria.nombre,
+                "displayName": c.nombre_cliente, "weightCategory": c.categoria_cliente,
+            }
             for c in compat
         ]
 
@@ -114,22 +127,34 @@ class VehicleCategorySerializer(serializers.ModelSerializer):
                 nombre_cliente=(nombre or "").strip(),
             )
 
+    def _sync_weight_categories(self, instance, categorias):
+        for tipo_carroceria_id, categoria in categorias.items():
+            instance.compatibilidades.filter(tipo_carroceria_id=int(tipo_carroceria_id)).update(
+                categoria_cliente=categoria or "",
+            )
+
     def create(self, validated_data):
         compat = validated_data.pop("_compat_write", None)
         nombres = validated_data.pop("_display_names_write", None)
+        categorias = validated_data.pop("_weight_categories_write", None)
         instance = super().create(validated_data)
         if compat is not None:
             self._sync_compat(instance, compat)
         if nombres:
             self._sync_display_names(instance, nombres)
+        if categorias:
+            self._sync_weight_categories(instance, categorias)
         return instance
 
     def update(self, instance, validated_data):
         compat = validated_data.pop("_compat_write", None)
         nombres = validated_data.pop("_display_names_write", None)
+        categorias = validated_data.pop("_weight_categories_write", None)
         instance = super().update(instance, validated_data)
         if compat is not None:
             self._sync_compat(instance, compat)
         if nombres:
             self._sync_display_names(instance, nombres)
+        if categorias:
+            self._sync_weight_categories(instance, categorias)
         return instance

@@ -46,17 +46,30 @@ const bodyOptions = computed(() => bodyTypes.value.map(b => ({ title: b.name, va
 const snackbar = reactive({ show: false, text: '', color: 'success' })
 const notify = (text, color = 'success') => Object.assign(snackbar, { show: true, text, color })
 
+const WEIGHT_OPTIONS = [
+  { title: 'Menores', value: 'menores' },
+  { title: 'Livianos', value: 'livianos' },
+  { title: 'Medianos', value: 'medianos' },
+  { title: 'Pesados', value: 'pesados' },
+  { title: 'Especiales', value: 'especiales' },
+]
+
 const dialog = ref(false)
 const editing = ref(null)
 const selected = ref([])
-const displayNames = reactive({})   // { [tipoCarroceriaId]: 'Nombre para el cliente' }
+const displayNames = reactive({})     // { [tipoCarroceriaId]: 'Nombre para el cliente' }
+const weightCategories = reactive({}) // { [tipoCarroceriaId]: 'especiales' | '' }
 const saving = ref(false)
 
 const openEdit = row => {
   editing.value = row
   selected.value = (row.compatibleBodyTypes || []).map(c => c.id)
   Object.keys(displayNames).forEach(k => delete displayNames[k])
-  for (const c of row.compatibleBodyTypes || []) displayNames[c.id] = c.displayName || ''
+  Object.keys(weightCategories).forEach(k => delete weightCategories[k])
+  for (const c of row.compatibleBodyTypes || []) {
+    displayNames[c.id] = c.displayName || ''
+    weightCategories[c.id] = c.weightCategory || ''
+  }
   dialog.value = true
 }
 
@@ -68,6 +81,7 @@ const submit = async () => {
     await vehicleCategoriesService.update(editing.value.id, {
       compatibleBodyTypeIds: selected.value,
       bodyTypeDisplayNames: Object.fromEntries(selected.value.map(id => [id, displayNames[id] || ''])),
+      bodyTypeWeightCategories: Object.fromEntries(selected.value.map(id => [id, weightCategories[id] || ''])),
     })
     dialog.value = false
     notify('Compatibilidades actualizadas.')
@@ -110,6 +124,7 @@ const submit = async () => {
                   :prepend-icon="c.displayName ? 'ri-star-smile-line' : undefined"
                 >
                   {{ c.displayName ? `${c.displayName} (${c.name})` : c.name }}
+                  <span v-if="c.displayName && c.weightCategory"> · {{ c.weightCategory }}</span>
                 </VChip>
               </template>
               <span v-else class="text-caption text-medium-emphasis">Sin carrocería — no aplica o sin restricción</span>
@@ -143,14 +158,26 @@ const submit = async () => {
               carrocería, esa combinación deja de listarse como una carrocería más de
               "{{ editing.name }}" y aparece en el cotizador como su propia opción con ese nombre
               (p. ej. "Cigüeña" en vez de "{{ editing.name }} · Furgón Cerrado"). El transportista
-              sigue dando de alta su vehículo real + esa carrocería real, sin nada especial.
+              sigue dando de alta su vehículo real + esa carrocería real, sin nada especial. La
+              categoría de peso es opcional — vacío = usa la de "{{ editing.name }}"
+              ({{ editing.category }}).
             </p>
-            <VTextField
-              v-for="id in selected" :key="id"
-              v-model="displayNames[id]"
-              :label="bodyTypeName(id)" placeholder="Nombre para el cliente (opcional)"
-              density="compact" clearable class="mb-2" hide-details
-            />
+            <VRow v-for="id in selected" :key="id" dense class="mb-1">
+              <VCol cols="12" sm="7">
+                <VTextField
+                  v-model="displayNames[id]"
+                  :label="bodyTypeName(id)" placeholder="Nombre para el cliente (opcional)"
+                  density="compact" clearable hide-details
+                />
+              </VCol>
+              <VCol cols="12" sm="5">
+                <VSelect
+                  v-model="weightCategories[id]"
+                  :items="WEIGHT_OPTIONS" label="Categoría de peso al cliente"
+                  :disabled="!displayNames[id]" clearable density="compact" hide-details
+                />
+              </VCol>
+            </VRow>
           </template>
         </VCardText>
         <VCardActions>

@@ -100,7 +100,12 @@ class PublicVehiclePickerView(APIView):
                     "code": f"{cat.id}:{c.tipo_carroceria_id}",
                     "name": c.nombre_cliente,
                     "vehicleType": tv.codigo,
-                    "weightCategory": cat.categoria,
+                    # Categoría de peso propia si se configuró (p. ej. una
+                    # "Camión 5 ton" normal es "Livianos", pero la variante
+                    # con grúa de esa misma categoría real se quiere mostrar
+                    # al cliente en "Especiales") — si no, hereda la de la
+                    # categoría real de base, como antes.
+                    "weightCategory": c.categoria_cliente or cat.categoria,
                     "minTon": min_ton,
                     "maxTon": max_ton,
                     "bodyTypes": [c.tipo_carroceria.codigo],

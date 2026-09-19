@@ -78,12 +78,15 @@ class CompatibilidadesApiTests(_Base):
             {
                 "compatibleBodyTypeIds": [furgon.id, plataforma.id],
                 "bodyTypeDisplayNames": {str(furgon.id): "Cigüeña"},
+                "bodyTypeWeightCategories": {str(furgon.id): "especiales"},
             }, format="json",
         )
         self.assertEqual(r.status_code, 200, r.content)
         by_id = {c["id"]: c for c in r.data["compatibleBodyTypes"]}
         self.assertEqual(by_id[furgon.id]["displayName"], "Cigüeña")
+        self.assertEqual(by_id[furgon.id]["weightCategory"], "especiales")
         self.assertEqual(by_id[plataforma.id]["displayName"], "")
+        self.assertEqual(by_id[plataforma.id]["weightCategory"], "")
 
     def test_categorias_del_mismo_tipo_no_comparten_compatibilidad(self):
         """Regresion: antes CompatibilidadCarroceria colgaba de TipoVehiculo,
@@ -168,3 +171,21 @@ class PublicVehiclePickerTests(APITestCase):
 
         base = next(u for u in r.data["units"] if u["name"] == "Camión 2 ton")
         self.assertNotIn("furgon_cerrado", base["bodyTypes"])
+
+    def test_categoria_cliente_permite_mostrar_en_otra_categoria_de_peso(self):
+        """"Camión 2 ton" es "livianos", pero la variante grúa de esa misma
+        categoría real se puede mostrar al cliente en "Especiales" sin
+        afectar la categoría de peso real de "Camión 2 ton"."""
+        categoria = CategoriaVehiculo.objects.get(nombre="Camión 2 ton")
+        self.assertEqual(categoria.categoria, "livianos")
+        grua = TipoCarroceria.objects.get(codigo="grua_telescopica")
+        CompatibilidadCarroceria.objects.filter(
+            categoria_vehiculo=categoria, tipo_carroceria=grua,
+        ).update(nombre_cliente="Camión Grúa 2 ton", categoria_cliente="especiales")
+
+        r = self.client.get("/api/v2/catalog/vehicle-picker")
+        virtual = next(u for u in r.data["units"] if u["name"] == "Camión Grúa 2 ton")
+        self.assertEqual(virtual["weightCategory"], "especiales")
+
+        base = next(u for u in r.data["units"] if u["name"] == "Camión 2 ton")
+        self.assertEqual(base["weightCategory"], "livianos")
