@@ -45,10 +45,18 @@ const options = computed(() => {
 // como tarjeta seleccionable (con media pantalla de hueco vacío al lado)
 // confunde. Se muestra como una franja informativa, sin affordance de click.
 const single = computed(() => (options.value.length === 1 ? options.value[0] : null))
+// El título tiene que dejar de sonar a pregunta ("Elegí cómo cotizar tu
+// carga") cuando ya no hay ninguna eleccion real que hacer — mientras
+// carga el precio se mantiene el genérico, para no mostrar "Tu servicio:
+// Express" y que un instante después aparezca también Consolidada.
+const heading = computed(() => (props.loading || !single.value)
+  ? 'Elegí cómo cotizar tu carga'
+  : `Tu servicio: ${single.value.title}`)
 </script>
 
 <template>
   <div>
+    <div class="text-h6 font-weight-bold mb-4">{{ heading }}</div>
     <VProgressLinear v-if="loading" indeterminate class="mb-4" />
     <template v-else-if="single">
       <VCard variant="outlined" class="pa-4 d-flex align-center ga-3 flex-wrap price-tile price-tile--selected">

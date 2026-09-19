@@ -280,8 +280,8 @@ const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE
 
           <VWindowItem :value="3">
             <template v-if="serviceType === 'carga'">
-              <div class="text-h6 font-weight-bold mb-4">Elegí cómo cotizar tu carga</div>
               <template v-if="hasStops">
+                <div class="text-h6 font-weight-bold mb-4">Elegí cómo cotizar tu carga</div>
                 <VAlert type="info" variant="tonal">
                   Con paradas intermedias, un asesor te confirma el precio — no aplica Consolidada/Express.
                 </VAlert>
