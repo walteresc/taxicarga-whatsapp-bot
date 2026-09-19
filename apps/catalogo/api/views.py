@@ -48,9 +48,10 @@ class PublicVehiclePickerView(APIView):
                 # La carrocería compatible es por CATEGORÍA puntual (tonelaje),
                 # no por tipo de vehículo genérico — un "Camión 2 ton" no
                 # admite lo mismo que un "Camión 15 ton".
-                body_types = [
-                    c.tipo_carroceria for c in cat.compatibilidades.all() if c.tipo_carroceria.habilitado
-                ]
+                body_types = sorted(
+                    (c.tipo_carroceria for c in cat.compatibilidades.all() if c.tipo_carroceria.habilitado),
+                    key=lambda bt: (bt.orden, bt.nombre),
+                )
                 for bt in body_types:
                     body_codes_seen[bt.codigo] = bt
                 units.append({

@@ -81,10 +81,11 @@ class VehicleCategorySerializer(serializers.ModelSerializer):
         )
 
     def get_compatibleBodyTypes(self, obj):
-        return [
-            {"id": c.tipo_carroceria_id, "name": c.tipo_carroceria.nombre}
-            for c in obj.compatibilidades.select_related("tipo_carroceria").all()
-        ]
+        compat = sorted(
+            obj.compatibilidades.select_related("tipo_carroceria").all(),
+            key=lambda c: (c.tipo_carroceria.orden, c.tipo_carroceria.nombre),
+        )
+        return [{"id": c.tipo_carroceria_id, "name": c.tipo_carroceria.nombre} for c in compat]
 
     def _sync_compat(self, instance, carrocerias):
         instance.compatibilidades.exclude(
