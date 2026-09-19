@@ -72,6 +72,20 @@ class CompatibilidadCarroceria(models.Model):
     tipo_carroceria = models.ForeignKey(
         TipoCarroceria, on_delete=models.CASCADE, related_name="compatibilidades",
     )
+    # Si se completa, esta combinación vehículo+carrocería deja de mostrarse
+    # solo como una opción de carrocería DENTRO de la categoría — aparece
+    # además como su propia "unidad" con nombre propio en el cotizador
+    # público (p. ej. una categoría "Semitrailer 20 ton" con carrocería
+    # "Cigüeña" puede mostrarse al cliente directamente como "Cigüeña").
+    # Del lado del transportista no cambia nada: sigue dando de alta su
+    # vehículo real + esa carrocería real, normalmente.
+    nombre_cliente = models.CharField(
+        max_length=80, blank=True, default="",
+        help_text=(
+            "Nombre propio para mostrar al cliente en el cotizador (p. ej. 'Cigüeña'). "
+            "Vacío = se muestra solo como carrocería dentro de la categoría, como siempre."
+        ),
+    )
 
     class Meta:
         verbose_name = "Compatibilidad vehículo–carrocería"

@@ -49,18 +49,26 @@ const notify = (text, color = 'success') => Object.assign(snackbar, { show: true
 const dialog = ref(false)
 const editing = ref(null)
 const selected = ref([])
+const displayNames = reactive({})   // { [tipoCarroceriaId]: 'Nombre para el cliente' }
 const saving = ref(false)
 
 const openEdit = row => {
   editing.value = row
   selected.value = (row.compatibleBodyTypes || []).map(c => c.id)
+  Object.keys(displayNames).forEach(k => delete displayNames[k])
+  for (const c of row.compatibleBodyTypes || []) displayNames[c.id] = c.displayName || ''
   dialog.value = true
 }
+
+const bodyTypeName = id => bodyTypes.value.find(b => b.id === id)?.name || ''
 
 const submit = async () => {
   saving.value = true
   try {
-    await vehicleCategoriesService.update(editing.value.id, { compatibleBodyTypeIds: selected.value })
+    await vehicleCategoriesService.update(editing.value.id, {
+      compatibleBodyTypeIds: selected.value,
+      bodyTypeDisplayNames: Object.fromEntries(selected.value.map(id => [id, displayNames[id] || ''])),
+    })
     dialog.value = false
     notify('Compatibilidades actualizadas.')
     await load()
@@ -98,9 +106,10 @@ const submit = async () => {
               <template v-if="row.compatibleBodyTypes?.length">
                 <VChip
                   v-for="c in row.compatibleBodyTypes" :key="c.id"
-                  size="x-small" color="primary" variant="tonal" class="me-1 mb-1"
+                  size="x-small" :color="c.displayName ? 'secondary' : 'primary'" variant="tonal" class="me-1 mb-1"
+                  :prepend-icon="c.displayName ? 'ri-star-smile-line' : undefined"
                 >
-                  {{ c.name }}
+                  {{ c.displayName ? `${c.displayName} (${c.name})` : c.name }}
                 </VChip>
               </template>
               <span v-else class="text-caption text-medium-emphasis">Sin carrocería — no aplica o sin restricción</span>
@@ -113,7 +122,7 @@ const submit = async () => {
       </VList>
     </VCard>
 
-    <VDialog v-model="dialog" max-width="520" persistent>
+    <VDialog v-model="dialog" max-width="560" persistent>
       <VCard v-if="editing">
         <VCardTitle>Carrocerías de {{ editing.name }}</VCardTitle>
         <VCardText>
@@ -123,9 +132,26 @@ const submit = async () => {
             label="Carrocerías compatibles"
             multiple chips closable-chips
           />
-          <p class="text-caption text-medium-emphasis mt-2">
+          <p class="text-caption text-medium-emphasis mt-2 mb-3">
             Sin selección = el vehículo no lleva carrocería (moto, auto…) o no hay restricción.
           </p>
+
+          <template v-if="selected.length">
+            <VDivider class="mb-3" />
+            <p class="text-caption text-medium-emphasis mb-2">
+              <strong>Nombre propio para el cliente (opcional):</strong> si lo completás para una
+              carrocería, esa combinación deja de listarse como una carrocería más de
+              "{{ editing.name }}" y aparece en el cotizador como su propia opción con ese nombre
+              (p. ej. "Cigüeña" en vez de "{{ editing.name }} · Furgón Cerrado"). El transportista
+              sigue dando de alta su vehículo real + esa carrocería real, sin nada especial.
+            </p>
+            <VTextField
+              v-for="id in selected" :key="id"
+              v-model="displayNames[id]"
+              :label="bodyTypeName(id)" placeholder="Nombre para el cliente (opcional)"
+              density="compact" clearable class="mb-2" hide-details
+            />
+          </template>
         </VCardText>
         <VCardActions>
           <VSpacer />

@@ -58,12 +58,21 @@ class PublicVehiclePickerView(APIView):
             # La carrocería compatible es por CATEGORÍA puntual (tonelaje),
             # no por tipo de vehículo genérico — un "Camión 2 ton" no
             # admite lo mismo que un "Camión 15 ton".
+            compat_rows = list(cat.compatibilidades.all())
+            # Las combinaciones con "nombre_cliente" (p. ej. Semitrailer 20
+            # ton + carrocería Cigüeña) NO se listan como una carrocería más
+            # dentro de esta unidad — se muestran aparte, como su propia
+            # "unidad" con nombre propio (ver más abajo). Así el cliente ve
+            # "Cigüeña" en vez de "Semitrailer 20 ton" con una carrocería
+            # más entre varias.
             body_types = sorted(
-                (c.tipo_carroceria for c in cat.compatibilidades.all() if c.tipo_carroceria.habilitado),
+                (c.tipo_carroceria for c in compat_rows if c.tipo_carroceria.habilitado and not c.nombre_cliente),
                 key=lambda bt: (bt.orden, bt.nombre),
             )
             for bt in body_types:
                 body_codes_seen[bt.codigo] = bt
+            min_ton = float(cat.min_ton) if cat.min_ton is not None else None
+            max_ton = float(cat.max_ton) if cat.max_ton is not None else None
             units.append({
                 "code": str(cat.id),
                 "name": cat.nombre,
@@ -73,10 +82,30 @@ class PublicVehiclePickerView(APIView):
                 # informativo, no como filtro obligatorio (la decide el transportista
                 # al aceptar el servicio, no el cliente al pedirlo).
                 "weightCategory": cat.categoria,
-                "minTon": float(cat.min_ton) if cat.min_ton is not None else None,
-                "maxTon": float(cat.max_ton) if cat.max_ton is not None else None,
+                "minTon": min_ton,
+                "maxTon": max_ton,
                 "bodyTypes": [bt.codigo for bt in body_types],
             })
+            # Unidades "virtuales": misma categoría real (mismo vehículo y
+            # tonelaje), pero mostradas con nombre propio y carrocería fija
+            # — al confirmarlas, el cliente pide exactamente esa categoría +
+            # esa carrocería, aunque el transportista dio de alta su
+            # vehículo real normalmente (categoría real + carrocería real,
+            # sin nada especial de su lado).
+            for c in sorted(compat_rows, key=lambda c: c.tipo_carroceria.orden):
+                if not c.nombre_cliente or not c.tipo_carroceria.habilitado:
+                    continue
+                body_codes_seen[c.tipo_carroceria.codigo] = c.tipo_carroceria
+                units.append({
+                    "code": f"{cat.id}:{c.tipo_carroceria_id}",
+                    "name": c.nombre_cliente,
+                    "vehicleType": tv.codigo,
+                    "weightCategory": cat.categoria,
+                    "minTon": min_ton,
+                    "maxTon": max_ton,
+                    "bodyTypes": [c.tipo_carroceria.codigo],
+                    "fixedBodyType": c.tipo_carroceria.codigo,
+                })
         body_types = [
             {"code": bt.codigo, "name": bt.nombre, "icon": bt.icono or "ri-truck-line"}
             for bt in sorted(body_codes_seen.values(), key=lambda b: (b.orden, b.nombre))

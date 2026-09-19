@@ -87,6 +87,14 @@ const close = () => emit('update:modelValue', false)
 // La carrocería solo se reinicia a "Cualquiera" al abrir una unidad
 // DISTINTA a la que estaba elegida.
 const toggleUnit = u => {
+  // Unidad "virtual" con carrocería fija (p. ej. "Cigüeña" — ver
+  // apps/catalogo, nombre_cliente): ya trae su carrocería resuelta, no
+  // tiene sentido pedirle al cliente que elija una — se confirma directo.
+  if (u.fixedBodyType) {
+    emit('select', u.name)
+    close()
+    return
+  }
   if (expandedUnit.value === u.code) {
     expandedUnit.value = ''
     return
@@ -150,7 +158,11 @@ const clear = () => { emit('clear'); close() }
                 <div class="text-body-2 font-weight-bold">{{ u.name }}</div>
                 <div class="text-caption text-medium-emphasis">{{ capacityLabel(u) }}</div>
               </div>
-              <VIcon :icon="expandedUnit === u.code ? 'ri-arrow-up-s-line' : 'ri-arrow-right-s-line'" class="text-medium-emphasis" />
+              <VIcon
+                v-if="!u.fixedBodyType"
+                :icon="expandedUnit === u.code ? 'ri-arrow-up-s-line' : 'ri-arrow-right-s-line'" class="text-medium-emphasis"
+              />
+              <VIcon v-else icon="ri-checkbox-circle-line" class="text-medium-emphasis" />
             </div>
 
             <template v-if="expandedUnit === u.code">

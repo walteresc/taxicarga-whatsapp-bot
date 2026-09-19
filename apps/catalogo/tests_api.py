@@ -68,6 +68,23 @@ class CompatibilidadesApiTests(_Base):
         self.assertEqual(r.status_code, 200)
         self.assertEqual(CompatibilidadCarroceria.objects.filter(categoria_vehiculo=categoria).count(), 0)
 
+    def test_nombre_cliente_se_guarda_y_se_lee(self):
+        categoria = CategoriaVehiculo.objects.get(nombre="Camión 30 ton")
+        furgon = TipoCarroceria.objects.get(codigo="furgon_cerrado")
+        plataforma = TipoCarroceria.objects.get(codigo="plataforma")
+
+        r = self.client.patch(
+            f"/api/v2/vehicle-categories/{categoria.id}/",
+            {
+                "compatibleBodyTypeIds": [furgon.id, plataforma.id],
+                "bodyTypeDisplayNames": {str(furgon.id): "Cigüeña"},
+            }, format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+        by_id = {c["id"]: c for c in r.data["compatibleBodyTypes"]}
+        self.assertEqual(by_id[furgon.id]["displayName"], "Cigüeña")
+        self.assertEqual(by_id[plataforma.id]["displayName"], "")
+
     def test_categorias_del_mismo_tipo_no_comparten_compatibilidad(self):
         """Regresion: antes CompatibilidadCarroceria colgaba de TipoVehiculo,
         asi que TODAS las categorias de "Camion" (2 ton .. 15 ton)
@@ -130,3 +147,24 @@ class PublicVehiclePickerTests(APITestCase):
         codes = {b["code"] for b in r.data["bodyTypes"]}
         self.assertIn("furgon_cerrado", codes)
         self.assertIn("plataforma", codes)
+
+    def test_nombre_cliente_crea_unidad_virtual_y_no_duplica_carroceria(self):
+        """Una combinación categoría+carrocería con nombre_cliente (p. ej.
+        "Cigüeña") se muestra como su propia unidad con nombre propio y
+        carrocería fija, y deja de listarse como una carrocería más dentro
+        de la unidad real de esa categoría."""
+        categoria = CategoriaVehiculo.objects.get(nombre="Camión 2 ton")
+        furgon = TipoCarroceria.objects.get(codigo="furgon_cerrado")
+        CompatibilidadCarroceria.objects.filter(
+            categoria_vehiculo=categoria, tipo_carroceria=furgon,
+        ).update(nombre_cliente="Cigüeña")
+
+        r = self.client.get("/api/v2/catalog/vehicle-picker")
+        self.assertEqual(r.status_code, 200, r.content)
+        virtual = next((u for u in r.data["units"] if u["name"] == "Cigüeña"), None)
+        self.assertIsNotNone(virtual)
+        self.assertEqual(virtual["fixedBodyType"], "furgon_cerrado")
+        self.assertEqual(virtual["vehicleType"], "camion")
+
+        base = next(u for u in r.data["units"] if u["name"] == "Camión 2 ton")
+        self.assertNotIn("furgon_cerrado", base["bodyTypes"])

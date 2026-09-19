@@ -71,13 +71,21 @@ class VehicleCategorySerializer(serializers.ModelSerializer):
         many=True, required=False, queryset=TipoCarroceria.objects.all(), source="_compat_write",
     )
     compatibleBodyTypes = serializers.SerializerMethodField()
+    # Nombre propio opcional por combinación categoría+carrocería (ver
+    # CompatibilidadCarroceria.nombre_cliente) — {"<tipoCarroceriaId>": "Nombre"}.
+    # Solo hace falta mandar las que se quieran fijar/cambiar/borrar; el resto
+    # queda como estaba.
+    bodyTypeDisplayNames = serializers.DictField(
+        child=serializers.CharField(allow_blank=True, max_length=80, required=False),
+        required=False, source="_display_names_write",
+    )
 
     class Meta:
         model = CategoriaVehiculo
         fields = (
             "id", "vehicleTypeId", "vehicleTypeName", "name", "category",
             "minTons", "maxTons", "order", "enabled",
-            "compatibleBodyTypeIds", "compatibleBodyTypes",
+            "compatibleBodyTypeIds", "compatibleBodyTypes", "bodyTypeDisplayNames",
         )
 
     def get_compatibleBodyTypes(self, obj):
@@ -85,7 +93,10 @@ class VehicleCategorySerializer(serializers.ModelSerializer):
             obj.compatibilidades.select_related("tipo_carroceria").all(),
             key=lambda c: (c.tipo_carroceria.orden, c.tipo_carroceria.nombre),
         )
-        return [{"id": c.tipo_carroceria_id, "name": c.tipo_carroceria.nombre} for c in compat]
+        return [
+            {"id": c.tipo_carroceria_id, "name": c.tipo_carroceria.nombre, "displayName": c.nombre_cliente}
+            for c in compat
+        ]
 
     def _sync_compat(self, instance, carrocerias):
         instance.compatibilidades.exclude(
@@ -97,16 +108,28 @@ class VehicleCategorySerializer(serializers.ModelSerializer):
             for c in carrocerias if c.id not in existentes
         ])
 
+    def _sync_display_names(self, instance, nombres):
+        for tipo_carroceria_id, nombre in nombres.items():
+            instance.compatibilidades.filter(tipo_carroceria_id=int(tipo_carroceria_id)).update(
+                nombre_cliente=(nombre or "").strip(),
+            )
+
     def create(self, validated_data):
         compat = validated_data.pop("_compat_write", None)
+        nombres = validated_data.pop("_display_names_write", None)
         instance = super().create(validated_data)
         if compat is not None:
             self._sync_compat(instance, compat)
+        if nombres:
+            self._sync_display_names(instance, nombres)
         return instance
 
     def update(self, instance, validated_data):
         compat = validated_data.pop("_compat_write", None)
+        nombres = validated_data.pop("_display_names_write", None)
         instance = super().update(instance, validated_data)
         if compat is not None:
             self._sync_compat(instance, compat)
+        if nombres:
+            self._sync_display_names(instance, nombres)
         return instance
