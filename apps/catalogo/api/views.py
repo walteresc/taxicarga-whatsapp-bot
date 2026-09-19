@@ -111,6 +111,17 @@ class PublicVehiclePickerView(APIView):
                     "bodyTypes": [c.tipo_carroceria.codigo],
                     "fixedBodyType": c.tipo_carroceria.codigo,
                 })
+        # En "Todas" (sin filtrar por categoría de peso) las unidades quedaban
+        # intercaladas por su "Orden" global sin agrupar — un Camión Grúa 5
+        # ton (Especiales) podía salir en medio de los Camión 6/7/8 ton
+        # (Livianos/Medianos), mezclado con los chips de arriba (Livianos,
+        # Medianos, Pesados, Especiales). Se reordena una sola vez, de forma
+        # ESTABLE, para que agrupe por esa misma categoría de peso y en ese
+        # mismo orden — dentro de cada grupo se conserva el orden ya armado
+        # arriba (el "Orden" configurado, intercalando tipos de vehículo).
+        peso_rank = {code: i for i, (code, _) in enumerate(CategoriaVehiculo.CATEGORIAS)}
+        units.sort(key=lambda u: peso_rank.get(u["weightCategory"], 99))
+
         body_types = [
             {"code": bt.codigo, "name": bt.nombre, "icon": bt.icono or "ri-truck-line"}
             for bt in sorted(body_codes_seen.values(), key=lambda b: (b.orden, b.nombre))

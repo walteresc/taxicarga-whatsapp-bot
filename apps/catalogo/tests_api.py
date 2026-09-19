@@ -189,3 +189,23 @@ class PublicVehiclePickerTests(APITestCase):
 
         base = next(u for u in r.data["units"] if u["name"] == "Camión 2 ton")
         self.assertEqual(base["weightCategory"], "livianos")
+
+    def test_todas_agrupa_por_categoria_de_peso_no_solo_por_orden(self):
+        """Sin filtrar por categoría de peso, las unidades se agrupan por
+        categoría de peso (Livianos, Medianos, Pesados, Especiales, en ese
+        orden) — no solo por el "Orden" global. Una unidad "Especiales"
+        armada sobre una categoría real de "Livianos" con orden bajo (2 ton
+        es de las primeras) no debe intercalarse entre los ítems de
+        Livianos."""
+        categoria = CategoriaVehiculo.objects.get(nombre="Camión 2 ton")
+        grua = TipoCarroceria.objects.get(codigo="grua_telescopica")
+        CompatibilidadCarroceria.objects.filter(
+            categoria_vehiculo=categoria, tipo_carroceria=grua,
+        ).update(nombre_cliente="Camión Grúa 2 ton", categoria_cliente="especiales")
+
+        r = self.client.get("/api/v2/catalog/vehicle-picker")
+        idx_grua = next(i for i, u in enumerate(r.data["units"]) if u["name"] == "Camión Grúa 2 ton")
+        idx_ultimo_liviano = max(
+            i for i, u in enumerate(r.data["units"]) if u["weightCategory"] == "livianos"
+        )
+        self.assertGreater(idx_grua, idx_ultimo_liviano)
