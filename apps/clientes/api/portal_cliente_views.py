@@ -23,6 +23,7 @@ from decimal import Decimal, InvalidOperation
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -34,7 +35,7 @@ from apps.leads.geo import clasificar_y_marcar_ambito
 from apps.leads.models import Lead
 from apps.leads.route import replace_lead_route
 from apps.tercerizacion import negociacion as neg
-from apps.tercerizacion.models import HiloNegociacion, MensajeNegociacion
+from apps.tercerizacion.models import HiloNegociacion, MensajeNegociacion, OfertaTransportista, PublicacionCarga
 
 _HILO_STATE_EN = {
     "abierta": "open", "pausada": "paused", "acuerdo": "agreement",
@@ -484,3 +485,90 @@ class CustomerNegotiationRespondView(_CustHilo):
         except neg.NegociacionError as e:
             raise ValidationError(str(e))
         return Response(self._payload(self._hilo(code)))
+
+
+# --------------------------------------------------------------------------- #
+#  Ofertas de transportistas (F8) — el cliente ve las ofertas de SU carga
+#  (nunca el costo de compra, ver client_offer_item) y puede marcar cuál
+#  prefiere. Preferir NO adjudica: es una señal para que el asesor confirme
+#  desde el panel de tercerización (misma `adjudicar_publicacion()` de
+#  siempre) — ver apps/tercerizacion/models.py::PublicacionCarga.
+# --------------------------------------------------------------------------- #
+
+def client_offer_item(o):
+    """Traduce una OfertaTransportista a lo que puede ver el cliente: nunca
+    el costo de compra (`precio_ofertado`/`monto_actual`) tal cual — eso es
+    lo que TaxiCarga le paga al transportista, no lo que el cliente pagaría.
+    Se traduce a precio de venta con la misma fórmula que ya usa el panel de
+    staff (`precio_cliente_sugerido`, ver publication_detail)."""
+    from apps.tercerizacion.services import _categoria_de, precio_cliente_sugerido
+
+    costo = o.monto_actual or o.precio_ofertado
+    categoria = _categoria_de(o.publicacion.servicio)
+    carrier = o.transportista
+    return {
+        "id": o.id,
+        "carrierName": carrier.nombre if carrier else "Transportista",
+        "modality": o.modalidad or None,
+        "price": _num(precio_cliente_sugerido(costo, categoria)),
+        "createdAt": _d(o.creado_en),
+    }
+
+
+class CustomerLoadOffersView(_Portal):
+    def get(self, request, code):
+        from apps.cotizador.api.guest_views import _price_view_from_calc
+        from apps.cotizador.services import estimar_precio
+
+        lead = self._lead(code)
+        servicio = getattr(lead, "servicio_generado", None)
+        pub = (
+            PublicacionCarga.objects.filter(servicio=servicio)
+            .select_related("oferta_preferida_cliente").order_by("-creado_en").first()
+            if servicio else None
+        )
+        if not pub:
+            return Response({
+                "offers": [], "direct": None, "preferredOfferId": None,
+                "prefersDirect": False, "awarded": False, "winningOfferId": None,
+            })
+
+        offers = [
+            client_offer_item(o) for o in pub.ofertas.exclude(estado="rechazada")
+            .select_related("transportista", "publicacion__servicio").order_by("monto_actual", "creado_en")
+        ]
+        direct = _price_view_from_calc(estimar_precio(lead))
+        return Response({
+            "offers": offers,
+            "direct": {**direct, "isDirect": True} if direct.get("amount") is not None else None,
+            "preferredOfferId": pub.oferta_preferida_cliente_id,
+            "prefersDirect": pub.prefiere_directo_taxicarga,
+            "awarded": pub.estado == PublicacionCarga.ESTADO_ADJUDICADA,
+            "winningOfferId": pub.oferta_ganadora_id,
+        })
+
+
+class CustomerLoadPreferOfferView(_Portal):
+    def post(self, request, code):
+        lead = self._lead(code)
+        servicio = getattr(lead, "servicio_generado", None)
+        pub = (
+            PublicacionCarga.objects.filter(servicio=servicio).order_by("-creado_en").first()
+            if servicio else None
+        )
+        if not pub:
+            raise ValidationError("Todavía no hay ofertas para esta carga.")
+        if pub.estado == PublicacionCarga.ESTADO_ADJUDICADA:
+            raise ValidationError("Ya se confirmó un transportista para esta carga.")
+
+        offer_id = request.data.get("offerId")
+        if offer_id:
+            oferta = get_object_or_404(OfertaTransportista, pk=offer_id, publicacion=pub)
+            pub.oferta_preferida_cliente = oferta
+            pub.prefiere_directo_taxicarga = False
+        else:
+            pub.oferta_preferida_cliente = None
+            pub.prefiere_directo_taxicarga = True
+        pub.preferencia_cliente_en = timezone.now()
+        pub.save(update_fields=["oferta_preferida_cliente", "prefiere_directo_taxicarga", "preferencia_cliente_en"])
+        return Response({"ok": True})

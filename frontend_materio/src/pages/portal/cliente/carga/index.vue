@@ -3,8 +3,8 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 
 import {
-  customerAccept, customerLoad, customerNegotiate, customerNegotiation,
-  customerNegotiationRespond, customerNegotiationSend, customerPay, customerRequestAdvisor,
+  customerAccept, customerLoad, customerLoadOffers, customerLoadPreferOffer, customerNegotiate,
+  customerNegotiation, customerNegotiationRespond, customerNegotiationSend, customerPay, customerRequestAdvisor,
 } from '@/services/customerPortalService'
 
 const route = useRoute()
@@ -22,8 +22,10 @@ const soles = n => (n == null ? '—' : `S/ ${Math.round(n).toLocaleString('es-P
 
 const load = ref(null)
 const neg = ref(null)
+const offers = ref(null)
 const loading = ref(true)
 const busy = ref(false)
+const preferring = ref(null)   // id de la oferta (o 'direct') mientras se confirma la preferencia
 const snackbar = reactive({ show: false, text: '', color: 'success' })
 const notify = (t, c = 'success') => Object.assign(snackbar, { show: true, text: t, color: c })
 
@@ -32,8 +34,21 @@ const refresh = async () => {
   if (load.value.negotiating) {
     try { neg.value = await customerNegotiation(code) } catch { neg.value = null }
   }
+  try { offers.value = await customerLoadOffers(code) } catch { offers.value = null }
 }
 onMounted(async () => { try { await refresh() } finally { loading.value = false } })
+
+// Solo tiene sentido mostrar la tarjeta si hay algo para comparar — ofertas
+// reales, o al menos el precio directo de TaxiCarga.
+const hasOffersToShow = computed(() => !!offers.value && (offers.value.offers.length > 0 || offers.value.direct))
+const preferOffer = async offerId => {
+  preferring.value = offerId || 'direct'
+  try {
+    await customerLoadPreferOffer(code, offerId)
+    offers.value = await customerLoadOffers(code)
+    notify('Listo, un asesor confirma tu elección.')
+  } catch (e) { notify(e.message, 'error') } finally { preferring.value = null }
+}
 
 const doAccept = async () => {
   busy.value = true
@@ -132,6 +147,63 @@ const price = computed(() => load.value?.price || {})
                   </VBtn>
                 </div>
               </template>
+            </VCardText>
+          </VCard>
+
+          <!-- Ofertas de transportistas -->
+          <VCard v-if="hasOffersToShow" class="mb-4">
+            <VCardText>
+              <div class="text-overline mb-1">Ofertas de transportistas</div>
+              <p class="text-body-2 text-medium-emphasis mb-3">
+                {{ offers.awarded
+                  ? 'Ya confirmamos un transportista para tu carga.'
+                  : 'Elegí la que prefieras — un asesor la confirma antes de coordinar.' }}
+              </p>
+
+              <VCard
+                v-if="offers.direct" variant="outlined" class="mb-2 pa-3"
+                :color="offers.prefersDirect ? 'primary' : undefined"
+              >
+                <div class="d-flex align-center flex-wrap ga-2">
+                  <VChip size="small" color="primary" variant="flat">Directo TaxiCarga</VChip>
+                  <span class="text-caption text-medium-emphasis">Soporte directo, sin intermediarios</span>
+                  <VSpacer />
+                  <span class="text-h6 font-weight-bold">{{ soles(offers.direct.amount) }}</span>
+                </div>
+                <div class="mt-2">
+                  <VChip v-if="offers.prefersDirect" size="small" color="primary" variant="tonal">Tu preferida</VChip>
+                  <VBtn
+                    v-else-if="!offers.awarded" size="small" variant="tonal"
+                    :loading="preferring === 'direct'" @click="preferOffer(null)"
+                  >
+                    Preferir esta
+                  </VBtn>
+                </div>
+              </VCard>
+
+              <VCard
+                v-for="o in offers.offers" :key="o.id" variant="outlined" class="mb-2 pa-3"
+                :color="o.id === offers.winningOfferId ? 'success' : (o.id === offers.preferredOfferId ? 'primary' : undefined)"
+              >
+                <div class="d-flex align-center flex-wrap ga-2">
+                  <span class="font-weight-medium">{{ o.carrierName }}</span>
+                  <VChip v-if="o.modality" size="x-small" variant="outlined">
+                    {{ o.modality === 'parcial' ? 'Compartido' : 'Exclusivo' }}
+                  </VChip>
+                  <VSpacer />
+                  <span class="text-h6 font-weight-bold">{{ soles(o.price) }}</span>
+                </div>
+                <div class="mt-2">
+                  <VChip v-if="o.id === offers.winningOfferId" size="small" color="success" variant="flat">Confirmada</VChip>
+                  <VChip v-else-if="o.id === offers.preferredOfferId" size="small" color="primary" variant="tonal">Tu preferida</VChip>
+                  <VBtn
+                    v-else-if="!offers.awarded" size="small" variant="tonal"
+                    :loading="preferring === o.id" @click="preferOffer(o.id)"
+                  >
+                    Preferir esta
+                  </VBtn>
+                </div>
+              </VCard>
             </VCardText>
           </VCard>
 

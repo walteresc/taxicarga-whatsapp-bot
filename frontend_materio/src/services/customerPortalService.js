@@ -26,3 +26,10 @@ export const customerNegotiationSend = (code, body) => apiClient.post(`${P}/load
 export const customerNegotiationRespond = (code, messageId, body) =>
   apiClient.post(`${P}/loads/${code}/negotiation/messages/${messageId}/respond`, body)
 export const customerPay = (code, body) => apiClient.post(`${P}/loads/${code}/pay`, body || {})
+
+// Ofertas de transportistas para MI carga (F8) — nunca el costo de compra,
+// ver apps/clientes/api/portal_cliente_views.py::client_offer_item. Preferir
+// una NO adjudica sola, es una señal para que el asesor confirme.
+export const customerLoadOffers = code => apiClient.get(`${P}/loads/${code}/offers`)
+export const customerLoadPreferOffer = (code, offerId) =>
+  apiClient.post(`${P}/loads/${code}/offers/prefer`, offerId ? { offerId } : {})

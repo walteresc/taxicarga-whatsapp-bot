@@ -76,6 +76,13 @@ def publication_item(pub):
         "publishedAt": _d(pub.publicada_en),
         "awardedAt": _d(pub.adjudicada_en),
         "createdAt": _d(pub.creado_en),
+        # El cliente puede marcar una oferta (o el precio directo) como
+        # preferida desde el Portal Cliente — es solo una señal, el asesor
+        # sigue siendo quien adjudica de verdad. Ver apps/clientes/api/
+        # portal_cliente_views.py::CustomerLoadPreferOfferView.
+        "clientPreferredOfferId": pub.oferta_preferida_cliente_id,
+        "clientPrefersDirect": pub.prefiere_directo_taxicarga,
+        "clientPreferenceAt": _d(pub.preferencia_cliente_en),
     }
 
 

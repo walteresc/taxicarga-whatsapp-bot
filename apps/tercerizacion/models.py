@@ -111,6 +111,24 @@ class PublicacionCarga(models.Model):
     )
     publicada_en = models.DateTimeField(null=True, blank=True)
 
+    # El cliente puede marcar qué oferta prefiere (o el precio directo de
+    # TaxiCarga) desde el Portal Cliente — es solo una SEÑAL para el asesor,
+    # NO adjudica sola. La adjudicación real sigue siendo siempre
+    # `adjudicacion.adjudicar_publicacion()`, disparada por un asesor
+    # (ver PublicationAwardView) que ve esta preferencia y decide.
+    oferta_preferida_cliente = models.ForeignKey(
+        "OfertaTransportista",
+        on_delete=models.SET_NULL, null=True, blank=True, related_name="preferida_por_cliente_en",
+        help_text="Oferta que el cliente marcó como preferida. Vacío si prefiere el precio directo "
+                   "(ver prefiere_directo_taxicarga) o todavía no eligió.",
+    )
+    prefiere_directo_taxicarga = models.BooleanField(
+        default=False,
+        help_text="El cliente prefirió el precio directo de TaxiCarga en vez de una oferta de "
+                   "transportista (no es una OfertaTransportista real, ver client_offer_item).",
+    )
+    preferencia_cliente_en = models.DateTimeField(null=True, blank=True)
+
     class Meta:
         ordering = ["-creado_en"]
         verbose_name = "Publicación de carga"

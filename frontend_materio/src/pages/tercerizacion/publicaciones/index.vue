@@ -399,6 +399,11 @@ const awarded = computed(() => detail.value?.state === 'awarded')
               <VSpacer />
               <VBtn v-if="canOffer" size="small" variant="tonal" prepend-icon="ri-add-line" @click="openOfferForm">Registrar oferta</VBtn>
             </div>
+            <!-- El cliente puede marcar una preferencia desde su portal — es
+                 solo una señal, no adjudica sola (ver PublicacionCarga). -->
+            <VAlert v-if="detail.clientPrefersDirect" type="info" variant="tonal" density="compact" class="mb-3">
+              El cliente prefiere que lo hagamos directo (TaxiCarga), no una oferta de transportista.
+            </VAlert>
             <div v-if="!detail.offers.length" class="text-body-2 text-medium-emphasis">Sin ofertas todavía.</div>
             <VTable v-else density="compact" class="text-body-2">
               <thead><tr><th>Transportista</th><th>Vehículo</th><th class="text-right">Monto</th><th>Estado</th><th></th></tr></thead>
@@ -407,6 +412,9 @@ const awarded = computed(() => detail.value?.state === 'awarded')
                   <td>
                     {{ o.carrierName }}
                     <VIcon v-if="!o.affiliated" icon="ri-error-warning-line" color="warning" size="14" title="Contacto de WhatsApp sin afiliar" />
+                    <VChip v-if="o.id === detail.clientPreferredOfferId" size="x-small" color="primary" variant="tonal" class="ml-1">
+                      Preferida del cliente
+                    </VChip>
                   </td>
                   <td>{{ o.vehiclePlate || '—' }}</td>
                   <td class="text-right font-weight-medium">{{ soles(o.currentAmount) }}</td>
