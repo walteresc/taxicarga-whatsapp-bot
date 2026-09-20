@@ -273,7 +273,7 @@ class CustomerLoadsView(_Portal):
             modo_cotizacion=modo,
             modo_carga=modo_carga,
             categoria_carga=(cargo.get("category") or ""),
-            tipo_servicio=(cargo.get("category") or "carga"),
+            tipo_servicio=(d.get("serviceType") or cargo.get("category") or "carga"),
             distrito_origen=origin.get("district") or "",
             distrito_destino=destination.get("district") or "",
             direccion_origen=origin.get("address") or "",

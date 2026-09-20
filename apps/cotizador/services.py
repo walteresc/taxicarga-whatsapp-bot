@@ -16,6 +16,16 @@ logger = logging.getLogger(__name__)
 # (históricos de mudanzas dentro de Lima). El resto → cotización manual / negociación.
 _CATEGORIAS_MOTOR = {"", "mudanza"}
 
+# "Carga" (categoria_carga="otros", igual que Reparto — ambos comparten esa
+# categoría porque no es su propia taxonomía, es la de tipos de mercadería
+# nacional) SÍ tiene base de cálculo propia (BASE_PRICES["carga"] +
+# peso/volumen, ver pricing.py::fallback_price_for_lead) — pero solo cuando
+# el wizard de Carga la marcó explícitamente vía tipo_servicio="carga"
+# (ver apps/cotizador/api/guest_views.py, apps/clientes/api/
+# portal_cliente_views.py). Reparto sigue sin tarifario propio, así que
+# NO entra acá — solo Carga.
+_TIPO_SERVICIO_CARGA = "carga"
+
 
 def _calcular_multipunto():
     """Ruta con paradas intermedias: ningún camino del motor las contempla en
@@ -78,10 +88,15 @@ def _calcular_general(lead):
         explanation = "Cotizacion preliminar calculada por reglas base por falta de historicos similares."
         confianza = 35
 
-    # El motor no cubre bien: interprovincial, o carga que no es mudanza.
-    fuera_de_alcance = bool(getattr(lead, "es_interprovincial", False)) or (
-        (getattr(lead, "categoria_carga", "") or "") not in _CATEGORIAS_MOTOR
+    # El motor no cubre bien: interprovincial, o carga que no es mudanza —
+    # salvo Carga local explícita (tipo_servicio="carga"), que sí tiene base
+    # de cálculo propia (ver _TIPO_SERVICIO_CARGA arriba).
+    categoria = (getattr(lead, "categoria_carga", "") or "")
+    es_carga_local_explicita = categoria == "otros" and (
+        (getattr(lead, "tipo_servicio", "") or "").lower() == _TIPO_SERVICIO_CARGA
     )
+    motor_cubre = categoria in _CATEGORIAS_MOTOR or es_carga_local_explicita
+    fuera_de_alcance = bool(getattr(lead, "es_interprovincial", False)) or not motor_cubre
     if fuera_de_alcance:
         confianza = min(confianza, 25)
         modo = Cotizacion.MODO_MANUAL

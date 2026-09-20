@@ -123,6 +123,69 @@ class CotizadorTests(TestCase):
         self.assertGreater(cotizacion.precio_recomendado, Decimal("0.00"))
         self.assertEqual(Cotizacion.objects.count(), 1)
 
+    def test_carga_local_explicita_con_historicos_cotiza_automatico(self):
+        """Carga local (categoria_carga='otros', tipo_servicio='carga' — la
+        marca explícita que manda el wizard de Carga) ahora sí entra al motor
+        automático. Antes caía siempre a asesor solo por no ser 'mudanza',
+        aunque ya hay ~11 mil ServicioHistorico reales con tipo_servicio=
+        'carga' cargados (importar_wally_sql) que el motor nunca podía usar."""
+        cliente = Cliente.objects.create(telefono="51944444401")
+        lead = Lead.objects.create(
+            cliente=cliente, tipo_servicio="carga", categoria_carga="otros",
+            distrito_origen="Santiago de Surco", distrito_destino="La Molina",
+            lista_objetos="1 cama", peso_carga_kg=Decimal("70"), volumen_carga_m3=Decimal("1.2"),
+            es_interprovincial=False,
+        )
+        for price in ["150.00", "180.00", "200.00"]:
+            ServicioHistorico.objects.create(
+                fecha="2026-01-01", tipo_servicio="carga",
+                distrito_origen="Santiago de Surco", distrito_destino="La Molina",
+                lista_objetos="1 cama", precio_cotizado=Decimal(price), precio_final=Decimal(price),
+                cerrado=True,
+            )
+        cotizacion = cotizar_lead(lead)
+        self.assertEqual(cotizacion.modo, Cotizacion.MODO_AUTOMATICO)
+        self.assertEqual(cotizacion.servicios_similares_encontrados, 3)
+        self.assertGreater(cotizacion.precio_recomendado, Decimal("0.00"))
+
+    def test_carga_local_explicita_sin_historicos_sigue_a_asesor(self):
+        """Sin históricos similares, la confianza del cálculo por reglas base
+        (35) sigue quedando bajo el umbral de 40 para modo automático — esto
+        es igual para Mudanza y para Carga, no es parte de este cambio."""
+        cliente = Cliente.objects.create(telefono="51944444404")
+        lead = Lead.objects.create(
+            cliente=cliente, tipo_servicio="carga", categoria_carga="otros",
+            distrito_origen="Ancón", distrito_destino="Pucusana",
+            es_interprovincial=False,
+        )
+        cotizacion = cotizar_lead(lead)
+        self.assertEqual(cotizacion.modo, Cotizacion.MODO_MANUAL)
+
+    def test_reparto_local_sigue_a_asesor(self):
+        """Reparto comparte categoria_carga='otros' con Carga pero NO tiene
+        tarifario propio — a propósito no entra al carve-out (tipo_servicio
+        debe ser exactamente 'carga', no cualquier cosa en 'otros')."""
+        cliente = Cliente.objects.create(telefono="51944444402")
+        lead = Lead.objects.create(
+            cliente=cliente, tipo_servicio="reparto", categoria_carga="otros",
+            distrito_origen="Santiago de Surco", distrito_destino="La Molina",
+            es_interprovincial=False,
+        )
+        cotizacion = cotizar_lead(lead)
+        self.assertEqual(cotizacion.modo, Cotizacion.MODO_MANUAL)
+
+    def test_carga_interprovincial_sigue_a_asesor(self):
+        """El carve-out de Carga local no anula el gate de interprovincial —
+        esa ruta la maneja _calcular_carga_parcial o cae a asesor, nunca el
+        motor de mudanzas/carga local."""
+        cliente = Cliente.objects.create(telefono="51944444403")
+        lead = Lead.objects.create(
+            cliente=cliente, tipo_servicio="carga", categoria_carga="otros",
+            distrito_origen="Lima", distrito_destino="Piura", es_interprovincial=True,
+        )
+        cotizacion = cotizar_lead(lead)
+        self.assertEqual(cotizacion.modo, Cotizacion.MODO_MANUAL)
+
     def test_factores_operativos_incrementan_precio(self):
         cliente = Cliente.objects.create(telefono="51922222223")
         simple = Lead.objects.create(

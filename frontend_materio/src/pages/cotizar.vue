@@ -166,7 +166,7 @@ const fetchPricePreview = async () => {
   previewLoading.value = true
   try {
     pricePreview.value = await guestQuotePreview({
-      origin: quote.origin, destination: quote.destination,
+      origin: quote.origin, destination: quote.destination, serviceType: serviceType.value,
       cargo: { category: quote.cargo.category, weightKg: estimatedWeightKg.value },
     })
   } catch (e) { pricePreview.value = null } finally { previewLoading.value = false }
@@ -276,7 +276,7 @@ const submitQuote = async () => {
     const validStops = serviceType.value === 'carga' ? stops.filter(s => s.district) : []
     const wantsOwnPrice = serviceType.value === 'carga' && continueMode.value === 'propio'
     const payload = {
-      ...quote, cargo, quoteMode, stops: validStops,
+      ...quote, cargo, quoteMode, stops: validStops, serviceType: serviceType.value,
       proposedPrice: wantsOwnPrice ? quote.proposedPrice : null,
       priceNegotiable: wantsOwnPrice ? quote.priceNegotiable : true,
     }
