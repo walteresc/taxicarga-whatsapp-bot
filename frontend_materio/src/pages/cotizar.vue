@@ -74,36 +74,76 @@ const hasStops = computed(() => stops.some(s => s.district))
 const step1ok = computed(() => !!(serviceType.value && quote.origin.district && quote.destination.district))
 
 // Peso/volumen: primero regex sobre el texto (instantáneo); si no encuentra
-// nada y hay texto, se le pide a la IA que estime (la mayoría de las
+// nada y hay texto o fotos, se le pide a la IA que estime (la mayoría de las
 // descripciones reales no traen números — "un juego de sala", no "500 kg").
-// Ver apps/cotizador/services_estimacion.py — nunca "otro agente", es una
+// Con fotos, la IA las usa como evidencia principal para el volumen. Ver
+// apps/cotizador/services_estimacion.py — nunca "otro agente", es una
 // extracción de un solo turno, misma pieza base que ya usa el proyecto.
 const estimatedWeightKg = ref(null)
 const estimatedVolumeM3 = ref(null)
 const estimatingCargo = ref(false)
+// true en cuanto cambia texto/fotos y todavía no corrió un intento real
+// (esperando el debounce o la llamada a la IA) — evita que el aviso o la
+// pregunta de aclaración parpadeen apenas se empieza a escribir.
+const estimatePending = ref(false)
+// Pregunta de aclaración en lenguaje simple que arma la propia IA cuando ni
+// el texto ni las fotos alcanzan (nunca pide kg/m3 directos — ver
+// services_estimacion.py). Un solo reintento: se contesta una vez o se
+// ignora, nunca se vuelve a preguntar de nuevo.
+const suggestedQuestion = ref(null)
+const questionAnswer = ref(null)
+const answeringQuestion = ref(false)
 const cargoEstimateFailed = computed(() =>
-  serviceType.value === 'carga' && !estimatingCargo.value && quote.cargo.detail.trim() &&
+  serviceType.value === 'carga' && !estimatingCargo.value && !estimatePending.value &&
+  !suggestedQuestion.value && quote.cargo.detail.trim() &&
   estimatedWeightKg.value == null && estimatedVolumeM3.value == null)
+const hasSuggestedQuestion = computed(() =>
+  serviceType.value === 'carga' && !estimatingCargo.value && !estimatePending.value &&
+  !answeringQuestion.value && !!suggestedQuestion.value)
 
 let estimateDebounce = null
 const estimateCargo = async () => {
+  estimatePending.value = false
   const text = quote.cargo.detail
   const w = extractWeightKg(text)
   const v = extractVolumeM3(text)
-  if (w != null || v != null) { estimatedWeightKg.value = w; estimatedVolumeM3.value = v; return }
-  if (!text.trim()) { estimatedWeightKg.value = null; estimatedVolumeM3.value = null; return }
+  if (w != null || v != null) {
+    estimatedWeightKg.value = w; estimatedVolumeM3.value = v; suggestedQuestion.value = null
+    return
+  }
+  if (!text.trim() && !photos.value.length) {
+    estimatedWeightKg.value = null; estimatedVolumeM3.value = null; suggestedQuestion.value = null
+    return
+  }
   estimatingCargo.value = true
   try {
-    const r = await guestCargoEstimate({ detail: text })
+    const r = await guestCargoEstimate({ detail: text }, photos.value)
     estimatedWeightKg.value = r.weightKg
     estimatedVolumeM3.value = r.volumeM3
-  } catch (e) { estimatedWeightKg.value = null; estimatedVolumeM3.value = null }
-  finally { estimatingCargo.value = false }
+    suggestedQuestion.value = r.suggestedQuestion || null
+  } catch (e) {
+    estimatedWeightKg.value = null; estimatedVolumeM3.value = null; suggestedQuestion.value = null
+  } finally { estimatingCargo.value = false }
 }
-watch(() => quote.cargo.detail, () => {
+watch([() => quote.cargo.detail, photos], () => {
+  questionAnswer.value = null
+  estimatePending.value = true
   clearTimeout(estimateDebounce)
   estimateDebounce = setTimeout(estimateCargo, 600)
 })
+
+const answerSuggestedQuestion = async () => {
+  if (questionAnswer.value == null || questionAnswer.value === '') return
+  const question = suggestedQuestion.value
+  answeringQuestion.value = true
+  try {
+    const augmented = `${quote.cargo.detail}\n${question.text}: ${questionAnswer.value} ${question.unit}`
+    const r = await guestCargoEstimate({ detail: augmented }, photos.value)
+    estimatedWeightKg.value = r.weightKg
+    estimatedVolumeM3.value = r.volumeM3
+  } catch (e) { /* seguí sin precio, ver aviso de abajo */ }
+  finally { suggestedQuestion.value = null; answeringQuestion.value = false }
+}
 
 // Precio de referencia: no crea nada, es un estimado (ver
 // apps/cotizador/api/guest_views.py::PreviewQuoteView). Antes se mostraba
@@ -189,6 +229,25 @@ const priceEstimate = computed(() => {
 // (QuoteSummaryPanel) hace de confirmación permanente.
 const stepperItems = ['Servicio y ruta', 'Detalles', 'Reserva']
 const maxStep = 3
+
+// Al pasar de "Detalles" a "Reserva" (única transición donde importa la
+// estimación de carga): si hay un intento pendiente, se resuelve antes de
+// decidir — si no, "Siguiente" podría avanzar sin haber corrido nunca la
+// estimación (o con una desactualizada). Si la IA recién ahí propone una
+// pregunta de aclaración, se queda una vez para mostrarla; el segundo clic
+// (la haya contestado o no) avanza igual — nunca bloquea.
+const goingToStep3 = ref(false)
+const goToStep3 = async () => {
+  if (serviceType.value !== 'carga') { step++; return }
+  if (estimatePending.value) {
+    goingToStep3.value = true
+    clearTimeout(estimateDebounce)
+    await estimateCargo()
+    goingToStep3.value = false
+  }
+  if (hasSuggestedQuestion.value) return
+  step++
+}
 
 const formOk = computed(() => {
   if (!(step1ok.value && quote.contact.phone && quote.contact.name)) return false
@@ -388,9 +447,23 @@ const submitSignup = async () => {
 
               <CargoPhotosPicker v-model="photos" class="mb-2" />
 
-              <VAlert v-if="cargoEstimateFailed" type="info" variant="tonal" density="comfortable" class="mt-2">
+              <VAlert v-if="hasSuggestedQuestion" type="info" variant="tonal" density="comfortable" class="mt-2">
+                <div class="mb-2">{{ suggestedQuestion.text }}</div>
+                <div class="d-flex align-center ga-2 flex-wrap">
+                  <VTextField
+                    v-model="questionAnswer" type="number" density="compact" hide-details style="max-width: 140px;"
+                    :suffix="suggestedQuestion.unit" @keyup.enter="answerSuggestedQuestion"
+                  />
+                  <VBtn size="small" color="primary" variant="tonal" :loading="answeringQuestion" @click="answerSuggestedQuestion">
+                    Estimar precio
+                  </VBtn>
+                  <VBtn size="small" variant="text" @click="suggestedQuestion = null">Continuar sin precio</VBtn>
+                </div>
+              </VAlert>
+
+              <VAlert v-else-if="cargoEstimateFailed" type="info" variant="tonal" density="comfortable" class="mt-2">
                 No pudimos calcular el precio estimado por falta de detalle de carga (peso, cantidad, volumen, etc.).
-                Podés editar la descripción, o continuar así sin precio, no hay problema.
+                Podés editar la descripción, agregar fotos, o continuar así sin precio, no hay problema.
               </VAlert>
 
               <template v-if="serviceType === 'carga'">
@@ -479,7 +552,12 @@ const submitSignup = async () => {
           <VBtn v-else variant="text" to="/login">Ya tengo cuenta</VBtn>
           <VSpacer />
           <VBtn v-if="step === 1" color="primary" variant="elevated" rounded="lg" size="large" min-width="180" :disabled="!step1ok" @click="step = 2">Siguiente</VBtn>
-          <VBtn v-else-if="step < maxStep" color="primary" variant="elevated" rounded="lg" size="large" min-width="180" @click="step++">Siguiente</VBtn>
+          <VBtn
+            v-else-if="step < maxStep" color="primary" variant="elevated" rounded="lg" size="large" min-width="180"
+            :loading="goingToStep3" @click="goToStep3"
+          >
+            Siguiente
+          </VBtn>
           <VBtn v-else color="primary" variant="elevated" rounded="lg" size="large" min-width="180" :loading="busy" :disabled="!formOk" @click="submitQuote">Cotizar</VBtn>
         </VCardActions>
 
