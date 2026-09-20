@@ -82,15 +82,21 @@ const showFlexRow = computed(() => quickPick.value !== 'urgente')
     />
 
     <template v-if="showFlexRow">
-      <VBtnToggle v-model="flexibility" mandatory density="comfortable" class="mb-2" divided>
-        <VBtn value="fija" size="small">Fecha fija</VBtn>
-        <VBtn value="flex" size="small">Flexible ± 2 días</VBtn>
+      <VBtnToggle
+        v-model="flexibility" color="primary" variant="outlined" divided
+        density="comfortable" mandatory class="schedule-toggle mb-4"
+      >
+        <VBtn value="fija" class="px-6">Fecha fija</VBtn>
+        <VBtn value="flex" class="px-6">Flexible ± 2 días</VBtn>
       </VBtnToggle>
 
-      <div class="text-subtitle-2 mb-2">¿A qué hora?</div>
-      <VBtnToggle v-model="hourMode" mandatory density="comfortable" class="mb-2" divided>
-        <VBtn value="flexible" size="small">Horario flexible</VBtn>
-        <VBtn value="exacta" size="small">Hora exacta</VBtn>
+      <div class="text-subtitle-2 font-weight-bold mb-2">¿A qué hora?</div>
+      <VBtnToggle
+        v-model="hourMode" color="primary" variant="outlined" divided
+        density="comfortable" mandatory class="schedule-toggle mb-4"
+      >
+        <VBtn value="flexible" class="px-6">Horario flexible</VBtn>
+        <VBtn value="exacta" class="px-6">Hora exacta</VBtn>
       </VBtnToggle>
 
       <VRow v-if="showWindows" dense class="mb-2">
@@ -108,3 +114,16 @@ const showFlexRow = computed(() => quickPick.value !== 'urgente')
     </template>
   </div>
 </template>
+
+<style scoped>
+/* El tema (Materio) fuerza en .v-btn-toggle un ancho fijo de 44/52px por
+   botón (pensado para toggles de solo ícono) — con texto ("Fecha fija" /
+   "Flexible ± 2 días") eso los aplasta y superpone. Se anula ese ancho fijo
+   acá; la especificidad extra (dos clases en el mismo elemento) es
+   necesaria para ganarle al !important del tema — mismo fix que
+   ContinueModePicker.vue (.price-btn-toggle) y cotizar.vue (.load-mode-toggle). */
+:deep(.schedule-toggle.v-btn-toggle .v-btn) {
+  inline-size: auto !important;
+  block-size: 40px !important;
+}
+</style>
