@@ -110,21 +110,6 @@ watch(() => form.cargo.detail, () => {
   estimateDebounce = setTimeout(estimateCargo, 600)
 })
 
-// Modalidad Compartido/Exclusivo: el cliente NUNCA elige Consolidada/Express
-// directamente — eso lo declara el transportista al ofertar (ver
-// apps/tercerizacion, campo OfertaTransportista.modalidad). Acá solo se
-// recomienda una modalidad premarcada según el tamaño de la carga, con
-// opción de cambiarla; deja de seguir la recomendación en cuanto el
-// cliente toca el toggle a mano.
-const modalityTouched = ref(false)
-const recommendedMode = computed(() => recomendarModalidad({ weightKg: estimatedWeightKg.value }))
-watch(recommendedMode, mode => {
-  if (modalityTouched.value) return
-  form.loadMode = mode === 'exclusivo' ? 'completa' : 'parcial'
-}, { immediate: true })
-const setLoadMode = mode => { modalityTouched.value = true; form.loadMode = mode }
-watch(() => form.loadMode, mode => { if (mode === 'parcial') clearTruck() })
-
 // Precio de referencia: no crea nada, es un estimado (ver
 // apps/cotizador/api/guest_views.py::PreviewQuoteView). Antes se mostraba
 // como paso propio comparando dos tarjetas (Consolidada/Express) — ahora es
@@ -133,6 +118,13 @@ watch(() => form.loadMode, mode => { if (mode === 'parcial') clearTruck() })
 // ese momento.
 const pricePreview = ref(null)
 const previewLoading = ref(false)
+// El backend ya calcula esto (evaluar_ambito, sin importar el peso) — no
+// hay Compartido/Exclusivo que preguntar en una ruta local: Consolidada
+// NUNCA existe fuera de rutas interprovinciales (ver
+// apps.tercerizacion.services.existe_tarifa_especifica). Mientras no se
+// conoce todavía (preview sin resolver), se trata como "no interprovincial"
+// para no mostrar el toggle y después tener que retirarlo.
+const isInterprovincial = computed(() => pricePreview.value?.isInterprovincial === true)
 let previewDebounce = null
 const fetchPricePreview = async () => {
   if (serviceType.value !== 'carga' || hasStops.value || !step1ok.value) { pricePreview.value = null; return }
@@ -149,6 +141,23 @@ watch([() => serviceType.value, () => form.origin.district, () => form.destinati
   clearTimeout(previewDebounce)
   previewDebounce = setTimeout(fetchPricePreview, 400)
 })
+
+// Modalidad Compartido/Exclusivo: el cliente NUNCA elige Consolidada/Express
+// directamente — eso lo declara el transportista al ofertar (ver
+// apps/tercerizacion, campo OfertaTransportista.modalidad). Acá solo se
+// recomienda una modalidad premarcada según el tamaño de la carga, con
+// opción de cambiarla; deja de seguir la recomendación en cuanto el
+// cliente toca el toggle a mano. Solo tiene sentido en ruta interprovincial
+// (ver isInterprovincial arriba) — en una ruta local nunca se toca
+// form.loadMode, queda en 'completa' (Express), que es lo único que existe.
+const modalityTouched = ref(false)
+const recommendedMode = computed(() => recomendarModalidad({ weightKg: estimatedWeightKg.value }))
+watch([recommendedMode, isInterprovincial], ([mode, interprovincial]) => {
+  if (modalityTouched.value || !interprovincial) return
+  form.loadMode = mode === 'exclusivo' ? 'completa' : 'parcial'
+})
+const setLoadMode = mode => { modalityTouched.value = true; form.loadMode = mode }
+watch(() => form.loadMode, mode => { if (mode === 'parcial') clearTruck() })
 
 const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE')}`)
 const priceEstimate = computed(() => {
@@ -347,28 +356,33 @@ const submit = async () => {
 
             <template v-if="serviceType === 'carga'">
               <VDivider class="my-3" />
-              <div class="text-subtitle-2 font-weight-bold mb-2">¿Cómo querés tu carga?</div>
-              <VBtnToggle
-                :model-value="form.loadMode" color="primary" variant="outlined" divided
-                density="comfortable" mandatory class="load-mode-toggle mb-2"
-                @update:model-value="setLoadMode"
-              >
-                <VBtn value="parcial" class="px-6">
-                  Compartido
-                  <VChip v-if="recommendedMode === 'compartido' && !modalityTouched" size="x-small" color="primary" variant="flat" class="ml-2">Recomendado</VChip>
-                </VBtn>
-                <VBtn value="completa" class="px-6">
-                  Exclusivo
-                  <VChip v-if="recommendedMode === 'exclusivo' && !modalityTouched" size="x-small" color="primary" variant="flat" class="ml-2">Recomendado</VChip>
-                </VBtn>
-              </VBtnToggle>
-              <p class="text-caption text-medium-emphasis mb-3">
-                {{ form.loadMode === 'parcial'
-                  ? 'Tu carga viaja junto con otra — más económico.'
-                  : 'Un camión solo para tu carga — más rápido.' }}
-              </p>
+              <!-- Compartido/Exclusivo solo existe en rutas interprovinciales —
+                   Consolidada nunca es una opción real dentro de una misma
+                   ciudad, así que ni se pregunta ahí. -->
+              <template v-if="isInterprovincial">
+                <div class="text-subtitle-2 font-weight-bold mb-2">¿Cómo querés tu carga?</div>
+                <VBtnToggle
+                  :model-value="form.loadMode" color="primary" variant="outlined" divided
+                  density="comfortable" mandatory class="load-mode-toggle mb-2"
+                  @update:model-value="setLoadMode"
+                >
+                  <VBtn value="parcial" class="px-6">
+                    Compartido
+                    <VChip v-if="recommendedMode === 'compartido' && !modalityTouched" size="x-small" color="primary" variant="flat" class="ml-2">Recomendado</VChip>
+                  </VBtn>
+                  <VBtn value="completa" class="px-6">
+                    Exclusivo
+                    <VChip v-if="recommendedMode === 'exclusivo' && !modalityTouched" size="x-small" color="primary" variant="flat" class="ml-2">Recomendado</VChip>
+                  </VBtn>
+                </VBtnToggle>
+                <p class="text-caption text-medium-emphasis mb-3">
+                  {{ form.loadMode === 'parcial'
+                    ? 'Tu carga viaja junto con otra — más económico.'
+                    : 'Un camión solo para tu carga — más rápido.' }}
+                </p>
+              </template>
 
-              <template v-if="form.loadMode === 'completa'">
+              <template v-if="!isInterprovincial || form.loadMode === 'completa'">
                 <div class="d-flex align-start ga-3">
                   <VAvatar size="40" color="primary" variant="tonal"><VIcon icon="ri-truck-line" /></VAvatar>
                   <div class="flex-grow-1">
@@ -394,7 +408,7 @@ const submit = async () => {
           <VWindowItem :value="3">
             <template v-if="serviceType === 'carga'">
               <VAlert v-if="hasStops" type="info" variant="tonal" class="mb-4">
-                Con paradas intermedias, un asesor te confirma el precio — no aplica Compartido/Exclusivo.
+                Con paradas intermedias, un asesor te confirma el precio.
               </VAlert>
               <ContinueModePicker
                 :mode="continueMode" :price="form.proposedPrice" :negotiable="form.priceNegotiable"
