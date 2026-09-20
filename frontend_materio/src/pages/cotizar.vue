@@ -238,7 +238,7 @@ const maxStep = 3
 // (la haya contestado o no) avanza igual — nunca bloquea.
 const goingToStep3 = ref(false)
 const goToStep3 = async () => {
-  if (serviceType.value !== 'carga') { step++; return }
+  if (serviceType.value !== 'carga') { step.value++; return }
   if (estimatePending.value) {
     goingToStep3.value = true
     clearTimeout(estimateDebounce)
@@ -246,7 +246,7 @@ const goToStep3 = async () => {
     goingToStep3.value = false
   }
   if (hasSuggestedQuestion.value) return
-  step++
+  step.value++
 }
 
 const formOk = computed(() => {
