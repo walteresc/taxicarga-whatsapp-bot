@@ -151,7 +151,16 @@ watch([() => serviceType.value, () => form.origin.district, () => form.destinati
 // (ver isInterprovincial arriba) — en una ruta local nunca se toca
 // form.loadMode, queda en 'completa' (Express), que es lo único que existe.
 const modalityTouched = ref(false)
-const recommendedMode = computed(() => recomendarModalidad({ weightKg: estimatedWeightKg.value }))
+// El backend solo arma `consolidated` cuando existe_tarifa_especifica(destino)
+// — hay tarifa propia cargada para ESE destino (Configuración → Comisiones de
+// tercerización → "Carga parcial"), no la tabla general. Sin eso, no hay
+// evidencia real de que ese destino tenga tráfico para consolidar: no tiene
+// sentido recomendar Compartido (igual queda seleccionable a mano, por si un
+// transportista ofrece consolidar de todas formas).
+const hasSpecificTariff = computed(() => isInterprovincial.value && pricePreview.value?.consolidated != null)
+const recommendedMode = computed(() => hasSpecificTariff.value
+  ? recomendarModalidad({ weightKg: estimatedWeightKg.value })
+  : 'exclusivo')
 watch([recommendedMode, isInterprovincial], ([mode, interprovincial]) => {
   if (modalityTouched.value || !interprovincial) return
   form.loadMode = mode === 'exclusivo' ? 'completa' : 'parcial'
