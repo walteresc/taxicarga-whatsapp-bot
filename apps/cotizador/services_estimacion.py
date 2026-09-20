@@ -35,16 +35,17 @@ PROMPT_SISTEMA = (
     "- Si la descripción ya trae un número explícito de peso o volumen, "
     "usalo tal cual en vez de estimar.\n"
     "- Si ni el texto ni las fotos alcanzan para estimar nada razonable: "
-    "devolvé null en peso_kg y volumen_m3, confianza 'baja', y proponé en "
-    "'pregunta_sugerida' UNA sola pregunta que el propio cliente (sin "
+    "devolvé 0 en peso_kg y volumen_m3 (0 significa 'no se pudo estimar', "
+    "nunca es un valor real), confianza 'baja', y completá "
+    "'pregunta_sugerida' con UNA sola pregunta que el propio cliente (sin "
     "conocimientos técnicos) pueda responder con un número simple — nunca "
     "le pidas kg ni m3 directamente. Elegí la pregunta según el tipo de "
     "carga: cantidad de cajas/bultos, largo aproximado en metros de lo más "
     "grande, cantidad de ambientes de la casa, etc. — lo que más ayude para "
     "ESA carga puntual. 'unidad' es la unidad de la respuesta esperada "
     "('cajas', 'metros', 'ambientes', etc.).\n"
-    "- Si sí pudiste estimar algo (aunque sea con confianza 'media'), no "
-    "pongas pregunta_sugerida.\n"
+    "- Si sí pudiste estimar algo (aunque sea con confianza 'media'), dejá "
+    "pregunta_sugerida con texto y unidad vacíos (\"\").\n"
     "- confianza 'alta' = objetos conocidos y concretos (texto y/o fotos "
     "claras); 'media' = estimación razonable pero con rango amplio; 'baja' "
     "= no se pudo estimar nada útil."
@@ -52,21 +53,30 @@ PROMPT_SISTEMA = (
 
 MAX_FOTOS = 5
 
+# Los schemas de acá abajo evitan a propósito Optional/`| None` (que Pydantic
+# traduce a `anyOf` en JSON Schema): DeepSeek rechaza ese `anyOf` en modo
+# estructurado ("Invalid json schema: field `anyOf`: missing field `type`"),
+# tanto para tipos simples como para un objeto anidado opcional — confirmado
+# en vivo contra su API. En vez de eso, "sin dato" se representa con
+# centinelas (0 = no se pudo estimar; texto/unidad vacíos = sin pregunta) y
+# TODOS los campos son siempre requeridos — funciona igual en OpenAI y
+# DeepSeek, sin ramas de schema por proveedor.
+
 
 class PreguntaSugerida(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    texto: str
-    unidad: str
+    texto: str = ""
+    unidad: str = ""
 
 
 class EstimacionCarga(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    peso_kg: float | None = Field(default=None, ge=0)
-    volumen_m3: float | None = Field(default=None, ge=0)
+    peso_kg: float = Field(default=0, ge=0)
+    volumen_m3: float = Field(default=0, ge=0)
     confianza: Literal["alta", "media", "baja"]
-    pregunta_sugerida: PreguntaSugerida | None = Field(default=None)
+    pregunta_sugerida: PreguntaSugerida = Field(default_factory=PreguntaSugerida)
 
 
 def _bloques_fotos(fotos):
@@ -98,13 +108,6 @@ def estimar_carga_por_ia(descripcion, fotos=None, *, provider_name=None):
     if not texto and not fotos:
         return None
 
-    # Con fotos, forzamos OpenAI explícito: es el único proveedor probado en
-    # este repo para imágenes (ver apps/ia/image_analyzer.py). El soporte de
-    # visión de DeepSeek es contra su endpoint /chat/completions, no
-    # confirmado contra la superficie "Responses" que usa este módulo.
-    if fotos:
-        provider_name = "openai"
-
     contenido = [{"type": "input_text", "text": texto or "(sin descripción de texto, ver fotos)"}]
     contenido.extend(_bloques_fotos(fotos))
 
@@ -126,14 +129,18 @@ def estimar_carga_por_ia(descripcion, fotos=None, *, provider_name=None):
         logger.warning("[EstimacionCarga] Error inesperado: %s", e)
         return None
 
+    # 0 es el centinela de "no se pudo estimar" (ver PROMPT_SISTEMA) — nunca
+    # un peso/volumen real (nada pesa u ocupa 0).
+    peso = parsed.peso_kg or None
+    volumen = parsed.volumen_m3 or None
+
     pregunta = None
-    if parsed.confianza == "baja" and parsed.peso_kg is None and parsed.volumen_m3 is None:
-        if parsed.pregunta_sugerida:
-            pregunta = {"text": parsed.pregunta_sugerida.texto, "unit": parsed.pregunta_sugerida.unidad}
+    if peso is None and volumen is None and parsed.pregunta_sugerida.texto:
+        pregunta = {"text": parsed.pregunta_sugerida.texto, "unit": parsed.pregunta_sugerida.unidad}
 
     return {
-        "weightKg": parsed.peso_kg,
-        "volumeM3": parsed.volumen_m3,
+        "weightKg": peso,
+        "volumeM3": volumen,
         "confidence": parsed.confianza,
         "suggestedQuestion": pregunta,
     }

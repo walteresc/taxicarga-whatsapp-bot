@@ -30,19 +30,30 @@ class EstimarCargaPorIaTests(APITestCase):
         self.assertEqual(r, {"weightKg": 250, "volumeM3": 3.5, "confidence": "alta", "suggestedQuestion": None})
 
     def test_confianza_baja_sin_pregunta_devuelve_dict_con_nulls(self):
-        fake = FakeStructuredProvider(payload={"peso_kg": None, "volumen_m3": None, "confianza": "baja"})
+        # 0 es el centinela de "no se pudo estimar" (nunca `null`/Optional —
+        # ver comentario en services_estimacion.py sobre por qué: DeepSeek
+        # rechaza `anyOf` en modo estructurado).
+        fake = FakeStructuredProvider(payload={"peso_kg": 0, "volumen_m3": 0, "confianza": "baja"})
         with patch("apps.cotizador.services_estimacion.build_provider", return_value=fake):
             r = estimar_carga_por_ia("cosas varias")
         self.assertEqual(r, {"weightKg": None, "volumeM3": None, "confidence": "baja", "suggestedQuestion": None})
 
     def test_confianza_baja_con_pregunta_sugerida(self):
         fake = FakeStructuredProvider(payload={
-            "peso_kg": None, "volumen_m3": None, "confianza": "baja",
+            "peso_kg": 0, "volumen_m3": 0, "confianza": "baja",
             "pregunta_sugerida": {"texto": "¿Cuántas cajas son aproximadamente?", "unidad": "cajas"},
         })
         with patch("apps.cotizador.services_estimacion.build_provider", return_value=fake):
             r = estimar_carga_por_ia("cosas varias")
         self.assertEqual(r["suggestedQuestion"], {"text": "¿Cuántas cajas son aproximadamente?", "unit": "cajas"})
+
+    def test_pregunta_sugerida_vacia_no_cuenta_como_pregunta(self):
+        """Si la IA estima algo, deja pregunta_sugerida con texto/unidad
+        vacíos (el default del schema) — no debe aparecer como suggestedQuestion."""
+        fake = FakeStructuredProvider(payload={"peso_kg": 100, "volumen_m3": 2, "confianza": "media"})
+        with patch("apps.cotizador.services_estimacion.build_provider", return_value=fake):
+            r = estimar_carga_por_ia("un ropero grande")
+        self.assertIsNone(r["suggestedQuestion"])
 
     def test_texto_vacio_sin_fotos_no_llama_al_provider(self):
         with patch("apps.cotizador.services_estimacion.build_provider") as provider:
@@ -64,15 +75,15 @@ class EstimarCargaPorIaTests(APITestCase):
             r = estimar_carga_por_ia("una moto usada")
         self.assertIsNone(r)
 
-    def test_fotos_fuerza_provider_openai(self):
-        """Con fotos, se ignora cualquier provider_name pasado o configurado
-        — DeepSeek no está probado para imágenes en la superficie Responses
-        que usa este módulo (ver apps/ia/providers.py)."""
+    def test_fotos_respetan_el_provider_pedido(self):
+        """Con fotos, NO se fuerza ningún proveedor — DeepSeek también sabe
+        leer imágenes (confirmado en vivo contra su API), así que se usa el
+        que corresponda según ConfiguracionIA/provider_name, igual que sin fotos."""
         fake = FakeStructuredProvider(payload={"peso_kg": 80, "volumen_m3": 2, "confianza": "media"})
         foto = SimpleUploadedFile("carga.jpg", b"contenido-fake", content_type="image/jpeg")
         with patch("apps.cotizador.services_estimacion.build_provider", return_value=fake) as build:
             r = estimar_carga_por_ia("una caja", fotos=[foto], provider_name="deepseek")
-        build.assert_called_once_with("extraction", provider_name="openai")
+        build.assert_called_once_with("extraction", provider_name="deepseek")
         self.assertEqual(r["confidence"], "media")
 
     def test_solo_fotos_sin_texto_igual_llama_al_provider(self):
