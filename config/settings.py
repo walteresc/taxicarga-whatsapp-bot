@@ -162,6 +162,9 @@ REST_FRAMEWORK = {
         # cada vez que llega al paso "Precio" o cambia peso/categoría, así que
         # necesita más margen que la cotización real.
         "guest_quote_preview": config("GUEST_QUOTE_PREVIEW_RATE", default="60/hour"),
+        # A diferencia de guest_quote_preview, esta SÍ llama a un proveedor de
+        # IA (costo real por request) — límite más chico a propósito.
+        "guest_cargo_estimate": config("GUEST_CARGO_ESTIMATE_RATE", default="30/hour"),
         "guest_signup": config("GUEST_SIGNUP_RATE", default="15/hour"),
         "agent_ask": config("AGENT_ASK_RATE", default="30/hour"),
         # Público, código (secuencial, adivinable) + teléfono — limitar fuerte

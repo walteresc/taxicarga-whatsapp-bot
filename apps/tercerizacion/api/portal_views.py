@@ -27,6 +27,7 @@ from rest_framework.views import APIView
 from apps.api.exceptions import api_exception_handler
 from apps.api.permissions import IsCarrier, carrier_for
 from apps.campo.models import ProgramacionServicio
+from apps.leads.models import Lead
 from apps.tercerizacion import adjudicacion as adj
 from apps.tercerizacion import negociacion as neg
 from apps.tercerizacion.models import (
@@ -95,9 +96,14 @@ def _safe_load(pub, mi_oferta=None):
         "date": _d(s.fecha_servicio),
         "lines": lineas_detalle_permitido(s),
         "photos": photos,
+        # Solo si es_interprovincial tiene sentido pedirle al transportista
+        # que declare modalidad (Consolidada/Express) al ofertar — en carga
+        # local esa distinción no existe.
+        "isInterprovincial": s.es_interprovincial,
         "myOfferId": mi_oferta.id if mi_oferta else None,
         "myOfferAmount": _num(mi_oferta.monto_actual or mi_oferta.precio_ofertado) if mi_oferta else None,
         "myOfferState": _OFFER_STATE_EN.get(mi_oferta.estado) if mi_oferta else None,
+        "myOfferModality": (mi_oferta.modalidad or None) if mi_oferta else None,
     }
 
 
@@ -217,12 +223,22 @@ class CarrierOfferView(_Portal):
             if vehiculo is None:
                 raise ValidationError({"vehicleId": "Ese vehículo no es tuyo."})
 
+        # Modalidad (Consolidada/Express) — solo tiene sentido en carga
+        # interprovincial; el transportista es quien realmente sabe si
+        # dedica el camión o va con carga propia compartida, no el cliente.
+        modalidad = (request.data.get("modalidad") or "").strip()
+        if modalidad and modalidad not in dict(Lead.MODOS_CARGA):
+            raise ValidationError({"modalidad": "Modalidad inválida."})
+        if modalidad and not pub.servicio.es_interprovincial:
+            modalidad = ""  # ignorado en silencio, no es un error del cliente
+
         try:
             adj.registrar_oferta(
                 pub, monto=amount, usuario=request.user, transportista=self.carrier,
                 transportista_vehiculo=vehiculo,
                 nota=(request.data.get("note") or "").strip(),
                 canal=MensajeNegociacion.CANAL_PORTAL,
+                modalidad=modalidad,
             )
         except adj.AdjudicacionError as e:
             raise ValidationError(str(e))

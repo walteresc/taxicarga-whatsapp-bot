@@ -18,6 +18,15 @@ const props = defineProps({
   detail: { type: String, default: '' },
   date: { type: String, default: '' },
   truckLabel: { type: String, default: '' },
+  // Peso/volumen ya resuelto por el padre (regex o estimación por IA — ver
+  // apps/cotizador/services_estimacion.py) — se prioriza sobre volver a
+  // extraerlo acá con regex solamente, que se perdería la estimación de IA.
+  estimatedWeightKg: { type: Number, default: null },
+  estimatedVolumeM3: { type: Number, default: null },
+  // Precio de referencia (un solo número, un rango, o "un asesor confirma")
+  // — ver cotizar.vue::priceEstimate. null = Carga sin datos suficientes
+  // todavía, o no es Carga.
+  priceEstimate: { type: Object, default: null },
 })
 const emit = defineEmits(['edit-type'])
 
@@ -146,8 +155,8 @@ const distanceLabel = computed(() => {
 })
 
 const weightVolumeLabel = computed(() => {
-  const w = extractWeightKg(props.detail)
-  const v = extractVolumeM3(props.detail)
+  const w = props.estimatedWeightKg ?? extractWeightKg(props.detail)
+  const v = props.estimatedVolumeM3 ?? extractVolumeM3(props.detail)
   if (w == null && v == null) return null
   const parts = []
   if (w != null) parts.push(`Peso total: ${Math.round(w)} kg`)
@@ -212,7 +221,7 @@ const fmtDate = iso => {
         {{ distanceLabel }}
       </div>
 
-      <template v-if="detail || weightVolumeLabel || truckLabel || fmtDate(date)">
+      <template v-if="detail || weightVolumeLabel || truckLabel || fmtDate(date) || priceEstimate">
         <VDivider class="my-3" />
         <div v-if="detail" class="d-flex align-start ga-2 mb-3">
           <VIcon icon="ri-file-text-line" size="16" class="text-medium-emphasis mt-1" />
@@ -235,11 +244,24 @@ const fmtDate = iso => {
             <div class="text-body-2 font-weight-medium">{{ truckLabel }}</div>
           </div>
         </div>
-        <div v-if="fmtDate(date)" class="d-flex align-start ga-2">
+        <div v-if="fmtDate(date)" class="d-flex align-start ga-2 mb-3">
           <VIcon icon="ri-calendar-line" size="16" class="text-medium-emphasis mt-1" />
           <div>
             <div class="summary-label">Fecha del servicio</div>
             <div class="text-body-2 font-weight-medium text-capitalize">{{ fmtDate(date) }}</div>
+          </div>
+        </div>
+        <div v-if="priceEstimate" class="d-flex align-start ga-2">
+          <VIcon icon="ri-price-tag-3-line" size="16" class="text-medium-emphasis mt-1" />
+          <div>
+            <div class="summary-label">Precio estimado</div>
+            <template v-if="priceEstimate.mode === 'loading'">
+              <VProgressCircular indeterminate size="14" width="2" color="primary" />
+            </template>
+            <template v-else>
+              <div class="text-body-2 font-weight-medium">{{ priceEstimate.text }}</div>
+              <div v-if="priceEstimate.sub" class="text-caption text-medium-emphasis">{{ priceEstimate.sub }}</div>
+            </template>
           </div>
         </div>
       </template>

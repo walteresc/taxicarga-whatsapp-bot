@@ -45,7 +45,7 @@ def publicar_publicacion(pub, usuario, *, grupos=None):
 @transaction.atomic
 def registrar_oferta(pub, *, monto, usuario, transportista=None, transportista_vehiculo=None,
                      cliente=None, nota="", canal=MensajeNegociacion.CANAL_CRM,
-                     mensaje_whatsapp=None):
+                     mensaje_whatsapp=None, modalidad=""):
     """Crea o actualiza la oferta de un transportista y la refleja como propuesta
     en su mesa de negociación de compra."""
     if pub.estado not in _ESTADOS_ABIERTOS:
@@ -66,6 +66,11 @@ def registrar_oferta(pub, *, monto, usuario, transportista=None, transportista_v
 
     if transportista_vehiculo is not None:
         oferta.transportista_vehiculo = transportista_vehiculo
+    # Solo carga interprovincial la usa (ver OfertaTransportista.modalidad) —
+    # si no viene (carga local, o el transportista no la declaró), se deja
+    # lo que ya tuviera en vez de borrarla en una re-oferta.
+    if modalidad:
+        oferta.modalidad = modalidad
     if creada and oferta.precio_ofertado is None:
         oferta.precio_ofertado = monto
     oferta.monto_actual = monto

@@ -30,3 +30,6 @@ const withPhotos = (body, photos) => {
 export const guestQuote = (body, photos) => post('quote', withPhotos(body, photos))
 export const guestQuotePreview = body => post('quote/preview', body)
 export const guestSignup = body => post('signup', body)
+// Estima peso/volumen por IA cuando la descripción no trae números explícitos
+// (ver apps/cotizador/services_estimacion.py) — {detail} -> {weightKg, volumeM3, confidence}
+export const guestCargoEstimate = body => post('cargo/estimate', body)

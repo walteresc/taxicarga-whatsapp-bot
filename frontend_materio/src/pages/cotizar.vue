@@ -1,18 +1,17 @@
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 import AddressAutocomplete from '@/components/AddressAutocomplete.vue'
 import CargoPhotosPicker from '@/components/CargoPhotosPicker.vue'
 import ContinueModePicker from '@/components/ContinueModePicker.vue'
 import DistrictAutocomplete from '@/components/DistrictAutocomplete.vue'
-import PriceModePicker from '@/components/PriceModePicker.vue'
 import QuoteSummaryPanel from '@/components/QuoteSummaryPanel.vue'
 import ScheduleStepPicker from '@/components/ScheduleStepPicker.vue'
 import VehiclePickerDialog from '@/components/VehiclePickerDialog.vue'
-import { guestQuote, guestQuotePreview, guestSignup } from '@/services/guestService'
+import { guestCargoEstimate, guestQuote, guestQuotePreview, guestSignup } from '@/services/guestService'
 import { useAuthStore } from '@/stores/authStore'
-import { extractVolumeM3, extractWeightKg } from '@/utils/cargoText'
+import { extractVolumeM3, extractWeightKg, recomendarModalidad } from '@/utils/cargoText'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -21,9 +20,9 @@ const auth = useAuthStore()
 // (Carga / Mudanzas / Reparto); por dentro las 3 pasan por el mismo cotizador
 // de invitado, solo cambia qué categoría de `cargo` mandamos.
 const SERVICE_TYPES = [
-  { value: 'carga', icon: 'ri-truck-line', title: 'Carga', subtitle: 'Paquetes, mercadería o carga nacional.' },
+  { value: 'carga', icon: 'ri-truck-line', title: 'Carga', subtitle: 'Encomiendas, paquetes o carga nacional.' },
   { value: 'mudanza', icon: 'ri-home-4-line', title: 'Mudanzas', subtitle: 'Casa, oficina o empresa.' },
-  { value: 'reparto', icon: 'ri-e-bike-2-line', title: 'Reparto', subtitle: 'Entregas y última milla.' },
+  { value: 'reparto', icon: 'ri-e-bike-2-line', title: 'Entregas', subtitle: 'Reparto, distribución y última milla.' },
 ]
 const serviceType = ref('')
 
@@ -31,6 +30,15 @@ const serviceType = ref('')
 // "que TaxiCarga elija" (quoteMode 'por_carga', sin truckType). El picker
 // trae sus propias opciones del catálogo real (apps/catalogo) y emite
 // directamente el nombre de la unidad elegida (p. ej. "Camión 4 ton").
+//
+// Elegir vehículo solo tiene sentido si la carga es "Exclusiva" (camión
+// dedicado) — en "Compartida" no hay vehículo puntual que pedir, va con
+// carga propia del transportista. Por eso el picker está ANIDADO bajo el
+// toggle de modalidad, no es un control aparte: así el cliente que quiere
+// exclusividad pero no sabe qué camión pedir no tiene que "elegir un
+// vehículo" para conseguirlo (le alcanza con el toggle solo), y el que
+// necesita un tamaño puntual pero no le importa compartir nunca ve la
+// pregunta (si comparte, no elige camión).
 const showVehiclePicker = ref(false)
 const chosenTruck = ref(null)
 const chosenTruckLabel = computed(() => chosenTruck.value || '')
@@ -63,46 +71,113 @@ const stops = reactive([])
 const addStop = () => stops.push({ district: '', province: '', region: '', lat: null, lng: null })
 const removeStop = index => stops.splice(index, 1)
 const hasStops = computed(() => stops.some(s => s.district))
+const step1ok = computed(() => !!(serviceType.value && quote.origin.district && quote.destination.district))
 
-// Paso "Precio" (solo Carga, sin paradas): compara Consolidada vs. Express
-// ANTES de publicar — no crea nada, es solo un precio de referencia (ver
-// apps/cotizador/api/guest_views.py::PreviewQuoteView).
+// Peso/volumen: primero regex sobre el texto (instantáneo); si no encuentra
+// nada y hay texto, se le pide a la IA que estime (la mayoría de las
+// descripciones reales no traen números — "un juego de sala", no "500 kg").
+// Ver apps/cotizador/services_estimacion.py — nunca "otro agente", es una
+// extracción de un solo turno, misma pieza base que ya usa el proyecto.
+const estimatedWeightKg = ref(null)
+const estimatedVolumeM3 = ref(null)
+const estimatingCargo = ref(false)
+const cargoEstimateFailed = computed(() =>
+  serviceType.value === 'carga' && !estimatingCargo.value && quote.cargo.detail.trim() &&
+  estimatedWeightKg.value == null && estimatedVolumeM3.value == null)
+
+let estimateDebounce = null
+const estimateCargo = async () => {
+  const text = quote.cargo.detail
+  const w = extractWeightKg(text)
+  const v = extractVolumeM3(text)
+  if (w != null || v != null) { estimatedWeightKg.value = w; estimatedVolumeM3.value = v; return }
+  if (!text.trim()) { estimatedWeightKg.value = null; estimatedVolumeM3.value = null; return }
+  estimatingCargo.value = true
+  try {
+    const r = await guestCargoEstimate({ detail: text })
+    estimatedWeightKg.value = r.weightKg
+    estimatedVolumeM3.value = r.volumeM3
+  } catch (e) { estimatedWeightKg.value = null; estimatedVolumeM3.value = null }
+  finally { estimatingCargo.value = false }
+}
+watch(() => quote.cargo.detail, () => {
+  clearTimeout(estimateDebounce)
+  estimateDebounce = setTimeout(estimateCargo, 600)
+})
+
+// Modalidad Compartido/Exclusivo: el cliente NUNCA elige Consolidada/Express
+// directamente — eso lo declara el transportista al ofertar (ver
+// apps/tercerizacion, campo OfertaTransportista.modalidad). Acá solo se
+// recomienda una modalidad premarcada según el tamaño de la carga, con
+// opción de cambiarla; deja de seguir la recomendación en cuanto el
+// cliente toca el toggle a mano.
+const modalityTouched = ref(false)
+const recommendedMode = computed(() => recomendarModalidad({ weightKg: estimatedWeightKg.value }))
+watch(recommendedMode, mode => {
+  if (modalityTouched.value) return
+  quote.loadMode = mode === 'exclusivo' ? 'completa' : 'parcial'
+}, { immediate: true })
+const setLoadMode = mode => { modalityTouched.value = true; quote.loadMode = mode }
+watch(() => quote.loadMode, mode => { if (mode === 'parcial') chosenTruck.value = null })
+
+// Precio de referencia: no crea nada, es un estimado (ver
+// apps/cotizador/api/guest_views.py::PreviewQuoteView). Antes se mostraba
+// como paso propio comparando dos tarjetas (Consolidada/Express) — ahora es
+// un solo número (o un rango, en la franja donde ambas modalidades tienen
+// sentido real) en el panel lateral, coherente con la modalidad marcada en
+// ese momento.
 const pricePreview = ref(null)
 const previewLoading = ref(false)
+let previewDebounce = null
 const fetchPricePreview = async () => {
-  if (hasStops.value) { pricePreview.value = null; return }
+  if (serviceType.value !== 'carga' || hasStops.value || !step1ok.value) { pricePreview.value = null; return }
   previewLoading.value = true
   try {
     pricePreview.value = await guestQuotePreview({
       origin: quote.origin, destination: quote.destination,
-      cargo: { category: quote.cargo.category, weightKg: extractWeightKg(quote.cargo.detail) },
+      cargo: { category: quote.cargo.category, weightKg: estimatedWeightKg.value },
     })
-    quote.loadMode = pricePreview.value.consolidated ? 'parcial' : 'completa'
   } catch (e) { pricePreview.value = null } finally { previewLoading.value = false }
 }
-
-// Mismo timeline que las capturas: "Servicio y ruta" → "Detalles" → "Precio"
-// (solo Carga) → "Reserva". El resumen/mapa de la derecha (QuoteSummaryPanel)
-// hace de confirmación permanente — no hace falta un paso final de "revisar
-// todo" aparte, por eso Reserva ya incluye los datos de contacto y termina
-// en el botón de publicar.
-const stepperItems = computed(() => serviceType.value === 'carga'
-  ? ['Servicio y ruta', 'Detalles', 'Precio', 'Reserva']
-  : ['Servicio y ruta', 'Detalles', 'Reserva'])
-const maxStep = computed(() => serviceType.value === 'carga' ? 4 : 3)
+watch([() => serviceType.value, () => quote.origin.district, () => quote.destination.district,
+  estimatedWeightKg, hasStops], () => {
+  clearTimeout(previewDebounce)
+  previewDebounce = setTimeout(fetchPricePreview, 400)
+})
 
 const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE')}`)
-const step1ok = computed(() => !!(serviceType.value && quote.origin.district && quote.destination.district))
+const priceEstimate = computed(() => {
+  if (serviceType.value !== 'carga') return null
+  if (hasStops.value) return { mode: 'advisor', text: 'Un asesor te confirma el precio (hay paradas intermedias).' }
+  if (previewLoading.value) return { mode: 'loading' }
+  if (!pricePreview.value) return null
+  const { express, consolidated } = pricePreview.value
+  // Sin tocar el toggle y en la franja ambigua: un rango, no dos tarjetas.
+  if (!modalityTouched.value && recommendedMode.value === 'rango' && express?.amount != null && consolidated?.amount != null) {
+    return { mode: 'rango', text: `Desde ${soles(consolidated.amount)} hasta ${soles(express.amount)} aprox.`, sub: 'según el transportista' }
+  }
+  const chosen = quote.loadMode === 'parcial' ? consolidated : express
+  if (!chosen || chosen.amount == null) return { mode: 'advisor', text: 'Un asesor te confirma el precio.' }
+
+  return {
+    mode: 'unico', text: soles(chosen.amount),
+    sub: chosen.range && chosen.range[0] !== chosen.range[1] ? `Rango ${soles(chosen.range[0])} – ${soles(chosen.range[1])}` : null,
+  }
+})
+
+// 3 pasos siempre: "Servicio y ruta" → "Detalles" → "Reserva". El precio
+// (Carga) vive en el panel lateral, no en un paso propio; "¿cómo quieres
+// continuar?" se sumó al paso Reserva. El resumen/mapa de la derecha
+// (QuoteSummaryPanel) hace de confirmación permanente.
+const stepperItems = ['Servicio y ruta', 'Detalles', 'Reserva']
+const maxStep = 3
+
 const formOk = computed(() => {
   if (!(step1ok.value && quote.contact.phone && quote.contact.name)) return false
   if (serviceType.value === 'carga' && continueMode.value === 'propio' && !quote.proposedPrice) return false
 
   return true
 })
-const goToStep3 = async () => {
-  step.value = 3
-  if (serviceType.value === 'carga') await fetchPricePreview()
-}
 
 const submitQuote = async () => {
   busy.value = true
@@ -118,7 +193,7 @@ const submitQuote = async () => {
         ? { ...quote.cargo, category: 'otros', detail: `[REPARTO] ${quote.cargo.detail}`.trim() }
         : {
             ...quote.cargo, truckType: chosenTruck.value || undefined,
-            weightKg: extractWeightKg(quote.cargo.detail), volumeM3: extractVolumeM3(quote.cargo.detail),
+            weightKg: estimatedWeightKg.value, volumeM3: estimatedVolumeM3.value,
           }
     const quoteMode = serviceType.value === 'carga' && chosenTruck.value ? 'por_vehiculo' : 'por_carga'
     const validStops = serviceType.value === 'carga' ? stops.filter(s => s.district) : []
@@ -295,63 +370,69 @@ const submitSignup = async () => {
 
               <CargoPhotosPicker v-model="photos" class="mb-2" />
 
+              <VAlert v-if="cargoEstimateFailed" type="info" variant="tonal" density="comfortable" class="mt-2">
+                No pudimos calcular el precio estimado por falta de detalle de carga (peso, cantidad, volumen, etc.).
+                Podés editar la descripción, o continuar así sin precio, no hay problema.
+              </VAlert>
+
               <template v-if="serviceType === 'carga'">
                 <VDivider class="my-3" />
-                <div class="d-flex align-start ga-3">
-                  <VAvatar size="40" color="primary" variant="tonal"><VIcon icon="ri-truck-line" /></VAvatar>
-                  <div class="flex-grow-1">
-                    <div class="text-subtitle-2 font-weight-bold">¿Quieres elegir vehículo?</div>
-                    <div class="text-caption text-medium-emphasis mb-2">
-                      Opcional — si no elegís, te asignamos la mejor opción disponible.
+                <div class="text-subtitle-2 font-weight-bold mb-2">¿Cómo querés tu carga?</div>
+                <VBtnToggle
+                  :model-value="quote.loadMode" color="primary" variant="outlined" divided
+                  density="comfortable" mandatory class="load-mode-toggle mb-2"
+                  @update:model-value="setLoadMode"
+                >
+                  <VBtn value="parcial" class="px-6">
+                    Compartido
+                    <VChip v-if="recommendedMode === 'compartido' && !modalityTouched" size="x-small" color="primary" variant="flat" class="ml-2">Recomendado</VChip>
+                  </VBtn>
+                  <VBtn value="completa" class="px-6">
+                    Exclusivo
+                    <VChip v-if="recommendedMode === 'exclusivo' && !modalityTouched" size="x-small" color="primary" variant="flat" class="ml-2">Recomendado</VChip>
+                  </VBtn>
+                </VBtnToggle>
+                <p class="text-caption text-medium-emphasis mb-3">
+                  {{ quote.loadMode === 'parcial'
+                    ? 'Tu carga viaja junto con otra — más económico.'
+                    : 'Un camión solo para tu carga — más rápido.' }}
+                </p>
+
+                <template v-if="quote.loadMode === 'completa'">
+                  <div class="d-flex align-start ga-3">
+                    <VAvatar size="40" color="primary" variant="tonal"><VIcon icon="ri-truck-line" /></VAvatar>
+                    <div class="flex-grow-1">
+                      <div class="text-subtitle-2 font-weight-bold">¿Quieres elegir vehículo?</div>
+                      <div class="text-caption text-medium-emphasis mb-2">
+                        Opcional — si no elegís, te asignamos la mejor opción disponible.
+                      </div>
+                      <VChip v-if="chosenTruck" closable color="primary" variant="tonal" @click:close="chosenTruck = null">
+                        {{ chosenTruckLabel }}
+                      </VChip>
+                      <VBtn v-else variant="outlined" size="small" @click="showVehiclePicker = true">Elegir vehículo</VBtn>
                     </div>
-                    <VChip v-if="chosenTruck" closable color="primary" variant="tonal" @click:close="chosenTruck = null">
-                      {{ chosenTruckLabel }}
-                    </VChip>
-                    <VBtn v-else variant="outlined" size="small" @click="showVehiclePicker = true">Elegir vehículo</VBtn>
                   </div>
-                </div>
-                <VehiclePickerDialog
-                  v-model="showVehiclePicker"
-                  @select="v => chosenTruck = v" @clear="chosenTruck = null"
-                />
+                  <VehiclePickerDialog
+                    v-model="showVehiclePicker"
+                    :estimated-weight-kg="estimatedWeightKg" :estimated-volume-m3="estimatedVolumeM3"
+                    @select="v => chosenTruck = v" @clear="chosenTruck = null"
+                  />
+                </template>
               </template>
             </VWindowItem>
 
             <VWindowItem :value="3">
               <template v-if="serviceType === 'carga'">
-                <template v-if="hasStops">
-                  <div class="text-h6 font-weight-bold mb-4">Elige cómo quieres cotizar tu carga</div>
-                  <VAlert type="info" variant="tonal">
-                    Con paradas intermedias, un asesor te confirma el precio — no aplica Consolidada/Express.
-                  </VAlert>
-                </template>
-                <PriceModePicker
-                  v-else v-model="quote.loadMode" :loading="previewLoading"
-                  :express="pricePreview?.express" :consolidated="pricePreview?.consolidated"
-                />
-
-                <VDivider class="my-4" />
+                <VAlert v-if="hasStops" type="info" variant="tonal" class="mb-4">
+                  Con paradas intermedias, un asesor te confirma el precio — no aplica Compartido/Exclusivo.
+                </VAlert>
                 <ContinueModePicker
                   :mode="continueMode" :price="quote.proposedPrice" :negotiable="quote.priceNegotiable"
                   @update:mode="v => continueMode = v" @update:price="v => quote.proposedPrice = v"
                   @update:negotiable="v => quote.priceNegotiable = v"
                 />
-              </template>
-              <template v-else>
-                <ScheduleStepPicker
-                  :date="quote.date" :schedule="quote.schedule"
-                  @update:date="v => quote.date = v" @update:schedule="v => quote.schedule = v"
-                />
                 <VDivider class="my-4" />
-                <div class="text-subtitle-2 mb-2">¿Cómo te contactamos?</div>
-                <VTextField v-model="quote.contact.name" label="Tu nombre" density="comfortable" class="mb-2" />
-                <VTextField v-model="quote.contact.phone" label="Teléfono / WhatsApp" density="comfortable" class="mb-2" />
-                <VTextField v-model="quote.contact.email" label="Correo (opcional)" type="email" density="comfortable" />
-                <VAlert v-if="error" type="error" variant="tonal" class="mt-3">{{ error }}</VAlert>
               </template>
-            </VWindowItem>
-
-            <VWindowItem :value="4">
               <ScheduleStepPicker
                 :date="quote.date" :schedule="quote.schedule"
                 @update:date="v => quote.date = v" @update:schedule="v => quote.schedule = v"
@@ -361,7 +442,9 @@ const submitSignup = async () => {
               <VTextField v-model="quote.contact.name" label="Tu nombre" density="comfortable" class="mb-2" />
               <VTextField v-model="quote.contact.phone" label="Teléfono / WhatsApp" density="comfortable" class="mb-2" />
               <VTextField v-model="quote.contact.email" label="Correo (opcional)" type="email" density="comfortable" />
-              <p class="text-caption text-medium-emphasis mt-1 mb-0">La dirección exacta de recojo y entrega se confirma al reservar.</p>
+              <p v-if="serviceType !== 'carga'" class="text-caption text-medium-emphasis mt-1 mb-0">
+                La dirección exacta de recojo y entrega se confirma al reservar.
+              </p>
               <VAlert v-if="error" type="error" variant="tonal" class="mt-3">{{ error }}</VAlert>
             </VWindowItem>
           </VWindow>
@@ -373,7 +456,6 @@ const submitSignup = async () => {
           <VBtn v-else variant="text" to="/login">Ya tengo cuenta</VBtn>
           <VSpacer />
           <VBtn v-if="step === 1" color="primary" variant="elevated" rounded="lg" size="large" min-width="180" :disabled="!step1ok" @click="step = 2">Siguiente</VBtn>
-          <VBtn v-else-if="step === 2" color="primary" variant="elevated" rounded="lg" size="large" min-width="180" @click="goToStep3">Siguiente</VBtn>
           <VBtn v-else-if="step < maxStep" color="primary" variant="elevated" rounded="lg" size="large" min-width="180" @click="step++">Siguiente</VBtn>
           <VBtn v-else color="primary" variant="elevated" rounded="lg" size="large" min-width="180" :loading="busy" :disabled="!formOk" @click="submitQuote">Cotizar</VBtn>
         </VCardActions>
@@ -440,6 +522,8 @@ const submitSignup = async () => {
           :origin="quote.origin" :destination="quote.destination" :stops="stops"
           :detail="quote.cargo.detail" :date="quote.date"
           :truck-label="chosenTruckLabel"
+          :estimated-weight-kg="estimatedWeightKg" :estimated-volume-m3="estimatedVolumeM3"
+          :price-estimate="priceEstimate"
           @edit-type="step = 1"
         />
       </VCol>
@@ -503,5 +587,13 @@ const submitSignup = async () => {
   min-width: 24px;
   opacity: 0.6;
   flex: 0 1 32px;
+}
+
+/* El tema (Materio) fuerza en .v-btn-toggle un ancho fijo de 44/52px por
+   botón (pensado para toggles de solo ícono) — con texto ("Compartido"/
+   "Exclusivo") eso los aplasta. Mismo fix que ContinueModePicker.vue. */
+:deep(.load-mode-toggle.v-btn-toggle .v-btn) {
+  inline-size: auto !important;
+  block-size: 40px !important;
 }
 </style>

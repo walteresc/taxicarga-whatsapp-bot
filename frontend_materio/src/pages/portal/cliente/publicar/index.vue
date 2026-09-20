@@ -1,18 +1,17 @@
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 import AddressAutocomplete from '@/components/AddressAutocomplete.vue'
 import CargoPhotosPicker from '@/components/CargoPhotosPicker.vue'
 import ContinueModePicker from '@/components/ContinueModePicker.vue'
 import DistrictAutocomplete from '@/components/DistrictAutocomplete.vue'
-import PriceModePicker from '@/components/PriceModePicker.vue'
 import QuoteSummaryPanel from '@/components/QuoteSummaryPanel.vue'
 import ScheduleStepPicker from '@/components/ScheduleStepPicker.vue'
 import VehiclePickerDialog from '@/components/VehiclePickerDialog.vue'
-import { customerPublish } from '@/services/customerPortalService'
-import { guestQuotePreview } from '@/services/guestService'
-import { extractVolumeM3, extractWeightKg } from '@/utils/cargoText'
+import { customerLoad, customerLoads, customerPublish } from '@/services/customerPortalService'
+import { guestCargoEstimate, guestQuotePreview } from '@/services/guestService'
+import { extractVolumeM3, extractWeightKg, recomendarModalidad } from '@/utils/cargoText'
 
 const router = useRouter()
 
@@ -20,11 +19,27 @@ const router = useRouter()
 // cliente el negocio se presenta en 3 líneas (Carga/Mudanzas/Reparto), por
 // dentro las 3 siguen siendo una "carga" con distinta categoría/detalle.
 const SERVICE_TYPES = [
-  { value: 'carga', icon: 'ri-truck-line', title: 'Carga', subtitle: 'Paquetes, mercadería o carga nacional.' },
+  { value: 'carga', icon: 'ri-truck-line', title: 'Carga', subtitle: 'Encomiendas, paquetes o carga nacional.' },
   { value: 'mudanza', icon: 'ri-home-4-line', title: 'Mudanzas', subtitle: 'Casa, oficina o empresa.' },
-  { value: 'reparto', icon: 'ri-e-bike-2-line', title: 'Reparto', subtitle: 'Entregas y última milla.' },
+  { value: 'reparto', icon: 'ri-e-bike-2-line', title: 'Entregas', subtitle: 'Reparto, distribución y última milla.' },
 ]
 const serviceType = ref('carga')
+
+// Cliente recurrente que siempre publica el mismo tipo de servicio (p. ej.
+// un negocio que solo hace Reparto): se premarca según su última carga
+// publicada, para no obligarlo a re-elegir cada vez — sigue pudiendo
+// cambiarlo. "otros" (carga/categoria_carga) no distingue Carga de Reparto
+// en la lista, por eso hace falta el detalle de la última carga puntual.
+onMounted(async () => {
+  try {
+    const { results } = await customerLoads()
+    const last = results?.[0]
+    if (!last) return
+    if (last.cargoCategory === 'mudanza') { selectService('mudanza'); return }
+    const detail = await customerLoad(last.code)
+    selectService((detail.cargoDetail || '').startsWith('[REPARTO]') ? 'reparto' : 'carga')
+  } catch (e) { /* sin historial, o falló — queda el default 'carga' */ }
+})
 
 const step = ref(1)
 const form = reactive({
@@ -61,41 +76,108 @@ const stops = reactive([])
 const addStop = () => stops.push({ district: '', province: '', region: '', lat: null, lng: null })
 const removeStop = index => stops.splice(index, 1)
 const hasStops = computed(() => stops.some(s => s.district))
+const step1ok = computed(() => !!(serviceType.value && form.origin.district && form.destination.district))
 
-// Paso "Precio" (solo Carga, sin paradas): compara Consolidada vs. Express
-// ANTES de publicar — no crea nada, es solo un precio de referencia (ver
-// apps/cotizador/api/guest_views.py::PreviewQuoteView).
+// Peso/volumen: primero regex sobre el texto (instantáneo); si no encuentra
+// nada y hay texto, se le pide a la IA que estime (la mayoría de las
+// descripciones reales no traen números — "un juego de sala", no "500 kg").
+// Ver apps/cotizador/services_estimacion.py — nunca "otro agente", es una
+// extracción de un solo turno, misma pieza base que ya usa el proyecto.
+const estimatedWeightKg = ref(null)
+const estimatedVolumeM3 = ref(null)
+const estimatingCargo = ref(false)
+const cargoEstimateFailed = computed(() =>
+  serviceType.value === 'carga' && !estimatingCargo.value && form.cargo.detail.trim() &&
+  estimatedWeightKg.value == null && estimatedVolumeM3.value == null)
+
+let estimateDebounce = null
+const estimateCargo = async () => {
+  const text = form.cargo.detail
+  const w = extractWeightKg(text)
+  const v = extractVolumeM3(text)
+  if (w != null || v != null) { estimatedWeightKg.value = w; estimatedVolumeM3.value = v; return }
+  if (!text.trim()) { estimatedWeightKg.value = null; estimatedVolumeM3.value = null; return }
+  estimatingCargo.value = true
+  try {
+    const r = await guestCargoEstimate({ detail: text })
+    estimatedWeightKg.value = r.weightKg
+    estimatedVolumeM3.value = r.volumeM3
+  } catch (e) { estimatedWeightKg.value = null; estimatedVolumeM3.value = null }
+  finally { estimatingCargo.value = false }
+}
+watch(() => form.cargo.detail, () => {
+  clearTimeout(estimateDebounce)
+  estimateDebounce = setTimeout(estimateCargo, 600)
+})
+
+// Modalidad Compartido/Exclusivo: el cliente NUNCA elige Consolidada/Express
+// directamente — eso lo declara el transportista al ofertar (ver
+// apps/tercerizacion, campo OfertaTransportista.modalidad). Acá solo se
+// recomienda una modalidad premarcada según el tamaño de la carga, con
+// opción de cambiarla; deja de seguir la recomendación en cuanto el
+// cliente toca el toggle a mano.
+const modalityTouched = ref(false)
+const recommendedMode = computed(() => recomendarModalidad({ weightKg: estimatedWeightKg.value }))
+watch(recommendedMode, mode => {
+  if (modalityTouched.value) return
+  form.loadMode = mode === 'exclusivo' ? 'completa' : 'parcial'
+}, { immediate: true })
+const setLoadMode = mode => { modalityTouched.value = true; form.loadMode = mode }
+watch(() => form.loadMode, mode => { if (mode === 'parcial') clearTruck() })
+
+// Precio de referencia: no crea nada, es un estimado (ver
+// apps/cotizador/api/guest_views.py::PreviewQuoteView). Antes se mostraba
+// como paso propio comparando dos tarjetas (Consolidada/Express) — ahora es
+// un solo número (o un rango, en la franja donde ambas modalidades tienen
+// sentido real) en el panel lateral, coherente con la modalidad marcada en
+// ese momento.
 const pricePreview = ref(null)
 const previewLoading = ref(false)
+let previewDebounce = null
 const fetchPricePreview = async () => {
-  if (hasStops.value) { pricePreview.value = null; return }
+  if (serviceType.value !== 'carga' || hasStops.value || !step1ok.value) { pricePreview.value = null; return }
   previewLoading.value = true
   try {
     pricePreview.value = await guestQuotePreview({
       origin: form.origin, destination: form.destination,
-      cargo: { category: form.cargo.category, weightKg: extractWeightKg(form.cargo.detail) },
+      cargo: { category: form.cargo.category, weightKg: estimatedWeightKg.value },
     })
-    form.loadMode = pricePreview.value.consolidated ? 'parcial' : 'completa'
   } catch (e) { pricePreview.value = null } finally { previewLoading.value = false }
 }
+watch([() => serviceType.value, () => form.origin.district, () => form.destination.district,
+  estimatedWeightKg, hasStops], () => {
+  clearTimeout(previewDebounce)
+  previewDebounce = setTimeout(fetchPricePreview, 400)
+})
 
-// Mismo timeline que las capturas: "Servicio y ruta" → "Detalles" → "Precio"
-// (solo Carga) → "Reserva". Ver mismo criterio en /cotizar.vue.
-const stepperItems = computed(() => serviceType.value === 'carga'
-  ? ['Servicio y ruta', 'Detalles', 'Precio', 'Reserva']
-  : ['Servicio y ruta', 'Detalles', 'Reserva'])
-const maxStep = computed(() => serviceType.value === 'carga' ? 4 : 3)
+const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE')}`)
+const priceEstimate = computed(() => {
+  if (serviceType.value !== 'carga') return null
+  if (hasStops.value) return { mode: 'advisor', text: 'Un asesor te confirma el precio (hay paradas intermedias).' }
+  if (previewLoading.value) return { mode: 'loading' }
+  if (!pricePreview.value) return null
+  const { express, consolidated } = pricePreview.value
+  if (!modalityTouched.value && recommendedMode.value === 'rango' && express?.amount != null && consolidated?.amount != null) {
+    return { mode: 'rango', text: `Desde ${soles(consolidated.amount)} hasta ${soles(express.amount)} aprox.`, sub: 'según el transportista' }
+  }
+  const chosen = form.loadMode === 'parcial' ? consolidated : express
+  if (!chosen || chosen.amount == null) return { mode: 'advisor', text: 'Un asesor te confirma el precio.' }
 
-const goToStep3 = async () => {
-  step.value = 3
-  if (serviceType.value === 'carga') await fetchPricePreview()
-}
+  return {
+    mode: 'unico', text: soles(chosen.amount),
+    sub: chosen.range && chosen.range[0] !== chosen.range[1] ? `Rango ${soles(chosen.range[0])} – ${soles(chosen.range[1])}` : null,
+  }
+})
+
+// 3 pasos siempre: "Servicio y ruta" → "Detalles" → "Reserva". El precio
+// (Carga) vive en el panel lateral, no en un paso propio; "¿cómo quieres
+// continuar?" se sumó al paso Reserva.
+const stepperItems = ['Servicio y ruta', 'Detalles', 'Reserva']
+const maxStep = 3
 
 const submitting = ref(false)
 const result = ref(null)
 const error = ref('')
-
-const step1ok = computed(() => !!(serviceType.value && form.origin.district && form.destination.district))
 const submitted = ref(false)
 
 const submit = async () => {
@@ -107,7 +189,7 @@ const submit = async () => {
     const cargo = serviceType.value === 'reparto'
       ? { ...form.cargo, detail: `[REPARTO] ${form.cargo.detail}`.trim() }
       : serviceType.value === 'carga'
-        ? { ...form.cargo, weightKg: extractWeightKg(form.cargo.detail), volumeM3: extractVolumeM3(form.cargo.detail) }
+        ? { ...form.cargo, weightKg: estimatedWeightKg.value, volumeM3: estimatedVolumeM3.value }
         : form.cargo
     const validStops = serviceType.value === 'carga' ? stops.filter(s => s.district) : []
     const wantsOwnPrice = serviceType.value === 'carga' && continueMode.value === 'propio'
@@ -120,7 +202,6 @@ const submit = async () => {
     submitted.value = true
   } catch (e) { error.value = e.message || 'No se pudo publicar.' } finally { submitting.value = false }
 }
-const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE')}`)
 </script>
 
 <template>
@@ -259,60 +340,74 @@ const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE
 
             <CargoPhotosPicker v-model="photos" class="mb-2" />
 
+            <VAlert v-if="cargoEstimateFailed" type="info" variant="tonal" density="comfortable" class="mt-2">
+              No pudimos calcular el precio estimado por falta de detalle de carga (peso, cantidad, volumen, etc.).
+              Podés editar la descripción, o continuar así sin precio, no hay problema.
+            </VAlert>
+
             <template v-if="serviceType === 'carga'">
               <VDivider class="my-3" />
-              <div class="d-flex align-start ga-3">
-                <VAvatar size="40" color="primary" variant="tonal"><VIcon icon="ri-truck-line" /></VAvatar>
-                <div class="flex-grow-1">
-                  <div class="text-subtitle-2 font-weight-bold">¿Quieres elegir vehículo?</div>
-                  <div class="text-caption text-medium-emphasis mb-2">
-                    Opcional — si no elegís, te asignamos la mejor opción disponible.
+              <div class="text-subtitle-2 font-weight-bold mb-2">¿Cómo querés tu carga?</div>
+              <VBtnToggle
+                :model-value="form.loadMode" color="primary" variant="outlined" divided
+                density="comfortable" mandatory class="load-mode-toggle mb-2"
+                @update:model-value="setLoadMode"
+              >
+                <VBtn value="parcial" class="px-6">
+                  Compartido
+                  <VChip v-if="recommendedMode === 'compartido' && !modalityTouched" size="x-small" color="primary" variant="flat" class="ml-2">Recomendado</VChip>
+                </VBtn>
+                <VBtn value="completa" class="px-6">
+                  Exclusivo
+                  <VChip v-if="recommendedMode === 'exclusivo' && !modalityTouched" size="x-small" color="primary" variant="flat" class="ml-2">Recomendado</VChip>
+                </VBtn>
+              </VBtnToggle>
+              <p class="text-caption text-medium-emphasis mb-3">
+                {{ form.loadMode === 'parcial'
+                  ? 'Tu carga viaja junto con otra — más económico.'
+                  : 'Un camión solo para tu carga — más rápido.' }}
+              </p>
+
+              <template v-if="form.loadMode === 'completa'">
+                <div class="d-flex align-start ga-3">
+                  <VAvatar size="40" color="primary" variant="tonal"><VIcon icon="ri-truck-line" /></VAvatar>
+                  <div class="flex-grow-1">
+                    <div class="text-subtitle-2 font-weight-bold">¿Quieres elegir vehículo?</div>
+                    <div class="text-caption text-medium-emphasis mb-2">
+                      Opcional — si no elegís, te asignamos la mejor opción disponible.
+                    </div>
+                    <VChip v-if="form.cargo.truckType" closable color="primary" variant="tonal" @click:close="clearTruck">
+                      {{ chosenTruckLabel }}
+                    </VChip>
+                    <VBtn v-else variant="outlined" size="small" @click="showVehiclePicker = true">Elegir vehículo</VBtn>
                   </div>
-                  <VChip v-if="form.cargo.truckType" closable color="primary" variant="tonal" @click:close="clearTruck">
-                    {{ chosenTruckLabel }}
-                  </VChip>
-                  <VBtn v-else variant="outlined" size="small" @click="showVehiclePicker = true">Elegir vehículo</VBtn>
                 </div>
-              </div>
-              <VehiclePickerDialog v-model="showVehiclePicker" @select="pickTruck" @clear="clearTruck" />
+                <VehiclePickerDialog
+                  v-model="showVehiclePicker"
+                  :estimated-weight-kg="estimatedWeightKg" :estimated-volume-m3="estimatedVolumeM3"
+                  @select="pickTruck" @clear="clearTruck"
+                />
+              </template>
             </template>
           </VWindowItem>
 
           <VWindowItem :value="3">
             <template v-if="serviceType === 'carga'">
-              <template v-if="hasStops">
-                <div class="text-h6 font-weight-bold mb-4">Elegí cómo cotizar tu carga</div>
-                <VAlert type="info" variant="tonal">
-                  Con paradas intermedias, un asesor te confirma el precio — no aplica Consolidada/Express.
-                </VAlert>
-              </template>
-              <PriceModePicker
-                v-else v-model="form.loadMode" :loading="previewLoading"
-                :express="pricePreview?.express" :consolidated="pricePreview?.consolidated"
-              />
-
-              <VDivider class="my-4" />
+              <VAlert v-if="hasStops" type="info" variant="tonal" class="mb-4">
+                Con paradas intermedias, un asesor te confirma el precio — no aplica Compartido/Exclusivo.
+              </VAlert>
               <ContinueModePicker
                 :mode="continueMode" :price="form.proposedPrice" :negotiable="form.priceNegotiable"
                 @update:mode="v => continueMode = v" @update:price="v => form.proposedPrice = v"
                 @update:negotiable="v => form.priceNegotiable = v"
               />
+              <VDivider class="my-4" />
             </template>
-            <template v-else>
-              <ScheduleStepPicker
-                :date="form.date" :schedule="form.schedule"
-                @update:date="v => form.date = v" @update:schedule="v => form.schedule = v"
-              />
-              <VAlert v-if="error" type="error" variant="tonal" class="mt-3">{{ error }}</VAlert>
-            </template>
-          </VWindowItem>
-
-          <VWindowItem :value="4">
             <ScheduleStepPicker
               :date="form.date" :schedule="form.schedule"
               @update:date="v => form.date = v" @update:schedule="v => form.schedule = v"
             />
-            <VAlert type="info" variant="tonal" density="comfortable" class="mt-4">
+            <VAlert v-if="serviceType === 'carga'" type="info" variant="tonal" density="comfortable" class="mt-4">
               <div class="text-body-2 font-weight-medium mb-1">Dirección y datos de contacto</div>
               <div class="text-caption">
                 La dirección exacta de recogida y entrega, así como tus datos de contacto, se confirmarán en el siguiente paso.
@@ -327,7 +422,6 @@ const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE
         <VBtn v-if="step > 1" variant="text" @click="step--">Atrás</VBtn>
         <VSpacer />
         <VBtn v-if="step === 1" color="primary" variant="elevated" rounded="lg" size="large" min-width="180" :disabled="!step1ok" @click="step = 2">Siguiente</VBtn>
-        <VBtn v-else-if="step === 2" color="primary" variant="elevated" rounded="lg" size="large" min-width="180" @click="goToStep3">Siguiente</VBtn>
         <VBtn v-else-if="step < maxStep" color="primary" variant="elevated" rounded="lg" size="large" min-width="180" @click="step++">Siguiente</VBtn>
         <VBtn
           v-else color="primary" variant="elevated" rounded="lg" size="large" min-width="180" :loading="submitting"
@@ -361,6 +455,8 @@ const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE
         :origin="form.origin" :destination="form.destination" :stops="stops"
         :detail="form.cargo.detail" :date="form.date"
         :truck-label="chosenTruckLabel"
+        :estimated-weight-kg="estimatedWeightKg" :estimated-volume-m3="estimatedVolumeM3"
+        :price-estimate="priceEstimate"
         @edit-type="step = 1"
       />
     </VCol>
@@ -424,5 +520,13 @@ const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE
   min-width: 24px;
   opacity: 0.6;
   flex: 0 1 32px;
+}
+
+/* El tema (Materio) fuerza en .v-btn-toggle un ancho fijo de 44/52px por
+   botón (pensado para toggles de solo ícono) — con texto ("Compartido"/
+   "Exclusivo") eso los aplasta. Mismo fix que ContinueModePicker.vue. */
+:deep(.load-mode-toggle.v-btn-toggle .v-btn) {
+  inline-size: auto !important;
+  block-size: 40px !important;
 }
 </style>

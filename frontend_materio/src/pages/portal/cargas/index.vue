@@ -40,7 +40,15 @@ onMounted(async () => {
 
 const lightbox = ref('')   // url de la foto ampliada, '' = cerrado
 
-const form = reactive({ open: false, load: null, amount: '', vehicleId: null, note: '' })
+// Modalidad (Consolidada/Express) — solo tiene sentido en carga
+// interprovincial. El transportista es quien sabe si dedica el camión o va
+// con carga propia compartida, no el cliente ni el asesor.
+const MODALIDAD_OPTIONS = [
+  { title: 'Consolidada — comparto camión con otra carga mía', value: 'parcial' },
+  { title: 'Express — camión dedicado solo a esta carga', value: 'completa' },
+]
+
+const form = reactive({ open: false, load: null, amount: '', vehicleId: null, note: '', modalidad: null })
 const busy = ref(false)
 const openOffer = l => {
   Object.assign(form, {
@@ -48,6 +56,7 @@ const openOffer = l => {
     amount: l.priceMode === 'fixed' ? String(l.targetPrice ?? '') : (l.myOfferAmount ? String(l.myOfferAmount) : ''),
     vehicleId: vehicles.value.length === 1 ? vehicles.value[0].id : null,
     note: '',
+    modalidad: l.myOfferModality || null,
   })
 }
 const submit = async () => {
@@ -57,6 +66,7 @@ const submit = async () => {
       amount: form.amount || undefined,
       vehicleId: form.vehicleId || undefined,
       note: form.note || undefined,
+      modalidad: form.load.isInterprovincial ? (form.modalidad || undefined) : undefined,
     })
     form.open = false
     notify('Oferta enviada.')
@@ -126,6 +136,12 @@ const submit = async () => {
           <VSelect
             v-if="vehicles.length > 1" v-model="form.vehicleId" label="Vehículo" class="mb-2" clearable
             :items="vehicles.map(v => ({ title: v.plate, value: v.id }))"
+          />
+          <VSelect
+            v-if="form.load.isInterprovincial" v-model="form.modalidad" label="¿Cómo la vas a llevar?"
+            class="mb-2" :items="MODALIDAD_OPTIONS"
+            hint="Vos sabés si dedicás el camión o vas con carga propia compartida — el cliente no elige esto."
+            persistent-hint
           />
           <VTextarea v-model="form.note" label="Nota para Lima Express (opcional)" rows="2" auto-grow />
         </VCardText>

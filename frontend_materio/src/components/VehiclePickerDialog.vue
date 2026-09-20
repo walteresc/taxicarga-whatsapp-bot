@@ -25,6 +25,12 @@ import { vehiclePickerCatalog } from '@/services/catalogService'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
+  // Estimado por el padre (regex o IA — ver apps/cotizador/services_estimacion.py).
+  // Solo se usa para RESALTAR una unidad como recomendada y preseleccionar
+  // su categoría de peso — nunca para ocultar ni filtrar el resto: puede
+  // haber una razón real (frágil, urgente) para elegir otra igual.
+  estimatedWeightKg: { type: Number, default: null },
+  estimatedVolumeM3: { type: Number, default: null },
 })
 const emit = defineEmits(['update:modelValue', 'select', 'clear'])
 
@@ -37,6 +43,14 @@ const expandedUnit = ref('')     // code de la unidad con el panel de carrocerí
 const chosenUnit = ref(null)
 const chosenBody = ref(null)     // null = Cualquiera
 
+const recommendedUnitCode = computed(() => {
+  if (props.estimatedWeightKg == null) return null
+  const ton = props.estimatedWeightKg / 1000
+
+  return units.value.find(u =>
+    (u.minTon == null || ton >= u.minTon) && (u.maxTon == null || ton <= u.maxTon))?.code || null
+})
+
 const load = async () => {
   if (units.value.length) return   // ya cargado, no repetir
   loading.value = true
@@ -45,6 +59,12 @@ const load = async () => {
     bodyTypes.value = data.bodyTypes || []
     weightCategories.value = data.weightCategories || []
     units.value = data.units || []
+    // Preselecciona el filtro de peso recomendado (una sola vez, si el
+    // cliente todavía no tocó el filtro) — el resto de categorías sigue a
+    // un toque de distancia en "Todas".
+    if (!selectedWeight.value && recommendedUnitCode.value) {
+      selectedWeight.value = units.value.find(u => u.code === recommendedUnitCode.value)?.weightCategory || ''
+    }
   } catch (e) { /* si falla, queda el picker vacío — "TaxiCarga elige" sigue disponible */ }
   finally { loading.value = false }
 }
@@ -155,7 +175,10 @@ const clear = () => { emit('clear'); close() }
                 <VIcon icon="ri-truck-line" :color="expandedUnit === u.code ? 'white' : undefined" />
               </VAvatar>
               <div class="flex-grow-1">
-                <div class="text-body-2 font-weight-bold">{{ u.name }}</div>
+                <div class="d-flex align-center ga-2">
+                  <div class="text-body-2 font-weight-bold">{{ u.name }}</div>
+                  <VChip v-if="u.code === recommendedUnitCode" size="x-small" color="primary" variant="flat">Recomendado</VChip>
+                </div>
                 <div class="text-caption text-medium-emphasis">{{ capacityLabel(u) }}</div>
               </div>
               <VIcon

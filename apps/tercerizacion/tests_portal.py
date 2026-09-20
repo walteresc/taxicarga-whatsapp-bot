@@ -33,15 +33,16 @@ def _carrier(name, vehiculos=1):
     return c, u
 
 
-def _publicacion(n, estado=PublicacionCarga.ESTADO_ABIERTA):
-    cli = Cliente.objects.create(nombre=CLIENTE_NOMBRE, telefono=CLIENTE_TEL)
+def _publicacion(n, estado=PublicacionCarga.ESTADO_ABIERTA, interprovincial=False):
+    cli = Cliente.objects.create(nombre=CLIENTE_NOMBRE, telefono=f"{CLIENTE_TEL}{n}")
     lead = Lead.objects.create(cliente=cli, tipo_servicio="mudanza",
                                distrito_origen="Miraflores", distrito_destino="Surco")
     svc = Servicio.objects.create(lead_origen=lead, cliente=cli, tipo_servicio="mudanza",
                                   distrito_origen="Miraflores", distrito_destino="Surco",
                                   direccion_origen="Calle Real 123 dpto 401",
                                   fecha_servicio=date.today() + timedelta(days=3),
-                                  horario_servicio="08:00", precio=1500)
+                                  horario_servicio="08:00", precio=1500,
+                                  es_interprovincial=interprovincial)
     return PublicacionCarga.objects.create(
         servicio=svc, codigo=f"P{n:02d}", texto_publicado="OFERTA-P", estado=estado,
         modo_precio=PublicacionCarga.PRECIO_REFERENCIAL, precio_publicado=1000,
@@ -97,6 +98,35 @@ class PortalScopingTests(APITestCase):
                              {"amount": "500"}, format="json")
         self.assertEqual(r.status_code, 200, r.content)
         self.assertEqual(r.data["myOfferAmount"], 1000.0)
+
+    def test_carga_local_no_es_interprovincial_y_modalidad_se_ignora(self):
+        self.client.force_login(self.u1)
+        r = self.client.get("/api/v2/portal/carrier/loads")
+        self.assertFalse(r.data["results"][0]["isInterprovincial"])
+
+        r = self.client.post(f"/api/v2/portal/carrier/loads/{self.pub.codigo}/offer",
+                             {"amount": "950", "modalidad": "completa"}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertIsNone(r.data["myOfferModality"])
+
+    def test_carga_interprovincial_guarda_la_modalidad_declarada(self):
+        pub = _publicacion(2, interprovincial=True)
+        self.client.force_login(self.u1)
+        r = self.client.get("/api/v2/portal/carrier/loads")
+        load = next(x for x in r.data["results"] if x["code"] == pub.codigo)
+        self.assertTrue(load["isInterprovincial"])
+
+        r = self.client.post(f"/api/v2/portal/carrier/loads/{pub.codigo}/offer",
+                             {"amount": "3000", "modalidad": "parcial"}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.data["myOfferModality"], "parcial")
+
+    def test_modalidad_invalida_400(self):
+        pub = _publicacion(3, interprovincial=True)
+        self.client.force_login(self.u1)
+        r = self.client.post(f"/api/v2/portal/carrier/loads/{pub.codigo}/offer",
+                             {"amount": "3000", "modalidad": "rapidita"}, format="json")
+        self.assertEqual(r.status_code, 400)
 
     def test_negociacion_de_compra_scoped_y_sin_margen(self):
         adj.registrar_oferta(self.pub, monto=950, usuario=self.u1, transportista=self.c1)

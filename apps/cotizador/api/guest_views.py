@@ -153,6 +153,29 @@ class PreviewQuoteView(_Public):
         })
 
 
+class EstimateCargoView(_Public):
+    """Estima peso/volumen de una carga a partir de su descripción libre,
+    cuando el cliente no escribió ningún número (el caso más común — "un
+    juego de sala" en vez de "500 kg"). No persiste nada.
+
+        POST /api/v2/guest/cargo/estimate  {detail}
+        → {weightKg, volumeM3, confidence} | {weightKg: null, volumeM3: null, confidence: null}
+    """
+    throttle_scope = "guest_cargo_estimate"
+
+    def post(self, request):
+        detail = (request.data.get("detail") or "").strip()
+        if not detail:
+            raise ValidationError("Falta la descripción de la carga.")
+
+        from apps.cotizador.services_estimacion import estimar_carga_por_ia
+
+        estimacion = estimar_carga_por_ia(detail)
+        if not estimacion:
+            return Response({"weightKg": None, "volumeM3": None, "confidence": None})
+        return Response(estimacion)
+
+
 class GuestQuoteView(_Public):
     throttle_scope = "guest_quote"
 

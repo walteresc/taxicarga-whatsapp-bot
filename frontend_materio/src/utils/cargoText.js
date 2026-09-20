@@ -22,3 +22,26 @@ export const extractVolumeM3 = text => {
 
   return m ? parseFloat(m[1].replace(',', '.')) : null
 }
+
+// El cliente nunca elige Compartido/Exclusivo a ciegas — el sistema recomienda
+// según el tamaño de SU carga (chica -> tiene sentido compartir camión con
+// otra carga; grande -> ya casi no ahorra compartir, conviene camión propio),
+// premarcado pero siempre cambiable. Umbrales aproximados en kg (no hay una
+// regla exacta de negocio para esto — son un punto de partida razonable,
+// ajustable si en la práctica quedan mal calibrados):
+//   <= 1500 kg  -> "compartido" (una carga chica no justifica un camión entero)
+//   >= 8000 kg  -> "exclusivo"  (a esa escala compartir casi no ahorra)
+//   en el medio -> "rango" (ambas modalidades tienen sentido real)
+// Sin ninguna estimación de peso, se recomienda "compartido" — es el default
+// más barato y más común, y evita anclar una expectativa de precio alto sin
+// tener con qué respaldarla.
+const UMBRAL_COMPARTIDO_KG = 1500
+const UMBRAL_EXCLUSIVO_KG = 8000
+
+export const recomendarModalidad = ({ weightKg } = {}) => {
+  if (weightKg == null) return 'compartido'
+  if (weightKg <= UMBRAL_COMPARTIDO_KG) return 'compartido'
+  if (weightKg >= UMBRAL_EXCLUSIVO_KG) return 'exclusivo'
+
+  return 'rango'
+}

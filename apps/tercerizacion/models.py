@@ -1,6 +1,8 @@
 from django.conf import settings
 from django.db import models
 
+from apps.leads.models import Lead
+
 
 class PublicacionCarga(models.Model):
     """Un 'anuncio' de una carga que se va a tercerizar: código corto + texto
@@ -166,6 +168,14 @@ class OfertaTransportista(models.Model):
     precio_ofertado = models.DecimalField(
         max_digits=10, decimal_places=2, null=True, blank=True,
         help_text="Primer precio que puso el transportista (se conserva).",
+    )
+    modalidad = models.CharField(
+        max_length=10, choices=Lead.MODOS_CARGA, blank=True, default="",
+        help_text="Solo tiene sentido si la publicación es de una carga interprovincial "
+                  "(completa/Express = camión dedicado, parcial/Consolidada = comparte "
+                  "camión con otra carga). La declara el transportista al ofertar — él es "
+                  "quien sabe si dedica el camión o va con carga propia compartida. "
+                  "Vacío = no aplica (carga local) o no se declaró.",
     )
     monto_actual = models.DecimalField(
         max_digits=10, decimal_places=2, null=True, blank=True,
