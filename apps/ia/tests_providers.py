@@ -33,6 +33,11 @@ class _Factory:
 
 
 class ProviderSelectionTests(SimpleTestCase):
+    # build_provider ahora consulta ConfiguracionIA (singleton, apps/ia/models.py)
+    # para el override de modelo aunque el provider venga forzado — una consulta
+    # real a la BD, no solo settings en memoria.
+    databases = {"default"}
+
     @override_settings(
         OPENAI_API_KEY="test-key",
         OPENAI_EXTRACTION_MODEL="gpt-4.1-mini",

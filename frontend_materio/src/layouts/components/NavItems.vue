@@ -99,6 +99,7 @@ const MENU = [
 
   { heading: 'Configuración', roles: SISTEMA },
   { title: 'BOT', icon: 'ri-robot-line', to: '/configuracion/bot', roles: SISTEMA },
+  { title: 'IA', icon: 'ri-brain-line', to: '/configuracion/ia', roles: SISTEMA },
   {
     title: 'Operaciones', icon: 'ri-settings-3-line', roles: ADMIN, children: [
       { title: 'Catálogo de vehículos', icon: 'ri-list-settings-line', to: '/configuracion/catalogo-vehiculos', roles: ADMIN },

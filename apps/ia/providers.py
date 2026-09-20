@@ -137,6 +137,19 @@ class DeepSeekProvider(AIProvider):
 
 
 def provider_name_for(responsibility):
+    from apps.ia.models import ConfiguracionIA
+
+    config = ConfiguracionIA.get_solo()
+    override = {
+        "extraction": config.proveedor_extraccion,
+        "conversation": config.proveedor_conversacion,
+        "copilot": config.proveedor_copiloto,
+    }.get(responsibility)
+    if override:
+        return override
+    if config.proveedor_default:
+        return config.proveedor_default
+
     if responsibility == "extraction":
         return settings.AI_EXTRACTION_PROVIDER
     if responsibility == "conversation":
@@ -147,21 +160,24 @@ def provider_name_for(responsibility):
 
 
 def build_provider(responsibility, provider_name=None, client_factory=OpenAI):
+    from apps.ia.models import ConfiguracionIA
+
     name = (provider_name or provider_name_for(responsibility)).strip().lower()
     if name not in SUPPORTED_PROVIDERS:
         raise AIProviderError(f"Provider IA no soportado: {name}.")
 
     suffix = responsibility.upper()
+    config = ConfiguracionIA.get_solo()
     if name == "openai":
         return OpenAIProvider(
             api_key=settings.OPENAI_API_KEY,
-            model=getattr(settings, f"OPENAI_{suffix}_MODEL"),
+            model=config.modelo_openai or getattr(settings, f"OPENAI_{suffix}_MODEL"),
             timeout=settings.AI_REQUEST_TIMEOUT_SECONDS,
             client_factory=client_factory,
         )
     return DeepSeekProvider(
         api_key=settings.DEEPSEEK_API_KEY,
-        model=getattr(settings, f"DEEPSEEK_{suffix}_MODEL"),
+        model=config.modelo_deepseek or getattr(settings, f"DEEPSEEK_{suffix}_MODEL"),
         base_url=settings.DEEPSEEK_BASE_URL,
         timeout=settings.AI_REQUEST_TIMEOUT_SECONDS,
         client_factory=client_factory,

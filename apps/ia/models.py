@@ -67,3 +67,49 @@ class AIDeltaAudit(models.Model):
         indexes = [
             models.Index(fields=["status", "created_at"], name="ia_delta_status_idx")
         ]
+
+
+class ConfiguracionIA(models.Model):
+    """Qué proveedor/modelo de IA usar por propósito (singleton) — permite
+    cambiarlo desde el panel de Configuración sin redeploy. La API key NUNCA
+    vive acá: sigue siendo exclusivamente de `.env`/infraestructura (decisión
+    de seguridad — ver `apps/ia/providers.py`); esto solo elige CUÁL usar.
+
+    Todo vacío por defecto = "usar lo que diga el .env del servidor"
+    (`settings.AI_PROVIDER`/`AI_EXTRACTION_PROVIDER`/etc., comportamiento
+    actual sin cambios) — un despliegue nuevo sin tocar esta pantalla se
+    comporta exactamente igual que antes de que existiera este modelo."""
+
+    PROVEEDOR_CHOICES = [("openai", "OpenAI"), ("deepseek", "DeepSeek")]
+    PROVEEDOR_O_DEFAULT = [("", "Usar el valor del servidor (.env)"), *PROVEEDOR_CHOICES]
+
+    proveedor_default = models.CharField(
+        max_length=10, choices=PROVEEDOR_O_DEFAULT, blank=True, default="",
+        help_text="Proveedor general — aplica a extracción/conversación/copiloto salvo que se anule abajo.",
+    )
+    proveedor_extraccion = models.CharField(max_length=10, choices=PROVEEDOR_O_DEFAULT, blank=True, default="")
+    proveedor_conversacion = models.CharField(max_length=10, choices=PROVEEDOR_O_DEFAULT, blank=True, default="")
+    proveedor_copiloto = models.CharField(max_length=10, choices=PROVEEDOR_O_DEFAULT, blank=True, default="")
+
+    modelo_openai = models.CharField(
+        max_length=60, blank=True, default="",
+        help_text="Vacío = usa el modelo por defecto del servidor (OPENAI_MODEL).",
+    )
+    modelo_deepseek = models.CharField(
+        max_length=60, blank=True, default="",
+        help_text="Vacío = usa el modelo por defecto del servidor (DEEPSEEK_MODEL).",
+    )
+
+    actualizado_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Configuración de IA"
+        verbose_name_plural = "Configuración de IA"
+
+    def __str__(self):
+        return f"Configuración de IA (proveedor default: {self.proveedor_default or 'servidor'})"
+
+    @classmethod
+    def get_solo(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
