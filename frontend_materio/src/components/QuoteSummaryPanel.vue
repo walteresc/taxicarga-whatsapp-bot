@@ -99,8 +99,7 @@ const updateMarkers = () => {
 }
 
 // El mapa recién es visible por debajo de la tarjeta "Resumen del servicio"
-// (flota arriba) y por encima de la nota "Mapa de ruta" (flota abajo) — el
-// padding del fitBounds evita que la ruta quede tapada por esas tarjetas.
+// (flota arriba) — el padding del fitBounds evita que la ruta quede tapada.
 const fitToRoute = () => {
   if (!mapReady.value) return
   const points = []
@@ -110,7 +109,7 @@ const fitToRoute = () => {
   if (!points.length) return
   if (points.length === 1) { map.value.flyTo({ center: points[0], zoom: 12 }); return }
   const bounds = points.reduce((b, p) => b.extend(p), new mapboxgl.LngLatBounds(points[0], points[0]))
-  map.value.fitBounds(bounds, { padding: { top: 170, bottom: 90, left: 40, right: 40 }, maxZoom: 14, duration: 600 })
+  map.value.fitBounds(bounds, { padding: { top: 170, bottom: 40, left: 40, right: 40 }, maxZoom: 14, duration: 600 })
 }
 
 watch(
@@ -265,17 +264,6 @@ const fmtDate = iso => {
           </div>
         </div>
       </template>
-    </VCard>
-
-    <VCard
-      v-if="hasOrigin && hasDestination" variant="elevated" class="position-absolute pa-3 d-flex ga-2"
-      style="left:12px; bottom:12px; max-width:280px;"
-    >
-      <VIcon icon="ri-map-2-line" size="18" class="mt-1" />
-      <div>
-        <div class="text-body-2 font-weight-medium">Mapa de ruta</div>
-        <div class="text-caption text-medium-emphasis">La ruta se mostrará con más detalle en los siguientes pasos.</div>
-      </div>
     </VCard>
   </VCard>
 </template>
