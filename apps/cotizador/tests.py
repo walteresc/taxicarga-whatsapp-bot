@@ -107,6 +107,19 @@ class CotizadorTests(TestCase):
         self.assertEqual(cotizacion.modo, Cotizacion.MODO_MANUAL)
         self.assertIn("multipunto", cotizacion.explicacion.lower())
 
+    def test_mudanza_sin_historicos_tambien_cotiza_automatico(self):
+        """Mismo fix que Carga, pero para Mudanza — confirma que el cambio de
+        umbral aplica parejo a todas las categorías dentro del alcance del
+        motor, no es un carve-out puntual para Carga."""
+        cliente = Cliente.objects.create(telefono="51944444405")
+        lead = Lead.objects.create(
+            cliente=cliente, tipo_servicio="mudanza",
+            distrito_origen="Ancón", distrito_destino="Pucusana",
+            lista_objetos="un dormitorio completo",
+        )
+        cotizacion = cotizar_lead(lead)
+        self.assertEqual(cotizacion.modo, Cotizacion.MODO_AUTOMATICO)
+
     def test_cotiza_con_reglas_si_no_hay_historicos(self):
         cliente = Cliente.objects.create(telefono="51922222222")
         lead = Lead.objects.create(
@@ -148,18 +161,23 @@ class CotizadorTests(TestCase):
         self.assertEqual(cotizacion.servicios_similares_encontrados, 3)
         self.assertGreater(cotizacion.precio_recomendado, Decimal("0.00"))
 
-    def test_carga_local_explicita_sin_historicos_sigue_a_asesor(self):
-        """Sin históricos similares, la confianza del cálculo por reglas base
-        (35) sigue quedando bajo el umbral de 40 para modo automático — esto
-        es igual para Mudanza y para Carga, no es parte de este cambio."""
+    def test_carga_local_explicita_sin_historicos_igual_cotiza_automatico(self):
+        """Sin históricos similares (p. ej. "1 cama" a una ruta sin gemelo
+        histórico exacto), el cálculo por reglas base (peso/volumen/distrito)
+        ahora SÍ cuenta como automático — antes quedaba pisado por un umbral
+        de confianza (40) que solo alcanzaban los históricos (55-95), nunca
+        el cálculo por reglas (fijo en 35) aunque produjera un número real.
+        Sigue siendo un estimado: el cliente puede pedir un asesor si quiere."""
         cliente = Cliente.objects.create(telefono="51944444404")
         lead = Lead.objects.create(
             cliente=cliente, tipo_servicio="carga", categoria_carga="otros",
             distrito_origen="Ancón", distrito_destino="Pucusana",
+            lista_objetos="1 cama", peso_carga_kg=Decimal("70"), volumen_carga_m3=Decimal("1.2"),
             es_interprovincial=False,
         )
         cotizacion = cotizar_lead(lead)
-        self.assertEqual(cotizacion.modo, Cotizacion.MODO_MANUAL)
+        self.assertEqual(cotizacion.modo, Cotizacion.MODO_AUTOMATICO)
+        self.assertGreater(cotizacion.precio_recomendado, Decimal("0.00"))
 
     def test_reparto_local_sigue_a_asesor(self):
         """Reparto comparte categoria_carga='otros' con Carga pero NO tiene

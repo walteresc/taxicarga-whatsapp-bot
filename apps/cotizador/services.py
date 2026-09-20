@@ -102,7 +102,16 @@ def _calcular_general(lead):
         modo = Cotizacion.MODO_MANUAL
         explanation += " · Fuera del alcance del cotizador automático: requiere confirmación de un asesor."
     else:
-        modo = Cotizacion.MODO_AUTOMATICO if confianza >= 40 else Cotizacion.MODO_MANUAL
+        # Antes exigía confianza >= 40 para modo automático — en la práctica
+        # eso solo se cumplía con >=3 históricos parecidos (confianza
+        # 55-95); el cálculo por reglas base (sin históricos, confianza fija
+        # 35) SIEMPRE caía a asesor aunque produjera un número real y
+        # razonable (p. ej. "1 cama" local, sin gemelo histórico exacto pero
+        # con precio calculado por peso/volumen/distrito). El precio sigue
+        # siendo un estimado — el cliente puede pedir un asesor igual si
+        # quiere — así que dentro del alcance del motor, siempre se ofrece
+        # automático; ya no se pisa la ruta por reglas base con manual.
+        modo = Cotizacion.MODO_AUTOMATICO
 
     return {
         "precio_min": price_min,
