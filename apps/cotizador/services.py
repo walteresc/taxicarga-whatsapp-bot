@@ -38,29 +38,34 @@ def _calcular_multipunto():
     }
 
 
-def _calcular_carga_parcial(lead):
-    """Carga nacional PARCIAL/consolidada: el transportista comparte el camión
-    con otra carga suya, así que cotizamos por peso × tabla de tarifas (no por
-    camión dedicado) — ver `apps.tercerizacion.services.resolver_tarifa_parcial`.
-    Sin tabla de tarifas para ese destino/peso → cotización manual (asesor)."""
+def _calcular_carga_nacional(lead):
+    """Carga interprovincial, cualquier modalidad (Completa/Exclusivo o
+    Parcial/Consolidada): cotizamos por tabla de tarifas por destino × peso
+    (con peso volumétrico si hay volumen) — nunca por una fórmula lineal por
+    km, no tiene sentido a esa escala (Lima-Arequipa ~900km). Ver
+    `apps.tercerizacion.services.resolver_tarifa_parcial`. Sin tabla de
+    tarifas para ese destino/peso/modalidad → cotización manual (asesor),
+    nunca se inventa un precio de referencia."""
     from apps.tercerizacion.services import resolver_tarifa_parcial
 
-    tarifa = resolver_tarifa_parcial(lead.distrito_destino, lead.peso_carga_kg)
+    modalidad = lead.modo_carga or Lead.MODO_CARGA_COMPLETA
+    tarifa = resolver_tarifa_parcial(lead.distrito_destino, lead.peso_carga_kg, lead.volumen_carga_m3, modalidad)
     if tarifa is None:
         return {
             "precio_min": Decimal(0), "precio_max": Decimal(0), "precio_recomendado": Decimal(0),
             "servicios_similares_encontrados": 0, "confianza": 20, "modo": Cotizacion.MODO_MANUAL,
-            "explicacion": "Carga nacional parcial sin tarifa cargada para ese destino/peso: "
-                           "requiere confirmación de un asesor.",
+            "explicacion": f"Carga nacional ({dict(Lead.MODOS_CARGA).get(modalidad, modalidad)}) sin tarifa "
+                           "cargada para ese destino/peso: requiere confirmación de un asesor.",
         }
     precio = tarifa["precio"]
+    etiqueta = "comparte camión con otra carga del transportista" if modalidad == Lead.MODO_CARGA_PARCIAL \
+        else "camión dedicado solo a esta carga"
     return {
         "precio_min": precio, "precio_max": precio, "precio_recomendado": precio,
         "servicios_similares_encontrados": 0, "confianza": 70, "modo": Cotizacion.MODO_AUTOMATICO,
         "dias_estimados": tarifa["dias_estimados"],
-        "explicacion": f"Carga parcial/consolidada por tabla de tarifas: S/ {precio} · "
-                       f"llega en {tarifa['dias_estimados']} días hábiles aprox. "
-                       "(comparte camión con otra carga del transportista).",
+        "explicacion": f"Carga nacional por tabla de tarifas: S/ {precio} · "
+                       f"llega en {tarifa['dias_estimados']} días hábiles aprox. ({etiqueta}).",
     }
 
 
@@ -130,8 +135,8 @@ def _calcular_precio(lead, *, tiene_paradas):
     (preview, sobre un lead sin guardar todavía)."""
     if tiene_paradas:
         return _calcular_multipunto()
-    if lead.es_interprovincial and lead.modo_carga == Lead.MODO_CARGA_PARCIAL:
-        return _calcular_carga_parcial(lead)
+    if lead.es_interprovincial:
+        return _calcular_carga_nacional(lead)
     return _calcular_general(lead)
 
 

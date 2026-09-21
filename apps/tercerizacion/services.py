@@ -169,34 +169,53 @@ def precio_cliente_sugerido(costo, categoria="", *, markup_pct=None):
     return precio
 
 
-def existe_tarifa_especifica(destino):
-    """True si hay una tarifa de carga parcial cargada a propósito para ESE
-    destino (no la general "" que cubre cualquier ciudad) — es la señal de
-    "ruta frecuente": si un asesor cargó una tarifa propia para Arequipa,
-    Arequipa es frecuente; una ciudad sin tarifa propia (aunque exista la
-    general) no lo es. La usa el preview de precio (Consolidada vs. Express)
-    para decidir si le ofrece Consolidada al cliente."""
+def existe_tarifa_especifica(destino, modalidad=None):
+    """True si hay una tarifa cargada a propósito para ESE destino (no la
+    general "" que cubre cualquier ciudad) — es la señal de "ruta frecuente":
+    si un asesor cargó una tarifa propia para Arequipa, Arequipa es
+    frecuente; una ciudad sin tarifa propia (aunque exista la general) no lo
+    es. La usa el preview de precio (Consolidada vs. Express) para decidir si
+    le ofrece Consolidada al cliente. `modalidad` por defecto queda en
+    Parcial (uso histórico de esta función); pasar Lead.MODO_CARGA_COMPLETA
+    para chequear tarifa de Exclusivo."""
+    from apps.leads.models import Lead
     from apps.tercerizacion.models import TarifaCargaParcial
 
     destino_norm = (destino or "").strip().lower()
     if not destino_norm:
         return False
-    return TarifaCargaParcial.objects.filter(activo=True, destino__iexact=destino_norm).exists()
+    return TarifaCargaParcial.objects.filter(
+        activo=True, destino__iexact=destino_norm, modalidad=modalidad or Lead.MODO_CARGA_PARCIAL,
+    ).exists()
 
 
-def resolver_tarifa_parcial(destino, peso_kg):
-    """Busca en `TarifaCargaParcial` el tramo activo para `destino` (o el
-    general) cuyo rango de peso contiene `peso_kg`. Devuelve
+def resolver_tarifa_parcial(destino, peso_kg, volumen_m3=None, modalidad=None):
+    """Busca en `TarifaCargaParcial` el tramo activo de esa `modalidad`
+    (Parcial por defecto — uso histórico de esta función) para `destino` (o
+    el general) cuyo rango de peso contiene `peso_kg`. El precio del tramo es
+    el mayor entre peso×precio_por_kg y volumen×precio_por_m3 ("peso
+    volumétrico", igual que las agencias de carga reales — así una carga
+    grande pero liviana no ocupa camión gratis). Devuelve
     `{precio, dias_estimados}` o None si no hay tramo que cubra ese
     destino/peso (→ el llamador debe derivar a un asesor, misma salvaguarda
     de siempre)."""
+    from apps.leads.models import Lead
     from apps.tercerizacion.models import TarifaCargaParcial
 
     peso = _dec(peso_kg)
-    if peso is None or peso <= 0:
+    volumen = _dec(volumen_m3)
+    if (peso is None or peso <= 0) and (volumen is None or volumen <= 0):
         return None
+    peso = peso or Decimal(0)
+    modalidad = modalidad or Lead.MODO_CARGA_PARCIAL
     destino_norm = (destino or "").strip().lower()
-    activos = list(TarifaCargaParcial.objects.filter(activo=True))
+    activos = list(TarifaCargaParcial.objects.filter(activo=True, modalidad=modalidad))
+
+    def _precio_tramo(t):
+        candidatos = [_dec(t.monto_minimo), (_dec(t.precio_por_kg) * peso).quantize(Decimal("1"), rounding=ROUND_HALF_UP)]
+        if t.precio_por_m3 is not None and volumen:
+            candidatos.append((_dec(t.precio_por_m3) * volumen).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+        return max(candidatos)
 
     for candidato in (destino_norm, TarifaCargaParcial.DESTINO_GENERAL) if destino_norm else (TarifaCargaParcial.DESTINO_GENERAL,):
         tramos = sorted(
@@ -205,13 +224,11 @@ def resolver_tarifa_parcial(destino, peso_kg):
         )
         for t in tramos:
             if peso >= t.peso_desde_kg and (t.peso_hasta_kg is None or peso < t.peso_hasta_kg):
-                precio = max(_dec(t.monto_minimo), (_dec(t.precio_por_kg) * peso).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
-                return {"precio": precio, "dias_estimados": t.dias_estimados}
+                return {"precio": _precio_tramo(t), "dias_estimados": t.dias_estimados}
         if tramos:  # hay tabla para este destino pero el peso excede todos los tramos → el último (sin tope)
             ultimo = tramos[-1]
             if ultimo.peso_hasta_kg is None:
-                precio = max(_dec(ultimo.monto_minimo), (_dec(ultimo.precio_por_kg) * peso).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
-                return {"precio": precio, "dias_estimados": ultimo.dias_estimados}
+                return {"precio": _precio_tramo(ultimo), "dias_estimados": ultimo.dias_estimados}
     return None
 
 

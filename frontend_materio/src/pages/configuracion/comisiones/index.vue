@@ -92,30 +92,41 @@ onMounted(loadPartial)
 const destLabel = d => (d === '' ? 'Cualquier destino (general)' : d.charAt(0).toUpperCase() + d.slice(1))
 const kg = n => (n == null ? 'sin tope' : `${n} kg`)
 
+// Completa (Exclusivo, camión dedicado) y Parcial (Consolidada, comparte
+// camión) son tablas independientes — misma pantalla, filtro aparte. Ambas
+// cotizan por destino × peso (+ volumen, "peso volumétrico") en vez de una
+// tarifa lineal por km, que no tiene sentido a escala nacional.
+const MODALITIES = [
+  { value: 'parcial', title: 'Consolidada — comparte camión' },
+  { value: 'completa', title: 'Exclusivo — camión dedicado' },
+]
+const modalityFilter = ref('parcial')
+
 const partialGroups = computed(() => {
   const by = {}
-  for (const t of partial.value) (by[t.destination] ??= []).push(t)
+  for (const t of partial.value.filter(t => t.modality === modalityFilter.value)) (by[t.destination] ??= []).push(t)
   for (const k in by) by[k].sort((a, b) => a.weightFrom - b.weightFrom)
   const keys = Object.keys(by).sort((a, b) => (a === '' ? -1 : b === '' ? 1 : a.localeCompare(b)))
   return keys.map(k => ({ destination: k, rows: by[k] }))
 })
 
 const pform = reactive({
-  open: false, id: null, destination: '', weightFrom: 0, weightTo: null,
-  pricePerKg: 5, minAmount: 35, daysEstimated: 5, active: true,
+  open: false, id: null, destination: '', modality: 'parcial', weightFrom: 0, weightTo: null,
+  pricePerKg: 5, pricePerM3: null, minAmount: 35, daysEstimated: 5, active: true,
 })
 const openNewPartial = dest => Object.assign(pform, {
-  open: true, id: null, destination: dest ?? '', weightFrom: 0, weightTo: null,
-  pricePerKg: 5, minAmount: 35, daysEstimated: 5, active: true,
+  open: true, id: null, destination: dest ?? '', modality: modalityFilter.value, weightFrom: 0, weightTo: null,
+  pricePerKg: 5, pricePerM3: null, minAmount: 35, daysEstimated: 5, active: true,
 })
 const openEditPartial = t => Object.assign(pform, { open: true, ...t })
 const savePartial = async () => {
   partialBusy.value = true
   const body = {
-    destination: pform.destination, weightFrom: pform.weightFrom,
+    destination: pform.destination, modality: pform.modality, weightFrom: pform.weightFrom,
     weightTo: pform.weightTo === '' || pform.weightTo == null ? null : pform.weightTo,
-    pricePerKg: pform.pricePerKg, minAmount: pform.minAmount,
-    daysEstimated: pform.daysEstimated, active: pform.active,
+    pricePerKg: pform.pricePerKg,
+    pricePerM3: pform.pricePerM3 === '' || pform.pricePerM3 == null ? null : pform.pricePerM3,
+    minAmount: pform.minAmount, daysEstimated: pform.daysEstimated, active: pform.active,
   }
   try {
     if (pform.id) await partialTariffUpdate(pform.id, body)
@@ -138,7 +149,7 @@ const removePartial = async t => {
     <h1 class="text-h4 font-weight-bold mb-1">Tarifas de tercerización</h1>
     <VTabs v-model="tab" class="mb-4">
       <VTab value="comisiones">Comisiones</VTab>
-      <VTab value="parcial">Carga parcial (consolidada)</VTab>
+      <VTab value="parcial">Carga nacional</VTab>
     </VTabs>
 
     <div v-show="tab === 'comisiones'">
@@ -204,11 +215,18 @@ const removePartial = async t => {
     </div>
 
     <div v-show="tab === 'parcial'">
-      <p class="text-body-2 text-medium-emphasis mb-4" style="max-width: 70ch;">
-        Carga nacional donde el transportista comparte el camión con otra carga suya (más económico, más lento).
-        Cotizamos por <strong>peso × destino</strong>, no por camión dedicado. Si una carga parcial no cae en
-        ningún tramo de destino/peso, se deriva a un asesor.
+      <p class="text-body-2 text-medium-emphasis mb-3" style="max-width: 70ch;">
+        Tarifa de carga nacional por destino × peso (+ volumen, se cobra el que salga más caro de los dos —
+        "peso volumétrico", igual que las agencias de carga reales). Nunca por km — una tarifa lineal no tiene
+        sentido a esa escala (Lima–Arequipa son ~900km). Sin tramo que cubra ese destino/peso, se deriva a un asesor.
       </p>
+
+      <VBtnToggle
+        v-model="modalityFilter" color="primary" variant="outlined" divided
+        density="comfortable" mandatory class="modality-toggle mb-4"
+      >
+        <VBtn v-for="m in MODALITIES" :key="m.value" :value="m.value" class="px-4">{{ m.title }}</VBtn>
+      </VBtnToggle>
 
       <VProgressLinear v-if="partialLoading" indeterminate class="mb-4" />
 
@@ -223,7 +241,7 @@ const removePartial = async t => {
           <VTable density="compact">
             <thead>
               <tr>
-                <th>Peso desde</th><th>Peso hasta</th><th class="text-right">S//kg</th>
+                <th>Peso desde</th><th>Peso hasta</th><th class="text-right">S//kg</th><th class="text-right">S//m³</th>
                 <th class="text-right">Mínimo</th><th class="text-right">Días</th><th></th><th></th>
               </tr>
             </thead>
@@ -232,6 +250,7 @@ const removePartial = async t => {
                 <td>{{ kg(t.weightFrom) }}</td>
                 <td>{{ kg(t.weightTo) }}</td>
                 <td class="text-right font-weight-medium">S/ {{ t.pricePerKg }}</td>
+                <td class="text-right">{{ t.pricePerM3 != null ? `S/ ${t.pricePerM3}` : '—' }}</td>
                 <td class="text-right">{{ soles(t.minAmount) }}</td>
                 <td class="text-right">{{ t.daysEstimated }}</td>
                 <td><VChip v-if="!t.active" size="x-small">inactivo</VChip></td>
@@ -273,6 +292,10 @@ const removePartial = async t => {
       <VCard>
         <VCardTitle>{{ pform.id ? 'Editar tarifa' : 'Nueva tarifa' }}</VCardTitle>
         <VCardText>
+          <VSelect
+            v-model="pform.modality" :items="MODALITIES" item-title="title" item-value="value"
+            label="Modalidad" density="compact" class="mb-2"
+          />
           <VTextField v-model="pform.destination" label="Destino — vacío = cualquiera (general)" density="compact" class="mb-2" />
           <div class="d-flex ga-2 mb-2">
             <VTextField v-model.number="pform.weightFrom" label="Peso desde (kg)" type="number" density="compact" />
@@ -280,9 +303,14 @@ const removePartial = async t => {
           </div>
           <div class="d-flex ga-2 mb-2">
             <VTextField v-model.number="pform.pricePerKg" label="Precio por kg (S/)" type="number" density="compact" />
-            <VTextField v-model.number="pform.minAmount" label="Mínimo a cobrar (S/)" type="number" density="compact" />
+            <VTextField
+              v-model.number="pform.pricePerM3" label="Precio por m³ (S/) — opcional" type="number" density="compact" clearable
+            />
           </div>
-          <VTextField v-model.number="pform.daysEstimated" label="Días estimados de entrega" type="number" density="compact" class="mb-2" />
+          <div class="d-flex ga-2 mb-2">
+            <VTextField v-model.number="pform.minAmount" label="Mínimo a cobrar (S/)" type="number" density="compact" />
+            <VTextField v-model.number="pform.daysEstimated" label="Días estimados de entrega" type="number" density="compact" />
+          </div>
           <VCheckbox v-model="pform.active" label="Activo" density="compact" hide-details />
         </VCardText>
         <VCardActions>
@@ -296,3 +324,13 @@ const removePartial = async t => {
     <VSnackbar v-model="snackbar.show" :color="snackbar.color" timeout="3500">{{ snackbar.text }}</VSnackbar>
   </section>
 </template>
+
+<style scoped>
+/* Mismo fix que ContinueModePicker.vue/cotizar.vue: Materio fuerza en
+   .v-btn-toggle un ancho fijo de 44/52px por botón (pensado para íconos),
+   que aplasta y superpone texto más largo. */
+:deep(.modality-toggle.v-btn-toggle .v-btn) {
+  inline-size: auto !important;
+  block-size: 40px !important;
+}
+</style>

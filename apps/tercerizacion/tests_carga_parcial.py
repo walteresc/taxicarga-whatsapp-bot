@@ -68,6 +68,23 @@ class ResolverTarifaParcialTests(APITestCase):
         self.assertEqual(r["precio"], Decimal("60"))  # 10 kg * 6 = 60 (tramo general)
         self.assertEqual(r["dias_estimados"], 6)
 
+    def test_modalidad_completa_no_ve_tramos_de_parcial(self):
+        _tarifas_base()  # todos default modalidad="parcial"
+        self.assertIsNone(resolver_tarifa_parcial("arequipa", 10, modalidad=Lead.MODO_CARGA_COMPLETA))
+
+    def test_volumen_mas_caro_que_peso_gana(self):
+        TarifaCargaParcial.objects.create(
+            destino="ica", peso_desde_kg=0, peso_hasta_kg=None,
+            precio_por_kg=Decimal("3"), precio_por_m3=Decimal("100"), monto_minimo=Decimal("30"),
+        )
+        r = resolver_tarifa_parcial("ica", 10, volumen_m3=2)  # 10*3=30 vs 2*100=200
+        self.assertEqual(r["precio"], Decimal("200"))
+
+    def test_sin_precio_por_m3_configurado_ignora_volumen(self):
+        _tarifas_base()  # ninguna tiene precio_por_m3
+        r = resolver_tarifa_parcial("arequipa", 10, volumen_m3=50)
+        self.assertEqual(r["precio"], Decimal("50"))  # igual que sin volumen
+
 
 class CotizarCargaParcialTests(APITestCase):
     def setUp(self):
@@ -99,15 +116,45 @@ class CotizarCargaParcialTests(APITestCase):
         cot = cotizar_lead(lead)
         self.assertEqual(cot.modo, Cotizacion.MODO_MANUAL)
 
-    def test_modo_completa_no_usa_la_tabla_parcial(self):
-        # Misma carga pero modo completa: sigue el camino de siempre (motor de
-        # históricos / fallback), no la tabla de carga parcial.
+    def test_modo_completa_no_usa_tarifas_de_modalidad_parcial(self):
+        # La tabla ahora cubre las dos modalidades (campo `modalidad`), pero
+        # son tablas independientes: _tarifas_base() solo cargó tramos
+        # "parcial" (el default del modelo) — un lead completo/exclusivo no
+        # debe usarlos, así que cae a asesor igual que si no hubiera tabla.
         lead = Lead.objects.create(
             cliente=self.cliente, es_interprovincial=True, modo_carga=Lead.MODO_CARGA_COMPLETA,
             distrito_origen="Lima", distrito_destino="Arequipa", peso_carga_kg=Decimal("20"),
         )
         cot = cotizar_lead(lead)
+        self.assertEqual(cot.modo, Cotizacion.MODO_MANUAL)
         self.assertIsNone(cot.dias_estimados)
+
+    def test_modo_completa_con_tarifa_propia_cotiza_automatico(self):
+        TarifaCargaParcial.objects.create(
+            destino="arequipa", modalidad=Lead.MODO_CARGA_COMPLETA,
+            peso_desde_kg=0, peso_hasta_kg=None,
+            precio_por_kg=Decimal("8"), monto_minimo=Decimal("100"), dias_estimados=3,
+        )
+        lead = Lead.objects.create(
+            cliente=self.cliente, es_interprovincial=True, modo_carga=Lead.MODO_CARGA_COMPLETA,
+            distrito_origen="Lima", distrito_destino="Arequipa", peso_carga_kg=Decimal("20"),
+        )
+        cot = cotizar_lead(lead)
+        self.assertEqual(cot.modo, Cotizacion.MODO_AUTOMATICO)
+        self.assertEqual(cot.precio_recomendado, Decimal("160"))  # 20 kg * 8
+        self.assertEqual(cot.dias_estimados, 3)
+
+    def test_peso_volumetrico_cobra_el_mayor_entre_peso_y_volumen(self):
+        TarifaCargaParcial.objects.create(
+            destino="ica", modalidad=Lead.MODO_CARGA_PARCIAL,
+            peso_desde_kg=0, peso_hasta_kg=None,
+            precio_por_kg=Decimal("3"), precio_por_m3=Decimal("100"), monto_minimo=Decimal("30"), dias_estimados=2,
+        )
+        # Carga liviana pero grande: 10kg * 3 = 30, pero 2m3 * 100 = 200 — debe cobrar 200.
+        lead = self._lead(distrito_destino="Ica", peso_carga_kg=Decimal("10"), volumen_carga_m3=Decimal("2"))
+        cot = cotizar_lead(lead)
+        self.assertEqual(cot.modo, Cotizacion.MODO_AUTOMATICO)
+        self.assertEqual(cot.precio_recomendado, Decimal("200"))
 
 
 class PartialTariffsAPITests(APITestCase):
@@ -137,6 +184,29 @@ class PartialTariffsAPITests(APITestCase):
         r = self.client.get("/api/v2/outsourcing/partial-tariffs")
         self.assertEqual(len(r.data["tariffs"]), 1)
         self.assertEqual(self.client.delete(f"/api/v2/outsourcing/partial-tariffs/{tid}").status_code, 204)
+
+    def test_crud_con_modalidad_y_precio_por_m3(self):
+        self.client.force_authenticate(self.gerente)
+        r = self.client.post("/api/v2/outsourcing/partial-tariffs", {
+            "destination": "cusco", "modality": "completa", "weightFrom": 0, "weightTo": None,
+            "pricePerKg": 8, "pricePerM3": 150, "minAmount": 100, "daysEstimated": 3,
+        }, format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual(r.data["modality"], "completa")
+        self.assertEqual(r.data["pricePerM3"], 150.0)
+        # default: sin mandar modality, queda "parcial" (comportamiento previo intacto).
+        r2 = self.client.post("/api/v2/outsourcing/partial-tariffs", {
+            "destination": "puno", "weightFrom": 0, "pricePerKg": 5,
+        }, format="json")
+        self.assertEqual(r2.data["modality"], "parcial")
+        self.assertIsNone(r2.data["pricePerM3"])
+
+    def test_rechaza_modalidad_invalida(self):
+        self.client.force_authenticate(self.gerente)
+        r = self.client.post("/api/v2/outsourcing/partial-tariffs", {
+            "destination": "cusco", "modality": "express", "weightFrom": 0, "pricePerKg": 5,
+        }, format="json")
+        self.assertEqual(r.status_code, 400)
 
     def test_rechaza_rango_de_peso_invalido(self):
         self.client.force_authenticate(self.gerente)

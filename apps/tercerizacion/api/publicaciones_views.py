@@ -337,9 +337,11 @@ def _partial_tariff_item(t):
     return {
         "id": t.id,
         "destination": t.destino,
+        "modality": t.modalidad,
         "weightFrom": float(t.peso_desde_kg),
         "weightTo": float(t.peso_hasta_kg) if t.peso_hasta_kg is not None else None,
         "pricePerKg": float(t.precio_por_kg),
+        "pricePerM3": float(t.precio_por_m3) if t.precio_por_m3 is not None else None,
         "minAmount": float(t.monto_minimo),
         "daysEstimated": t.dias_estimados,
         "active": t.activo,
@@ -349,6 +351,13 @@ def _partial_tariff_item(t):
 def _partial_tariff_from_body(data, t):
     if "destination" in data:
         t.destino = (data["destination"] or "").strip()
+    if "modality" in data:
+        from apps.leads.models import Lead
+
+        modalidad = (data["modality"] or "").strip()
+        if modalidad not in dict(Lead.MODOS_CARGA):
+            raise ValidationError({"modality": "Modalidad inválida."})
+        t.modalidad = modalidad
     if "weightFrom" in data:
         try:
             t.peso_desde_kg = Decimal(str(data["weightFrom"]))
@@ -371,6 +380,16 @@ def _partial_tariff_from_body(data, t):
             raise ValidationError({"pricePerKg": "Precio no válido."})
         if t.precio_por_kg <= 0:
             raise ValidationError({"pricePerKg": "Debe ser mayor que cero."})
+    if "pricePerM3" in data:
+        if data["pricePerM3"] in (None, ""):
+            t.precio_por_m3 = None
+        else:
+            try:
+                t.precio_por_m3 = Decimal(str(data["pricePerM3"]))
+            except (InvalidOperation, TypeError):
+                raise ValidationError({"pricePerM3": "Precio no válido."})
+            if t.precio_por_m3 < 0:
+                raise ValidationError({"pricePerM3": "No puede ser negativo."})
     if "minAmount" in data:
         try:
             t.monto_minimo = Decimal(str(data["minAmount"]))
