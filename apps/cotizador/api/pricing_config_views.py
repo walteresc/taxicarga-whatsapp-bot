@@ -25,7 +25,7 @@ _CAMPOS = [
     "costo_personal_carga", "costo_desarmado", "costo_objeto_pesado", "costo_camion_no_llega",
     "costo_embalaje_basico", "costo_embalaje_completo", "costo_embalaje_full",
     "costo_descripcion_media", "costo_descripcion_grande", "costo_descripcion_muy_grande",
-    "costo_caminata_por_bloque", "rango_min_pct", "rango_max_pct",
+    "costo_caminata_por_bloque", "km_gratis", "costo_por_km", "rango_min_pct", "rango_max_pct",
 ]
 
 

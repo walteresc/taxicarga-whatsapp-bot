@@ -435,6 +435,20 @@ class ConfiguracionPrecios(models.Model):
     # adicional de 25m, origen y destino se cuentan por separado).
     costo_caminata_por_bloque = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal("20.00"))
 
+    # Distancia línea recta origen-destino (haversine, igual que
+    # apps/leads/geo.py — solo aplica si el Lead tiene lat/lng, lo que ya es
+    # obligatorio en /cotizar y Portal Cliente porque el autocompletado de
+    # distrito no deja avanzar sin elegir una sugerencia con coordenadas;
+    # leads de WhatsApp o cargados a mano sin coordenadas no pagan esto).
+    km_gratis = models.DecimalField(
+        max_digits=6, decimal_places=1, default=Decimal("5.0"),
+        help_text="Primeros km sin costo adicional (cubiertos por el precio base).",
+    )
+    costo_por_km = models.DecimalField(
+        max_digits=8, decimal_places=2, default=Decimal("0.00"),
+        help_text="Por km más allá de km_gratis. 0 = distancia no afecta el precio (comportamiento anterior).",
+    )
+
     # Rango mostrado alrededor del precio recomendado (%).
     rango_min_pct = models.DecimalField(
         max_digits=5, decimal_places=2, default=Decimal("90.00"),

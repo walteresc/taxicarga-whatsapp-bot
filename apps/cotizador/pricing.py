@@ -33,7 +33,7 @@ def fallback_price_for_lead(lead):
     price += _floor_cost(lead.piso_origen, lead.ascensor_origen, config)
     price += _floor_cost(lead.piso_destino, lead.ascensor_destino, config)
     price += _volume_cost(lead.lista_objetos, config)
-    price += _distance_cost(lead.distrito_origen, lead.distrito_destino)
+    price += _distance_cost(lead.lat_origen, lead.lng_origen, lead.lat_destino, lead.lng_destino, config)
     price += config.costo_personal_carga if lead.incluye_personal_carga else Decimal("0.00")
     price += _packing_cost(lead.modalidad_servicio, config)
     price += _heavy_item_cost(lead.objetos_pesados, config)
@@ -71,8 +71,20 @@ def _volume_cost(objects, config):
     return Decimal("0.00")
 
 
-def _distance_cost(origin, destination):
-    return Decimal("0.00")
+def _distance_cost(lat_origen, lng_origen, lat_destino, lng_destino, config):
+    """Línea recta origen-destino (haversine, igual que apps/leads/geo.py) —
+    0 si al Lead le falta alguna coordenada (leads de WhatsApp o cargados a
+    mano sin geocodificar; en /cotizar y Portal Cliente el autocompletado de
+    distrito ya obliga a elegir una sugerencia con coordenadas)."""
+    if None in (lat_origen, lng_origen, lat_destino, lng_destino):
+        return Decimal("0.00")
+    from apps.leads.geo import haversine_km
+
+    km = Decimal(str(haversine_km(lat_origen, lng_origen, lat_destino, lng_destino)))
+    km_cobrables = km - config.km_gratis
+    if km_cobrables <= 0:
+        return Decimal("0.00")
+    return km_cobrables * config.costo_por_km
 
 
 def _packing_cost(modality, config):

@@ -62,6 +62,14 @@ const SECTIONS = [
     ],
   },
   {
+    title: 'Distancia',
+    hint: 'Solo aplica si el Lead tiene coordenadas (ya obligatorio en /cotizar y Portal Cliente). En km/km_gratis = 0 la distancia no afecta el precio.',
+    fields: [
+      { key: 'km_gratis', label: 'Km sin costo adicional (cubiertos por el precio base)', suffix: 'km' },
+      { key: 'costo_por_km', label: 'Costo por km después de eso', decimals: 2 },
+    ],
+  },
+  {
     title: 'Otros',
     fields: [
       { key: 'costo_caminata_por_bloque', label: 'Caminata — por bloque de 25m (más allá de 20m)' },

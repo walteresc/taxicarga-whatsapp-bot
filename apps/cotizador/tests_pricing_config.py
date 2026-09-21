@@ -35,7 +35,8 @@ class PricingConfigGetTests(_Authed):
         r = self.client.get("/api/v2/cotizador/pricing-config")
         for campo in [
             "base_mudanza", "base_carga", "base_traslado_pequeno", "base_oficina", "base_corporativo",
-            "costo_por_kg", "costo_por_m3", "costo_por_piso_sin_ascensor", "rango_min_pct", "rango_max_pct",
+            "costo_por_kg", "costo_por_m3", "costo_por_piso_sin_ascensor", "km_gratis", "costo_por_km",
+            "rango_min_pct", "rango_max_pct",
         ]:
             self.assertIn(campo, r.data)
 

@@ -6,7 +6,8 @@ from django.test import TestCase
 from django.utils import timezone
 
 from apps.clientes.models import Cliente
-from apps.cotizador.models import Cotizacion, ServicioHistorico
+from apps.cotizador.models import ConfiguracionPrecios, Cotizacion, ServicioHistorico
+from apps.cotizador.pricing import fallback_price_for_lead
 from apps.cotizador.services import cotizar_lead, crear_servicio_historico_desde_lead
 from apps.leads.models import Lead
 
@@ -234,6 +235,55 @@ class CotizadorTests(TestCase):
             complex_quote.precio_recomendado,
             simple_quote.precio_recomendado,
         )
+
+    def test_distancia_no_afecta_precio_por_defecto(self):
+        """costo_por_km default 0 — el cambio no altera precios existentes
+        hasta que un admin lo configure desde Configuración → Precios."""
+        cliente = Cliente.objects.create(telefono="51944444406")
+        cerca = Lead.objects.create(
+            cliente=cliente, tipo_servicio="mudanza",
+            lat_origen=Decimal("-12.1211"), lng_origen=Decimal("-77.0289"),
+            lat_destino=Decimal("-12.1215"), lng_destino=Decimal("-77.0295"),
+        )
+        lejos = Lead.objects.create(
+            cliente=cliente, tipo_servicio="mudanza",
+            lat_origen=Decimal("-12.1211"), lng_origen=Decimal("-77.0289"),
+            lat_destino=Decimal("-11.9868"), lng_destino=Decimal("-76.9452"),
+        )
+        self.assertEqual(fallback_price_for_lead(cerca)[2], fallback_price_for_lead(lejos)[2])
+
+    def test_distancia_configurada_encarece_rutas_largas(self):
+        config = ConfiguracionPrecios.get_solo()
+        config.km_gratis = Decimal("5.0")
+        config.costo_por_km = Decimal("2.00")
+        config.save()
+
+        cliente = Cliente.objects.create(telefono="51944444407")
+        cerca = Lead.objects.create(
+            cliente=cliente, tipo_servicio="mudanza",
+            lat_origen=Decimal("-12.1211"), lng_origen=Decimal("-77.0289"),
+            lat_destino=Decimal("-12.1215"), lng_destino=Decimal("-77.0295"),  # <1km, dentro del tramo gratis
+        )
+        lejos = Lead.objects.create(
+            cliente=cliente, tipo_servicio="mudanza",
+            lat_origen=Decimal("-12.1211"), lng_origen=Decimal("-77.0289"),
+            lat_destino=Decimal("-11.9868"), lng_destino=Decimal("-76.9452"),  # ~25km
+        )
+        precio_cerca = fallback_price_for_lead(cerca)[2]
+        precio_lejos = fallback_price_for_lead(lejos)[2]
+        self.assertEqual(precio_cerca, fallback_price_for_lead(cerca)[2])  # dentro del tramo gratis, sin cambio
+        self.assertGreater(precio_lejos, precio_cerca)
+
+    def test_sin_coordenadas_distancia_es_cero(self):
+        config = ConfiguracionPrecios.get_solo()
+        config.costo_por_km = Decimal("5.00")
+        config.save()
+
+        cliente = Cliente.objects.create(telefono="51944444408")
+        sin_coords = Lead.objects.create(cliente=cliente, tipo_servicio="mudanza")
+        # No lanza, no revienta el cálculo — simplemente no suma nada por distancia.
+        _min, _max, recommended = fallback_price_for_lead(sin_coords)
+        self.assertGreater(recommended, Decimal("0.00"))
 
     def test_mediana_evital_que_un_atipico_domine_la_cotizacion(self):
         cliente = Cliente.objects.create(telefono="51922222224")
