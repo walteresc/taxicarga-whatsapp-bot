@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import guest_views, views
+from . import guest_views, pricing_config_views, views
 
 urlpatterns = [
     # Público (F7): cotización rápida de invitado + alta de cuenta.
@@ -8,6 +8,8 @@ urlpatterns = [
     path("guest/quote/preview", guest_views.PreviewQuoteView.as_view(), name="v2-guest-quote-preview"),
     path("guest/cargo/estimate", guest_views.EstimateCargoView.as_view(), name="v2-guest-cargo-estimate"),
     path("guest/signup", guest_views.GuestSignupView.as_view(), name="v2-guest-signup"),
+
+    path("cotizador/pricing-config", pricing_config_views.PricingConfigView.as_view(), name="v2-pricing-config"),
 
     path("pipeline/counts", views.PipelineCountsView.as_view(), name="v2-pipeline-counts"),
 

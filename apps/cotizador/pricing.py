@@ -1,12 +1,11 @@
 from decimal import Decimal
 
-
-BASE_PRICES = {
-    "mudanza": Decimal("150.00"),
-    "carga": Decimal("180.00"),
-    "traslado pequeno": Decimal("150.00"),
-    "oficina": Decimal("350.00"),
-    "corporativo": Decimal("500.00"),
+_BASE_FIELD_BY_TIPO = {
+    "mudanza": "base_mudanza",
+    "carga": "base_carga",
+    "traslado pequeno": "base_traslado_pequeno",
+    "oficina": "base_oficina",
+    "corporativo": "base_corporativo",
 }
 
 
@@ -26,42 +25,49 @@ def panel_prices(lead):
 
 
 def fallback_price_for_lead(lead):
-    base = BASE_PRICES.get((lead.tipo_servicio or "").lower(), Decimal("220.00"))
-    price = base
+    from apps.cotizador.models import ConfiguracionPrecios
 
-    price += _floor_cost(lead.piso_origen, lead.ascensor_origen)
-    price += _floor_cost(lead.piso_destino, lead.ascensor_destino)
-    price += _volume_cost(lead.lista_objetos)
+    config = ConfiguracionPrecios.get_solo()
+    price = _base_price(lead.tipo_servicio, config)
+
+    price += _floor_cost(lead.piso_origen, lead.ascensor_origen, config)
+    price += _floor_cost(lead.piso_destino, lead.ascensor_destino, config)
+    price += _volume_cost(lead.lista_objetos, config)
     price += _distance_cost(lead.distrito_origen, lead.distrito_destino)
-    price += Decimal("50.00") if lead.incluye_personal_carga else Decimal("0.00")
-    price += _packing_cost(lead.modalidad_servicio)
-    price += _heavy_item_cost(lead.objetos_pesados)
-    price += Decimal("90.00") if lead.requiere_desarmado else Decimal("0.00")
-    price += _walking_cost(lead.distancia_carga_origen_m)
-    price += _walking_cost(lead.distancia_carga_destino_m)
-    price += Decimal("40.00") if lead.camion_llega_origen is False else Decimal("0.00")
-    price += Decimal("40.00") if lead.camion_llega_destino is False else Decimal("0.00")
-    price += _cargo_cost(lead.peso_carga_kg, lead.volumen_carga_m3)
+    price += config.costo_personal_carga if lead.incluye_personal_carga else Decimal("0.00")
+    price += _packing_cost(lead.modalidad_servicio, config)
+    price += _heavy_item_cost(lead.objetos_pesados, config)
+    price += config.costo_desarmado if lead.requiere_desarmado else Decimal("0.00")
+    price += _walking_cost(lead.distancia_carga_origen_m, config)
+    price += _walking_cost(lead.distancia_carga_destino_m, config)
+    price += config.costo_camion_no_llega if lead.camion_llega_origen is False else Decimal("0.00")
+    price += config.costo_camion_no_llega if lead.camion_llega_destino is False else Decimal("0.00")
+    price += _cargo_cost(lead.peso_carga_kg, lead.volumen_carga_m3, config)
 
-    minimum = price * Decimal("0.90")
-    maximum = price * Decimal("1.20")
+    minimum = price * (config.rango_min_pct / Decimal("100"))
+    maximum = price * (config.rango_max_pct / Decimal("100"))
     return minimum.quantize(Decimal("0.01")), maximum.quantize(Decimal("0.01")), price.quantize(Decimal("0.01"))
 
 
-def _floor_cost(floor, has_elevator):
+def _base_price(tipo_servicio, config):
+    field = _BASE_FIELD_BY_TIPO.get((tipo_servicio or "").lower())
+    return getattr(config, field) if field else config.base_otros
+
+
+def _floor_cost(floor, has_elevator, config):
     if not floor or floor <= 1 or has_elevator:
         return Decimal("0.00")
-    return Decimal(floor) * Decimal("35.00")
+    return Decimal(floor) * config.costo_por_piso_sin_ascensor
 
 
-def _volume_cost(objects):
+def _volume_cost(objects, config):
     words = (objects or "").split()
     if len(words) > 35:
-        return Decimal("160.00")
+        return config.costo_descripcion_muy_grande
     if len(words) > 15:
-        return Decimal("90.00")
+        return config.costo_descripcion_grande
     if len(words) > 10:
-        return Decimal("40.00")
+        return config.costo_descripcion_media
     return Decimal("0.00")
 
 
@@ -69,33 +75,33 @@ def _distance_cost(origin, destination):
     return Decimal("0.00")
 
 
-def _packing_cost(modality):
+def _packing_cost(modality, config):
     normalized = (modality or "").lower()
     if "full" in normalized:
-        return Decimal("350.00")
+        return config.costo_embalaje_full
     if "muebles y artefactos" in normalized or "completo" in normalized:
-        return Decimal("200.00")
+        return config.costo_embalaje_completo
     if "basico" in normalized or "básico" in normalized:
-        return Decimal("150.00")
+        return config.costo_embalaje_basico
     return Decimal("0.00")
 
 
-def _heavy_item_cost(items):
+def _heavy_item_cost(items, config):
     count = len([item for item in (items or "").split(",") if item.strip()])
-    return Decimal(count) * Decimal("45.00")
+    return Decimal(count) * config.costo_objeto_pesado
 
 
-def _walking_cost(distance_m):
+def _walking_cost(distance_m, config):
     if not distance_m or distance_m <= 20:
         return Decimal("0.00")
     blocks = Decimal(distance_m - 20) / Decimal("25")
-    return blocks.to_integral_value(rounding="ROUND_CEILING") * Decimal("20.00")
+    return blocks.to_integral_value(rounding="ROUND_CEILING") * config.costo_caminata_por_bloque
 
 
-def _cargo_cost(weight_kg, volume_m3):
+def _cargo_cost(weight_kg, volume_m3, config):
     cost = Decimal("0.00")
     if weight_kg:
-        cost += Decimal(weight_kg) * Decimal("0.12")
+        cost += Decimal(weight_kg) * config.costo_por_kg
     if volume_m3:
-        cost += Decimal(volume_m3) * Decimal("35.00")
+        cost += Decimal(volume_m3) * config.costo_por_m3
     return cost

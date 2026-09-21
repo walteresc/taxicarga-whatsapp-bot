@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -377,4 +379,83 @@ class PipelineVisto(models.Model):
 
     def __str__(self):
         return f"{self.etapa} · lead {self.lead_id} visto {self.visto_en:%Y-%m-%d %H:%M}"
+
+
+class ConfiguracionPrecios(models.Model):
+    """Parámetros del cálculo por reglas base (singleton) — ver
+    `apps/cotizador/pricing.py::fallback_price_for_lead`, el cálculo que se
+    usa cuando no hay suficientes históricos parecidos para cotizar por
+    mediana. Editable desde el panel (Configuración → Precios) sin redeploy.
+
+    Los valores por defecto son exactamente los que ya estaban hardcodeados
+    en pricing.py — cargar esta fila por primera vez (get_solo) no cambia
+    ningún precio existente."""
+
+    # Precio base por tipo de servicio (antes BASE_PRICES en pricing.py).
+    base_mudanza = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal("150.00"))
+    base_carga = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal("180.00"))
+    base_traslado_pequeno = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal("150.00"))
+    base_oficina = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal("350.00"))
+    base_corporativo = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal("500.00"))
+    base_otros = models.DecimalField(
+        max_digits=8, decimal_places=2, default=Decimal("220.00"),
+        help_text="Tipo de servicio sin base propia arriba.",
+    )
+
+    # Por unidad de carga.
+    costo_por_kg = models.DecimalField(max_digits=6, decimal_places=2, default=Decimal("0.12"))
+    costo_por_m3 = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal("35.00"))
+    costo_por_piso_sin_ascensor = models.DecimalField(
+        max_digits=8, decimal_places=2, default=Decimal("35.00"), help_text="Por piso, solo si no hay ascensor.",
+    )
+
+    # Servicios adicionales.
+    costo_personal_carga = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal("50.00"))
+    costo_desarmado = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal("90.00"))
+    costo_objeto_pesado = models.DecimalField(
+        max_digits=8, decimal_places=2, default=Decimal("45.00"), help_text="Por cada objeto pesado listado.",
+    )
+    costo_camion_no_llega = models.DecimalField(
+        max_digits=8, decimal_places=2, default=Decimal("40.00"),
+        help_text="Por punto (origen o destino) donde el camión no llega hasta la puerta.",
+    )
+
+    # Embalaje, según modalidad del servicio.
+    costo_embalaje_basico = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal("150.00"))
+    costo_embalaje_completo = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal("200.00"))
+    costo_embalaje_full = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal("350.00"))
+
+    # Descripción larga — proxy de volumen cuando no hay peso/volumen
+    # explícito (más de 10/15/35 palabras en la descripción de la carga).
+    costo_descripcion_media = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal("40.00"))
+    costo_descripcion_grande = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal("90.00"))
+    costo_descripcion_muy_grande = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal("160.00"))
+
+    # Caminata más allá de 20m entre el camión y la puerta (por cada bloque
+    # adicional de 25m, origen y destino se cuentan por separado).
+    costo_caminata_por_bloque = models.DecimalField(max_digits=8, decimal_places=2, default=Decimal("20.00"))
+
+    # Rango mostrado alrededor del precio recomendado (%).
+    rango_min_pct = models.DecimalField(
+        max_digits=5, decimal_places=2, default=Decimal("90.00"),
+        help_text="% del precio recomendado — piso del rango.",
+    )
+    rango_max_pct = models.DecimalField(
+        max_digits=5, decimal_places=2, default=Decimal("120.00"),
+        help_text="% del precio recomendado — techo del rango.",
+    )
+
+    actualizado_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Configuración de precios"
+        verbose_name_plural = "Configuración de precios"
+
+    def __str__(self):
+        return f"Configuración de precios (base carga: S/ {self.base_carga})"
+
+    @classmethod
+    def get_solo(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
 
