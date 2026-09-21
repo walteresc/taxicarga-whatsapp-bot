@@ -33,7 +33,8 @@ def fallback_price_for_lead(lead):
     price += _floor_cost(lead.piso_origen, lead.ascensor_origen, config)
     price += _floor_cost(lead.piso_destino, lead.ascensor_destino, config)
     price += _volume_cost(lead.lista_objetos, config)
-    price += _distance_cost(lead.lat_origen, lead.lng_origen, lead.lat_destino, lead.lng_destino, config)
+    if not getattr(lead, "es_interprovincial", False):
+        price += _distance_cost(lead.lat_origen, lead.lng_origen, lead.lat_destino, lead.lng_destino, config)
     price += config.costo_personal_carga if lead.incluye_personal_carga else Decimal("0.00")
     price += _packing_cost(lead.modalidad_servicio, config)
     price += _heavy_item_cost(lead.objetos_pesados, config)
@@ -75,7 +76,13 @@ def _distance_cost(lat_origen, lng_origen, lat_destino, lng_destino, config):
     """Línea recta origen-destino (haversine, igual que apps/leads/geo.py) —
     0 si al Lead le falta alguna coordenada (leads de WhatsApp o cargados a
     mano sin geocodificar; en /cotizar y Portal Cliente el autocompletado de
-    distrito ya obliga a elegir una sugerencia con coordenadas)."""
+    distrito ya obliga a elegir una sugerencia con coordenadas).
+
+    Solo se llama para rutas LOCALES (ver fallback_price_for_lead) — una
+    tarifa lineal por km no tiene sentido para carga nacional (Lima-Arequipa
+    son ~900km: a S/2.50/km serían +S/2250 por una sola cama). Carga
+    nacional se cotiza aparte, por destino/peso (TarifaCargaParcial) o
+    siempre a un asesor."""
     if None in (lat_origen, lng_origen, lat_destino, lng_destino):
         return Decimal("0.00")
     from apps.leads.geo import haversine_km

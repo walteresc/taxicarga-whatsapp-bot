@@ -285,6 +285,37 @@ class CotizadorTests(TestCase):
         _min, _max, recommended = fallback_price_for_lead(sin_coords)
         self.assertGreater(recommended, Decimal("0.00"))
 
+    def test_interprovincial_nunca_paga_tarifa_por_km(self):
+        """Una tarifa lineal por km no tiene sentido para carga nacional
+        (Lima-Arequipa ~900km) — aunque el precio de referencia igual se
+        calcula (para que el asesor tenga un número), nunca debe incluir el
+        costo por distancia."""
+        config = ConfiguracionPrecios.get_solo()
+        config.km_gratis = Decimal("5.0")
+        config.costo_por_km = Decimal("2.50")
+        config.save()
+
+        cliente = Cliente.objects.create(telefono="51944444409")
+        local = Lead.objects.create(
+            cliente=cliente, tipo_servicio="carga", categoria_carga="otros", es_interprovincial=False,
+            lat_origen=Decimal("-12.1211"), lng_origen=Decimal("-77.0289"),
+            lat_destino=Decimal("-11.9868"), lng_destino=Decimal("-76.9452"),  # ~25km, misma carga
+        )
+        nacional = Lead.objects.create(
+            cliente=cliente, tipo_servicio="carga", categoria_carga="otros", es_interprovincial=True,
+            lat_origen=Decimal("-12.1211"), lng_origen=Decimal("-77.0289"),
+            lat_destino=Decimal("-16.4090"), lng_destino=Decimal("-71.5375"),  # Arequipa, ~900km
+        )
+        precio_local = fallback_price_for_lead(local)[2]
+        precio_nacional = fallback_price_for_lead(nacional)[2]
+        # El local sí paga por los ~20km más allá del tramo gratis; el
+        # nacional, con 875km "cobrables", tendría que salir carísimo si se
+        # le aplicara la misma tarifa — en vez de eso, queda igual que sin
+        # distancia (solo la base + lo demás, ambos leads idénticos salvo
+        # coordenadas/es_interprovincial).
+        self.assertGreater(precio_local, config.base_carga)
+        self.assertEqual(precio_nacional, config.base_carga)
+
     def test_mediana_evital_que_un_atipico_domine_la_cotizacion(self):
         cliente = Cliente.objects.create(telefono="51922222224")
         lead = Lead.objects.create(
