@@ -1,4 +1,5 @@
 import secrets
+from decimal import Decimal
 
 from django.conf import settings
 from django.db import models
@@ -21,6 +22,24 @@ class ConfiguracionEncomiendas(models.Model):
         help_text="Si está activo, el monto contra-entrega incluye el precio del envío "
                   "(la plataforma lo retiene). Si no, el envío se cobra aparte.",
     )
+
+    # Envío NACIONAL (otra ciudad): no hay oficina propia en destino, el
+    # servicio siempre es puerta a puerta — recojo en el domicilio de
+    # origen (Lima) y entrega en el domicilio de destino, así que estos
+    # costos se suman SIEMPRE al precio de la tabla de tarifa nacional
+    # (TarifaCargaParcial, ver apps.tercerizacion), no son opcionales.
+    # Ver apps.encomiendas.services._cotizar_interprovincial. 0 por defecto
+    # = el precio no cambia hasta que se cargue un monto real.
+    costo_recojo_domicilio_nacional = models.DecimalField(
+        max_digits=8, decimal_places=2, default=Decimal("0.00"),
+        help_text="Recojo en el domicilio de origen (Lima) para un envío nacional.",
+    )
+    costo_entrega_domicilio_nacional = models.DecimalField(
+        max_digits=8, decimal_places=2, default=Decimal("0.00"),
+        help_text="Entrega en el domicilio de destino (otra ciudad) para un envío nacional — "
+                  "suele ser más barato que el recojo en Lima (menos tráfico, distancias más cortas).",
+    )
+
     actualizado_en = models.DateTimeField(auto_now=True)
 
     class Meta:

@@ -129,6 +129,11 @@ export const routes = [
         meta: { roles: ['Administrador', 'Gerencia', 'Finanzas'] },
       },
       {
+        path: 'configuracion/reparto',
+        component: () => import('@/pages/configuracion/reparto/index.vue'),
+        meta: { roles: ['Administrador', 'Gerencia', 'Finanzas'] },
+      },
+      {
         path: 'configuracion/ia',
         component: () => import('@/pages/configuracion/ia/index.vue'),
         meta: { roles: SISTEMA_ROLES },

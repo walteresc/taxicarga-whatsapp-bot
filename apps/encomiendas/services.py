@@ -84,14 +84,19 @@ def cotizar(*, origen_distrito, destino_distrito, nivel=Envio.NIVEL_EXPRESS, pes
 def _cotizar_interprovincial(ciudad_destino, peso_kg):
     """Reusa la tabla de carga nacional parcial/consolidada (Fase 2): el
     paquete viaja consolidado en el mismo camión que esa carga, así que es el
-    mismo precio por destino × peso."""
+    mismo precio por destino × peso — más el recojo/entrega a domicilio: no
+    hay oficina propia en destino, el servicio nacional siempre es puerta a
+    puerta (ver ConfiguracionEncomiendas), así que esos costos se suman
+    siempre, no son opcionales."""
     from apps.tercerizacion.services import resolver_tarifa_parcial
 
     tarifa = resolver_tarifa_parcial(ciudad_destino, peso_kg)
     if not tarifa:
         raise ValidationError({"destino": f"No hay tarifa configurada para envíos a {ciudad_destino}."})
+    config = ConfiguracionEncomiendas.get_solo()
+    precio = _dec(tarifa["precio"]) + _dec(config.costo_recojo_domicilio_nacional) + _dec(config.costo_entrega_domicilio_nacional)
     return {
-        "price": float(tarifa["precio"]),
+        "price": float(precio),
         "level": Envio.NIVEL_INTERPROVINCIAL,
         "etaHours": tarifa["dias_estimados"] * 24,
         "zoneFrom": "Lima",

@@ -1,8 +1,12 @@
 from django.urls import path
 
-from . import views
+from . import pricing_config_views, views
 
 urlpatterns = [
+    path(
+        "shipments/pricing-config", pricing_config_views.EncomiendasPricingConfigView.as_view(),
+        name="v2-shipments-pricing-config",
+    ),
     path("shipments/", views.ShipmentListView.as_view(), name="v2-shipment-list"),
     path("shipments/quote", views.ShipmentQuoteView.as_view(), name="v2-shipment-quote"),
     path("shipments/zones", views.ShipmentZonesView.as_view(), name="v2-shipment-zones"),

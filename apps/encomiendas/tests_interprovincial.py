@@ -55,6 +55,33 @@ class CotizarInterprovincialTests(APITestCase):
         )
         self.assertEqual(r["price"], 35.0)  # mínimo
 
+    def test_suma_recojo_y_entrega_a_domicilio(self):
+        """No hay oficina propia en destino — el envío nacional siempre es
+        puerta a puerta, así que estos costos se suman siempre al precio de
+        la tabla (nunca son opcionales, ver ConfiguracionEncomiendas)."""
+        from apps.encomiendas.models import ConfiguracionEncomiendas
+
+        config = ConfiguracionEncomiendas.get_solo()
+        config.costo_recojo_domicilio_nacional = Decimal("10")
+        config.costo_entrega_domicilio_nacional = Decimal("8")
+        config.save()
+        _tarifa_arequipa()
+        r = services.cotizar(
+            origen_distrito="Lima", destino_distrito="Arequipa",
+            nivel=Envio.NIVEL_INTERPROVINCIAL, peso_kg=10,
+        )
+        self.assertEqual(r["price"], 68.0)  # 50 (tabla) + 10 (recojo) + 8 (entrega)
+
+    def test_sin_configurar_no_cambia_el_precio(self):
+        # 0 por defecto — el cambio no altera precios existentes hasta que
+        # se cargue un monto real desde Configuración → Reparto.
+        _tarifa_arequipa()
+        r = services.cotizar(
+            origen_distrito="Lima", destino_distrito="Arequipa",
+            nivel=Envio.NIVEL_INTERPROVINCIAL, peso_kg=10,
+        )
+        self.assertEqual(r["price"], 50.0)
+
 
 class CrearEnvioInterprovincialTests(APITestCase):
     def setUp(self):
