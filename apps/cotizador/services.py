@@ -22,9 +22,10 @@ _CATEGORIAS_MOTOR = {"", "mudanza"}
 # peso/volumen, ver pricing.py::fallback_price_for_lead) — pero solo cuando
 # el wizard de Carga la marcó explícitamente vía tipo_servicio="carga"
 # (ver apps/cotizador/api/guest_views.py, apps/clientes/api/
-# portal_cliente_views.py). Reparto sigue sin tarifario propio, así que
-# NO entra acá — solo Carga.
+# portal_cliente_views.py). Reparto tiene su PROPIO motor (ver
+# _calcular_reparto), así que tampoco entra acá.
 _TIPO_SERVICIO_CARGA = "carga"
+_TIPO_SERVICIO_REPARTO = "reparto"
 
 
 def _calcular_multipunto():
@@ -66,6 +67,42 @@ def _calcular_carga_nacional(lead):
         "dias_estimados": tarifa["dias_estimados"],
         "explicacion": f"Carga nacional por tabla de tarifas: S/ {precio} · "
                        f"llega en {tarifa['dias_estimados']} días hábiles aprox. ({etiqueta}).",
+    }
+
+
+def _calcular_reparto(lead):
+    """Entregas/última milla: reusa el mismo motor de zonas que ya usa la API
+    pública de socios (apps.encomiendas.services.cotizar — zona origen ×
+    zona destino × nivel de servicio, o la tabla de carga nacional si el
+    destino es otra ciudad). Sin cobertura o sin tarifa para esa ruta →
+    cotización manual (asesor), nunca se inventa un precio."""
+    from django.core.exceptions import ValidationError as DjangoValidationError
+
+    from apps.encomiendas.models import Envio
+    from apps.encomiendas.services import cotizar as cotizar_encomienda
+
+    nivel = Envio.NIVEL_INTERPROVINCIAL if lead.es_interprovincial else Envio.NIVEL_EXPRESS
+    try:
+        r = cotizar_encomienda(
+            origen_distrito=lead.distrito_origen, destino_distrito=lead.distrito_destino,
+            nivel=nivel, peso_kg=lead.peso_carga_kg or 1,
+        )
+    except DjangoValidationError:
+        return {
+            "precio_min": Decimal(0), "precio_max": Decimal(0), "precio_recomendado": Decimal(0),
+            "servicios_similares_encontrados": 0, "confianza": 20, "modo": Cotizacion.MODO_MANUAL,
+            "explicacion": "Reparto sin cobertura o sin tarifa cargada para esa ruta: "
+                           "requiere confirmación de un asesor.",
+        }
+    precio = Decimal(str(r["price"]))
+    dias = round(r["etaHours"] / 24) if r["etaHours"] >= 24 else None
+    return {
+        "precio_min": precio, "precio_max": precio, "precio_recomendado": precio,
+        "servicios_similares_encontrados": 0, "confianza": 70, "modo": Cotizacion.MODO_AUTOMATICO,
+        "dias_estimados": dias,
+        "explicacion": f"Reparto por tabla de zonas: S/ {precio} · {r['zoneFrom']} → {r['zoneTo']} "
+                       f"({dict(Envio.NIVELES).get(r['level'], r['level'])}, "
+                       f"ETA ~{r['etaHours']}h).",
     }
 
 
@@ -135,6 +172,8 @@ def _calcular_precio(lead, *, tiene_paradas):
     (preview, sobre un lead sin guardar todavía)."""
     if tiene_paradas:
         return _calcular_multipunto()
+    if (lead.tipo_servicio or "").lower() == _TIPO_SERVICIO_REPARTO:
+        return _calcular_reparto(lead)
     if lead.es_interprovincial:
         return _calcular_carga_nacional(lead)
     return _calcular_general(lead)

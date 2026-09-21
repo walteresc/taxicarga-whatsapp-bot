@@ -135,8 +135,12 @@ class PreviewQuoteView(_Public):
         lead.modo_carga = Lead.MODO_CARGA_COMPLETA
         express = _price_view_from_calc(estimar_precio(lead))
 
+        # Compartido/Exclusivo es un concepto de Carga (camión dedicado vs.
+        # consolidado) — Reparto cotiza un solo precio por zona/tabla
+        # nacional (ver _calcular_reparto), esa elección no le aplica.
+        es_reparto = (lead.tipo_servicio or "").lower() == "reparto"
         consolidated = None
-        if lead.es_interprovincial:
+        if lead.es_interprovincial and not es_reparto:
             from apps.tercerizacion.services import existe_tarifa_especifica
 
             # Solo se ofrece Consolidada en rutas "frecuentes" — con tarifa

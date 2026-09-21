@@ -162,7 +162,10 @@ const previewLoading = ref(false)
 const isInterprovincial = computed(() => pricePreview.value?.isInterprovincial === true)
 let previewDebounce = null
 const fetchPricePreview = async () => {
-  if (serviceType.value !== 'carga' || hasStops.value || !step1ok.value) { pricePreview.value = null; return }
+  if (!['carga', 'reparto'].includes(serviceType.value) || hasStops.value || !step1ok.value) {
+    pricePreview.value = null
+    return
+  }
   previewLoading.value = true
   try {
     pricePreview.value = await guestQuotePreview({
@@ -205,11 +208,22 @@ watch(() => quote.loadMode, mode => { if (mode === 'parcial') chosenTruck.value 
 
 const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE')}`)
 const priceEstimate = computed(() => {
-  if (serviceType.value !== 'carga') return null
+  if (!['carga', 'reparto'].includes(serviceType.value)) return null
   if (hasStops.value) return { mode: 'advisor', text: 'Un asesor te confirma el precio (hay paradas intermedias).' }
   if (previewLoading.value) return { mode: 'loading' }
   if (!pricePreview.value) return null
   const { express, consolidated } = pricePreview.value
+
+  // Reparto no tiene Compartido/Exclusivo — un solo precio (o asesor si no
+  // hay cobertura de zona), ver apps/cotizador/services.py::_calcular_reparto.
+  if (serviceType.value === 'reparto') {
+    if (!express || express.amount == null) return { mode: 'advisor', text: 'Un asesor te confirma el precio.' }
+    return {
+      mode: 'unico', text: soles(express.amount),
+      sub: express.range && express.range[0] !== express.range[1] ? `Rango ${soles(express.range[0])} – ${soles(express.range[1])}` : null,
+    }
+  }
+
   // Sin tocar el toggle y en la franja ambigua: un rango, no dos tarjetas.
   if (!modalityTouched.value && recommendedMode.value === 'rango' && express?.amount != null && consolidated?.amount != null) {
     return { mode: 'rango', text: `Desde ${soles(consolidated.amount)} hasta ${soles(express.amount)} aprox.`, sub: 'según el transportista' }

@@ -180,10 +180,11 @@ class CotizadorTests(TestCase):
         self.assertEqual(cotizacion.modo, Cotizacion.MODO_AUTOMATICO)
         self.assertGreater(cotizacion.precio_recomendado, Decimal("0.00"))
 
-    def test_reparto_local_sigue_a_asesor(self):
-        """Reparto comparte categoria_carga='otros' con Carga pero NO tiene
-        tarifario propio — a propósito no entra al carve-out (tipo_servicio
-        debe ser exactamente 'carga', no cualquier cosa en 'otros')."""
+    def test_reparto_sin_cobertura_de_zona_sigue_a_asesor(self):
+        """Reparto ahora tiene motor propio (_calcular_reparto, reusa
+        apps.encomiendas.services.cotizar) — pero sin zonas cargadas para
+        esos distritos (ninguna en este test) sigue sin poder cotizar solo,
+        misma salvaguarda de siempre: nunca se inventa un precio."""
         cliente = Cliente.objects.create(telefono="51944444402")
         lead = Lead.objects.create(
             cliente=cliente, tipo_servicio="reparto", categoria_carga="otros",
@@ -192,6 +193,49 @@ class CotizadorTests(TestCase):
         )
         cotizacion = cotizar_lead(lead)
         self.assertEqual(cotizacion.modo, Cotizacion.MODO_MANUAL)
+
+    def test_reparto_con_cobertura_de_zona_cotiza_automatico(self):
+        """Con zonas/tarifas cargadas (apps.encomiendas), Reparto local ahora
+        sí cotiza automático — mismo motor que ya usa la API pública de
+        socios (apps.partners), conectado por primera vez al asistente
+        rápido de publicación."""
+        from django.core.management import call_command
+
+        from apps.encomiendas.models import ZonaReparto
+        if not ZonaReparto.objects.exists():
+            call_command("seed_encomiendas")
+
+        cliente = Cliente.objects.create(telefono="51944444410")
+        lead = Lead.objects.create(
+            cliente=cliente, tipo_servicio="reparto", categoria_carga="otros",
+            distrito_origen="Miraflores", distrito_destino="Surco", peso_carga_kg=Decimal("2"),
+            es_interprovincial=False,
+        )
+        cotizacion = cotizar_lead(lead)
+        self.assertEqual(cotizacion.modo, Cotizacion.MODO_AUTOMATICO)
+        self.assertGreater(cotizacion.precio_recomendado, Decimal("0.00"))
+
+    def test_reparto_interprovincial_reusa_tabla_de_carga_nacional(self):
+        """Un paquete a otra ciudad usa la misma TarifaCargaParcial que ya
+        administrás en Configuración → Comisiones → Carga nacional — no hace
+        falta una tabla aparte para encomiendas interprovinciales."""
+        from apps.tercerizacion.models import TarifaCargaParcial
+
+        TarifaCargaParcial.objects.create(
+            destino="arequipa", modalidad=Lead.MODO_CARGA_PARCIAL,
+            peso_desde_kg=0, peso_hasta_kg=None,
+            precio_por_kg=Decimal("6"), monto_minimo=Decimal("30"), dias_estimados=4,
+        )
+        cliente = Cliente.objects.create(telefono="51944444411")
+        lead = Lead.objects.create(
+            cliente=cliente, tipo_servicio="reparto", categoria_carga="otros",
+            distrito_origen="Miraflores", distrito_destino="Arequipa", peso_carga_kg=Decimal("2"),
+            es_interprovincial=True,
+        )
+        cotizacion = cotizar_lead(lead)
+        self.assertEqual(cotizacion.modo, Cotizacion.MODO_AUTOMATICO)
+        self.assertEqual(cotizacion.precio_recomendado, Decimal("30"))  # mínimo (2kg*6=12 < 30)
+        self.assertEqual(cotizacion.dias_estimados, 4)
 
     def test_carga_interprovincial_sigue_a_asesor(self):
         """El carve-out de Carga local no anula el gate de interprovincial —
