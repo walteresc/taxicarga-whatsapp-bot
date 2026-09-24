@@ -192,13 +192,15 @@ def existe_tarifa_especifica(destino, modalidad=None):
 def resolver_tarifa_parcial(destino, peso_kg, volumen_m3=None, modalidad=None):
     """Busca en `TarifaCargaParcial` el tramo activo de esa `modalidad`
     (Parcial por defecto — uso histórico de esta función) para `destino` (o
-    el general) cuyo rango de peso contiene `peso_kg`. El precio del tramo es
-    el mayor entre peso×precio_por_kg y volumen×precio_por_m3 ("peso
-    volumétrico", igual que las agencias de carga reales — así una carga
-    grande pero liviana no ocupa camión gratis). Devuelve
-    `{precio, dias_estimados}` o None si no hay tramo que cubra ese
-    destino/peso (→ el llamador debe derivar a un asesor, misma salvaguarda
-    de siempre)."""
+    el general) cuyo rango de peso contiene `peso_kg`. El precio de cada
+    extremo (min/max) es el mayor entre peso×precio_por_kg[_max] y
+    volumen×precio_por_m3[_max] ("peso volumétrico", igual que las agencias
+    de carga reales — así una carga grande pero liviana no ocupa camión
+    gratis). Si el tramo no tiene cargado un `_max`, el rango colapsa a un
+    solo precio (precio_min == precio_max), igual que antes de que existiera
+    el rango. Devuelve `{precio_min, precio_max, dias_estimados}` o None si
+    no hay tramo que cubra ese destino/peso (→ el llamador debe derivar a un
+    asesor, misma salvaguarda de siempre)."""
     from apps.leads.models import Lead
     from apps.tercerizacion.models import TarifaCargaParcial
 
@@ -211,11 +213,23 @@ def resolver_tarifa_parcial(destino, peso_kg, volumen_m3=None, modalidad=None):
     destino_norm = (destino or "").strip().lower()
     activos = list(TarifaCargaParcial.objects.filter(activo=True, modalidad=modalidad))
 
+    def _redondear(v):
+        return v.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+
     def _precio_tramo(t):
-        candidatos = [_dec(t.monto_minimo), (_dec(t.precio_por_kg) * peso).quantize(Decimal("1"), rounding=ROUND_HALF_UP)]
-        if t.precio_por_m3 is not None and volumen:
-            candidatos.append((_dec(t.precio_por_m3) * volumen).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
-        return max(candidatos)
+        piso = _dec(t.monto_minimo)
+        min_candidatos = [piso, _redondear(_dec(t.precio_por_kg) * peso)]
+        kg_max = t.precio_por_kg_max if t.precio_por_kg_max is not None else t.precio_por_kg
+        max_candidatos = [piso, _redondear(_dec(kg_max) * peso)]
+        if volumen:
+            if t.precio_por_m3 is not None:
+                min_candidatos.append(_redondear(_dec(t.precio_por_m3) * volumen))
+            m3_max = t.precio_por_m3_max if t.precio_por_m3_max is not None else t.precio_por_m3
+            if m3_max is not None:
+                max_candidatos.append(_redondear(_dec(m3_max) * volumen))
+        precio_min = max(min_candidatos)
+        precio_max = max(max(max_candidatos), precio_min)  # el máximo nunca puede quedar por debajo del mínimo
+        return precio_min, precio_max
 
     for candidato in (destino_norm, TarifaCargaParcial.DESTINO_GENERAL) if destino_norm else (TarifaCargaParcial.DESTINO_GENERAL,):
         tramos = sorted(
@@ -224,11 +238,42 @@ def resolver_tarifa_parcial(destino, peso_kg, volumen_m3=None, modalidad=None):
         )
         for t in tramos:
             if peso >= t.peso_desde_kg and (t.peso_hasta_kg is None or peso < t.peso_hasta_kg):
-                return {"precio": _precio_tramo(t), "dias_estimados": t.dias_estimados}
+                precio_min, precio_max = _precio_tramo(t)
+                return {"precio_min": precio_min, "precio_max": precio_max, "dias_estimados": t.dias_estimados}
         if tramos:  # hay tabla para este destino pero el peso excede todos los tramos → el último (sin tope)
             ultimo = tramos[-1]
             if ultimo.peso_hasta_kg is None:
-                return {"precio": _precio_tramo(ultimo), "dias_estimados": ultimo.dias_estimados}
+                precio_min, precio_max = _precio_tramo(ultimo)
+                return {"precio_min": precio_min, "precio_max": precio_max, "dias_estimados": ultimo.dias_estimados}
+    return None
+
+
+def resolver_cobertura_compartida(destino_texto, lat=None, lng=None):
+    """Punto de entrada único para "¿se ofrece Compartida, y a qué destino se
+    tarifa?". Con coordenadas, prueba los corredores primero (pueden
+    destapar casos que el texto solo no vería — radio de parada, eje,
+    desvío); si NINGÚN corredor cubre el punto, cae al criterio de siempre
+    (`existe_tarifa_especifica` por texto) — así una ciudad con tarifa propia
+    cargada pero sin corredor armado todavía sigue funcionando igual que
+    antes de esta feature. Sin coordenadas (bot de WhatsApp, captura manual
+    sin autocompletado): comportamiento IDÉNTICO al de siempre, los
+    corredores ni se evalúan.
+
+    None si no se ofrece Compartida; si no,
+    {destino_tarifa, destino_exacto, corredor_nombre, motivo}."""
+    if lat is not None and lng is not None:
+        from apps.tercerizacion.corredores import resolver_corredor
+
+        cobertura = resolver_corredor(lat, lng)
+        if cobertura:
+            return {
+                "destino_tarifa": cobertura["parada_nombre"],
+                "destino_exacto": cobertura["destino_exacto"],
+                "corredor_nombre": cobertura["corredor_nombre"],
+                "motivo": cobertura["motivo"],
+            }
+    if existe_tarifa_especifica(destino_texto):
+        return {"destino_tarifa": destino_texto, "destino_exacto": True, "corredor_nombre": None, "motivo": None}
     return None
 
 

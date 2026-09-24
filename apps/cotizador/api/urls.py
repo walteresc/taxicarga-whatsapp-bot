@@ -6,6 +6,7 @@ urlpatterns = [
     # Público (F7): cotización rápida de invitado + alta de cuenta.
     path("guest/quote", guest_views.GuestQuoteView.as_view(), name="v2-guest-quote"),
     path("guest/quote/preview", guest_views.PreviewQuoteView.as_view(), name="v2-guest-quote-preview"),
+    path("guest/quote/preview-batch", guest_views.PreviewQuoteBatchView.as_view(), name="v2-guest-quote-preview-batch"),
     path("guest/cargo/estimate", guest_views.EstimateCargoView.as_view(), name="v2-guest-cargo-estimate"),
     path("guest/signup", guest_views.GuestSignupView.as_view(), name="v2-guest-signup"),
 

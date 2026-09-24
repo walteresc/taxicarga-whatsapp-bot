@@ -100,7 +100,7 @@ onBeforeUnmount(() => { clearTimeout(debounceTimer); abortCtrl?.abort() })
           :model-value="query" :label="label" density="comfortable" class="mb-2"
           :append-inner-icon="located ? 'ri-map-pin-2-fill' : undefined"
           :color="located ? 'success' : undefined"
-          :hint="!MAPBOX_TOKEN ? 'Autocompletado no disponible: escribí la dirección completa.' : ''"
+          :hint="!MAPBOX_TOKEN ? 'Autocompletado no disponible: escribe la dirección completa.' : ''"
           persistent-hint
           @update:model-value="onInput"
         />

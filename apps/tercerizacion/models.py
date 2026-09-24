@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.conf import settings
 from django.db import models
 
@@ -755,13 +757,22 @@ class TarifaCargaParcial(models.Model):
     )
     precio_por_kg = models.DecimalField(
         max_digits=8, decimal_places=2,
-        help_text="Precio al cliente por kg dentro de este tramo (soles).",
+        help_text="Precio por kg — extremo MÍNIMO del rango (o el único precio si no se carga un máximo).",
+    )
+    precio_por_kg_max = models.DecimalField(
+        max_digits=8, decimal_places=2, null=True, blank=True,
+        help_text="Precio por kg — extremo MÁXIMO del rango. Vacío = sin rango, se cobra un solo precio "
+                  "(precio_por_kg) como antes.",
     )
     precio_por_m3 = models.DecimalField(
         max_digits=8, decimal_places=2, null=True, blank=True,
         help_text="Precio al cliente por m³ dentro de este tramo (soles) — 'peso volumétrico': "
                   "se cobra el que salga más caro entre peso×precio_por_kg y volumen×precio_por_m3. "
                   "Vacío = no se cobra por volumen, solo por peso.",
+    )
+    precio_por_m3_max = models.DecimalField(
+        max_digits=8, decimal_places=2, null=True, blank=True,
+        help_text="Extremo MÁXIMO del precio por m³ — mismo criterio que precio_por_kg_max.",
     )
     monto_minimo = models.DecimalField(
         max_digits=10, decimal_places=2, default=0,
@@ -784,6 +795,326 @@ class TarifaCargaParcial(models.Model):
         dest = self.destino or "general"
         tope = f"{self.peso_hasta_kg:g}" if self.peso_hasta_kg is not None else "∞"
         return f"[{self.get_modalidad_display()}] [{dest}] {self.peso_desde_kg:g}–{tope} kg: S/ {self.precio_por_kg:g}/kg"
+
+
+class Corredor(models.Model):
+    """Ruta troncal de carga nacional (p. ej. "Lima - Ica - Tacna"). El
+    trazado real (polyline) se calcula UNA VEZ desde el frontend contra
+    Mapbox Directions (mismo patrón que QuoteSummaryPanel.vue) y se persiste
+    tal cual — el backend nunca llama a Mapbox. Sirve para decidir, dado un
+    destino con coordenadas, si se puede ofrecer Carga Compartida/Consolidada
+    y hasta dónde (ver apps.tercerizacion.corredores.resolver_corredor)."""
+
+    nombre = models.CharField(max_length=120, help_text="P. ej. 'Lima - Ica - Tacna'.")
+    activo = models.BooleanField(default=True)
+
+    # Solo para prellenar el form y volver a pedir el trazado — el algoritmo
+    # de cobertura no usa estos 6 campos directamente, solo `trazado` y las
+    # paradas.
+    origen_nombre = models.CharField(max_length=120, blank=True, default="Lima")
+    origen_lat = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    origen_lng = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    destino_nombre = models.CharField(max_length=120, blank=True)
+    destino_lat = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    destino_lng = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+
+    trazado = models.JSONField(
+        default=list, blank=True,
+        help_text="Lista [[lng,lat], ...] de la ruta real (formato GeoJSON, mismo orden "
+                  "que devuelve Mapbox Directions). Se puede cargar a mano desde el "
+                  "frontend (botón 'Calcular trazado') O derivarse automáticamente "
+                  "concatenando la geometría de sus `tramos` (ver "
+                  "apps.tercerizacion.corredores.recalcular_trazado) cuando el corredor "
+                  "tiene CorredorTramo asociados — en ese caso el campo pasa a ser "
+                  "de solo lectura desde la API. Vacía = todavía no se calculó (el "
+                  "matcheo por radio de parada funciona igual sin ella).",
+    )
+    tolerancia_eje_km = models.DecimalField(
+        max_digits=5, decimal_places=2, default=Decimal("1.00"),
+        help_text="Cuán lejos del EJE de la carretera (no de una ciudad) puede caer un "
+                  "punto para seguir considerándose 'sobre la ruta' y ofrecerle Compartida.",
+    )
+    desvio_maximo_km = models.DecimalField(
+        max_digits=5, decimal_places=2, default=Decimal("30.00"),
+        help_text="Más allá de esta distancia al eje, el punto ya no tiene nada que ver "
+                  "con este corredor (ni siquiera como desvío tipo Lunahuaná) — solo "
+                  "Exclusivo. Sin este tope, cualquier punto del Perú terminaría "
+                  "'matcheando' al corredor geométricamente más cercano.",
+    )
+
+    # Catálogo comercial de 40 corredores (2026-09): código estable para
+    # identificar un corredor sin depender del nombre (dos corredores pueden
+    # compartir nombre comercial pero ser variantes distintas, p. ej. "Lima -
+    # Tarapoto" vía Norte y vía Centro — ver `variante`).
+    codigo = models.CharField(
+        max_length=20, blank=True, default="",
+        help_text="Identificador interno estable (p. ej. 'N05'). Vacío en corredores "
+                  "cargados a mano antes del catálogo de 40.",
+    )
+    variante = models.CharField(
+        max_length=60, blank=True, default="",
+        help_text="P. ej. 'vía Norte' / 'vía Centro' — dos corredores con el mismo "
+                  "origen/destino pero recorridos distintos NUNCA se fusionan.",
+    )
+    ESTADO_PENDIENTE_TRAZADO = "PENDIENTE_TRAZADO"
+    ESTADO_TRAZADO_CALCULADO = "TRAZADO_CALCULADO"
+    ESTADO_PENDIENTE_VALIDACION = "PENDIENTE_VALIDACION"
+    ESTADO_VALIDADO = "VALIDADO"
+    ESTADO_ERROR_TRAZADO = "ERROR_TRAZADO"
+    ESTADO_INACTIVO = "INACTIVO"
+    ESTADOS_VALIDACION = [
+        (ESTADO_PENDIENTE_TRAZADO, "Pendiente de trazado"),
+        (ESTADO_TRAZADO_CALCULADO, "Trazado calculado"),
+        (ESTADO_PENDIENTE_VALIDACION, "Pendiente de validación"),
+        (ESTADO_VALIDADO, "Validado"),
+        (ESTADO_ERROR_TRAZADO, "Error de trazado"),
+        (ESTADO_INACTIVO, "Inactivo"),
+    ]
+    estado_validacion = models.CharField(
+        max_length=24, choices=ESTADOS_VALIDACION, default=ESTADO_PENDIENTE_TRAZADO,
+        help_text="Estado de la GEOMETRÍA (independiente de `activo`, que es la "
+                  "habilitación comercial). Solo VALIDADO significa que un humano "
+                  "revisó y aprobó el trazado calculado — nunca se auto-promueve.",
+    )
+    localidad_origen = models.ForeignKey(
+        "Localidad", null=True, blank=True, on_delete=models.PROTECT, related_name="corredores_como_origen",
+        help_text="Nullable a propósito: corredores cargados a mano (antes del catálogo "
+                  "de 40) siguen mostrando origen_nombre sin tener esta FK.",
+    )
+    localidad_destino = models.ForeignKey(
+        "Localidad", null=True, blank=True, on_delete=models.PROTECT, related_name="corredores_como_destino",
+    )
+    distancia_total_km = models.DecimalField(
+        max_digits=7, decimal_places=2, null=True, blank=True,
+        help_text="Cacheada, recalculada junto con `trazado` cuando hay tramos.",
+    )
+    modificado_manualmente = models.BooleanField(
+        default=False,
+        help_text="True en cuanto un admin edita este corredor desde el CRUD — el "
+                  "seed/backfill de los 40 corredores nunca vuelve a tocar sus campos.",
+    )
+    creado_en = models.DateTimeField(auto_now_add=True)
+    actualizado_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Corredor de carga nacional"
+        verbose_name_plural = "Corredores de carga nacional"
+        ordering = ["nombre"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["codigo"], condition=models.Q(codigo__gt=""), name="corredor_codigo_unico",
+            ),
+        ]
+
+    def __str__(self):
+        return self.nombre
+
+
+class CorredorParada(models.Model):
+    """Ciudad atendida en el trayecto de un `Corredor`, con su PROPIO radio de
+    cobertura (cada ciudad tiene tamaño distinto). `nombre` debe coincidir
+    con el `destino` usado en `TarifaCargaParcial` para que el precio
+    matchee — si no coincide, cae a la tarifa general, misma salvaguarda de
+    siempre, nada se rompe. `orden` es solo para la UI (lista arrastrable);
+    la lógica de cobertura NO lo usa — calcula la posición real de la parada
+    proyectándola sobre `trazado`, así que se auto-corrige aunque `orden`
+    esté mal cargado."""
+
+    corredor = models.ForeignKey(Corredor, related_name="paradas", on_delete=models.CASCADE)
+    nombre = models.CharField(max_length=120, help_text="Debe coincidir con TarifaCargaParcial.destino.")
+    orden = models.PositiveSmallIntegerField(default=0, help_text="Solo UI (lista ordenable), no autoritativo.")
+    lat = models.DecimalField(max_digits=9, decimal_places=6)
+    lng = models.DecimalField(max_digits=9, decimal_places=6)
+    radio_km = models.DecimalField(
+        max_digits=5, decimal_places=2, default=Decimal("1.00"),
+        help_text="Radio de cobertura de Compartida alrededor del centro de esta ciudad.",
+    )
+    activo = models.BooleanField(default=True)
+
+    localidad = models.ForeignKey(
+        "Localidad", null=True, blank=True, on_delete=models.PROTECT,
+        help_text="Referencia al grafo de corredores compartidos — `nombre` (arriba) "
+                  "sigue siendo el campo que matchea contra TarifaCargaParcial.destino "
+                  "para el precio, esta FK es solo para el grafo, no lo reemplaza.",
+    )
+    TIPOS_PARADA = [
+        ("ciudad_principal", "Ciudad principal"), ("ciudad_intermedia", "Ciudad intermedia"),
+        ("pueblo", "Pueblo / centro poblado"), ("cruce_vial", "Cruce o desvío vial"),
+    ]
+    tipo_parada = models.CharField(max_length=20, choices=TIPOS_PARADA, blank=True, default="")
+    punto_acceso_lat = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    punto_acceso_lng = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    distancia_acceso_km = models.DecimalField(
+        max_digits=5, decimal_places=2, null=True, blank=True,
+        help_text="Distancia real de acarreo si la parada está fuera del eje del corredor.",
+    )
+    requiere_desvio = models.BooleanField(default=False)
+    modificado_manualmente = models.BooleanField(default=False)
+    creado_en = models.DateTimeField(auto_now_add=True)
+    actualizado_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Parada de corredor"
+        verbose_name_plural = "Paradas de corredor"
+        ordering = ["corredor", "orden"]
+        unique_together = [("corredor", "orden"), ("corredor", "nombre")]
+
+    def __str__(self):
+        return f"{self.corredor.nombre} · {self.nombre}"
+
+
+class Localidad(models.Model):
+    """Nodo del grafo de corredores: una ciudad/pueblo real o un cruce/desvío
+    vial sin nombre propio (`tipo="cruce_vial"`) — unificados en una sola
+    tabla porque ambos son simplemente puntos que un `TramoVial` conecta;
+    separarlos duplicaría la misma semántica (nombre, lat/lng, tipo) en dos
+    modelos. Geocodificada desde GeoNames (fuente pública, gratuita, sin
+    límite de uso — https://www.geonames.org, licencia CC-BY 4.0), nunca a
+    mano: dos localidades pueden compartir nombre y estar en departamentos
+    distintos (mismo problema que ya causó el bug de "Surco" con Mapbox)."""
+
+    TIPO_CIUDAD_PRINCIPAL = "ciudad_principal"
+    TIPO_CIUDAD_INTERMEDIA = "ciudad_intermedia"
+    TIPO_PUEBLO = "pueblo"
+    TIPO_CRUCE_VIAL = "cruce_vial"
+    TIPOS = [
+        (TIPO_CIUDAD_PRINCIPAL, "Ciudad principal"),
+        (TIPO_CIUDAD_INTERMEDIA, "Ciudad intermedia"),
+        (TIPO_PUEBLO, "Pueblo / centro poblado"),
+        (TIPO_CRUCE_VIAL, "Cruce o desvío vial"),
+    ]
+    RADIO_DEFAULT_KM = {
+        TIPO_CIUDAD_PRINCIPAL: Decimal("5.00"),
+        TIPO_CIUDAD_INTERMEDIA: Decimal("3.00"),
+        TIPO_PUEBLO: Decimal("2.00"),
+        TIPO_CRUCE_VIAL: Decimal("1.00"),
+    }
+
+    nombre = models.CharField(max_length=120)
+    nombre_normalizado = models.CharField(max_length=120, db_index=True, editable=False)
+    departamento = models.CharField(max_length=60, blank=True, default="")
+    provincia = models.CharField(max_length=60, blank=True, default="")
+    distrito = models.CharField(max_length=60, blank=True, default="")
+    ubigeo = models.CharField(max_length=6, blank=True, default="")
+    tipo = models.CharField(max_length=20, choices=TIPOS, default=TIPO_CIUDAD_INTERMEDIA)
+    lat = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    lng = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    radio_atencion_km = models.DecimalField(
+        max_digits=5, decimal_places=2, null=True, blank=True,
+        help_text="Vacío = usa el default de RADIO_DEFAULT_KM según `tipo` (ver radio_efectivo_km()).",
+    )
+    fuente_geografica = models.CharField(
+        max_length=20, blank=True, default="",
+        help_text="'geonames' | 'manual' | '' (todavía sin geocodificar).",
+    )
+    geonames_id = models.CharField(max_length=20, blank=True, default="")
+    ESTADO_PENDIENTE = "PENDIENTE_TRAZADO"
+    ESTADO_RESUELTO = "RESUELTO"
+    ESTADO_AMBIGUO = "AMBIGUO"
+    ESTADOS = [
+        (ESTADO_PENDIENTE, "Sin geocodificar"),
+        (ESTADO_RESUELTO, "Resuelto"),
+        (ESTADO_AMBIGUO, "Ambiguo — requiere revisión manual"),
+    ]
+    estado_validacion = models.CharField(max_length=20, choices=ESTADOS, default=ESTADO_PENDIENTE)
+    activo = models.BooleanField(default=True)
+    modificado_manualmente = models.BooleanField(
+        default=False, help_text="El seed/geocodificador nunca vuelve a tocar una fila con esto en True.",
+    )
+    creado_en = models.DateTimeField(auto_now_add=True)
+    actualizado_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Localidad"
+        verbose_name_plural = "Localidades"
+        ordering = ["nombre"]
+        constraints = [
+            models.UniqueConstraint(fields=["nombre_normalizado", "departamento"], name="localidad_nombre_depto_unico"),
+        ]
+
+    def __str__(self):
+        return f"{self.nombre} ({self.departamento})" if self.departamento else self.nombre
+
+    def save(self, *args, **kwargs):
+        import unicodedata
+        s = unicodedata.normalize("NFKD", (self.nombre or "").strip().lower())
+        self.nombre_normalizado = "".join(c for c in s if not unicodedata.combining(c))
+        super().save(*args, **kwargs)
+
+    def radio_efectivo_km(self):
+        return self.radio_atencion_km or self.RADIO_DEFAULT_KM.get(self.tipo, Decimal("2.00"))
+
+
+class TramoVial(models.Model):
+    """Segmento real de carretera entre dos `Localidad` consecutivas dentro
+    de algún corredor. Dos o más `Corredor` pueden referenciar el MISMO
+    `TramoVial` vía `CorredorTramo` — esa referencia compartida ES la
+    representación de "tramo compartido" (Lima-Piura y Lima-Jaén comparten
+    fila, no una comparación de polylines). La geometría se pide UNA VEZ a
+    Mapbox Directions (mismo proveedor que ya usa el frontend) y se persiste
+    tal cual. Inmutable en la práctica una vez con geometría real: si está
+    mal, se desactiva (`activo=False`) y se crea uno nuevo — nunca se edita
+    la geometría de un tramo ya usado por más de un corredor (evita romper
+    otros corredores sin aviso)."""
+
+    ESTADO_PENDIENTE = "PENDIENTE_TRAZADO"
+    ESTADO_CALCULADO = "TRAZADO_CALCULADO"
+    ESTADO_ERROR = "ERROR_TRAZADO"
+    ESTADOS = [
+        (ESTADO_PENDIENTE, "Pendiente"), (ESTADO_CALCULADO, "Calculado"), (ESTADO_ERROR, "Error"),
+    ]
+
+    nodo_inicio = models.ForeignKey(Localidad, related_name="tramos_como_inicio", on_delete=models.PROTECT)
+    nodo_fin = models.ForeignKey(Localidad, related_name="tramos_como_fin", on_delete=models.PROTECT)
+    geometria = models.JSONField(
+        default=list, blank=True,
+        help_text="[[lng,lat], ...] en el sentido nodo_inicio→nodo_fin, tal como lo "
+                  "devuelve Mapbox Directions.",
+    )
+    distancia_km = models.DecimalField(max_digits=7, decimal_places=2, null=True, blank=True)
+    codigo_carretera = models.CharField(max_length=20, blank=True, default="", help_text="P. ej. 'PE-1N'.")
+    estado_validacion = models.CharField(max_length=20, choices=ESTADOS, default=ESTADO_PENDIENTE)
+    fuente_geografica = models.CharField(max_length=20, blank=True, default="")
+    activo = models.BooleanField(default=True)
+    creado_en = models.DateTimeField(auto_now_add=True)
+    actualizado_en = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Tramo vial"
+        verbose_name_plural = "Tramos viales"
+        constraints = [
+            models.UniqueConstraint(fields=["nodo_inicio", "nodo_fin"], name="tramo_par_nodos_unico"),
+        ]
+
+    def __str__(self):
+        return f"{self.nodo_inicio.nombre} → {self.nodo_fin.nombre}"
+
+
+class CorredorTramo(models.Model):
+    """Un `TramoVial`, en una posición de la secuencia de UN `Corredor`, con
+    el sentido en que ESE corredor lo recorre. El mismo `tramo` puede
+    aparecer en varias filas de `CorredorTramo` (una por cada corredor que
+    lo comparte) — compartir tramo es compartir esta fila de FK, no comparar
+    geometrías."""
+
+    corredor = models.ForeignKey(Corredor, related_name="tramos", on_delete=models.CASCADE)
+    tramo = models.ForeignKey(TramoVial, related_name="corredores", on_delete=models.PROTECT)
+    orden = models.PositiveSmallIntegerField()
+    SENTIDO_IDA = "ida"
+    SENTIDO_VUELTA = "vuelta"
+    SENTIDOS = [(SENTIDO_IDA, "nodo_inicio → nodo_fin"), (SENTIDO_VUELTA, "nodo_fin → nodo_inicio")]
+    sentido = models.CharField(max_length=10, choices=SENTIDOS, default=SENTIDO_IDA)
+
+    class Meta:
+        verbose_name = "Tramo de corredor"
+        verbose_name_plural = "Tramos de corredor"
+        ordering = ["corredor", "orden"]
+        constraints = [
+            models.UniqueConstraint(fields=["corredor", "orden"], name="corredortramo_orden_unico"),
+        ]
+
+    def __str__(self):
+        return f"{self.corredor.nombre} #{self.orden}: {self.tramo}"
 
 
 class Liquidacion(models.Model):

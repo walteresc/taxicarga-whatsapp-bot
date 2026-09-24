@@ -29,6 +29,10 @@ const withPhotos = (body, photos) => {
 
 export const guestQuote = (body, photos) => post('quote', withPhotos(body, photos))
 export const guestQuotePreview = body => post('quote/preview', body)
+// Precio Express por cada peso en `weights` en un solo pedido — la usa el
+// selector de vehículo para mostrar el precio de cada unidad sin gastar una
+// llamada (y su límite de throttle) por unidad. -> {isInterprovincial, prices}
+export const guestQuotePreviewBatch = body => post('quote/preview-batch', body)
 export const guestSignup = body => post('signup', body)
 // Estima peso/volumen por IA cuando la descripción no trae números explícitos
 // (ver apps/cotizador/services_estimacion.py) — {detail} + fotos opcionales ->

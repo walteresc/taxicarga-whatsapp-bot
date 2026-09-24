@@ -9,7 +9,7 @@ import DistrictAutocomplete from '@/components/DistrictAutocomplete.vue'
 import QuoteSummaryPanel from '@/components/QuoteSummaryPanel.vue'
 import ScheduleStepPicker from '@/components/ScheduleStepPicker.vue'
 import VehiclePickerDialog from '@/components/VehiclePickerDialog.vue'
-import { guestCargoEstimate, guestQuote, guestQuotePreview, guestSignup } from '@/services/guestService'
+import { guestCargoEstimate, guestQuote, guestQuotePreview, guestQuotePreviewBatch, guestSignup } from '@/services/guestService'
 import { useAuthStore } from '@/stores/authStore'
 import { extractVolumeM3, extractWeightKg, recomendarModalidad } from '@/utils/cargoText'
 
@@ -17,12 +17,15 @@ const router = useRouter()
 const auth = useAuthStore()
 
 // "¿Qué necesitas?" — de cara al cliente el negocio se presenta en 3 líneas
-// (Carga / Mudanzas / Reparto); por dentro las 3 pasan por el mismo cotizador
-// de invitado, solo cambia qué categoría de `cargo` mandamos.
+// (Paquetes/Encomiendas = reparto, Fletes y Carga = carga, Mudanzas); por
+// dentro las 3 pasan por el mismo cotizador de invitado, solo cambia qué
+// categoría de `cargo` mandamos. El orden y las etiquetas separan por QUÉ se
+// envía (paquete a mano / camión / se carga con personal y escaleras), no por
+// local vs. provincia — eso el sistema ya lo detecta solo con las direcciones.
 const SERVICE_TYPES = [
-  { value: 'carga', icon: 'ri-truck-line', title: 'Carga', subtitle: 'Encomiendas, paquetes o carga nacional.' },
-  { value: 'mudanza', icon: 'ri-home-4-line', title: 'Mudanzas', subtitle: 'Casa, oficina o empresa.' },
-  { value: 'reparto', icon: 'ri-e-bike-2-line', title: 'Entregas', subtitle: 'Reparto, distribución y última milla.' },
+  { value: 'reparto', icon: 'ri-archive-line', title: 'Paquetes y Encomiendas', subtitle: 'Cajas y bultos chicos o medianos. Local o a provincias.' },
+  { value: 'carga', icon: 'ri-truck-line', title: 'Fletes y Carga', subtitle: 'Mercancías, equipos y carga general.' },
+  { value: 'mudanza', icon: 'ri-home-4-line', title: 'Mudanzas', subtitle: 'Desde un mueble hasta tu oficina o casa completa.' },
 ]
 const serviceType = ref('')
 
@@ -41,7 +44,23 @@ const serviceType = ref('')
 // pregunta (si comparte, no elige camión).
 const showVehiclePicker = ref(false)
 const chosenTruck = ref(null)
+// Capacidad (minTon/maxTon) de la unidad elegida — ver effectiveWeightKg más
+// abajo: si el camión elegido pide más capacidad que lo estimado, el precio
+// se recalcula con esa capacidad como piso, no con el estimado original.
+const chosenTruckUnit = ref(null)
 const chosenTruckLabel = computed(() => chosenTruck.value || '')
+// Elegir un camión puntual ya es una señal clara de que quiere precio — no
+// hace falta que además toque "Ver precio estimado" por separado. Se resuelve
+// el estimado completo (no solo un flag) para no perderse un peso real más
+// grande que el del camión, si la descripción ya lo tenía.
+const pickTruck = (label, unit) => {
+  chosenTruck.value = label; chosenTruckUnit.value = unit || null; requestPriceEstimate()
+}
+const clearTruck = () => { chosenTruck.value = null; chosenTruckUnit.value = null }
+// La tarjeta "TaxiCarga elige" hace las dos cosas: si todavía no se pidió
+// precio, pedirlo (como el botón viejo); si ya hay uno, volver a este modo
+// (soltar el camión elegido, si había).
+const chooseAuto = () => { priceRequested.value ? clearTruck() : requestPriceEstimate() }
 
 const phase = ref('form')   // form | result | signup
 const step = ref(1)
@@ -63,6 +82,15 @@ const quote = reactive({
 const continueMode = ref('ofertas')   // 'ofertas' | 'propio' — solo Carga
 const result = ref(null)
 
+// El botón final refleja la decisión tomada en "¿Cómo quieres continuar?" en
+// vez de un genérico "Cotizar" — solo aplica a Carga, único servicio con
+// continueMode.
+const submitLabel = computed(() => {
+  if (serviceType.value !== 'carga') return 'Cotizar'
+  if (continueMode.value === 'propio' && quote.proposedPrice) return `Publicar con S/ ${quote.proposedPrice}`
+  return 'Publicar sin precio'
+})
+
 // Paradas intermedias (multipunto) — solo Carga. El motor de precios no las
 // contempla en el cálculo (ver apps/cotizador/services.py::cotizar_lead), así
 // que una solicitud con paradas siempre pasa a modo asesor, a propósito.
@@ -72,6 +100,11 @@ const addStop = () => stops.push({ district: '', province: '', region: '', lat: 
 const removeStop = index => stops.splice(index, 1)
 const hasStops = computed(() => stops.some(s => s.district))
 const step1ok = computed(() => !!(serviceType.value && quote.origin.district && quote.destination.district))
+// Precio sí es opcional (se puede continuar sin él) — la descripción de la
+// carga no: sin eso ni el transportista ni el motor de precios tienen nada
+// para trabajar. Mudanza y Reparto quedan afuera: sus campos ya están
+// marcados opcionales en el propio label ("...(opcional)").
+const step2ok = computed(() => serviceType.value !== 'carga' || !!quote.cargo.detail.trim())
 
 // Peso/volumen: primero regex sobre el texto (instantáneo); si no encuentra
 // nada y hay texto o fotos, se le pide a la IA que estime (la mayoría de las
@@ -82,10 +115,6 @@ const step1ok = computed(() => !!(serviceType.value && quote.origin.district && 
 const estimatedWeightKg = ref(null)
 const estimatedVolumeM3 = ref(null)
 const estimatingCargo = ref(false)
-// true en cuanto cambia texto/fotos y todavía no corrió un intento real
-// (esperando el debounce o la llamada a la IA) — evita que el aviso o la
-// pregunta de aclaración parpadeen apenas se empieza a escribir.
-const estimatePending = ref(false)
 // Pregunta de aclaración en lenguaje simple que arma la propia IA cuando ni
 // el texto ni las fotos alcanzan (nunca pide kg/m3 directos — ver
 // services_estimacion.py). Un solo reintento: se contesta una vez o se
@@ -93,56 +122,103 @@ const estimatePending = ref(false)
 const suggestedQuestion = ref(null)
 const questionAnswer = ref(null)
 const answeringQuestion = ref(false)
+// El precio (y su pregunta de aclaración, si hace falta) se pide solo al
+// pausar de escribir (debounce, ver watch de quote.cargo.detail más abajo) —
+// "Ver precio estimado"/las tarjetas de vehículo siguen sirviendo para
+// forzarlo antes de esa pausa.
+const priceRequested = ref(false)
+const requestingPrice = ref(false)
+// Pidió precio sin haber escrito nada ni subido fotos — sin esto, el pedido
+// se corta en silencio (a propósito, no hay nada que cotizar) y se siente
+// como que el botón/tile no responde.
+const missingDetail = computed(() =>
+  priceRequested.value && !quote.cargo.detail.trim() && !photos.value.length)
 const cargoEstimateFailed = computed(() =>
-  serviceType.value === 'carga' && !estimatingCargo.value && !estimatePending.value &&
+  priceRequested.value && serviceType.value === 'carga' && !estimatingCargo.value &&
   !suggestedQuestion.value && quote.cargo.detail.trim() &&
   estimatedWeightKg.value == null && estimatedVolumeM3.value == null)
 const hasSuggestedQuestion = computed(() =>
-  serviceType.value === 'carga' && !estimatingCargo.value && !estimatePending.value &&
+  priceRequested.value && serviceType.value === 'carga' && !estimatingCargo.value &&
   !answeringQuestion.value && !!suggestedQuestion.value)
 
-let estimateDebounce = null
+// Misma protección que fetchPricePreview: si el cliente sigue escribiendo o
+// contesta la pregunta de aclaración mientras un pedido anterior todavía
+// está en vuelo, esa respuesta vieja no debe pisar el peso/volumen ya
+// actualizado por una llamada más nueva.
+let estimateRequestSeq = 0
 const estimateCargo = async () => {
-  estimatePending.value = false
   const text = quote.cargo.detail
   const w = extractWeightKg(text)
   const v = extractVolumeM3(text)
   if (w != null || v != null) {
+    estimateRequestSeq++   // invalida cualquier pedido a la IA todavía en vuelo
     estimatedWeightKg.value = w; estimatedVolumeM3.value = v; suggestedQuestion.value = null
     return
   }
   if (!text.trim() && !photos.value.length) {
+    estimateRequestSeq++
     estimatedWeightKg.value = null; estimatedVolumeM3.value = null; suggestedQuestion.value = null
     return
   }
+  const seq = ++estimateRequestSeq
   estimatingCargo.value = true
   try {
     const r = await guestCargoEstimate({ detail: text }, photos.value)
+    if (seq !== estimateRequestSeq) return   // llegó una respuesta vieja, se descarta
     estimatedWeightKg.value = r.weightKg
     estimatedVolumeM3.value = r.volumeM3
     suggestedQuestion.value = r.suggestedQuestion || null
   } catch (e) {
-    estimatedWeightKg.value = null; estimatedVolumeM3.value = null; suggestedQuestion.value = null
-  } finally { estimatingCargo.value = false }
+    if (seq === estimateRequestSeq) { estimatedWeightKg.value = null; estimatedVolumeM3.value = null; suggestedQuestion.value = null }
+  } finally { if (seq === estimateRequestSeq) estimatingCargo.value = false }
 }
+// Evita que el propio append de la respuesta (más abajo) dispare otra vez
+// este watch y pise el estimado recién resuelto con una segunda llamada
+// redundante a la IA.
+let skipNextDetailWatch = false
+// Al pausar de escribir (o subir/sacar una foto), se pide el precio solo —
+// ya no hace falta tocar "Ver precio estimado" a propósito. Sigue existiendo
+// como respaldo (por si alguien quiere forzarlo antes de la pausa).
+let autoRequestDebounce = null
 watch([() => quote.cargo.detail, photos], () => {
+  if (skipNextDetailWatch) { skipNextDetailWatch = false; return }
+  // Editar la descripción invalida cualquier precio/pregunta ya resuelta —
+  // vuelve a aparecer "Toca para ver el precio" un instante, hasta que la
+  // pausa dispare el pedido de nuevo — sin arrastrar datos viejos de una
+  // carga distinta.
+  priceRequested.value = false
   questionAnswer.value = null
-  estimatePending.value = true
-  clearTimeout(estimateDebounce)
-  estimateDebounce = setTimeout(estimateCargo, 600)
+  suggestedQuestion.value = null
+  estimatedWeightKg.value = null
+  estimatedVolumeM3.value = null
+  clearTimeout(autoRequestDebounce)
+  if (quote.cargo.detail.trim() || photos.value.length) {
+    autoRequestDebounce = setTimeout(() => requestPriceEstimate(), 700)
+  }
 })
 
 const answerSuggestedQuestion = async () => {
   if (questionAnswer.value == null || questionAnswer.value === '') return
   const question = suggestedQuestion.value
+  const seq = ++estimateRequestSeq   // invalida cualquier estimateCargo() todavía en vuelo
   answeringQuestion.value = true
   try {
     const augmented = `${quote.cargo.detail}\n${question.text}: ${questionAnswer.value} ${question.unit}`
     const r = await guestCargoEstimate({ detail: augmented }, photos.value)
+    if (seq !== estimateRequestSeq) return   // llegó una respuesta vieja, se descarta
     estimatedWeightKg.value = r.weightKg
     estimatedVolumeM3.value = r.volumeM3
-  } catch (e) { /* seguí sin precio, ver aviso de abajo */ }
-  finally { suggestedQuestion.value = null; answeringQuestion.value = false }
+    // Deja la respuesta en la descripción visible — si no, el precio queda
+    // calculado con un dato (la cantidad) que el cliente nunca ve escrito.
+    skipNextDetailWatch = true
+    quote.cargo.detail = augmented
+    suggestedQuestion.value = null
+    // Se pide el precio en el mismo tramo — sin esto quedaría "Calculando…"
+    // colgado hasta el próximo cambio en ruta/tipo de servicio.
+    clearTimeout(previewDebounce)
+    await fetchPricePreview()
+  } catch (e) { if (seq === estimateRequestSeq) suggestedQuestion.value = null }
+  finally { if (seq === estimateRequestSeq) answeringQuestion.value = false }
 }
 
 // Precio de referencia: no crea nada, es un estimado (ver
@@ -160,25 +236,88 @@ const previewLoading = ref(false)
 // conoce todavía (preview sin resolver), se trata como "no interprovincial"
 // para no mostrar el toggle y después tener que retirarlo.
 const isInterprovincial = computed(() => pricePreview.value?.isInterprovincial === true)
+// Cuándo se ve "¿Qué vehículo prefieres?" (dos tarjetas) — en ese caso esa
+// sección absorbe el botón/tarjeta de precio genérico (sería el mismo
+// número dos veces en la misma pantalla).
+const showsVehicleTiles = computed(() =>
+  serviceType.value === 'carga' && (!isInterprovincial.value || quote.loadMode === 'completa'))
+// Si el camión elegido pide más capacidad que lo estimado por texto/fotos,
+// se cotiza con la capacidad del camión como piso — elegir una unidad más
+// grande sí debe subir el precio, aunque la carga descrita sea chica.
+const effectiveWeightKg = computed(() => {
+  const floorKg = chosenTruckUnit.value?.minTon != null ? chosenTruckUnit.value.minTon * 1000 : null
+  if (floorKg == null) return estimatedWeightKg.value
+
+  return estimatedWeightKg.value == null ? floorKg : Math.max(estimatedWeightKg.value, floorKg)
+})
 let previewDebounce = null
+// Varios disparadores pueden pedir el precio casi al mismo tiempo (el peso
+// de la IA se resuelve en pasos, cada paso dispara su propio pedido) — sin
+// esto, la respuesta que LLEGA última pisa a la que se pidió última, y si
+// esa es una más vieja (peso/destino todavía sin resolver), el precio que
+// queda en pantalla no es el correcto. Cada llamada se numera; solo la
+// numerada más alta puede escribir en `pricePreview`.
+let previewRequestSeq = 0
 const fetchPricePreview = async () => {
-  if (!['carga', 'reparto'].includes(serviceType.value) || hasStops.value || !step1ok.value) {
+  // Sin pedido explícito del cliente ("Ver precio estimado") no hay nada que
+  // calcular — evita mostrar un precio que nadie pidió todavía.
+  if (
+    !['carga', 'reparto'].includes(serviceType.value) || hasStops.value || !step1ok.value ||
+    !quote.cargo.detail.trim() || !priceRequested.value
+  ) {
     pricePreview.value = null
     return
   }
+  const seq = ++previewRequestSeq
   previewLoading.value = true
   try {
-    pricePreview.value = await guestQuotePreview({
+    const r = await guestQuotePreview({
       origin: quote.origin, destination: quote.destination, serviceType: serviceType.value,
-      cargo: { category: quote.cargo.category, weightKg: estimatedWeightKg.value },
+      cargo: { category: quote.cargo.category, weightKg: effectiveWeightKg.value },
     })
-  } catch (e) { pricePreview.value = null } finally { previewLoading.value = false }
+    if (seq === previewRequestSeq) pricePreview.value = r
+  } catch (e) { if (seq === previewRequestSeq) pricePreview.value = null }
+  finally { if (seq === previewRequestSeq) previewLoading.value = false }
 }
+// Cambios de ruta/tipo/camión elegido después de ya haber pedido el precio
+// lo refrescan solos — no hace falta volver a tocar el botón. La
+// descripción/fotos NO están acá: esas las dispara
+// requestPriceEstimate/answerSuggestedQuestion explícitamente (ver abajo),
+// nunca solas mientras se escribe.
 watch([() => serviceType.value, () => quote.origin.district, () => quote.destination.district,
-  estimatedWeightKg, hasStops], () => {
+  hasStops, priceRequested, effectiveWeightKg], () => {
   clearTimeout(previewDebounce)
   previewDebounce = setTimeout(fetchPricePreview, 400)
 })
+
+// Precio Express de cada unidad del catálogo, para el selector de vehículo
+// (ver VehiclePickerDialog :fetch-prices) — un solo pedido para toda la
+// lista, no uno por unidad.
+const fetchUnitPrices = async weightsKg => {
+  try {
+    const r = await guestQuotePreviewBatch({
+      origin: quote.origin, destination: quote.destination, serviceType: serviceType.value,
+      cargo: { category: quote.cargo.category }, weights: weightsKg,
+    })
+
+    return r.prices || []
+  } catch (e) { return [] }
+}
+
+// Acción explícita del botón "Ver precio estimado" — resuelve peso/volumen
+// (o la pregunta de aclaración) y, si no quedó nada pendiente, el precio en
+// el mismo tramo, sin esperar el debounce del watch de arriba.
+const requestPriceEstimate = async () => {
+  priceRequested.value = true
+  requestingPrice.value = true
+  try {
+    await estimateCargo()
+    if (!hasSuggestedQuestion.value) {
+      clearTimeout(previewDebounce)
+      await fetchPricePreview()
+    }
+  } finally { requestingPrice.value = false }
+}
 
 // Modalidad Compartido/Exclusivo: el cliente NUNCA elige Consolidada/Express
 // directamente — eso lo declara el transportista al ofertar (ver
@@ -204,12 +343,22 @@ watch([recommendedMode, isInterprovincial], ([mode, interprovincial]) => {
   quote.loadMode = mode === 'exclusivo' ? 'completa' : 'parcial'
 })
 const setLoadMode = mode => { modalityTouched.value = true; quote.loadMode = mode }
-watch(() => quote.loadMode, mode => { if (mode === 'parcial') chosenTruck.value = null })
+watch(() => quote.loadMode, mode => { if (mode === 'parcial') clearTruck() })
 
 const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE')}`)
 const priceEstimate = computed(() => {
   if (!['carga', 'reparto'].includes(serviceType.value)) return null
   if (hasStops.value) return { mode: 'advisor', text: 'Un asesor te confirma el precio (hay paradas intermedias).' }
+  // Todo el tramo de requestPriceEstimate (resolver peso/volumen y recién
+  // después pedir el precio) cuenta como "cargando" — sin esto, el resumen y
+  // el tile se quedaban sin nada que mostrar en la primera mitad de ese
+  // tramo (mientras se resuelve estimateCargo, antes de que exista
+  // previewLoading/pricePreview).
+  if (requestingPrice.value) return { mode: 'loading' }
+  // Mientras la IA todavía necesita un dato para estimar peso/volumen, no
+  // mostramos un precio "confiado" — sería contradictorio con la pregunta
+  // de aclaración que se le está por mostrar (o ya se le mostró).
+  if (suggestedQuestion.value) return { mode: 'loading' }
   if (previewLoading.value) return { mode: 'loading' }
   if (!pricePreview.value) return null
   const { express, consolidated } = pricePreview.value
@@ -218,23 +367,43 @@ const priceEstimate = computed(() => {
   // hay cobertura de zona), ver apps/cotizador/services.py::_calcular_reparto.
   if (serviceType.value === 'reparto') {
     if (!express || express.amount == null) return { mode: 'advisor', text: 'Un asesor te confirma el precio.' }
+    const hasRange = express.range && express.range[0] !== express.range[1]
+
     return {
-      mode: 'unico', text: soles(express.amount),
-      sub: express.range && express.range[0] !== express.range[1] ? `Rango ${soles(express.range[0])} – ${soles(express.range[1])}` : null,
+      mode: 'unico',
+      text: hasRange ? `${soles(express.range[0])} – ${soles(express.range[1])} aprox.` : soles(express.amount),
+      suggestedAmount: Math.round(express.amount),
     }
   }
 
   // Sin tocar el toggle y en la franja ambigua: un rango, no dos tarjetas.
+  // suggestedAmount usa Compartido (el más económico) como ancla editable —
+  // el cliente puede subirlo si prefiere Exclusivo.
   if (!modalityTouched.value && recommendedMode.value === 'rango' && express?.amount != null && consolidated?.amount != null) {
-    return { mode: 'rango', text: `Desde ${soles(consolidated.amount)} hasta ${soles(express.amount)} aprox.`, sub: 'según el transportista' }
+    return {
+      mode: 'rango', text: `${soles(consolidated.amount)} – ${soles(express.amount)} aprox.`, sub: 'según el transportista',
+      suggestedAmount: Math.round(consolidated.amount),
+    }
   }
   const chosen = quote.loadMode === 'parcial' ? consolidated : express
   if (!chosen || chosen.amount == null) return { mode: 'advisor', text: 'Un asesor te confirma el precio.' }
+  const hasRange = chosen.range && chosen.range[0] !== chosen.range[1]
 
   return {
-    mode: 'unico', text: soles(chosen.amount),
-    sub: chosen.range && chosen.range[0] !== chosen.range[1] ? `Rango ${soles(chosen.range[0])} – ${soles(chosen.range[1])}` : null,
+    mode: 'unico',
+    text: hasRange ? `${soles(chosen.range[0])} – ${soles(chosen.range[1])} aprox.` : soles(chosen.amount),
+    suggestedAmount: Math.round(chosen.amount),
   }
+})
+
+// Precarga "Tu precio" con el precio sugerido apenas hay uno, y lo sigue
+// actualizando si la sugerencia cambia (p. ej. el cliente vuelve atrás y
+// cambia la carga) — hasta que la edita a mano (priceTouched), para no
+// pisarle un valor que ya cambió a propósito.
+const priceTouched = ref(false)
+watch(() => priceEstimate.value?.suggestedAmount, amount => {
+  if (priceTouched.value || amount == null) return
+  quote.proposedPrice = amount
 })
 
 // 3 pasos siempre: "Servicio y ruta" → "Detalles" → "Reserva". El precio
@@ -244,22 +413,13 @@ const priceEstimate = computed(() => {
 const stepperItems = ['Servicio y ruta', 'Detalles', 'Reserva']
 const maxStep = 3
 
-// Al pasar de "Detalles" a "Reserva" (única transición donde importa la
-// estimación de carga): si hay un intento pendiente, se resuelve antes de
-// decidir — si no, "Siguiente" podría avanzar sin haber corrido nunca la
-// estimación (o con una desactualizada). Si la IA recién ahí propone una
-// pregunta de aclaración, se queda una vez para mostrarla; el segundo clic
-// (la haya contestado o no) avanza igual — nunca bloquea.
-const goingToStep3 = ref(false)
-const goToStep3 = async () => {
-  if (serviceType.value !== 'carga') { step.value++; return }
-  if (estimatePending.value) {
-    goingToStep3.value = true
-    clearTimeout(estimateDebounce)
-    await estimateCargo()
-    goingToStep3.value = false
-  }
-  if (hasSuggestedQuestion.value) return
+// El precio ya es una acción explícita (botón "Ver precio estimado", arriba)
+// — "Continuar" no necesita esperar ni resolver nada, nunca bloquea. Solo
+// limpia una pregunta sin contestar para que el paso 3 no quede colgado en
+// "Calculando…" (priceEstimate: mientras suggestedQuestion exista, no
+// muestra número).
+const goToStep3 = () => {
+  suggestedQuestion.value = null
   step.value++
 }
 
@@ -324,6 +484,16 @@ const submitSignup = async () => {
 </script>
 
 <template>
+  <!-- Placa flotante con el precio de referencia — el Paso 3 (Reserva) es
+       largo (fecha + hora + contacto) y en mobile no hay panel lateral fijo
+       (QuoteSummaryPanel solo se ve en md+), así que sin esto el cliente
+       pierde de vista el precio sugerido apenas hace scroll más abajo. -->
+  <div v-if="step === 3 && phase === 'form' && serviceType === 'carga' && priceEstimate?.mode === 'unico'" class="price-float-badge">
+    <VIcon icon="ri-price-tag-3-line" size="14" color="primary" />
+    <span class="text-caption text-medium-emphasis">Sugerido</span>
+    <span class="text-body-2 font-weight-bold text-primary">{{ priceEstimate.text }}</span>
+  </div>
+
   <div class="d-flex justify-center pa-4" style="min-height: 100vh; background: rgb(var(--v-theme-background));">
     <div style="width: 100%; max-width: 960px;">
       <div class="text-center my-6">
@@ -437,11 +607,13 @@ const submitSignup = async () => {
               <template v-if="serviceType === 'carga'">
                 <div class="text-h6 font-weight-bold mb-1">¿Qué vas a transportar?</div>
                 <p class="text-caption text-medium-emphasis mb-4">
-                  Describe tu carga con el mayor detalle posible para recibir mejores cotizaciones. Indica peso aprox. y volumen aprox.
+                  Cuéntanos qué vas a enviar — cantidad de cajas/bultos, tamaño aproximado, o agrega una foto.
+                  Nosotros calculamos el resto.
                 </p>
                 <VTextarea
                   v-model="quote.cargo.detail" rows="4" auto-grow density="comfortable" class="mb-4"
-                  counter maxlength="500" placeholder="Ej: 40 cajas de repuestos automotrices, peso total 500 kg y volumen aprox. 2 m³"
+                  counter maxlength="500" label="Descripción de la carga"
+                  placeholder="Ej: 40 cajas de repuestos automotrices, del tamaño de una caja de zapatos cada una"
                 />
               </template>
               <template v-else-if="serviceType === 'mudanza'">
@@ -452,7 +624,7 @@ const submitSignup = async () => {
                 />
               </template>
               <template v-else>
-                <div class="text-h6 font-weight-bold mb-4">Contanos tu operación de reparto</div>
+                <div class="text-h6 font-weight-bold mb-4">Cuéntanos tu operación de reparto</div>
                 <VTextarea
                   v-model="quote.cargo.detail" rows="2" auto-grow density="comfortable" class="mb-2"
                   label="Cuántos pedidos, frecuencia, si es ecommerce o contra-entrega (opcional)"
@@ -461,24 +633,74 @@ const submitSignup = async () => {
 
               <CargoPhotosPicker v-model="photos" class="mb-2" />
 
-              <VAlert v-if="hasSuggestedQuestion" type="info" variant="tonal" density="comfortable" class="mt-2">
-                <div class="mb-2">{{ suggestedQuestion.text }}</div>
-                <div class="d-flex align-center ga-2 flex-wrap">
-                  <VTextField
-                    v-model="questionAnswer" type="number" density="compact" hide-details style="max-width: 140px;"
-                    :suffix="suggestedQuestion.unit" @keyup.enter="answerSuggestedQuestion"
-                  />
-                  <VBtn size="small" color="primary" variant="tonal" :loading="answeringQuestion" @click="answerSuggestedQuestion">
-                    Estimar precio
-                  </VBtn>
-                  <VBtn size="small" variant="text" @click="suggestedQuestion = null">Continuar sin precio</VBtn>
-                </div>
-              </VAlert>
+              <!-- La pregunta de aclaración (si hace falta un dato) siempre va
+                   acá, sea que el precio se pida con el botón de abajo o desde
+                   el tile "TaxiCarga elige" más abajo. -->
+              <template v-if="['carga', 'reparto'].includes(serviceType)">
+                <VAlert v-if="hasSuggestedQuestion" type="info" variant="tonal" density="comfortable" class="mt-2">
+                  <div class="mb-2">
+                    Para darte un precio estimado nos falta un dato: <strong>{{ suggestedQuestion.text }}</strong>
+                  </div>
+                  <div class="d-flex align-center ga-2 flex-wrap">
+                    <VTextField
+                      v-model="questionAnswer" type="number" density="compact" hide-details style="max-width: 140px;"
+                      :suffix="suggestedQuestion.unit" @keyup.enter="answerSuggestedQuestion"
+                    />
+                    <VBtn size="small" color="primary" variant="tonal" :loading="answeringQuestion" @click="answerSuggestedQuestion">
+                      Estimar precio
+                    </VBtn>
+                  </div>
+                  <div class="text-caption text-medium-emphasis mt-2">
+                    También puedes continuar sin este dato — tu solicitud se publica igual, solo que sin precio
+                    estimado (un asesor te lo confirma después).
+                    <VBtn size="small" variant="text" class="px-1" @click="suggestedQuestion = null">Continuar sin precio</VBtn>
+                  </div>
+                </VAlert>
 
-              <VAlert v-else-if="cargoEstimateFailed" type="info" variant="tonal" density="comfortable" class="mt-2">
-                No pudimos calcular el precio estimado por falta de detalle de carga (peso, cantidad, volumen, etc.).
-                Podés editar la descripción, agregar fotos, o continuar así sin precio, no hay problema.
-              </VAlert>
+                <VAlert v-else-if="cargoEstimateFailed" type="info" variant="tonal" density="comfortable" class="mt-2">
+                  No pudimos calcular el precio estimado por falta de detalle de carga (peso, cantidad, volumen, etc.).
+                  Puedes editar la descripción, agregar fotos, o continuar así sin precio, no hay problema.
+                </VAlert>
+
+                <VAlert v-else-if="missingDetail" type="info" variant="tonal" density="comfortable" class="mt-2">
+                  Escribe qué vas a transportar (o agrega una foto) para poder calcular un precio — igual puedes
+                  continuar sin ponerlo.
+                </VAlert>
+              </template>
+
+              <!-- Botón/tarjeta de precio genérico — solo si "¿Qué vehículo
+                   prefieres?" no va a aparecer más abajo (ese tile "TaxiCarga
+                   elige" ya hace de botón + tarjeta; repetirlo acá sería el
+                   mismo precio dos veces seguidas en la misma pantalla). -->
+              <template v-if="['carga', 'reparto'].includes(serviceType) && !showsVehicleTiles && !hasSuggestedQuestion">
+                <VBtn
+                  v-if="!priceRequested || requestingPrice" variant="tonal" color="primary"
+                  prepend-icon="ri-price-tag-3-line" class="mt-2" :loading="requestingPrice"
+                  @click="requestPriceEstimate"
+                >
+                  Ver precio estimado
+                </VBtn>
+
+                <VCard
+                  v-else-if="priceEstimate" variant="tonal"
+                  :color="priceEstimate.mode === 'advisor' ? undefined : 'primary'" class="mt-2"
+                >
+                  <VCardText class="d-flex align-center ga-3">
+                    <VIcon icon="ri-price-tag-3-line" size="26" />
+                    <div v-if="priceEstimate.mode === 'loading'" class="d-flex align-center ga-2">
+                      <VProgressCircular indeterminate size="18" width="2" color="primary" />
+                      <span class="text-body-2">Calculando precio…</span>
+                    </div>
+                    <div v-else-if="priceEstimate.mode === 'advisor'" class="text-body-2 font-weight-medium">
+                      {{ priceEstimate.text }}
+                    </div>
+                    <div v-else>
+                      <div class="text-caption text-medium-emphasis">Precio estimado</div>
+                      <div class="text-h6 font-weight-bold">{{ priceEstimate.text }}</div>
+                    </div>
+                  </VCardText>
+                </VCard>
+              </template>
 
               <template v-if="serviceType === 'carga'">
                 <VDivider class="my-3" />
@@ -486,21 +708,30 @@ const submitSignup = async () => {
                      Consolidada nunca es una opción real dentro de una misma
                      ciudad, así que ni se pregunta ahí. -->
                 <template v-if="isInterprovincial">
-                  <div class="text-subtitle-2 font-weight-bold mb-2">¿Cómo querés tu carga?</div>
-                  <VBtnToggle
-                    :model-value="quote.loadMode" color="primary" variant="outlined" divided
-                    density="comfortable" mandatory class="load-mode-toggle mb-2"
-                    @update:model-value="setLoadMode"
+                  <div class="text-subtitle-2 font-weight-bold mb-2">¿Cómo quieres tu carga?</div>
+                  <VRadioGroup
+                    :model-value="quote.loadMode" inline hide-details density="comfortable"
+                    class="radio-pill-group mb-2" @update:model-value="setLoadMode"
                   >
-                    <VBtn value="parcial" class="px-6">
-                      Compartido
-                      <VChip v-if="recommendedMode === 'compartido' && !modalityTouched" size="x-small" color="primary" variant="flat" class="ml-2">Recomendado</VChip>
-                    </VBtn>
-                    <VBtn value="completa" class="px-6">
-                      Exclusivo
-                      <VChip v-if="recommendedMode === 'exclusivo' && !modalityTouched" size="x-small" color="primary" variant="flat" class="ml-2">Recomendado</VChip>
-                    </VBtn>
-                  </VBtnToggle>
+                    <VRadio value="parcial">
+                      <template #label>
+                        <span>Compartido</span>
+                        <VChip v-if="recommendedMode === 'compartido' && !modalityTouched" size="x-small" color="primary" variant="flat" class="ml-2">Recomendado</VChip>
+                        <span v-if="pricePreview?.consolidated?.amount != null" class="text-caption font-weight-bold text-primary ml-2">
+                          {{ soles(pricePreview.consolidated.amount) }}
+                        </span>
+                      </template>
+                    </VRadio>
+                    <VRadio value="completa">
+                      <template #label>
+                        <span>Exclusivo</span>
+                        <VChip v-if="recommendedMode === 'exclusivo' && !modalityTouched" size="x-small" color="primary" variant="flat" class="ml-2">Recomendado</VChip>
+                        <span v-if="pricePreview?.express?.amount != null" class="text-caption font-weight-bold text-primary ml-2">
+                          {{ soles(pricePreview.express.amount) }}
+                        </span>
+                      </template>
+                    </VRadio>
+                  </VRadioGroup>
                   <p class="text-caption text-medium-emphasis mb-3">
                     {{ quote.loadMode === 'parcial'
                       ? 'Tu carga viaja junto con otra — más económico.'
@@ -509,36 +740,128 @@ const submitSignup = async () => {
                 </template>
 
                 <template v-if="!isInterprovincial || quote.loadMode === 'completa'">
-                  <div class="d-flex align-start ga-3">
-                    <VAvatar size="40" color="primary" variant="tonal"><VIcon icon="ri-truck-line" /></VAvatar>
-                    <div class="flex-grow-1">
-                      <div class="text-subtitle-2 font-weight-bold">¿Quieres elegir vehículo?</div>
-                      <div class="text-caption text-medium-emphasis mb-2">
-                        Opcional — si no elegís, te asignamos la mejor opción disponible.
-                      </div>
-                      <VChip v-if="chosenTruck" closable color="primary" variant="tonal" @click:close="chosenTruck = null">
-                        {{ chosenTruckLabel }}
-                      </VChip>
-                      <VBtn v-else variant="outlined" size="small" @click="showVehiclePicker = true">Elegir vehículo</VBtn>
-                    </div>
+                  <div class="text-subtitle-2 font-weight-bold mb-2">¿Quieres elegir el vehículo?</div>
+                  <VRow dense>
+                    <VCol cols="12" sm="6">
+                      <VCard
+                        variant="outlined" class="pa-3 h-100 position-relative service-tile"
+                        :class="{ 'service-tile--selected': !chosenTruck }"
+                        style="cursor: pointer;" @click="chooseAuto"
+                      >
+                        <VIcon
+                          v-if="!chosenTruck" icon="ri-checkbox-circle-fill" color="primary" size="16"
+                          style="position:absolute; top:8px; right:8px;"
+                        />
+                        <VAvatar
+                          size="32" class="mb-2" :variant="!chosenTruck ? 'elevated' : 'tonal'"
+                          :color="!chosenTruck ? 'primary' : 'surface-variant'"
+                        >
+                          <VIcon icon="ri-magic-line" size="16" :color="!chosenTruck ? 'white' : undefined" />
+                        </VAvatar>
+                        <div class="text-body-2 font-weight-bold">No, que TaxiCarga elija</div>
+                        <div class="text-caption text-medium-emphasis">Elegimos el vehículo ideal para tu carga.</div>
+                        <div v-if="!chosenTruck" class="mt-1">
+                          <div v-if="priceEstimate?.mode === 'loading'" class="d-flex align-center ga-1">
+                            <VProgressCircular indeterminate size="12" width="2" color="primary" />
+                            <span class="text-caption text-medium-emphasis">Calculando…</span>
+                          </div>
+                          <div v-else-if="priceEstimate?.mode === 'unico'">
+                            <div class="text-caption text-medium-emphasis" style="line-height: 1.1;">Precio estimado</div>
+                            <div class="text-caption font-weight-bold text-primary">{{ priceEstimate.text }}</div>
+                          </div>
+                          <div v-else-if="priceEstimate?.mode === 'advisor'" class="text-caption text-medium-emphasis">
+                            {{ priceEstimate.text }}
+                          </div>
+                          <div v-else-if="missingDetail" class="text-caption text-medium-emphasis">
+                            Escribe qué vas a transportar para ver el precio.
+                          </div>
+                          <div v-else-if="!priceRequested" class="text-caption font-weight-bold text-primary">
+                            Toca para ver el precio
+                          </div>
+                        </div>
+                      </VCard>
+                    </VCol>
+                    <VCol cols="12" sm="6">
+                      <VCard
+                        variant="outlined" class="pa-3 h-100 position-relative service-tile"
+                        :class="{ 'service-tile--selected': !!chosenTruck }"
+                        style="cursor: pointer;" @click="showVehiclePicker = true"
+                      >
+                        <VIcon
+                          v-if="chosenTruck" icon="ri-checkbox-circle-fill" color="primary" size="16"
+                          style="position:absolute; top:8px; right:8px;"
+                        />
+                        <VAvatar
+                          size="32" class="mb-2" :variant="chosenTruck ? 'elevated' : 'tonal'"
+                          :color="chosenTruck ? 'primary' : 'surface-variant'"
+                        >
+                          <VIcon icon="ri-truck-line" size="16" :color="chosenTruck ? 'white' : undefined" />
+                        </VAvatar>
+                        <div class="text-body-2 font-weight-bold">Sí, elijo yo</div>
+                        <div class="text-caption text-medium-emphasis">
+                          {{ chosenTruck ? chosenTruckLabel : 'Camión dedicado solo para tu carga — vas a ver el precio de cada opción.' }}
+                        </div>
+                        <div v-if="chosenTruck" class="mt-1">
+                          <div v-if="priceEstimate?.mode === 'loading'" class="d-flex align-center ga-1">
+                            <VProgressCircular indeterminate size="12" width="2" color="primary" />
+                            <span class="text-caption text-medium-emphasis">Calculando…</span>
+                          </div>
+                          <div v-else-if="priceEstimate?.mode === 'unico'">
+                            <div class="text-caption text-medium-emphasis" style="line-height: 1.1;">Precio estimado</div>
+                            <div class="text-caption font-weight-bold text-primary">{{ priceEstimate.text }}</div>
+                          </div>
+                          <div v-else-if="priceEstimate?.mode === 'advisor'" class="text-caption text-medium-emphasis">
+                            {{ priceEstimate.text }}
+                          </div>
+                        </div>
+                      </VCard>
+                    </VCol>
+                  </VRow>
+                  <div v-if="isInterprovincial" class="text-caption text-medium-emphasis mt-2">
+                    Si elegís un camión puntual, tu carga se cotiza como <strong>Exclusiva</strong> y el precio se
+                    ajusta según su capacidad.
                   </div>
                   <VehiclePickerDialog
                     v-model="showVehiclePicker"
                     :estimated-weight-kg="estimatedWeightKg" :estimated-volume-m3="estimatedVolumeM3"
-                    @select="v => chosenTruck = v" @clear="chosenTruck = null"
+                    :fetch-prices="fetchUnitPrices"
+                    @select="pickTruck" @clear="clearTruck"
                   />
                 </template>
               </template>
             </VWindowItem>
 
             <VWindowItem :value="3">
+              <!-- Oculta si el tile "Precio sugerido" de abajo ya va a mostrar
+                   este mismo número como título — evita repetirlo dos veces
+                   seguidas en la misma pantalla (mismo criterio que
+                   showsVehicleTiles en el paso 2). -->
+              <VCard
+                v-if="priceEstimate && !(serviceType === 'carga' && continueMode === 'propio' && priceEstimate.mode === 'unico')"
+                variant="tonal" :color="priceEstimate.mode === 'advisor' ? undefined : 'primary'" class="mb-4"
+              >
+                <VCardText class="d-flex align-center ga-3">
+                  <VIcon icon="ri-price-tag-3-line" size="26" />
+                  <div v-if="priceEstimate.mode === 'loading'" class="d-flex align-center ga-2">
+                    <VProgressCircular indeterminate size="18" width="2" color="primary" />
+                    <span class="text-body-2">Calculando precio…</span>
+                  </div>
+                  <div v-else-if="priceEstimate.mode === 'advisor'" class="text-body-2 font-weight-medium">
+                    {{ priceEstimate.text }}
+                  </div>
+                  <div v-else>
+                    <div class="text-caption text-medium-emphasis">Precio estimado</div>
+                    <div class="text-h6 font-weight-bold">{{ priceEstimate.text }}</div>
+                    <div v-if="priceEstimate.sub" class="text-caption text-medium-emphasis">{{ priceEstimate.sub }}</div>
+                  </div>
+                </VCardText>
+              </VCard>
               <template v-if="serviceType === 'carga'">
-                <VAlert v-if="hasStops" type="info" variant="tonal" class="mb-4">
-                  Con paradas intermedias, un asesor te confirma el precio.
-                </VAlert>
                 <ContinueModePicker
                   :mode="continueMode" :price="quote.proposedPrice" :negotiable="quote.priceNegotiable"
-                  @update:mode="v => continueMode = v" @update:price="v => quote.proposedPrice = v"
+                  :suggested-price="priceEstimate?.suggestedAmount"
+                  @update:mode="v => continueMode = v"
+                  @update:price="v => { quote.proposedPrice = v; priceTouched = true }"
                   @update:negotiable="v => quote.priceNegotiable = v"
                 />
                 <VDivider class="my-4" />
@@ -568,11 +891,11 @@ const submitSignup = async () => {
           <VBtn v-if="step === 1" color="primary" variant="elevated" rounded="lg" size="large" min-width="180" :disabled="!step1ok" @click="step = 2">Siguiente</VBtn>
           <VBtn
             v-else-if="step < maxStep" color="primary" variant="elevated" rounded="lg" size="large" min-width="180"
-            :loading="goingToStep3" @click="goToStep3"
+            :disabled="step === 2 && !step2ok" @click="goToStep3"
           >
-            Siguiente
+            Continuar
           </VBtn>
-          <VBtn v-else color="primary" variant="elevated" rounded="lg" size="large" min-width="180" :loading="busy" :disabled="!formOk" @click="submitQuote">Cotizar</VBtn>
+          <VBtn v-else color="primary" variant="elevated" rounded="lg" size="large" min-width="180" :loading="busy" :disabled="!formOk" @click="submitQuote">{{ submitLabel }}</VBtn>
         </VCardActions>
 
         <!-- Paso 2: resultado -->
@@ -591,12 +914,12 @@ const submitSignup = async () => {
             <VIcon icon="ri-checkbox-circle-line" color="success" size="40" class="mb-2" />
             <div class="text-h6">Solicitud recibida</div>
             <div class="text-body-2 font-weight-medium mt-1">{{ result.quoteCode }} · {{ result.route }}</div>
-            <div class="text-body-2 text-medium-emphasis mt-2">Estamos buscando la mejor alternativa para vos.</div>
+            <div class="text-body-2 text-medium-emphasis mt-2">Estamos buscando la mejor alternativa para ti.</div>
             <div class="text-body-2 text-medium-emphasis">Te avisaremos apenas tengamos precio, también por WhatsApp.</div>
           </template>
           <VDivider class="my-4" />
           <p class="text-body-2 mb-3">
-            Creá tu cuenta para publicar la solicitud, negociar el precio y seguir el servicio.
+            Creá tu cuenta para hacer seguimiento, negociar el precio y ver el estado de tu solicitud.
           </p>
           <VBtn color="primary" block @click="phase = 'signup'">Crear cuenta y continuar</VBtn>
           <VBtn variant="text" block class="mt-2" to="/login">Ya tengo cuenta</VBtn>
@@ -704,11 +1027,56 @@ const submitSignup = async () => {
   flex: 0 1 32px;
 }
 
-/* El tema (Materio) fuerza en .v-btn-toggle un ancho fijo de 44/52px por
-   botón (pensado para toggles de solo ícono) — con texto ("Compartido"/
-   "Exclusivo") eso los aplasta. Mismo fix que ContinueModePicker.vue. */
-:deep(.load-mode-toggle.v-btn-toggle .v-btn) {
-  inline-size: auto !important;
-  block-size: 40px !important;
+/* Radio "tipo Materio" en caja compartida — mismo tratamiento que
+   ScheduleStepPicker.vue/ContinueModePicker.vue, en vez del VBtnToggle
+   (pill plano) que se veía "poco profesional". */
+.radio-pill-group :deep(.v-selection-control-group) {
+  display: flex;
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  border-radius: 8px;
+  overflow: hidden;
+}
+.radio-pill-group :deep(.v-radio) {
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 0 !important;
+  padding: 10px 14px;
+  transition: background-color 0.15s ease;
+}
+.radio-pill-group :deep(.v-radio:not(:last-child)) {
+  border-inline-end: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+}
+.radio-pill-group :deep(.v-radio.v-selection-control--dirty) {
+  background: rgba(var(--v-theme-primary), 0.06);
+}
+.radio-pill-group :deep(.v-label) {
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
+/* Fixed (no sticky) a propósito — evita depender de que ningún ancestro
+   tenga overflow:hidden (VCard sí lo tiene) para que el "pin" funcione. */
+.price-float-badge {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgb(var(--v-theme-surface));
+  border: 1px solid rgba(var(--v-theme-primary), 0.35);
+  border-radius: 20px;
+  padding: 6px 14px;
+  box-shadow: 0 2px 10px rgba(var(--v-theme-on-surface), 0.15);
+}
+@media (max-width: 600px) {
+  .price-float-badge {
+    top: auto;
+    bottom: 16px;
+    left: 16px;
+    right: 16px;
+    justify-content: center;
+  }
 }
 </style>

@@ -9,6 +9,7 @@
 from decimal import Decimal, InvalidOperation
 
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from rest_framework.response import Response
@@ -341,7 +342,9 @@ def _partial_tariff_item(t):
         "weightFrom": float(t.peso_desde_kg),
         "weightTo": float(t.peso_hasta_kg) if t.peso_hasta_kg is not None else None,
         "pricePerKg": float(t.precio_por_kg),
+        "pricePerKgMax": float(t.precio_por_kg_max) if t.precio_por_kg_max is not None else None,
         "pricePerM3": float(t.precio_por_m3) if t.precio_por_m3 is not None else None,
+        "pricePerM3Max": float(t.precio_por_m3_max) if t.precio_por_m3_max is not None else None,
         "minAmount": float(t.monto_minimo),
         "daysEstimated": t.dias_estimados,
         "active": t.activo,
@@ -380,6 +383,16 @@ def _partial_tariff_from_body(data, t):
             raise ValidationError({"pricePerKg": "Precio no válido."})
         if t.precio_por_kg <= 0:
             raise ValidationError({"pricePerKg": "Debe ser mayor que cero."})
+    if "pricePerKgMax" in data:
+        if data["pricePerKgMax"] in (None, ""):
+            t.precio_por_kg_max = None
+        else:
+            try:
+                t.precio_por_kg_max = Decimal(str(data["pricePerKgMax"]))
+            except (InvalidOperation, TypeError):
+                raise ValidationError({"pricePerKgMax": "Precio no válido."})
+            if t.precio_por_kg_max < 0:
+                raise ValidationError({"pricePerKgMax": "No puede ser negativo."})
     if "pricePerM3" in data:
         if data["pricePerM3"] in (None, ""):
             t.precio_por_m3 = None
@@ -390,6 +403,16 @@ def _partial_tariff_from_body(data, t):
                 raise ValidationError({"pricePerM3": "Precio no válido."})
             if t.precio_por_m3 < 0:
                 raise ValidationError({"pricePerM3": "No puede ser negativo."})
+    if "pricePerM3Max" in data:
+        if data["pricePerM3Max"] in (None, ""):
+            t.precio_por_m3_max = None
+        else:
+            try:
+                t.precio_por_m3_max = Decimal(str(data["pricePerM3Max"]))
+            except (InvalidOperation, TypeError):
+                raise ValidationError({"pricePerM3Max": "Precio no válido."})
+            if t.precio_por_m3_max < 0:
+                raise ValidationError({"pricePerM3Max": "No puede ser negativo."})
     if "minAmount" in data:
         try:
             t.monto_minimo = Decimal(str(data["minAmount"]))
@@ -408,6 +431,10 @@ def _partial_tariff_from_body(data, t):
         t.activo = bool(data["active"])
     if t.peso_hasta_kg is not None and t.peso_hasta_kg <= t.peso_desde_kg:
         raise ValidationError({"weightTo": "El 'hasta' debe ser mayor que el 'desde'."})
+    if t.precio_por_kg_max is not None and t.precio_por_kg_max < t.precio_por_kg:
+        raise ValidationError({"pricePerKgMax": "No puede ser menor que el precio por kg (mínimo)."})
+    if t.precio_por_m3_max is not None and t.precio_por_m3 is not None and t.precio_por_m3_max < t.precio_por_m3:
+        raise ValidationError({"pricePerM3Max": "No puede ser menor que el precio por m³ (mínimo)."})
     return t
 
 
@@ -445,6 +472,226 @@ class PartialCargoTariffDetailView(_Base):
         from apps.tercerizacion.models import TarifaCargaParcial
         get_object_or_404(TarifaCargaParcial, pk=pk).delete()
         return Response(status=204)
+
+
+def _corridor_stop_item(p):
+    return {
+        "id": p.id, "name": p.nombre, "order": p.orden,
+        "lat": float(p.lat), "lng": float(p.lng),
+        "radiusKm": float(p.radio_km), "active": p.activo,
+        "typeOfStop": p.tipo_parada, "requiresDetour": p.requiere_desvio,
+    }
+
+
+def _corridor_tramo_item(ct):
+    # Cuántos OTROS corredores comparten este mismo TramoVial — advertencia
+    # en la UI antes de editar/desactivar un tramo compartido (pedido
+    # explícito: que una edición no rompa otro corredor sin avisar).
+    otros = ct.tramo.corredores.exclude(corredor_id=ct.corredor_id).count()
+    return {
+        "order": ct.orden, "from": ct.tramo.nodo_inicio.nombre, "to": ct.tramo.nodo_fin.nombre,
+        "direction": ct.sentido, "distanceKm": float(ct.tramo.distancia_km) if ct.tramo.distancia_km is not None else None,
+        "sharedWithOtherCorridors": otros,
+    }
+
+
+def _corridor_item(c):
+    tiene_tramos = c.tramos.exists()
+    return {
+        "id": c.id, "name": c.nombre, "active": c.activo,
+        "code": c.codigo, "variant": c.variante, "validationStatus": c.estado_validacion,
+        "originLabel": c.origen_nombre,
+        "originLat": float(c.origen_lat) if c.origen_lat is not None else None,
+        "originLng": float(c.origen_lng) if c.origen_lng is not None else None,
+        "destinationLabel": c.destino_nombre,
+        "destinationLat": float(c.destino_lat) if c.destino_lat is not None else None,
+        "destinationLng": float(c.destino_lng) if c.destino_lng is not None else None,
+        "trace": c.trazado,
+        "traceIsDerived": tiene_tramos,   # True = viene del grafo de tramos, de solo lectura
+        "totalDistanceKm": float(c.distancia_total_km) if c.distancia_total_km is not None else None,
+        "axisToleranceKm": float(c.tolerancia_eje_km),
+        "maxDetourKm": float(c.desvio_maximo_km),
+        "stops": [_corridor_stop_item(p) for p in c.paradas.all().order_by("orden")],
+        "segments": [_corridor_tramo_item(ct) for ct in c.tramos.select_related("tramo__nodo_inicio", "tramo__nodo_fin").order_by("orden")] if tiene_tramos else [],
+    }
+
+
+def _corridor_from_body(data, c):
+    """Setea los campos planos del corredor y, si vino `stops`, reemplaza
+    TODAS sus paradas (se editan siempre juntas — pocas por corredor, mismo
+    patrón que `replace_lead_route` para las paradas de un Lead). El `order`
+    que mande el cliente se ignora: se reasigna por posición en el array,
+    para no chocar con el unique_together (corredor, orden)."""
+    if "name" in data:
+        nombre = (data["name"] or "").strip()
+        if not nombre:
+            raise ValidationError({"name": "Requerido."})
+        c.nombre = nombre
+    if "active" in data:
+        c.activo = bool(data["active"])
+    if "originLabel" in data:
+        c.origen_nombre = (data["originLabel"] or "").strip()
+    if "originLat" in data and "originLng" in data:
+        try:
+            c.origen_lat = Decimal(str(data["originLat"])) if data["originLat"] not in (None, "") else None
+            c.origen_lng = Decimal(str(data["originLng"])) if data["originLng"] not in (None, "") else None
+        except InvalidOperation:
+            raise ValidationError({"originLat": "Coordenadas no válidas."})
+    if "destinationLabel" in data:
+        c.destino_nombre = (data["destinationLabel"] or "").strip()
+    if "destinationLat" in data and "destinationLng" in data:
+        try:
+            c.destino_lat = Decimal(str(data["destinationLat"])) if data["destinationLat"] not in (None, "") else None
+            c.destino_lng = Decimal(str(data["destinationLng"])) if data["destinationLng"] not in (None, "") else None
+        except InvalidOperation:
+            raise ValidationError({"destinationLat": "Coordenadas no válidas."})
+    if "trace" in data and not (c.pk and c.tramos.exists()):
+        # Si el corredor tiene tramos (CorredorTramo), `trazado` es derivado
+        # (ver recalcular_trazado) — se ignora cualquier `trace` manual en vez
+        # de romper el request, misma filosofía "nunca bloquear".
+        trace = data["trace"] or []
+        if not isinstance(trace, list):
+            raise ValidationError({"trace": "Formato no válido."})
+        c.trazado = trace
+    if "axisToleranceKm" in data:
+        try:
+            c.tolerancia_eje_km = Decimal(str(data["axisToleranceKm"]))
+        except (InvalidOperation, TypeError):
+            raise ValidationError({"axisToleranceKm": "Valor no válido."})
+        if c.tolerancia_eje_km <= 0:
+            raise ValidationError({"axisToleranceKm": "Debe ser mayor que cero."})
+    if "maxDetourKm" in data:
+        try:
+            c.desvio_maximo_km = Decimal(str(data["maxDetourKm"]))
+        except (InvalidOperation, TypeError):
+            raise ValidationError({"maxDetourKm": "Valor no válido."})
+        if c.desvio_maximo_km <= c.tolerancia_eje_km:
+            raise ValidationError({"maxDetourKm": "Debe ser mayor que la tolerancia del eje."})
+    c.save()
+
+    if "stops" in data:
+        from apps.tercerizacion.models import CorredorParada
+
+        stops = data["stops"] or []
+        c.paradas.all().delete()
+        for i, s in enumerate(stops):
+            nombre = (s.get("name") or "").strip()
+            if not nombre:
+                raise ValidationError({"stops": f"Parada #{i + 1}: nombre requerido."})
+            try:
+                lat = Decimal(str(s["lat"]))
+                lng = Decimal(str(s["lng"]))
+            except (InvalidOperation, TypeError, KeyError):
+                raise ValidationError({"stops": f"Parada #{i + 1}: coordenadas no válidas."})
+            try:
+                radio_km = Decimal(str(s.get("radiusKm", "1")))
+            except InvalidOperation:
+                raise ValidationError({"stops": f"Parada #{i + 1}: radio no válido."})
+            if radio_km <= 0:
+                raise ValidationError({"stops": f"Parada #{i + 1}: el radio debe ser mayor que cero."})
+            CorredorParada.objects.create(
+                corredor=c, nombre=nombre, orden=i, lat=lat, lng=lng,
+                radio_km=radio_km, activo=bool(s.get("active", True)),
+            )
+    return c
+
+
+class CorridorsView(_Base):
+    """GET/POST de corredores de carga nacional (rutas troncales con paradas)
+    — ver `apps.tercerizacion.models.Corredor`/`CorredorParada` y
+    `apps.tercerizacion.corredores.resolver_corredor`."""
+    permission_classes = [HasAnyRole(*_ROLES_COMISION)]
+
+    def get(self, request):
+        from apps.tercerizacion.models import Corredor
+        corredores = Corredor.objects.all().prefetch_related(
+            "paradas", "tramos__tramo__nodo_inicio", "tramos__tramo__nodo_fin", "tramos__tramo__corredores",
+        )
+        return Response({"corridors": [_corridor_item(c) for c in corredores]})
+
+    def post(self, request):
+        from apps.tercerizacion.models import Corredor
+        if not (request.data.get("name") or "").strip():
+            raise ValidationError({"name": "Requerido."})
+        with transaction.atomic():
+            c = _corridor_from_body(request.data, Corredor())
+        return Response(_corridor_item(c), status=201)
+
+
+class CorridorDetailView(_Base):
+    permission_classes = [HasAnyRole(*_ROLES_COMISION)]
+
+    def patch(self, request, pk):
+        from apps.tercerizacion.models import Corredor
+        c = get_object_or_404(Corredor, pk=pk)
+        with transaction.atomic():
+            _corridor_from_body(request.data, c)
+        return Response(_corridor_item(c))
+
+    def delete(self, request, pk):
+        from apps.tercerizacion.models import Corredor
+        get_object_or_404(Corredor, pk=pk).delete()   # CASCADE borra sus paradas
+        return Response(status=204)
+
+
+class CorridorSharedRoutesView(_Base):
+    """GET de solo lectura: qué corredores comparten un trayecto — la
+    "detección de corredores compartidos" (ver
+    apps.tercerizacion.corredores.detectar_corredores_compartidos). Resuelve
+    origen/destino por nombre (`?origin=Trujillo&destination=Chiclayo`) contra
+    el catálogo de `Localidad` — nunca comparando nombres de ciudad a ciegas,
+    solo geometría real (tramos con estado TRAZADO_CALCULADO/VALIDADO)."""
+    permission_classes = [HasAnyRole(*_ROLES_COMISION)]
+
+    def get(self, request):
+        from apps.tercerizacion.corredores import detectar_corredores_compartidos, resolver_localidad
+
+        origen_texto = (request.query_params.get("origin") or "").strip()
+        destino_texto = (request.query_params.get("destination") or "").strip()
+        if not origen_texto or not destino_texto:
+            raise ValidationError({"origin": "Se requiere origin y destination."})
+
+        origen = resolver_localidad(origen_texto)
+        destino = resolver_localidad(destino_texto)
+        if not origen or not destino:
+            return Response({
+                "originResolved": bool(origen), "destinationResolved": bool(destino), "corridors": [],
+            })
+
+        resultados = detectar_corredores_compartidos(origen, destino)
+        return Response({
+            "originResolved": True, "destinationResolved": True,
+            "origin": {"id": origen.id, "name": origen.nombre, "lat": float(origen.lat), "lng": float(origen.lng)},
+            "destination": {"id": destino.id, "name": destino.nombre, "lat": float(destino.lat), "lng": float(destino.lng)},
+            "corridors": [
+                {
+                    "id": r["corredor"].id, "code": r["corredor"].codigo, "name": r["corredor"].nombre,
+                    "fullSegment": r["tramo_completo"], "requiresDetour": r["requiere_desvio"],
+                    "sharedCandidate": r["candidato_a_compartida"],
+                }
+                for r in resultados if r["tramo_completo"]
+            ],
+        })
+
+
+class LocalitiesView(_Base):
+    """GET de solo lectura: catálogo de `Localidad` (nodos del grafo de
+    corredores) — para el mapa interactivo y el buscador de "corredores
+    compartidos" en Configuración → Corredores → Mapa."""
+    permission_classes = [HasAnyRole(*_ROLES_COMISION)]
+
+    def get(self, request):
+        from apps.tercerizacion.models import Localidad
+        localidades = Localidad.objects.filter(activo=True, lat__isnull=False, lng__isnull=False).order_by("nombre")
+        return Response({
+            "localities": [
+                {
+                    "id": loc.id, "name": loc.nombre, "department": loc.departamento,
+                    "type": loc.tipo, "lat": float(loc.lat), "lng": float(loc.lng),
+                }
+                for loc in localidades
+            ],
+        })
 
 
 class PublicationListView(_Base):

@@ -48,24 +48,26 @@ class ResolverTarifaParcialTests(APITestCase):
     def test_destino_con_tabla_propia(self):
         _tarifas_base()
         r = resolver_tarifa_parcial("Arequipa", 10)  # case-insensitive
-        self.assertEqual(r["precio"], Decimal("50"))  # 10 kg * 5 = 50 > mínimo 35
+        self.assertEqual(r["precio_min"], Decimal("50"))  # 10 kg * 5 = 50 > mínimo 35
+        self.assertEqual(r["precio_max"], Decimal("50"))  # sin _max cargado, el rango colapsa a un solo valor
         self.assertEqual(r["dias_estimados"], 4)
 
     def test_aplica_minimo(self):
         _tarifas_base()
         r = resolver_tarifa_parcial("arequipa", 2)  # 2 kg * 5 = 10 < mínimo 35
-        self.assertEqual(r["precio"], Decimal("35"))
+        self.assertEqual(r["precio_min"], Decimal("35"))
+        self.assertEqual(r["precio_max"], Decimal("35"))
 
     def test_tramo_de_peso_alto_sin_tope(self):
         _tarifas_base()
         r = resolver_tarifa_parcial("arequipa", 100)  # 100 kg * 3 = 300
-        self.assertEqual(r["precio"], Decimal("300"))
+        self.assertEqual(r["precio_min"], Decimal("300"))
         self.assertEqual(r["dias_estimados"], 5)
 
     def test_destino_sin_tabla_propia_cae_al_general(self):
         _tarifas_base()
         r = resolver_tarifa_parcial("trujillo", 10)
-        self.assertEqual(r["precio"], Decimal("60"))  # 10 kg * 6 = 60 (tramo general)
+        self.assertEqual(r["precio_min"], Decimal("60"))  # 10 kg * 6 = 60 (tramo general)
         self.assertEqual(r["dias_estimados"], 6)
 
     def test_modalidad_completa_no_ve_tramos_de_parcial(self):
@@ -78,12 +80,32 @@ class ResolverTarifaParcialTests(APITestCase):
             precio_por_kg=Decimal("3"), precio_por_m3=Decimal("100"), monto_minimo=Decimal("30"),
         )
         r = resolver_tarifa_parcial("ica", 10, volumen_m3=2)  # 10*3=30 vs 2*100=200
-        self.assertEqual(r["precio"], Decimal("200"))
+        self.assertEqual(r["precio_min"], Decimal("200"))
 
     def test_sin_precio_por_m3_configurado_ignora_volumen(self):
         _tarifas_base()  # ninguna tiene precio_por_m3
         r = resolver_tarifa_parcial("arequipa", 10, volumen_m3=50)
-        self.assertEqual(r["precio"], Decimal("50"))  # igual que sin volumen
+        self.assertEqual(r["precio_min"], Decimal("50"))  # igual que sin volumen
+
+    def test_con_precio_kg_max_devuelve_rango(self):
+        TarifaCargaParcial.objects.create(
+            destino="ica", peso_desde_kg=0, peso_hasta_kg=None,
+            precio_por_kg=Decimal("3"), precio_por_kg_max=Decimal("4"), monto_minimo=Decimal("10"),
+        )
+        r = resolver_tarifa_parcial("ica", 10)  # 10*3=30 (min) .. 10*4=40 (max)
+        self.assertEqual(r["precio_min"], Decimal("30"))
+        self.assertEqual(r["precio_max"], Decimal("40"))
+
+    def test_precio_kg_max_no_puede_quedar_bajo_el_minimo(self):
+        # Si el mínimo se dispara por el monto_minimo (piso), el máximo debe
+        # seguirlo hacia arriba, nunca mostrar max < min.
+        TarifaCargaParcial.objects.create(
+            destino="ica", peso_desde_kg=0, peso_hasta_kg=None,
+            precio_por_kg=Decimal("3"), precio_por_kg_max=Decimal("4"), monto_minimo=Decimal("50"),
+        )
+        r = resolver_tarifa_parcial("ica", 10)  # 10*3=30 y 10*4=40, ambos bajo el piso de 50
+        self.assertEqual(r["precio_min"], Decimal("50"))
+        self.assertEqual(r["precio_max"], Decimal("50"))
 
 
 class CotizarCargaParcialTests(APITestCase):

@@ -49,6 +49,23 @@ let debounceTimer = null
 let blurTimer = null
 let abortCtrl = null
 
+// Mapbox a veces indexa el homónimo equivocado (p.ej. un caserío de Yauyos)
+// CON EL MISMO NOMBRE que el distrito real (ambos aparecen literalmente como
+// "Santiago de Surco") — el alias de abajo ya no alcanza para distinguirlos
+// por texto. Como todo alias conocido es un distrito de Lima Metropolitana,
+// se descarta por distancia: nada real está a más de ~40km del centro.
+const LIMA_CENTER = [-77.0428, -12.0464]
+const ALIAS_MAX_KM = 40
+const distanceKm = ([lon1, lat1], [lon2, lat2]) => {
+  const toRad = d => d * Math.PI / 180
+  const R = 6371
+  const dLat = toRad(lat2 - lat1)
+  const dLon = toRad(lon2 - lon1)
+  const s = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2
+
+  return 2 * R * Math.asin(Math.sqrt(s))
+}
+
 const geocode = async (text, signal) => {
   // proximity sesgado a Lima Metropolitana: la mayoría de las cotizaciones
   // arrancan ahí, y sin esto un distrito común (p.ej. "San Isidro") puede
@@ -82,13 +99,20 @@ const search = async text => {
       ? await Promise.all([geocode(alias, abortCtrl.signal), geocode(text, abortCtrl.signal)])
       : [await geocode(text, abortCtrl.signal)]
     const seen = new Set()
-    suggestions.value = results.flat().filter(f => {
+    let merged = results.flat().filter(f => {
       const id = f.properties?.mapbox_id
       if (seen.has(id)) return false
       seen.add(id)
 
       return true
     })
+    if (alias) {
+      merged = merged.filter(f => {
+        const coords = f.geometry?.coordinates
+        return coords && distanceKm(coords, LIMA_CENTER) <= ALIAS_MAX_KM
+      })
+    }
+    suggestions.value = merged
   } catch (e) {
     if (e.name !== 'AbortError') suggestions.value = []
   } finally { loading.value = false }
@@ -188,8 +212,8 @@ onBeforeUnmount(() => { clearTimeout(debounceTimer); clearTimeout(blurTimer); ab
         :prepend-inner-icon="hideIcons ? undefined : 'ri-map-pin-line'"
         :append-inner-icon="hideIcons ? undefined : (located ? 'ri-map-pin-2-fill' : undefined)"
         :color="located ? 'success' : undefined"
-        :hint="!MAPBOX_TOKEN ? 'Autocompletado no disponible: escribí el distrito o la dirección.' : ''"
-        persistent-hint clearable
+        :hint="!MAPBOX_TOKEN ? 'Autocompletado no disponible: escribe el distrito o la dirección.' : ''"
+        persistent-hint clearable persistent-clear
         @click:clear="clear"
         @focus="onFocus"
         @blur="onBlur"
@@ -200,7 +224,7 @@ onBeforeUnmount(() => { clearTimeout(debounceTimer); clearTimeout(blurTimer); ab
       <VListItem v-if="loading" title="Buscando…" />
       <VListItem
         v-else-if="!suggestions.length"
-        :title="query.trim().length < 2 ? 'Escribí el distrito o la dirección…' : 'Sin resultados — probá con otro nombre.'"
+        :title="query.trim().length < 2 ? 'Escribe el distrito o la dirección…' : 'Sin resultados — prueba con otro nombre.'"
         class="text-medium-emphasis"
       />
       <VListItem

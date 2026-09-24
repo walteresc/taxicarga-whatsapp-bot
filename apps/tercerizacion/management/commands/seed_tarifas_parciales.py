@@ -9,12 +9,24 @@ Precio por kg más bajo cuanto más pesada la carga (economías de escala del
 camión consolidado); el mínimo evita que un paquete de 2 kg salga gratis.
 Los destinos son ciudades/regiones típicas de ruta nacional desde Lima; el
 tramo general ("") cubre cualquier otro destino que no tenga tabla propia.
+
+El precio_por_kg_max (rango, no un segundo precio fijo) es +20% sobre el
+precio base — margen de partida para reflejar que un transportista puede
+cobrar más caro que otro por la misma ruta/peso; se ajusta libremente desde
+Configuración → Comisiones → Carga nacional, no es un valor definitivo.
 """
 from decimal import Decimal
 
 from django.core.management.base import BaseCommand
 
 from apps.tercerizacion.models import TarifaCargaParcial
+
+_MARGEN_MAX = Decimal("1.20")
+
+
+def _max(precio):
+    return (precio * _MARGEN_MAX).quantize(Decimal("0.01"))
+
 
 # (destino, peso_desde_kg, peso_hasta_kg|None, precio_por_kg, monto_minimo, dias_estimados)
 TARIFAS = [
@@ -62,7 +74,7 @@ class Command(BaseCommand):
             TarifaCargaParcial(
                 destino=destino, peso_desde_kg=Decimal(desde),
                 peso_hasta_kg=None if hasta is None else Decimal(hasta),
-                precio_por_kg=precio, monto_minimo=minimo,
+                precio_por_kg=precio, precio_por_kg_max=_max(precio), monto_minimo=minimo,
                 dias_estimados=dias, activo=True,
             )
             for destino, desde, hasta, precio, minimo, dias in TARIFAS

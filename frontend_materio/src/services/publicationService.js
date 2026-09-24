@@ -27,3 +27,14 @@ export const partialTariffs = () => apiClient.get(PT)
 export const partialTariffCreate = body => apiClient.post(PT, body)
 export const partialTariffUpdate = (id, body) => apiClient.patch(`${PT}/${id}`, body)
 export const partialTariffDelete = id => apiClient.delete(`${PT}/${id}`)
+
+// Corredores de carga nacional (rutas troncales con paradas) — deciden
+// cobertura de Compartida/Consolidada por ruta, ver
+// apps.tercerizacion.corredores.resolver_corredor.
+const CO = '/api/v2/outsourcing/corridors'
+export const corridors = () => apiClient.get(CO)
+export const corridorCreate = body => apiClient.post(CO, body)
+export const corridorUpdate = (id, body) => apiClient.patch(`${CO}/${id}`, body)
+export const corridorDelete = id => apiClient.delete(`${CO}/${id}`)
+export const corridorSharedRoutes = (origin, destination) => apiClient.get(`${CO}/shared-routes`, { origin, destination })
+export const localities = () => apiClient.get('/api/v2/outsourcing/localities')

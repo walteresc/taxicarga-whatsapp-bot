@@ -112,11 +112,13 @@ const partialGroups = computed(() => {
 
 const pform = reactive({
   open: false, id: null, destination: '', modality: 'parcial', weightFrom: 0, weightTo: null,
-  pricePerKg: 5, pricePerM3: null, minAmount: 35, daysEstimated: 5, active: true,
+  pricePerKg: 5, pricePerKgMax: null, pricePerM3: null, pricePerM3Max: null,
+  minAmount: 35, daysEstimated: 5, active: true,
 })
 const openNewPartial = dest => Object.assign(pform, {
   open: true, id: null, destination: dest ?? '', modality: modalityFilter.value, weightFrom: 0, weightTo: null,
-  pricePerKg: 5, pricePerM3: null, minAmount: 35, daysEstimated: 5, active: true,
+  pricePerKg: 5, pricePerKgMax: null, pricePerM3: null, pricePerM3Max: null,
+  minAmount: 35, daysEstimated: 5, active: true,
 })
 const openEditPartial = t => Object.assign(pform, { open: true, ...t })
 const savePartial = async () => {
@@ -125,7 +127,9 @@ const savePartial = async () => {
     destination: pform.destination, modality: pform.modality, weightFrom: pform.weightFrom,
     weightTo: pform.weightTo === '' || pform.weightTo == null ? null : pform.weightTo,
     pricePerKg: pform.pricePerKg,
+    pricePerKgMax: pform.pricePerKgMax === '' || pform.pricePerKgMax == null ? null : pform.pricePerKgMax,
     pricePerM3: pform.pricePerM3 === '' || pform.pricePerM3 == null ? null : pform.pricePerM3,
+    pricePerM3Max: pform.pricePerM3Max === '' || pform.pricePerM3Max == null ? null : pform.pricePerM3Max,
     minAmount: pform.minAmount, daysEstimated: pform.daysEstimated, active: pform.active,
   }
   try {
@@ -249,8 +253,12 @@ const removePartial = async t => {
               <tr v-for="t in g.rows" :key="t.id" :class="{ 'text-disabled': !t.active }">
                 <td>{{ kg(t.weightFrom) }}</td>
                 <td>{{ kg(t.weightTo) }}</td>
-                <td class="text-right font-weight-medium">S/ {{ t.pricePerKg }}</td>
-                <td class="text-right">{{ t.pricePerM3 != null ? `S/ ${t.pricePerM3}` : '—' }}</td>
+                <td class="text-right font-weight-medium">
+                  S/ {{ t.pricePerKg }}{{ t.pricePerKgMax != null ? ` – ${t.pricePerKgMax}` : '' }}
+                </td>
+                <td class="text-right">
+                  {{ t.pricePerM3 != null ? `S/ ${t.pricePerM3}${t.pricePerM3Max != null ? ` – ${t.pricePerM3Max}` : ''}` : '—' }}
+                </td>
                 <td class="text-right">{{ soles(t.minAmount) }}</td>
                 <td class="text-right">{{ t.daysEstimated }}</td>
                 <td><VChip v-if="!t.active" size="x-small">inactivo</VChip></td>
@@ -301,13 +309,22 @@ const removePartial = async t => {
             <VTextField v-model.number="pform.weightFrom" label="Peso desde (kg)" type="number" density="compact" />
             <VTextField v-model.number="pform.weightTo" label="Peso hasta (kg) — vacío = sin tope" type="number" density="compact" clearable />
           </div>
-          <div class="d-flex ga-2 mb-2">
-            <VTextField v-model.number="pform.pricePerKg" label="Precio por kg (S/)" type="number" density="compact" />
+          <div class="d-flex ga-2 mb-1">
+            <VTextField v-model.number="pform.pricePerKg" label="Precio por kg — mínimo (S/)" type="number" density="compact" />
             <VTextField
-              v-model.number="pform.pricePerM3" label="Precio por m³ (S/) — opcional" type="number" density="compact" clearable
+              v-model.number="pform.pricePerKgMax" label="Precio por kg — máximo (S/), opcional" type="number" density="compact" clearable
             />
           </div>
-          <div class="d-flex ga-2 mb-2">
+          <p class="text-caption text-medium-emphasis mb-2">Vacío el máximo = precio único, sin rango (como antes).</p>
+          <div class="d-flex ga-2 mb-1">
+            <VTextField
+              v-model.number="pform.pricePerM3" label="Precio por m³ — mínimo (S/), opcional" type="number" density="compact" clearable
+            />
+            <VTextField
+              v-model.number="pform.pricePerM3Max" label="Precio por m³ — máximo (S/), opcional" type="number" density="compact" clearable
+            />
+          </div>
+          <div class="d-flex ga-2 mb-2 mt-2">
             <VTextField v-model.number="pform.minAmount" label="Mínimo a cobrar (S/)" type="number" density="compact" />
             <VTextField v-model.number="pform.daysEstimated" label="Días estimados de entrega" type="number" density="compact" />
           </div>

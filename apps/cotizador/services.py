@@ -46,11 +46,23 @@ def _calcular_carga_nacional(lead):
     km, no tiene sentido a esa escala (Lima-Arequipa ~900km). Ver
     `apps.tercerizacion.services.resolver_tarifa_parcial`. Sin tabla de
     tarifas para ese destino/peso/modalidad → cotización manual (asesor),
-    nunca se inventa un precio de referencia."""
-    from apps.tercerizacion.services import resolver_tarifa_parcial
+    nunca se inventa un precio de referencia.
+
+    En Parcial, antes de tarifar se resuelve la cobertura por corredor
+    (`resolver_cobertura_compartida`) — si el destino real se desvía de la
+    ruta troncal, la Compartida se tariza hasta la última parada alcanzable
+    (p. ej. Lunahuaná → Cañete), no al destino exacto; Exclusivo no se toca,
+    siempre cotiza el destino real completo."""
+    from apps.tercerizacion.services import resolver_cobertura_compartida, resolver_tarifa_parcial
 
     modalidad = lead.modo_carga or Lead.MODO_CARGA_COMPLETA
-    tarifa = resolver_tarifa_parcial(lead.distrito_destino, lead.peso_carga_kg, lead.volumen_carga_m3, modalidad)
+    destino = lead.distrito_destino
+    cobertura = None
+    if modalidad == Lead.MODO_CARGA_PARCIAL:
+        cobertura = resolver_cobertura_compartida(destino, lead.lat_destino, lead.lng_destino)
+        if cobertura:
+            destino = cobertura["destino_tarifa"]
+    tarifa = resolver_tarifa_parcial(destino, lead.peso_carga_kg, lead.volumen_carga_m3, modalidad)
     if tarifa is None:
         return {
             "precio_min": Decimal(0), "precio_max": Decimal(0), "precio_recomendado": Decimal(0),
@@ -58,15 +70,25 @@ def _calcular_carga_nacional(lead):
             "explicacion": f"Carga nacional ({dict(Lead.MODOS_CARGA).get(modalidad, modalidad)}) sin tarifa "
                            "cargada para ese destino/peso: requiere confirmación de un asesor.",
         }
-    precio = tarifa["precio"]
+    precio_min, precio_max = tarifa["precio_min"], tarifa["precio_max"]
+    precio_recomendado = (precio_min + precio_max) // 2 if precio_max != precio_min else precio_min
     etiqueta = "comparte camión con otra carga del transportista" if modalidad == Lead.MODO_CARGA_PARCIAL \
         else "camión dedicado solo a esta carga"
+    precio_texto = f"S/ {precio_min} – S/ {precio_max}" if precio_max != precio_min else f"S/ {precio_min}"
+    explicacion = (
+        f"Carga nacional por tabla de tarifas: {precio_texto} · "
+        f"llega en {tarifa['dias_estimados']} días hábiles aprox. ({etiqueta})."
+    )
+    if cobertura and not cobertura["destino_exacto"]:
+        explicacion += (
+            f" · Compartida llega hasta {cobertura['destino_tarifa']}; "
+            f"para {lead.distrito_destino} completo, cotizá Exclusivo."
+        )
     return {
-        "precio_min": precio, "precio_max": precio, "precio_recomendado": precio,
+        "precio_min": precio_min, "precio_max": precio_max, "precio_recomendado": precio_recomendado,
         "servicios_similares_encontrados": 0, "confianza": 70, "modo": Cotizacion.MODO_AUTOMATICO,
         "dias_estimados": tarifa["dias_estimados"],
-        "explicacion": f"Carga nacional por tabla de tarifas: S/ {precio} · "
-                       f"llega en {tarifa['dias_estimados']} días hábiles aprox. ({etiqueta}).",
+        "explicacion": explicacion,
     }
 
 
@@ -106,8 +128,8 @@ def _calcular_reparto(lead):
     }
 
 
-def _calcular_general(lead):
-    similar_services = _find_similar_services(lead)
+def _calcular_general(lead, candidates=None):
+    similar_services = _find_similar_services(lead, candidates=candidates)
     n = len(similar_services)
     if n >= 3:
         prices = sorted(
@@ -166,17 +188,20 @@ def _calcular_general(lead):
     }
 
 
-def _calcular_precio(lead, *, tiene_paradas):
+def _calcular_precio(lead, *, tiene_paradas, candidates=None):
     """Despacha al cálculo que corresponda. Puro (sin persistir) — lo usan
     tanto `cotizar_lead` (guarda una Cotizacion) como `estimar_precio`
-    (preview, sobre un lead sin guardar todavía)."""
+    (preview, sobre un lead sin guardar todavía). `candidates` es opcional —
+    ver `historical_candidates_for`: solo lo usa `_calcular_general`, para no
+    repetir la misma consulta de históricos entre llamadas con el mismo
+    tipo_servicio."""
     if tiene_paradas:
         return _calcular_multipunto()
     if (lead.tipo_servicio or "").lower() == _TIPO_SERVICIO_REPARTO:
         return _calcular_reparto(lead)
     if lead.es_interprovincial:
         return _calcular_carga_nacional(lead)
-    return _calcular_general(lead)
+    return _calcular_general(lead, candidates=candidates)
 
 
 def cotizar_lead(lead):
@@ -184,23 +209,40 @@ def cotizar_lead(lead):
     return Cotizacion.objects.create(lead=lead, **_calcular_precio(lead, tiene_paradas=tiene_paradas))
 
 
-def estimar_precio(lead):
+def estimar_precio(lead, candidates=None):
     """Como `cotizar_lead`, pero sin persistir nada — para mostrar un precio
     de referencia ANTES de publicar la solicitud (paso "Precio" del
     cotizador, para comparar Consolidada vs. Express). `lead` puede ser una
     instancia sin guardar (sin pk); en ese caso nunca hay paradas que
     consultar (todavía no existen en la base), así que ese camino no aplica.
+    `candidates` opcional (ver `historical_candidates_for`) — para cotizar el
+    mismo tipo_servicio a varios pesos sin repetir la consulta de históricos
+    (ver PreviewQuoteBatchView).
     Devuelve el mismo dict que arma `Cotizacion`, sin crear el registro."""
-    return _calcular_precio(lead, tiene_paradas=False)
+    return _calcular_precio(lead, tiene_paradas=False, candidates=candidates)
 
 
-def _find_similar_services(lead):
-    candidates = ServicioHistorico.objects.filter(
+def _historical_candidates(tipo_servicio):
+    return ServicioHistorico.objects.filter(
         cerrado=True,
         precio_final__gte=50,
         precio_final__lte=10000,
-        tipo_servicio__iexact=lead.tipo_servicio,
+        tipo_servicio__iexact=tipo_servicio,
     )
+
+
+def historical_candidates_for(tipo_servicio):
+    """Materializa una sola vez el conjunto de históricos comparables para un
+    tipo de servicio — pensado para reusar entre varias llamadas a
+    `estimar_precio` con el mismo tipo_servicio (ver
+    PreviewQuoteBatchView, que cotiza el mismo tipo de carga a distintos
+    pesos), en vez de repetir la misma consulta una vez por peso."""
+    return list(_historical_candidates(tipo_servicio))
+
+
+def _find_similar_services(lead, candidates=None):
+    if candidates is None:
+        candidates = _historical_candidates(lead.tipo_servicio)
     scored = sorted(
         ((score_service(lead, service), service) for service in candidates),
         key=lambda item: item[0],

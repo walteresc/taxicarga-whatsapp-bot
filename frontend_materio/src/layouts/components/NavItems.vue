@@ -106,6 +106,7 @@ const MENU = [
     ],
   },
   { title: 'Comisiones de tercerización', icon: 'ri-percent-line', to: '/configuracion/comisiones', roles: ['Administrador', 'Gerencia', 'Finanzas'] },
+  { title: 'Corredores de carga nacional', icon: 'ri-route-line', to: '/configuracion/corredores', roles: ['Administrador', 'Gerencia', 'Finanzas'] },
   { title: 'Precios', icon: 'ri-price-tag-3-line', to: '/configuracion/precios', roles: ['Administrador', 'Gerencia', 'Finanzas'] },
   { title: 'Reparto', icon: 'ri-e-bike-2-line', to: '/configuracion/reparto', roles: ['Administrador', 'Gerencia', 'Finanzas'] },
   { title: 'Socios (API de envíos)', icon: 'ri-plug-line', to: '/configuracion/socios', roles: ['Administrador', 'Gerencia'] },

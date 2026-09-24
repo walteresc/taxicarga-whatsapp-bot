@@ -23,7 +23,7 @@ from rest_framework.views import APIView
 from apps.api.exceptions import api_exception_handler
 from apps.clientes.models import Cliente, ClienteUsuario, Empresa
 from apps.cotizador.models import Cotizacion
-from apps.cotizador.services import cotizar_lead, estimar_precio
+from apps.cotizador.services import cotizar_lead, estimar_precio, historical_candidates_for
 from apps.dashboard.views_auth_api import _user_payload
 from apps.leads.geo import clasificar_y_marcar_ambito, evaluar_ambito
 from apps.leads.models import Lead
@@ -141,20 +141,91 @@ class PreviewQuoteView(_Public):
         es_reparto = (lead.tipo_servicio or "").lower() == "reparto"
         consolidated = None
         if lead.es_interprovincial and not es_reparto:
-            from apps.tercerizacion.services import existe_tarifa_especifica
+            from apps.tercerizacion.services import resolver_cobertura_compartida
 
             # Solo se ofrece Consolidada en rutas "frecuentes" — con tarifa
-            # propia cargada para ese destino, no la tarifa general (esa
-            # cubre cualquier ciudad y no distingue frecuente de ocasional).
-            if existe_tarifa_especifica(destination.get("district")):
+            # propia cargada para ese destino (o cubierta por un corredor),
+            # no la tarifa general (esa cubre cualquier ciudad y no
+            # distingue frecuente de ocasional).
+            cobertura = resolver_cobertura_compartida(
+                destination.get("district"), lead.lat_destino, lead.lng_destino,
+            )
+            if cobertura:
                 lead.modo_carga = Lead.MODO_CARGA_PARCIAL
                 consolidated = _price_view_from_calc(estimar_precio(lead))
+                if consolidated and not cobertura["destino_exacto"]:
+                    consolidated["partialUpToStop"] = cobertura["destino_tarifa"]
+                    consolidated["partialUpToReason"] = cobertura["motivo"]  # "eje" | "desvio"
 
         return Response({
             "isInterprovincial": lead.es_interprovincial,
             "express": express,
             "consolidated": consolidated,
         })
+
+
+class PreviewQuoteBatchView(_Public):
+    """Como `PreviewQuoteView`, pero para varios pesos candidatos en un solo
+    pedido — la usa el selector de vehículo para mostrar el precio Exclusivo
+    de cada unidad del catálogo sin gastar una llamada (y su límite de
+    throttle) por unidad. Solo Express/Exclusivo: elegir un camión puntual
+    ya implica esa modalidad, Consolidada no aplica acá (ver
+    VehiclePickerDialog.vue, solo se ofrece dentro de modo Completa).
+
+        POST /api/v2/guest/quote/preview-batch  {origin, destination, cargo, weights: [kg, ...]}
+        → {isInterprovincial, prices: [{weightKg, express}, ...]}  (mismo orden que `weights`)
+    """
+    throttle_scope = "guest_quote_preview"
+    # El catálogo de vehículos (apps/catalogo) hoy tiene 24 unidades — el
+    # picker manda el peso de TODAS (no solo las del filtro visible) en un
+    # solo pedido. 40 deja margen para que el catálogo crezca sin volver a
+    # tocar esto.
+    _MAX_WEIGHTS = 40
+
+    def post(self, request):
+        d = request.data
+        origin = d.get("origin") or {}
+        destination = d.get("destination") or {}
+        cargo = d.get("cargo") or {}
+        weights = d.get("weights") or []
+        if not origin.get("district") or not destination.get("district"):
+            raise ValidationError("Necesitamos al menos el distrito de origen y de destino.")
+        if not weights:
+            raise ValidationError("Necesitamos al menos un peso a cotizar.")
+        if len(weights) > self._MAX_WEIGHTS:
+            raise ValidationError(f"Como máximo {self._MAX_WEIGHTS} pesos por pedido.")
+
+        tipo_servicio = d.get("serviceType") or cargo.get("category") or "carga"
+        # Los 24+ pesos del catálogo comparten el mismo tipo_servicio en un
+        # solo pedido — sin esto, _calcular_general repetía la misma consulta
+        # de históricos comparables una vez por cada peso (ver
+        # historical_candidates_for). Rutas interprovinciales no la usan
+        # (_calcular_carga_nacional no consulta históricos), así que ahí este
+        # prefetch simplemente no se aprovecha, sin costo extra.
+        candidates = historical_candidates_for(tipo_servicio)
+
+        is_interprovincial = None
+        prices = []
+        for raw_weight in weights:
+            lead = Lead(
+                categoria_carga=(cargo.get("category") or ""),
+                tipo_servicio=tipo_servicio,
+                distrito_origen=origin.get("district") or "",
+                distrito_destino=destination.get("district") or "",
+                peso_carga_kg=_num(raw_weight),
+                volumen_carga_m3=_num(cargo.get("volumeM3")),
+                lat_origen=_coord(origin.get("lat")), lng_origen=_coord(origin.get("lng")),
+                lat_destino=_coord(destination.get("lat")), lng_destino=_coord(destination.get("lng")),
+                modo_carga=Lead.MODO_CARGA_COMPLETA,
+            )
+            lead.es_interprovincial = evaluar_ambito(lead)
+            is_interprovincial = lead.es_interprovincial
+            prices.append({
+                "weightKg": float(raw_weight) if raw_weight is not None else None,
+                "express": _price_view_from_calc(estimar_precio(lead, candidates=candidates)),
+            })
+
+        return Response({"isInterprovincial": is_interprovincial, "prices": prices})
 
 
 class EstimateCargoView(_Public):

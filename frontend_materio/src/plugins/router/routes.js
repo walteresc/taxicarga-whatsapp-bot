@@ -124,6 +124,16 @@ export const routes = [
         meta: { roles: ['Administrador', 'Gerencia', 'Finanzas'] },
       },
       {
+        path: 'configuracion/corredores',
+        component: () => import('@/pages/configuracion/corredores/index.vue'),
+        meta: { roles: ['Administrador', 'Gerencia', 'Finanzas'] },
+      },
+      {
+        path: 'configuracion/corredores/mapa',
+        component: () => import('@/pages/configuracion/corredores/mapa.vue'),
+        meta: { roles: ['Administrador', 'Gerencia', 'Finanzas'] },
+      },
+      {
         path: 'configuracion/precios',
         component: () => import('@/pages/configuracion/precios/index.vue'),
         meta: { roles: ['Administrador', 'Gerencia', 'Finanzas'] },

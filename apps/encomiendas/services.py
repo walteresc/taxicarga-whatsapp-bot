@@ -94,7 +94,10 @@ def _cotizar_interprovincial(ciudad_destino, peso_kg):
     if not tarifa:
         raise ValidationError({"destino": f"No hay tarifa configurada para envíos a {ciudad_destino}."})
     config = ConfiguracionEncomiendas.get_solo()
-    precio = _dec(tarifa["precio"]) + _dec(config.costo_recojo_domicilio_nacional) + _dec(config.costo_entrega_domicilio_nacional)
+    # Encomiendas cotiza un solo precio (sin rango, no hay UI de "elegí un
+    # valor dentro del rango" acá) — usa el extremo mínimo del tramo, la base
+    # antes de cualquier margen que el transportista pueda cobrar de más.
+    precio = _dec(tarifa["precio_min"]) + _dec(config.costo_recojo_domicilio_nacional) + _dec(config.costo_entrega_domicilio_nacional)
     return {
         "price": float(precio),
         "level": Envio.NIVEL_INTERPROVINCIAL,

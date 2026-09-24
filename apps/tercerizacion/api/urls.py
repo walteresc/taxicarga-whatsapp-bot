@@ -28,6 +28,10 @@ urlpatterns = router.urls + [
     path("outsourcing/commission-tiers/<int:pk>", pubv.CommissionTierDetailView.as_view(), name="v2-commission-tier-detail"),
     path("outsourcing/partial-tariffs", pubv.PartialCargoTariffsView.as_view(), name="v2-partial-tariffs"),
     path("outsourcing/partial-tariffs/<int:pk>", pubv.PartialCargoTariffDetailView.as_view(), name="v2-partial-tariff-detail"),
+    path("outsourcing/corridors", pubv.CorridorsView.as_view(), name="v2-corridors"),
+    path("outsourcing/corridors/<int:pk>", pubv.CorridorDetailView.as_view(), name="v2-corridor-detail"),
+    path("outsourcing/corridors/shared-routes", pubv.CorridorSharedRoutesView.as_view(), name="v2-corridor-shared-routes"),
+    path("outsourcing/localities", pubv.LocalitiesView.as_view(), name="v2-localities"),
 
     path("settlements/", liqv.SettlementListView.as_view(), name="v2-settlement-list"),
     path("settlements/summary", liqv.SettlementSummaryView.as_view(), name="v2-settlement-summary"),

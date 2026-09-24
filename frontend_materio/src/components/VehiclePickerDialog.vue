@@ -18,7 +18,7 @@
 // ya eligió un camión específico, ese botón confundiría ("¿elige la
 // carrocería?"). Por eso el botón de abajo cambia a "Confirmar" (con
 // "Cualquiera" preseleccionado) apenas se expande una unidad.
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 
 import CarroceriaIcon from '@/components/CarroceriaIcon.vue'
 import { vehiclePickerCatalog } from '@/services/catalogService'
@@ -31,6 +31,11 @@ const props = defineProps({
   // haber una razón real (frágil, urgente) para elegir otra igual.
   estimatedWeightKg: { type: Number, default: null },
   estimatedVolumeM3: { type: Number, default: null },
+  // (weightsKg: number[]) => Promise<{weightKg, express}[]> — un solo pedido
+  // para el precio Exclusivo de todas las unidades (ver
+  // guestQuotePreviewBatch/PreviewQuoteBatchView). Sin esto, la lista se ve
+  // igual que antes, sin precios (p. ej. si el padre no tiene ruta todavía).
+  fetchPrices: { type: Function, default: null },
 })
 const emit = defineEmits(['update:modelValue', 'select', 'clear'])
 
@@ -42,6 +47,8 @@ const selectedWeight = ref('')   // '' = Todas
 const expandedUnit = ref('')     // code de la unidad con el panel de carrocería abierto
 const chosenUnit = ref(null)
 const chosenBody = ref(null)     // null = Cualquiera
+const unitPrices = ref({})       // code -> {amount, ...} | null
+const loadingPrices = ref(false)
 
 const recommendedUnitCode = computed(() => {
   if (props.estimatedWeightKg == null) return null
@@ -51,22 +58,53 @@ const recommendedUnitCode = computed(() => {
     (u.minTon == null || ton >= u.minTon) && (u.maxTon == null || ton <= u.maxTon))?.code || null
 })
 
-const load = async () => {
-  if (units.value.length) return   // ya cargado, no repetir
-  loading.value = true
+// Mismo piso que usa el padre para el precio ya elegido (ver
+// effectiveWeightKg en cotizar.vue/publicar) — acá, por unidad: el mayor
+// entre lo estimado y la capacidad mínima de ESA unidad.
+const unitFloorWeightKg = u => {
+  const tonFloor = u.minTon ?? u.maxTon
+  const floorKg = tonFloor != null ? tonFloor * 1000 : null
+  if (floorKg == null) return props.estimatedWeightKg
+
+  return props.estimatedWeightKg == null ? floorKg : Math.max(props.estimatedWeightKg, floorKg)
+}
+
+const loadPrices = async () => {
+  if (!props.fetchPrices || !units.value.length) return
+  const withWeight = units.value.map(u => ({ u, w: unitFloorWeightKg(u) })).filter(x => x.w != null)
+  if (!withWeight.length) return
+  loadingPrices.value = true
   try {
-    const data = await vehiclePickerCatalog()
-    bodyTypes.value = data.bodyTypes || []
-    weightCategories.value = data.weightCategories || []
-    units.value = data.units || []
-    // Preselecciona el filtro de peso recomendado (una sola vez, si el
-    // cliente todavía no tocó el filtro) — el resto de categorías sigue a
-    // un toque de distancia en "Todas".
-    if (!selectedWeight.value && recommendedUnitCode.value) {
-      selectedWeight.value = units.value.find(u => u.code === recommendedUnitCode.value)?.weightCategory || ''
-    }
-  } catch (e) { /* si falla, queda el picker vacío — "TaxiCarga elige" sigue disponible */ }
-  finally { loading.value = false }
+    const results = await props.fetchPrices(withWeight.map(x => x.w))
+    const map = {}
+    withWeight.forEach((x, i) => { map[x.u.code] = results[i]?.express || null })
+    unitPrices.value = map
+  } catch (e) { unitPrices.value = {} }
+  finally { loadingPrices.value = false }
+}
+
+const load = async () => {
+  if (!units.value.length) {
+    loading.value = true
+    try {
+      const data = await vehiclePickerCatalog()
+      bodyTypes.value = data.bodyTypes || []
+      weightCategories.value = data.weightCategories || []
+      units.value = data.units || []
+      // Preselecciona el filtro de peso recomendado (una sola vez, si el
+      // cliente todavía no tocó el filtro) — el resto de categorías sigue a
+      // un toque de distancia en "Todas".
+      if (!selectedWeight.value && recommendedUnitCode.value) {
+        selectedWeight.value = units.value.find(u => u.code === recommendedUnitCode.value)?.weightCategory || ''
+      }
+    } catch (e) { /* si falla, queda el picker vacío — "TaxiCarga elige" sigue disponible */ }
+    finally { loading.value = false }
+  }
+  // Siempre (no solo la primera vez): el contexto (ruta/estimado) pudo
+  // cambiar entre una apertura y otra del picker, aunque el catálogo ya
+  // esté en caché.
+  loadPrices()
+  nextTick(onListScroll)
 }
 // Si la unidad expandida queda afuera del filtro (p. ej. se cambia de
 // categoría de peso mientras hay una unidad abierta), había quedado el
@@ -88,6 +126,29 @@ watch(() => props.modelValue, v => {
 const filteredUnits = computed(() => selectedWeight.value
   ? units.value.filter(u => u.weightCategory === selectedWeight.value)
   : units.value)
+
+// Scroll-spy: en "Todas" (sin filtro elegido), a medida que se baja por la
+// lista combinada, se resalta el chip de la categoría que se está viendo en
+// ese momento — es solo una referencia visual, "Todas" sigue siendo el
+// filtro real (no se oculta nada).
+const listEl = ref(null)
+const activeCategory = ref('')
+const highlightedCategory = computed(() => selectedWeight.value || activeCategory.value)
+const onListScroll = () => {
+  if (!listEl.value || selectedWeight.value) return
+  const containerTop = listEl.value.getBoundingClientRect().top
+  const cards = listEl.value.querySelectorAll('[data-category]')
+  for (const c of cards) {
+    if (c.getBoundingClientRect().bottom > containerTop + 4) {
+      activeCategory.value = c.dataset.category
+      return
+    }
+  }
+  if (cards.length) activeCategory.value = cards[cards.length - 1].dataset.category
+}
+watch(selectedWeight, val => { if (!val) nextTick(onListScroll) })
+
+const soles = n => (n == null ? null : `S/ ${Math.round(n).toLocaleString('es-PE')}`)
 
 const capacityLabel = u => {
   if (u.minTon == null && u.maxTon == null) return ''
@@ -111,7 +172,7 @@ const toggleUnit = u => {
   // apps/catalogo, nombre_cliente): ya trae su carrocería resuelta, no
   // tiene sentido pedirle al cliente que elija una — se confirma directo.
   if (u.fixedBodyType) {
-    emit('select', u.name)
+    emit('select', u.name, u)
     close()
     return
   }
@@ -126,19 +187,22 @@ const toggleUnit = u => {
 const pickBody = bt => { chosenBody.value = bt }
 const confirm = () => {
   const label = chosenBody.value ? `${chosenUnit.value.name} (${chosenBody.value.name})` : chosenUnit.value.name
-  emit('select', label)
+  emit('select', label, chosenUnit.value)
   close()
 }
 const clear = () => { emit('clear'); close() }
 </script>
 
 <template>
-  <VDialog :model-value="modelValue" max-width="560" @update:model-value="v => emit('update:modelValue', v)">
+  <VDialog :model-value="modelValue" max-width="700" @update:model-value="v => emit('update:modelValue', v)">
     <VCard class="vehicle-picker-card">
       <VCardTitle class="d-flex align-center justify-space-between flex-shrink-0 pb-2">
         <div>
           <span class="text-subtitle-1 font-weight-bold d-block">Elegir vehículo</span>
-          <span class="text-caption text-medium-emphasis">Elegí la unidad — la carrocería es opcional.</span>
+          <span class="text-caption text-medium-emphasis">
+            Elige la unidad — la carrocería es opcional.
+            <template v-if="fetchPrices"> Los precios son estimados.</template>
+          </span>
         </div>
         <VBtn icon variant="text" size="small" @click="close">
           <VIcon icon="ri-close-line" />
@@ -158,32 +222,43 @@ const clear = () => { emit('clear'); close() }
           </VChip>
           <VChip
             v-for="wc in weightCategories" :key="wc.code"
-            :color="selectedWeight === wc.code ? 'primary' : undefined" :variant="selectedWeight === wc.code ? 'flat' : 'outlined'"
+            :color="highlightedCategory === wc.code ? 'primary' : undefined"
+            :variant="selectedWeight === wc.code ? 'flat' : (highlightedCategory === wc.code ? 'tonal' : 'outlined')"
             size="small" @click="selectedWeight = wc.code"
           >
             {{ wc.name }}
           </VChip>
         </div>
 
-        <div class="flex-grow-1" style="overflow-y: auto; min-height: 0;">
+        <div ref="listEl" class="flex-grow-1" style="overflow-y: auto; min-height: 0;" @scroll="onListScroll">
           <VCard
             v-for="u in filteredUnits" :key="u.code" variant="outlined" class="mb-2 unit-card"
             :class="{ 'unit-card--expanded': expandedUnit === u.code }"
+            :data-category="u.weightCategory"
           >
             <div class="d-flex align-center pa-3" style="cursor: pointer;" @click="toggleUnit(u)">
               <VAvatar :color="expandedUnit === u.code ? 'primary' : 'surface-variant'" :variant="expandedUnit === u.code ? 'elevated' : 'tonal'" size="40" class="mr-3">
                 <VIcon icon="ri-truck-line" :color="expandedUnit === u.code ? 'white' : undefined" />
               </VAvatar>
-              <div class="flex-grow-1">
+              <div class="flex-grow-1" style="min-width: 0;">
                 <div class="d-flex align-center ga-2">
-                  <div class="text-body-2 font-weight-bold">{{ u.name }}</div>
-                  <VChip v-if="u.code === recommendedUnitCode" size="x-small" color="primary" variant="flat">Recomendado</VChip>
+                  <div class="text-body-2 font-weight-bold text-truncate">{{ u.name }}</div>
+                  <VChip v-if="u.code === recommendedUnitCode" size="x-small" color="primary" variant="flat" class="flex-shrink-0">Recomendado</VChip>
                 </div>
                 <div class="text-caption text-medium-emphasis">{{ capacityLabel(u) }}</div>
               </div>
+              <!-- Misma fila que el nombre, alineado a la derecha como columna de
+                   tabla — más ordenado que apilarlo debajo de la capacidad. -->
+              <div v-if="fetchPrices" class="text-end flex-shrink-0 mr-2" style="min-width: 84px;">
+                <span v-if="unitPrices[u.code]?.amount != null" class="text-body-2 font-weight-bold text-primary">
+                  {{ soles(unitPrices[u.code].amount) }}
+                </span>
+                <span v-else-if="loadingPrices" class="text-caption text-medium-emphasis">Calculando…</span>
+                <span v-else-if="unitPrices[u.code]" class="text-caption text-medium-emphasis">A confirmar</span>
+              </div>
               <VIcon
                 v-if="!u.fixedBodyType"
-                :icon="expandedUnit === u.code ? 'ri-arrow-up-s-line' : 'ri-arrow-right-s-line'" class="text-medium-emphasis"
+                :icon="expandedUnit === u.code ? 'ri-arrow-up-s-line' : 'ri-arrow-right-s-line'" class="text-medium-emphasis flex-shrink-0"
               />
               <VIcon v-else icon="ri-checkbox-circle-line" class="text-medium-emphasis" />
             </div>
@@ -192,7 +267,7 @@ const clear = () => { emit('clear'); close() }
               <VDivider />
               <div class="pa-3 body-panel">
                 <div class="text-caption text-medium-emphasis mb-2">
-                  <strong>Opcional:</strong> elegí un tipo de carrocería, o dejala en "Compatible" para conseguir vehículos compatibles con tu carga.
+                  <strong>Opcional:</strong> elige un tipo de carrocería, o déjala en "Compatible" para conseguir vehículos compatibles con tu carga.
                 </div>
                 <div class="d-flex flex-wrap ga-2">
                   <VChip
@@ -241,7 +316,7 @@ const clear = () => { emit('clear'); close() }
    esta clase sola. */
 .vehicle-picker-card {
   width: 100%;
-  height: 600px;
+  height: 720px;
   max-height: 88vh;
   flex: 0 0 auto !important;
   display: flex;

@@ -205,6 +205,10 @@ OPENAI_EXTRACTION_MODEL = config("OPENAI_EXTRACTION_MODEL", default="").strip() 
 OPENAI_CONVERSATION_MODEL = config("OPENAI_CONVERSATION_MODEL", default="").strip() or OPENAI_MODEL
 OPENAI_COPILOT_MODEL = config("OPENAI_COPILOT_MODEL", default="").strip() or OPENAI_MODEL
 DEEPSEEK_API_KEY = env_value("DEEPSEEK_API_KEY")
+# Mismo token público que ya usa el frontend (VITE_MAPBOX_TOKEN) — solo para el
+# backfill server-side de tramos de corredores (Mapbox Directions), nunca para
+# geocodificar (eso usa GeoNames, ver apps.tercerizacion.management.commands).
+MAPBOX_TOKEN = env_value("MAPBOX_TOKEN")
 DEEPSEEK_MODEL = config("DEEPSEEK_MODEL", default="deepseek-v4-flash")
 DEEPSEEK_EXTRACTION_MODEL = config("DEEPSEEK_EXTRACTION_MODEL", default="").strip() or DEEPSEEK_MODEL
 DEEPSEEK_CONVERSATION_MODEL = config("DEEPSEEK_CONVERSATION_MODEL", default="").strip() or DEEPSEEK_MODEL
