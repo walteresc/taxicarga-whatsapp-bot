@@ -22,6 +22,9 @@ import { computed, nextTick, ref, watch } from 'vue'
 
 import CarroceriaIcon from '@/components/CarroceriaIcon.vue'
 import { vehiclePickerCatalog } from '@/services/catalogService'
+import { useBrandStore } from '@/stores/brandStore'
+
+const brand = useBrandStore()
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -298,7 +301,7 @@ const clear = () => { emit('clear'); close() }
       <VCardActions class="px-4 py-3 flex-shrink-0">
         <VBtn v-if="expandedUnit" variant="text" prepend-icon="ri-close-line" @click="toggleUnit(chosenUnit)">Cambiar unidad</VBtn>
         <VSpacer />
-        <VBtn v-if="!expandedUnit" variant="outlined" @click="clear">Dejar que TaxiCarga elija</VBtn>
+        <VBtn v-if="!expandedUnit" variant="outlined" @click="clear">Dejar que {{ brand.displayName }} elija</VBtn>
         <VBtn v-else color="primary" variant="elevated" rounded="lg" @click="confirm">Confirmar</VBtn>
       </VCardActions>
     </VCard>

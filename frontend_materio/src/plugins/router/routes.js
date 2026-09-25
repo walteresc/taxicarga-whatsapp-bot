@@ -148,6 +148,11 @@ export const routes = [
         component: () => import('@/pages/configuracion/ia/index.vue'),
         meta: { roles: SISTEMA_ROLES },
       },
+      {
+        path: 'configuracion/marca',
+        component: () => import('@/pages/configuracion/marca/index.vue'),
+        meta: { roles: ADMIN_ROLES },
+      },
 
       // COMERCIAL
       {

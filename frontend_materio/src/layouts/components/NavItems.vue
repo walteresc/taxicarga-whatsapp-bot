@@ -111,6 +111,7 @@ const MENU = [
   { title: 'Reparto', icon: 'ri-e-bike-2-line', to: '/configuracion/reparto', roles: ['Administrador', 'Gerencia', 'Finanzas'] },
   { title: 'Socios (API de envíos)', icon: 'ri-plug-line', to: '/configuracion/socios', roles: ['Administrador', 'Gerencia'] },
   { title: 'Usuarios y permisos', icon: 'ri-shield-user-line', to: '/configuracion/usuarios', roles: SISTEMA },
+  { title: 'Marca (nombre y logo)', icon: 'ri-shapes-line', to: '/configuracion/marca', roles: ADMIN },
 ]
 
 // En un heading, `roles` es solo documentación (ver comentario arriba) — no

@@ -1,11 +1,13 @@
 <script setup>
-// "¿Cómo quieres fijar el precio?" — recibir ofertas de transportistas (el
-// asesor/red de transportistas proponen precio) vs. publicar con un precio
-// propio (fijo o negociable). El precio que pone el cliente acá es REAL —
-// es lo que está dispuesto a pagar, no un dato decorativo. Título elegido
-// para que el paso se explique solo (antes decía "¿Cómo quieres
-// continuar?", que no aclaraba continuar A QUÉ).
-import { ref } from 'vue'
+// "Elige cómo quieres publicar tu carga" — recibir ofertas de transportistas
+// vs. publicar con un precio propio. El precio que pone el cliente acá es
+// REAL — es lo que está dispuesto a pagar, no un dato decorativo.
+//
+// Ya no se pregunta Fijo/Negociable (decisión de UX, 2026-09-24): el
+// transportista SIEMPRE puede aceptar el precio propuesto o contraproponer
+// — quitamos la elección porque no agregaba nada que el cliente pudiera
+// usar bien, y confundía más de lo que ayudaba.
+import { computed, ref } from 'vue'
 
 const props = defineProps({
   mode: { type: String, default: 'ofertas' },       // v-model:mode — 'ofertas' | 'propio'
@@ -13,42 +15,39 @@ const props = defineProps({
   // priceTouched/watch en cotizar.vue y publicar/index.vue) — acá solo se
   // muestra y se deja editar.
   price: { type: [String, Number], default: '' },   // v-model:price
-  negotiable: { type: Boolean, default: true },      // v-model:negotiable
-  // Solo para mostrar la referencia "Precio sugerido: S/X" junto al campo —
-  // no cambia aunque el cliente edite `price` (así puede comparar).
+  // Solo para mostrar la referencia al editar, y como fallback del título
+  // mientras el cliente no tocó nada.
   suggestedPrice: { type: [String, Number], default: null },
 })
-const emit = defineEmits(['update:mode', 'update:price', 'update:negotiable'])
+const emit = defineEmits(['update:mode', 'update:price'])
 
-// Los dos títulos deben leerse como ACCIONES paralelas (qué pasa si elegís
-// esta), no una acción y una etiqueta — "Recibir ofertas" ya lo es;
-// "Publicar con tu precio" es el título por defecto (sin precio sugerido
-// todavía, o editando a mano), y cuando SÍ hay un precio sugerido listo, el
-// título se reemplaza por "PUBLICAR CON" + el monto (ver template) — misma
-// forma de acción, con el número real en vez de "tu precio".
-const OPTIONS = [
+// Un campo abierto obliga a inventar un número sin referencia — por eso el
+// camino por defecto es publicar directo al precio ya sugerido (sin editar);
+// "customizing" recién muestra el campo si alguien lo pide con "Cambiar precio".
+const customizing = ref(false)
+
+// El tile de precio propio muestra el monto en el TÍTULO ("Publicar con
+// S/X") — es la acción concreta que confirma al elegir esa opción.
+const displayAmount = computed(() => props.price || props.suggestedPrice)
+
+const OPTIONS = computed(() => [
   {
     value: 'ofertas', icon: 'ri-team-line', title: 'Recibir ofertas',
-    subtitle: 'Los transportistas proponen su precio — tú decides si aceptar o negociar.',
+    subtitle: 'Publica sin indicar un precio. Los transportistas te enviarán propuestas y tú eliges la que más te convenga.',
   },
   {
-    value: 'propio', icon: 'ri-price-tag-3-line', title: 'Publicar con tu precio',
-    subtitle: '',
+    value: 'propio', icon: 'ri-price-tag-3-line',
+    title: displayAmount.value != null ? `Publicar con S/ ${displayAmount.value}` : 'Publicar con tu precio',
+    subtitle: 'Los transportistas podrán aceptar tu precio o enviarte una contrapropuesta.',
   },
-]
-
-// Un campo abierto obliga a inventar un número sin referencia (¿es mucho?
-// ¿es poco?) — esa es la fricción real, no el nombre del botón. Por eso el
-// camino por defecto es publicar directo al precio ya sugerido (sin editar);
-// "customizing" recién muestra el campo si alguien lo pide a propósito. Sin
-// precio sugerido (modo asesor) no hay nada que "aceptar", así que ahí se
-// muestra el campo directo, sin el paso de más.
-const customizing = ref(false)
+])
 </script>
 
 <template>
   <div>
-    <div class="text-h6 font-weight-bold mb-3">¿Cómo quieres fijar el precio?</div>
+    <!-- El título "Publicar Carga" + "Elige cómo quieres publicar tu carga"
+         ya lo pone la página, antes de la cabecera de precio — no se repite
+         acá para no mostrarlo dos veces seguidas. -->
     <VRow dense>
       <VCol v-for="o in OPTIONS" :key="o.value" cols="12" sm="6">
         <VCard
@@ -68,64 +67,31 @@ const customizing = ref(false)
           >
             <VIcon :icon="o.icon" size="20" :color="mode === o.value ? 'white' : undefined" />
           </VAvatar>
-          <!-- Cuando hay precio sugerido listo para publicar, el título pasa
-               a ser la acción completa "Publicar con S/X" — mismo estilo
-               (tamaño, peso, mayúscula/minúscula, color) que "Recibir
-               ofertas", para que las dos tiles se lean como opciones
-               comparables, no una acción y una etiqueta distinta. -->
-          <template v-if="o.value === 'propio' && !customizing && suggestedPrice != null">
-            <div class="text-subtitle-1 font-weight-bold">Publicar con S/ {{ suggestedPrice }}</div>
-          </template>
-          <template v-else>
-            <div class="text-subtitle-1 font-weight-bold">{{ o.title }}</div>
-            <div v-if="o.subtitle" class="text-caption text-medium-emphasis">{{ o.subtitle }}</div>
-          </template>
+          <div class="text-subtitle-1 font-weight-bold">{{ o.title }}</div>
+          <div class="text-caption text-medium-emphasis">{{ o.subtitle }}</div>
 
-          <!-- Siempre visible (no solo tras elegir el tile) — así el cliente ve el
-               precio sugerido ya cargado antes de decidir, en vez de un tile vacío. -->
           <template v-if="o.value === 'propio'">
-            <template v-if="!customizing && suggestedPrice != null">
-              <div class="text-caption text-medium-emphasis mt-1">
-                Precio calculado según servicios similares en tu ruta.
-              </div>
-              <VBtn
-                size="small" variant="text" color="primary" class="px-0 mt-1" style="text-transform: none; height: auto;"
-                @click.stop="customizing = true; emit('update:mode', 'propio')"
-              >
-                ¿Quieres poner otro precio?
-              </VBtn>
-            </template>
+            <VBtn
+              v-if="!customizing"
+              size="small" variant="text" color="primary" class="px-0 mt-2" style="text-transform: none; height: auto;"
+              prepend-icon="ri-pencil-line" @click.stop="customizing = true; emit('update:mode', 'propio')"
+            >
+              Cambiar precio
+            </VBtn>
 
             <template v-else>
-              <div v-if="suggestedPrice != null" class="text-caption mt-3 d-flex align-center ga-1 flex-wrap">
-                <span class="text-medium-emphasis">Precio sugerido: S/ {{ suggestedPrice }}</span>
-                <VBtn
-                  size="x-small" variant="text" color="primary" class="px-1" style="text-transform: none; height: auto; min-width: 0;"
-                  @click.stop="customizing = false; emit('update:price', suggestedPrice)"
-                >
-                  Usar este
-                </VBtn>
-              </div>
-              <div v-else class="text-caption text-medium-emphasis mt-1">
-                Todavía no tenemos un precio sugerido para tu carga.
-              </div>
               <VTextField
                 :model-value="price" label="Tu precio (S/)" type="number" variant="outlined" density="comfortable"
-                class="mt-2" prefix="S/" hide-details @click.stop
-                @update:model-value="v => { customizing = true; emit('update:price', v) }"
+                class="mt-2" prefix="S/" hide-details autofocus @click.stop
+                @update:model-value="v => emit('update:price', v)"
               />
-
-              <VRadioGroup
-                :model-value="negotiable" inline hide-details density="comfortable"
-                class="radio-pill-group mt-3" @click.stop
-                @update:model-value="v => emit('update:negotiable', v)"
+              <VBtn
+                v-if="suggestedPrice != null" size="x-small" variant="text" color="primary" class="px-0 mt-1"
+                style="text-transform: none; height: auto;"
+                @click.stop="customizing = false; emit('update:price', suggestedPrice)"
               >
-                <VRadio :value="false" label="Fijo" />
-                <VRadio :value="true" label="Negociable" />
-              </VRadioGroup>
-              <p class="text-caption text-medium-emphasis mt-2 mb-0">
-                {{ negotiable ? 'Aceptan tu precio o proponen otro.' : 'Se paga exactamente ese monto.' }}
-              </p>
+                Usar precio sugerido (S/ {{ suggestedPrice }})
+              </VBtn>
             </template>
           </template>
         </VCard>
@@ -145,34 +111,6 @@ const customizing = ref(false)
   border-color: rgb(var(--v-theme-primary)) !important;
   border-inline-start: 3px solid rgb(var(--v-theme-primary)) !important;
   box-shadow: 0 4px 14px rgba(var(--v-theme-primary), 0.22);
-}
-
-/* Radio "tipo Materio" en caja compartida — mismo tratamiento que
-   ScheduleStepPicker.vue (Fecha fija/flexible, Horario flexible/exacta),
-   en vez del VBtnToggle (pill plano, sin punto de radio) que se veía
-   "poco profesional". */
-.radio-pill-group :deep(.v-selection-control-group) {
-  display: flex;
-  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
-  border-radius: 8px;
-  overflow: hidden;
-}
-.radio-pill-group :deep(.v-radio) {
-  flex: 1 1 0;
-  min-width: 0;
-  margin: 0 !important;
-  padding: 10px 14px;
-  transition: background-color 0.15s ease;
-}
-.radio-pill-group :deep(.v-radio:not(:last-child)) {
-  border-inline-end: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
-}
-.radio-pill-group :deep(.v-radio.v-selection-control--dirty) {
-  background: rgba(var(--v-theme-primary), 0.06);
-}
-.radio-pill-group :deep(.v-label) {
-  font-size: 0.875rem;
-  white-space: nowrap;
 }
 
 /* Las flechitas nativas del input number quedan desalineadas con el resto

@@ -3,6 +3,9 @@ import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { authService } from '@/services/authService'
 import { useAuthStore } from '@/stores/authStore'
+import { useBrandStore } from '@/stores/brandStore'
+
+const brand = useBrandStore()
 
 const router = useRouter()
 const route = useRoute()
@@ -54,7 +57,7 @@ const handleLogin = async () => {
       <VCard class="login-box">
         <VCardText>
           <div class="login-header">
-            <h1>TaxiCarga</h1>
+            <h1>{{ brand.displayName }}</h1>
             <p>Bandeja de entrada</p>
           </div>
 

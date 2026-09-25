@@ -28,10 +28,10 @@ const WINDOWS = [
 ]
 
 const QUICK_PICKS = [
-  { v: 'urgente', t: 'Urgente', s: 'Lo antes posible', icon: 'ri-flashlight-line' },
-  { v: 'hoy', t: 'Hoy', s: 'En el transcurso de hoy', icon: 'ri-calendar-event-line' },
-  { v: 'manana', t: 'Mañana', s: 'Mañana', icon: 'ri-calendar-2-line' },
-  { v: 'otro', t: 'Otro día', s: 'Elige la fecha', icon: 'ri-calendar-line' },
+  { v: 'urgente', t: 'Urgente', icon: 'ri-flashlight-line' },
+  { v: 'hoy', t: 'Hoy', icon: 'ri-calendar-event-line' },
+  { v: 'manana', t: 'Mañana', icon: 'ri-calendar-2-line' },
+  { v: 'otro', t: 'Otro día', icon: 'ri-calendar-line' },
 ]
 
 const buildSchedule = () => {
@@ -79,7 +79,7 @@ const showHourSection = computed(() => quickPick.value !== 'urgente')
     <VRow dense class="mb-4">
       <VCol v-for="q in QUICK_PICKS" :key="q.v" cols="6" sm="3">
         <VCard
-          variant="outlined" class="pa-3 h-100 position-relative schedule-tile"
+          variant="outlined" class="pa-3 h-100 position-relative schedule-tile d-flex align-center ga-2"
           :class="{ 'schedule-tile--selected': quickPick === q.v }"
           style="cursor: pointer;" @click="pickQuick(q.v)"
         >
@@ -88,13 +88,12 @@ const showHourSection = computed(() => quickPick.value !== 'urgente')
             style="position:absolute; top:8px; right:8px;"
           />
           <VAvatar
-            size="32" class="mb-2" :variant="quickPick === q.v ? 'elevated' : 'tonal'"
+            size="32" :variant="quickPick === q.v ? 'elevated' : 'tonal'"
             :color="quickPick === q.v ? 'primary' : 'surface-variant'"
           >
             <VIcon :icon="q.icon" size="16" :color="quickPick === q.v ? 'white' : undefined" />
           </VAvatar>
           <div class="text-body-2 font-weight-bold">{{ q.t }}</div>
-          <div class="text-caption text-medium-emphasis">{{ q.s }}</div>
         </VCard>
       </VCol>
     </VRow>
@@ -125,8 +124,8 @@ const showHourSection = computed(() => quickPick.value !== 'urgente')
     <template v-if="showHourSection">
       <div class="text-subtitle-1 font-weight-bold mb-3">¿A qué hora?</div>
       <VRadioGroup v-model="hourMode" inline hide-details density="comfortable" class="radio-pill-group mb-4">
-        <VRadio value="flexible" label="Horario flexible" />
-        <VRadio value="exacta" label="Hora exacta" />
+        <VRadio value="exacta" label="Hora exacta" @click="hourMode = 'exacta'" />
+        <VRadio value="flexible" label="Horario flexible" @click="hourMode = 'flexible'" />
       </VRadioGroup>
 
       <VRow v-if="showWindows" dense class="mb-2">
@@ -170,6 +169,7 @@ const showHourSection = computed(() => quickPick.value !== 'urgente')
   min-width: 0;
   margin: 0 !important;
   padding: 10px 14px;
+  cursor: pointer;
   transition: background-color 0.15s ease;
 }
 .radio-pill-group :deep(.v-radio:not(:last-child)) {

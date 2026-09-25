@@ -161,6 +161,7 @@ const load = async () => {
 onMounted(async () => {
   await load()
   if (!MAPBOX_TOKEN || !mapEl.value) return
+  mapboxgl.accessToken = MAPBOX_TOKEN
   map.value = new mapboxgl.Map({ container: mapEl.value, style: 'mapbox://styles/mapbox/streets-v12', center: LIMA_CENTER, zoom: 5 })
   map.value.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'bottom-right')
   map.value.on('load', () => {

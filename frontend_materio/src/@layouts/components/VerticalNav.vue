@@ -1,8 +1,14 @@
 <script setup>
 import { PerfectScrollbar } from 'vue3-perfect-scrollbar'
 import { useDisplay } from 'vuetify'
-import logo from '@images/logo.svg?raw'
+import defaultLogo from '@images/logo.svg?raw'
 import { useVerticalNavCollapse } from '@/composables/useVerticalNavCollapse'
+import { useBrandStore } from '@/stores/brandStore'
+
+// Nombre/logo editables desde Configuración → Marca (sin redeploy) — si
+// todavía no se configuró un logo propio, se usa el SVG por defecto del
+// template (inline, para que herede el color del tema).
+const brand = useBrandStore()
 
 const props = defineProps({
   tag: {
@@ -72,13 +78,18 @@ const handleNavScroll = evt => {
           to="/"
           class="app-logo app-title-wrapper"
         >
+          <img
+            v-if="brand.logoUrl"
+            :src="brand.logoUrl" alt="" class="d-flex" style="height: 24px; width: auto;"
+          >
           <div
+            v-else
             class="d-flex"
-            v-html="logo"
+            v-html="defaultLogo"
           />
 
           <h1 class="font-weight-medium text-base text-uppercase">
-            TaxiCarga
+            {{ brand.displayName }}
           </h1>
         </RouterLink>
       </slot>

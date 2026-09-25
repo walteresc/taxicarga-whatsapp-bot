@@ -11,9 +11,11 @@ import ScheduleStepPicker from '@/components/ScheduleStepPicker.vue'
 import VehiclePickerDialog from '@/components/VehiclePickerDialog.vue'
 import { customerLoad, customerLoads, customerPublish } from '@/services/customerPortalService'
 import { guestCargoEstimate, guestQuotePreview, guestQuotePreviewBatch } from '@/services/guestService'
+import { useBrandStore } from '@/stores/brandStore'
 import { extractVolumeM3, extractWeightKg, recomendarModalidad } from '@/utils/cargoText'
 
 const router = useRouter()
+const brand = useBrandStore()
 
 // "¿Qué necesitas?" — mismo criterio que /cotizar (invitado): de cara al
 // cliente el negocio se presenta en 3 líneas (Paquetes/Encomiendas = reparto,
@@ -54,7 +56,6 @@ const form = reactive({
   quoteMode: 'por_carga',
   loadMode: 'completa',   // completa|parcial — solo importa si la ruta es nacional
   proposedPrice: '',      // solo si continueMode === 'propio'
-  priceNegotiable: true,
 })
 const continueMode = ref('ofertas')   // 'ofertas' | 'propio' — solo Carga
 
@@ -91,10 +92,6 @@ const pickTruck = (value, unit) => {
   requestPriceEstimate()
 }
 const clearTruck = () => { form.cargo.truckType = null; form.quoteMode = 'por_carga'; chosenTruckUnit.value = null }
-// La tarjeta "TaxiCarga elige" hace las dos cosas: si todavía no se pidió
-// precio, pedirlo (como el botón viejo); si ya hay uno, volver a este modo
-// (soltar el camión elegido, si había).
-const chooseAuto = () => { priceRequested.value ? clearTruck() : requestPriceEstimate() }
 
 // Paradas intermedias (multipunto) — solo Carga. Ver cotizar.vue: el motor de
 // precios no las contempla, así que una solicitud con paradas siempre pasa a
@@ -241,11 +238,6 @@ const previewLoading = ref(false)
 // conoce todavía (preview sin resolver), se trata como "no interprovincial"
 // para no mostrar el toggle y después tener que retirarlo.
 const isInterprovincial = computed(() => pricePreview.value?.isInterprovincial === true)
-// Cuándo se ve "¿Qué vehículo prefieres?" (dos tarjetas) — en ese caso esa
-// sección absorbe el botón/tarjeta de precio genérico (sería el mismo
-// número dos veces en la misma pantalla).
-const showsVehicleTiles = computed(() =>
-  serviceType.value === 'carga' && (!isInterprovincial.value || form.loadMode === 'completa'))
 // Si el camión elegido pide más capacidad que lo estimado por texto/fotos,
 // se cotiza con la capacidad del camión como piso — elegir una unidad más
 // grande sí debe subir el precio, aunque la carga descrita sea chica.
@@ -448,7 +440,9 @@ const submit = async () => {
     const payload = {
       ...form, cargo, stops: validStops, serviceType: serviceType.value,
       proposedPrice: wantsOwnPrice ? form.proposedPrice : null,
-      priceNegotiable: wantsOwnPrice ? form.priceNegotiable : true,
+      // Siempre negociable — ya no se le pregunta al cliente Fijo/Negociable
+      // (decisión de UX: el transportista siempre puede contraproponer).
+      priceNegotiable: true,
     }
     result.value = await customerPublish(payload, photos.value)
     submitted.value = true
@@ -577,14 +571,19 @@ const submit = async () => {
             <template v-if="serviceType === 'carga'">
               <div class="text-h6 font-weight-bold mb-1">¿Qué vas a transportar?</div>
               <p class="text-caption text-medium-emphasis mb-4">
-                Cuéntanos qué vas a enviar — cantidad de cajas/bultos, tamaño aproximado, o agrega una foto.
-                Nosotros calculamos el resto.
+                Ingresa los detalles de tu carga y {{ brand.displayName }} te muestra el precio.
               </p>
               <VTextarea
-                v-model="form.cargo.detail" rows="4" auto-grow class="mb-4"
+                v-model="form.cargo.detail" rows="4" auto-grow class="mb-2"
                 counter maxlength="500" label="Descripción de la carga"
                 placeholder="Ej: 40 cajas de repuestos automotrices, del tamaño de una caja de zapatos cada una"
               />
+              <div class="d-flex align-center ga-1 mb-4">
+                <VIcon icon="ri-information-line" size="14" class="text-medium-emphasis" />
+                <span class="text-caption text-medium-emphasis">
+                  Cuanto más claro sea el detalle, más preciso será el precio estimado.
+                </span>
+              </div>
             </template>
             <template v-else-if="serviceType === 'mudanza'">
               <div class="text-h6 font-weight-bold mb-4">¿Qué vas a mudar?</div>
@@ -639,40 +638,6 @@ const submit = async () => {
               </VAlert>
             </template>
 
-            <!-- Botón/tarjeta de precio genérico — solo si "¿Qué vehículo
-                 prefieres?" no va a aparecer más abajo (ese tile "TaxiCarga
-                 elige" ya hace de botón + tarjeta; repetirlo acá sería el
-                 mismo precio dos veces seguidas en la misma pantalla). -->
-            <template v-if="['carga', 'reparto'].includes(serviceType) && !showsVehicleTiles && !hasSuggestedQuestion">
-              <VBtn
-                v-if="!priceRequested || requestingPrice" variant="tonal" color="primary"
-                prepend-icon="ri-price-tag-3-line" class="mt-2" :loading="requestingPrice"
-                @click="requestPriceEstimate"
-              >
-                Ver precio estimado
-              </VBtn>
-
-              <VCard
-                v-else-if="priceEstimate" variant="tonal"
-                :color="priceEstimate.mode === 'advisor' ? undefined : 'primary'" class="mt-2"
-              >
-                <VCardText class="d-flex align-center ga-3">
-                  <VIcon icon="ri-price-tag-3-line" size="26" />
-                  <div v-if="priceEstimate.mode === 'loading'" class="d-flex align-center ga-2">
-                    <VProgressCircular indeterminate size="18" width="2" color="primary" />
-                    <span class="text-body-2">Calculando precio…</span>
-                  </div>
-                  <div v-else-if="priceEstimate.mode === 'advisor'" class="text-body-2 font-weight-medium">
-                    {{ priceEstimate.text }}
-                  </div>
-                  <div v-else>
-                    <div class="text-caption text-medium-emphasis">Precio estimado</div>
-                    <div class="text-h6 font-weight-bold">{{ priceEstimate.text }}</div>
-                  </div>
-                </VCardText>
-              </VCard>
-            </template>
-
             <template v-if="serviceType === 'carga'">
               <VDivider class="my-3" />
               <!-- Compartido/Exclusivo solo existe en rutas interprovinciales —
@@ -684,7 +649,7 @@ const submit = async () => {
                   :model-value="form.loadMode" inline hide-details density="comfortable"
                   class="radio-pill-group mb-2" @update:model-value="setLoadMode"
                 >
-                  <VRadio value="parcial">
+                  <VRadio value="parcial" @click="setLoadMode('parcial')">
                     <template #label>
                       <span>Compartido</span>
                       <VChip v-if="recommendedMode === 'compartido' && !modalityTouched" size="x-small" color="primary" variant="flat" class="ml-2">Recomendado</VChip>
@@ -693,7 +658,7 @@ const submit = async () => {
                       </span>
                     </template>
                   </VRadio>
-                  <VRadio value="completa">
+                  <VRadio value="completa" @click="setLoadMode('completa')">
                     <template #label>
                       <span>Exclusivo</span>
                       <VChip v-if="recommendedMode === 'exclusivo' && !modalityTouched" size="x-small" color="primary" variant="flat" class="ml-2">Recomendado</VChip>
@@ -711,45 +676,29 @@ const submit = async () => {
               </template>
 
               <template v-if="!isInterprovincial || form.loadMode === 'completa'">
-                <div class="text-subtitle-2 font-weight-bold mb-2">¿Quieres elegir el vehículo?</div>
+                <div class="text-subtitle-2 font-weight-bold mb-1">¿Deseas elegir un vehículo específico?</div>
+                <p class="text-caption text-medium-emphasis mb-2">
+                  Si no tienes uno en mente, {{ brand.displayName }} encontrará un vehículo adecuado para tu carga.
+                </p>
                 <VRow dense>
                   <VCol cols="12" sm="6">
                     <VCard
                       variant="outlined" class="pa-3 h-100 position-relative service-tile"
                       :class="{ 'service-tile--selected': !form.cargo.truckType }"
-                      style="cursor: pointer;" @click="chooseAuto"
+                      style="cursor: pointer;" @click="clearTruck"
                     >
                       <VIcon
                         v-if="!form.cargo.truckType" icon="ri-checkbox-circle-fill" color="primary" size="16"
                         style="position:absolute; top:8px; right:8px;"
                       />
-                      <VAvatar
-                        size="32" class="mb-2" :variant="!form.cargo.truckType ? 'elevated' : 'tonal'"
-                        :color="!form.cargo.truckType ? 'primary' : 'surface-variant'"
-                      >
-                        <VIcon icon="ri-magic-line" size="16" :color="!form.cargo.truckType ? 'white' : undefined" />
+                      <VAvatar size="36" variant="tonal" color="primary" class="mb-2">
+                        <VIcon icon="ri-magic-line" size="18" />
                       </VAvatar>
-                      <div class="text-body-2 font-weight-bold">No, que TaxiCarga elija</div>
-                      <div class="text-caption text-medium-emphasis">Elegimos el vehículo ideal para tu carga.</div>
-                      <div v-if="!form.cargo.truckType" class="mt-1">
-                        <div v-if="priceEstimate?.mode === 'loading'" class="d-flex align-center ga-1">
-                          <VProgressCircular indeterminate size="12" width="2" color="primary" />
-                          <span class="text-caption text-medium-emphasis">Calculando…</span>
-                        </div>
-                        <div v-else-if="priceEstimate?.mode === 'unico'">
-                          <div class="text-caption text-medium-emphasis" style="line-height: 1.1;">Precio estimado</div>
-                          <div class="text-caption font-weight-bold text-primary">{{ priceEstimate.text }}</div>
-                        </div>
-                        <div v-else-if="priceEstimate?.mode === 'advisor'" class="text-caption text-medium-emphasis">
-                          {{ priceEstimate.text }}
-                        </div>
-                        <div v-else-if="missingDetail" class="text-caption text-medium-emphasis">
-                          Escribe qué vas a transportar para ver el precio.
-                        </div>
-                        <div v-else-if="!priceRequested" class="text-caption font-weight-bold text-primary">
-                          Toca para ver el precio
-                        </div>
+                      <div class="text-body-2 font-weight-bold">No, que {{ brand.displayName }} elija por mí</div>
+                      <div class="text-caption text-medium-emphasis mb-2">
+                        Encontramos el vehículo ideal según tu carga y ruta.
                       </div>
+                      <VChip size="x-small" color="primary" variant="tonal">Recomendado</VChip>
                     </VCard>
                   </VCol>
                   <VCol cols="12" sm="6">
@@ -762,34 +711,18 @@ const submit = async () => {
                         v-if="form.cargo.truckType" icon="ri-checkbox-circle-fill" color="primary" size="16"
                         style="position:absolute; top:8px; right:8px;"
                       />
-                      <VAvatar
-                        size="32" class="mb-2" :variant="form.cargo.truckType ? 'elevated' : 'tonal'"
-                        :color="form.cargo.truckType ? 'primary' : 'surface-variant'"
-                      >
-                        <VIcon icon="ri-truck-line" size="16" :color="form.cargo.truckType ? 'white' : undefined" />
+                      <VAvatar size="36" variant="tonal" color="primary" class="mb-2">
+                        <VIcon icon="ri-truck-line" size="18" />
                       </VAvatar>
-                      <div class="text-body-2 font-weight-bold">Sí, elijo yo</div>
+                      <div class="text-body-2 font-weight-bold">Sí, quiero elegir un vehículo</div>
                       <div class="text-caption text-medium-emphasis">
-                        {{ form.cargo.truckType ? chosenTruckLabel : 'Camión dedicado solo para tu carga — vas a ver el precio de cada opción.' }}
-                      </div>
-                      <div v-if="form.cargo.truckType" class="mt-1">
-                        <div v-if="priceEstimate?.mode === 'loading'" class="d-flex align-center ga-1">
-                          <VProgressCircular indeterminate size="12" width="2" color="primary" />
-                          <span class="text-caption text-medium-emphasis">Calculando…</span>
-                        </div>
-                        <div v-else-if="priceEstimate?.mode === 'unico'">
-                          <div class="text-caption text-medium-emphasis" style="line-height: 1.1;">Precio estimado</div>
-                          <div class="text-caption font-weight-bold text-primary">{{ priceEstimate.text }}</div>
-                        </div>
-                        <div v-else-if="priceEstimate?.mode === 'advisor'" class="text-caption text-medium-emphasis">
-                          {{ priceEstimate.text }}
-                        </div>
+                        {{ form.cargo.truckType ? chosenTruckLabel : 'Elige el vehículo que necesitas para tu carga.' }}
                       </div>
                     </VCard>
                   </VCol>
                 </VRow>
                 <div v-if="isInterprovincial" class="text-caption text-medium-emphasis mt-2">
-                  Si elegís un camión puntual, tu carga se cotiza como <strong>Exclusiva</strong> y el precio se
+                  Al elegir un camión puntual, tu carga se cotiza como <strong>Exclusiva</strong> y el precio se
                   ajusta según su capacidad.
                 </div>
                 <VehiclePickerDialog
@@ -803,36 +736,58 @@ const submit = async () => {
           </VWindowItem>
 
           <VWindowItem :value="3">
-            <!-- Oculta si el tile "Precio sugerido" de abajo ya va a mostrar
-                 este mismo número como título — evita repetirlo dos veces
-                 seguidas en la misma pantalla. -->
-            <VCard
-              v-if="priceEstimate && !(serviceType === 'carga' && continueMode === 'propio' && priceEstimate.mode === 'unico')"
-              variant="tonal" :color="priceEstimate.mode === 'advisor' ? undefined : 'primary'" class="mb-4"
-            >
-              <VCardText class="d-flex align-center ga-3">
-                <VIcon icon="ri-price-tag-3-line" size="26" />
+            <template v-if="serviceType === 'carga'">
+              <div class="text-h5 font-weight-bold mb-1">Publicar Carga</div>
+              <p class="text-body-2 text-medium-emphasis mb-4">Elige cómo quieres publicar tu carga</p>
+            </template>
+            <!-- Cabecera de precio ÚNICA para todo el paso, en dos columnas
+                 (sugerido | rango) — reemplaza la versión apilada anterior. -->
+            <VCard v-if="priceEstimate" variant="tonal" :color="priceEstimate.mode === 'advisor' ? undefined : 'primary'" class="mb-4">
+              <VCardText>
                 <div v-if="priceEstimate.mode === 'loading'" class="d-flex align-center ga-2">
                   <VProgressCircular indeterminate size="18" width="2" color="primary" />
                   <span class="text-body-2">Calculando precio…</span>
                 </div>
-                <div v-else-if="priceEstimate.mode === 'advisor'" class="text-body-2 font-weight-medium">
-                  {{ priceEstimate.text }}
+                <div v-else-if="priceEstimate.mode === 'advisor'" class="d-flex align-center ga-3">
+                  <VAvatar size="40" color="primary" variant="tonal"><VIcon icon="ri-price-tag-3-line" size="20" /></VAvatar>
+                  <span class="text-body-2 font-weight-medium">{{ priceEstimate.text }}</span>
                 </div>
-                <div v-else>
-                  <div class="text-caption text-medium-emphasis">Precio estimado</div>
-                  <div class="text-h6 font-weight-bold">{{ priceEstimate.text }}</div>
-                  <div v-if="priceEstimate.sub" class="text-caption text-medium-emphasis">{{ priceEstimate.sub }}</div>
+                <div v-else class="d-flex align-center flex-wrap ga-4">
+                  <div class="d-flex align-center ga-3">
+                    <VAvatar size="40" color="primary" variant="tonal"><VIcon icon="ri-price-tag-3-line" size="20" /></VAvatar>
+                    <div>
+                      <div class="d-flex align-center ga-1">
+                        <span class="text-caption text-medium-emphasis">Precio sugerido para esta carga</span>
+                        <VTooltip text="Calculado según servicios similares en tu ruta.">
+                          <template #activator="{ props: tip }">
+                            <VIcon v-bind="tip" icon="ri-information-line" size="14" class="text-medium-emphasis" />
+                          </template>
+                        </VTooltip>
+                      </div>
+                      <div class="text-h5 font-weight-bold text-primary">
+                        {{ priceEstimate.suggestedAmount != null ? soles(priceEstimate.suggestedAmount) : priceEstimate.text }}
+                      </div>
+                    </div>
+                  </div>
+
+                  <template v-if="priceEstimate.suggestedAmount != null && priceEstimate.text.includes('–')">
+                    <VDivider vertical class="d-none d-sm-block" style="min-height: 44px;" />
+                    <div>
+                      <div class="text-caption text-medium-emphasis">Rango estimado:</div>
+                      <div class="text-body-1 font-weight-bold text-primary">{{ priceEstimate.text }}</div>
+                      <div class="text-caption text-medium-emphasis">Basado en precios de transportes similares.</div>
+                    </div>
+                  </template>
+                  <div v-else-if="priceEstimate.sub" class="text-caption text-medium-emphasis">{{ priceEstimate.sub }}</div>
                 </div>
               </VCardText>
             </VCard>
             <template v-if="serviceType === 'carga'">
               <ContinueModePicker
-                :mode="continueMode" :price="form.proposedPrice" :negotiable="form.priceNegotiable"
+                :mode="continueMode" :price="form.proposedPrice"
                 :suggested-price="priceEstimate?.suggestedAmount"
                 @update:mode="v => continueMode = v"
                 @update:price="v => { form.proposedPrice = v; priceTouched = true }"
-                @update:negotiable="v => form.priceNegotiable = v"
               />
               <VDivider class="my-4" />
             </template>
@@ -840,12 +795,6 @@ const submit = async () => {
               :date="form.date" :schedule="form.schedule"
               @update:date="v => form.date = v" @update:schedule="v => form.schedule = v"
             />
-            <VAlert v-if="serviceType === 'carga'" type="info" variant="tonal" density="comfortable" class="mt-4">
-              <div class="text-body-2 font-weight-medium mb-1">Dirección y datos de contacto</div>
-              <div class="text-caption">
-                La dirección exacta de recogida y entrega, así como tus datos de contacto, se confirmarán en el siguiente paso.
-              </div>
-            </VAlert>
             <VAlert v-if="error" type="error" variant="tonal" class="mt-3">{{ error }}</VAlert>
           </VWindowItem>
         </VWindow>
@@ -894,7 +843,7 @@ const submit = async () => {
         :detail="form.cargo.detail" :date="form.date"
         :truck-label="chosenTruckLabel"
         :estimated-weight-kg="estimatedWeightKg" :estimated-volume-m3="estimatedVolumeM3"
-        :price-estimate="priceEstimate"
+        :price-estimate="step >= 3 ? priceEstimate : null"
         @edit-type="step = 1"
       />
     </VCol>
@@ -974,6 +923,7 @@ const submit = async () => {
   min-width: 0;
   margin: 0 !important;
   padding: 10px 14px;
+  cursor: pointer;
   transition: background-color 0.15s ease;
 }
 .radio-pill-group :deep(.v-radio:not(:last-child)) {

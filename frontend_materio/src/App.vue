@@ -1,12 +1,17 @@
 <script setup>
 import { useRoute } from 'vue-router'
 import { watch } from 'vue'
+import { useBrandStore } from '@/stores/brandStore'
 import { useEventStore } from '@/stores/eventStore'
 
 const route = useRoute()
 
 // TRABAJO A: Initialize eventStore early to ensure diagnostics object is created
 useEventStore()
+
+// Nombre/logo de marca — público, sin depender de sesión (login y cotizador
+// de invitado también lo necesitan). Se pide una sola vez por carga de app.
+useBrandStore().load()
 
 // Aplicar clase 'inbox-route' solo en bandeja-entrada
 watch(() => route.path, newPath => {

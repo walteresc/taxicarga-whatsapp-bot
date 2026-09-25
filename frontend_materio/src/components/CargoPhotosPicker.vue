@@ -36,28 +36,47 @@ onBeforeUnmount(() => { Object.values(previews.value).forEach(url => URL.revokeO
 
 <template>
   <div>
-    <div class="text-subtitle-2 mb-1">Agregar fotos (opcional)</div>
-    <p class="text-caption text-medium-emphasis mb-2">Hasta {{ MAX }} fotos — ayudan a que te coticen mejor.</p>
     <input ref="input" type="file" accept="image/*" multiple class="d-none" @change="onPick">
-    <div class="d-flex ga-2 flex-wrap">
-      <div v-for="(file, i) in modelValue" :key="file.name + file.lastModified" class="position-relative">
-        <VImg :src="urlFor(file)" width="88" height="88" cover class="rounded" />
-        <VBtn
-          icon size="x-small" variant="flat"
-          style="position: absolute; top: -8px; right: -8px; background: rgba(33, 33, 33, 0.75);"
-          @click="remove(i)"
-        >
-          <VIcon icon="ri-close-line" size="16" color="white" />
-        </VBtn>
+
+    <!-- Sin fotos: fila ícono + texto (clicable entera), no una caja grande
+         vacía ocupando espacio de entrada. Con fotos: miniaturas chicas en
+         fila + un "+" al final para seguir agregando — todo el bloque se ve
+         y se usa como una tira de adjuntos, no como un formulario aparte. -->
+    <template v-if="!modelValue.length">
+      <div class="d-flex align-center ga-3" style="cursor: pointer;" @click="openPicker">
+        <VAvatar size="44" variant="tonal" color="primary" rounded="lg">
+          <VIcon icon="ri-camera-line" size="22" />
+        </VAvatar>
+        <div>
+          <div class="text-body-2 font-weight-bold">
+            Agregar fotos <span class="text-medium-emphasis font-weight-regular">(opcional)</span>
+          </div>
+          <div class="text-caption text-medium-emphasis">Hasta {{ MAX }} fotos de tu carga. Formatos: JPG, PNG.</div>
+        </div>
       </div>
-      <VCard
-        v-if="modelValue.length < MAX" variant="outlined"
-        class="d-flex flex-column align-center justify-center" style="width: 88px; height: 88px; cursor: pointer;"
-        @click="openPicker"
-      >
-        <VIcon icon="ri-add-line" size="22" />
-        <span class="text-caption">Agregar</span>
-      </VCard>
-    </div>
+    </template>
+
+    <template v-else>
+      <div class="d-flex ga-2 flex-wrap">
+        <div v-for="(file, i) in modelValue" :key="file.name + file.lastModified" class="position-relative">
+          <VImg :src="urlFor(file)" width="56" height="56" cover class="rounded-lg" />
+          <VBtn
+            icon size="x-small" variant="flat"
+            style="position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; min-width: 18px; background: rgba(33, 33, 33, 0.75);"
+            @click="remove(i)"
+          >
+            <VIcon icon="ri-close-line" size="12" color="white" />
+          </VBtn>
+        </div>
+        <VCard
+          v-if="modelValue.length < MAX" variant="outlined"
+          class="d-flex align-center justify-center" style="width: 56px; height: 56px; cursor: pointer;"
+          @click="openPicker"
+        >
+          <VIcon icon="ri-add-line" size="20" />
+        </VCard>
+      </div>
+      <p class="text-caption text-medium-emphasis mt-1 mb-0">{{ modelValue.length }}/{{ MAX }} fotos</p>
+    </template>
   </div>
 </template>

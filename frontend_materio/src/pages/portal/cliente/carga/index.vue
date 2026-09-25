@@ -6,9 +6,11 @@ import {
   customerAccept, customerLoad, customerLoadOffers, customerLoadPreferOffer, customerNegotiate,
   customerNegotiation, customerNegotiationRespond, customerNegotiationSend, customerPay, customerRequestAdvisor,
 } from '@/services/customerPortalService'
+import { useBrandStore } from '@/stores/brandStore'
 
 const route = useRoute()
 const code = route.params.code
+const brand = useBrandStore()
 
 const STATUS = {
   draft: 'Borrador', quoted: 'Precio listo', negotiating: 'En negociación',
@@ -165,7 +167,7 @@ const price = computed(() => load.value?.price || {})
                 :color="offers.prefersDirect ? 'primary' : undefined"
               >
                 <div class="d-flex align-center flex-wrap ga-2">
-                  <VChip size="small" color="primary" variant="flat">Directo TaxiCarga</VChip>
+                  <VChip size="small" color="primary" variant="flat">Directo {{ brand.displayName }}</VChip>
                   <span class="text-caption text-medium-emphasis">Soporte directo, sin intermediarios</span>
                   <VSpacer />
                   <span class="text-h6 font-weight-bold">{{ soles(offers.direct.amount) }}</span>
